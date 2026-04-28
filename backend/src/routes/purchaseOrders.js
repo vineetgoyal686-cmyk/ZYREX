@@ -840,9 +840,13 @@ router.put("/:id", upload.fields([
   try {
     const bodyData = JSON.parse(req.body.data || "{}");
     const files    = req.files || {};
-    let { mainData, items } = bodyData;
+    let { mainData } = bodyData;
     mainData = sanitizeRichTextDeep(mainData || {});
-    items = sanitizeRichTextDeep(items || []);
+    // Distinguish "items omitted from payload" vs "items: []".
+    // If caller didn't send items at all (status-only updates etc.), DO NOT
+    // touch the items table. Only replace items when caller explicitly sends an array.
+    const itemsProvided = Array.isArray(bodyData.items);
+    const items = itemsProvided ? sanitizeRichTextDeep(bodyData.items) : null;
 
     // Fetch existing urls/status before any mutation so locked orders remain read-only.
     const { data: existing } = await supabase.schema("procurement")
@@ -884,12 +888,16 @@ router.put("/:id", upload.fields([
     }
 
     // 2.1 Override order_number to DRAFT if not Issued (prevent premature numbering on Edit)
+    // Exception: amendment clones (e.g. PO-4A, PO-4B) keep their assigned number — they
+    // are NOT new pending orders, they're versions of an issued one.
     if (mainData.status !== 'Issued' && !mainData.order_number?.startsWith("PENDING-")) {
-        // Find existing order number to see if it was already PENDING
         const { data: curr } = await supabase.schema("procurement")
-          .from("purchase_orders").select("order_number").eq("id", req.params.id).single();
+          .from("purchase_orders").select("order_number, amended_from_id").eq("id", req.params.id).single();
 
-        if (!curr?.order_number?.startsWith("PENDING-")) {
+        if (curr?.amended_from_id) {
+          // Amendment clone — keep its existing number (e.g. .../4A)
+          mainData.order_number = curr.order_number;
+        } else if (!curr?.order_number?.startsWith("PENDING-")) {
           mainData.order_number = `PENDING-${Date.now()}`;
         } else {
           mainData.order_number = curr.order_number; // Preserve existing pending ID
@@ -953,9 +961,10 @@ router.put("/:id", upload.fields([
       .eq("id", req.params.id);
     if (orderErr) throw orderErr;
 
-    // Replace items ONLY if items array was provided in the request
-    // (prevents accidental item wipe on status-only updates)
-    if (Array.isArray(items)) {
+    // Replace items ONLY if the caller explicitly sent an items array.
+    // Status-only updates (Cancel / Send to Approval / Amend Request flip)
+    // omit `items` entirely so the existing rows must stay untouched.
+    if (itemsProvided) {
       await supabase.schema("procurement").from("purchase_order_items").delete().eq("order_id", req.params.id);
       if (items.length > 0) {
         const itemInserts = items.map(it => ({ ...it, order_id: req.params.id }));
@@ -1168,8 +1177,14 @@ router.delete("/:id", async (req, res) => {
       .eq("id", req.params.id)
       .single();
     if (orderErr) throw orderErr;
-    if (["Issued", "Rejected", "Cancelled", "Reverted", "Recalled"].includes(order?.status)) {
+    if (["Issued", "Rejected", "Cancelled", "Reverted", "Recalled", "Amendment Request", "Amended"].includes(order?.status)) {
       return res.status(400).json({ error: `${order.status} orders cannot be deleted` });
+    }
+    // Block delete if any amendment record references this order (extra safety)
+    const { data: linkedAmend } = await supabase
+      .from("order_amendments").select("id").eq("original_order_id", req.params.id).limit(1).maybeSingle();
+    if (linkedAmend) {
+      return res.status(400).json({ error: "This order has amendment history and cannot be deleted." });
     }
     await supabase.schema("procurement").from("purchase_order_items").delete().eq("order_id", req.params.id);
     const { error } = await supabase.schema("procurement").from("purchase_orders").delete().eq("id", req.params.id);
@@ -1186,6 +1201,24 @@ router.delete("/:id", async (req, res) => {
    ════════════════════════════════════ */
 
 const POST_DOC_CATEGORIES = ["quotations", "comparative", "vendor-docs", "other", "vendor-acceptance"];
+
+/* ─────────────────────────────────────────
+   POST /api/orders/upload
+   Generic file upload helper — used by amendment-request proof attachments and
+   any other order-adjacent flow that just needs to store a file and get a URL.
+───────────────────────────────────────── */
+router.post("/upload", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "File is required" });
+    const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const storagePath = `orders/amendments/${Date.now()}_${safeName}`;
+    const url = await uploadToStorage("procurement-docs", storagePath, req.file.buffer, req.file.mimetype);
+    res.json({ success: true, url, storage_path: storagePath, name: req.file.originalname, size: req.file.size });
+  } catch (err) {
+    console.error("Generic order upload failed:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 router.post("/:id/post-documents", upload.single("file"), async (req, res) => {
   try {

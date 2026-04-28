@@ -63,8 +63,6 @@ import IntakeList from "./pages/Create/IntakeList";
 import ItemList from "./pages/Procurement/ItemList";
 import VendorList from "./pages/Procurement/VendorList";
 import CompanyList from "./pages/Procurement/CompanyList";
-import CreateOrder from "./pages/Procurement/CreateOrder";
-import OrderRecord from "./pages/Procurement/OrderRecord";
 import OrderDashboard from "./pages/Procurement/OrderDashboard";
 import TermCondition from "./pages/Procurement/clauses/TermCondition";
 import PaymentTerms from "./pages/Procurement/clauses/PaymentTerms";

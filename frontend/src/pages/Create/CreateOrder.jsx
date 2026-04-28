@@ -2123,10 +2123,17 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const handleDelete = async (id) => {
     if (!confirm("Are you sure you want to delete this order?")) return;
     try {
-      await fetch(`${API}/api/orders/${id}`, { method: "DELETE" });
+      const res = await fetch(`${API}/api/orders/${id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(data.error || `Delete failed (${res.status})`, "error");
+        return;
+      }
       showToast("Order deleted successfully");
       fetchOrders();
-    } catch { showToast("Failed to delete", "error"); }
+    } catch (err) {
+      showToast(err.message || "Failed to delete", "error");
+    }
   };
 
   const handleApprovalAction = async (id, action, promptMsg) => {
@@ -2432,7 +2439,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         "Ref No": o.ref_number || "",
         "Made By": o.made_by || "",
         "Created Date": o.date_of_creation ? new Date(o.date_of_creation).toLocaleDateString("en-IN") : "",
-        "Issued Date": o.status === 'Issued' && (t.issuedAt || o.updated_at) ? new Date(t.issuedAt || o.updated_at).toLocaleDateString("en-IN") : "",
+        "Issued Date": ["Issued", "Amended"].includes(o.status) && (t.issuedAt || o.updated_at) ? new Date(t.issuedAt || o.updated_at).toLocaleDateString("en-IN") : "",
         "Taxable Amount": taxable,
         "Grand Total": Number(t.grandTotal) || 0,
         "Status": o.status || "",
@@ -2632,6 +2639,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const getTabCount = (tabName) => {
     const scoped = orders.filter(projectScoped);
     if (tabName === "All") return scoped.filter(o => !o._history && !["Reverted", "Recalled"].includes(o.status)).length;
+    // "Issued" is the broader bucket — includes amended orders that were issued
+    // at some point in their lifecycle. "Amended" tab still shows only those.
+    if (tabName === "Issued") return scoped.filter(o => ["Issued", "Amended"].includes(o.status)).length;
     return scoped.filter(o => o.status === tabName).length;
   };
 
@@ -2673,7 +2683,11 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       o.order_type
     ].filter(Boolean).join(" ").toLowerCase();
     const matchSearch = !ms || searchBlob.includes(ms);
-    const matchTab = activeTab === "All" ? (!o._history && !["Reverted", "Recalled"].includes(o.status)) : o.status === activeTab;
+    const matchTab = activeTab === "All"
+      ? (!o._history && !["Reverted", "Recalled"].includes(o.status))
+      : activeTab === "Issued"
+        ? ["Issued", "Amended"].includes(o.status)
+        : o.status === activeTab;
     const matchSite = !filterSite || getSiteCode(o) === filterSite;
     const matchCompany = !filterCompany || getCompanyCode(o) === filterCompany;
     const matchType = !filterType || o.order_type === filterType;
@@ -3088,7 +3102,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                         {new Date(o.date_of_creation || o.created_at).toLocaleDateString("en-IN")}
                       </td>
                       <td className="px-4 py-3.5 border-b border-r border-slate-100 text-slate-500 text-[10px] font-medium whitespace-nowrap">
-                        {o.status === 'Issued' && (o.totals?.issuedAt || o.updated_at)
+                        {/* Show issue date for both Issued and Amended — Amended orders were
+                            issued at some point, so the date shouldn't disappear when their status flips */}
+                        {["Issued", "Amended"].includes(o.status) && (o.totals?.issuedAt || o.updated_at)
                           ? new Date(o.totals?.issuedAt || o.updated_at).toLocaleDateString("en-IN")
                           : <span className="text-slate-300">-</span>}
                       </td>

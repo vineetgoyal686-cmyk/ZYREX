@@ -47,7 +47,6 @@ const TAB_MODULE_KEY = {
   master_data__intakes:  "master_data_intakes",
   audit: "audit",
   proc_setup__contact_list: "contact_list",
-  proc_setup__annexure: "annexure",
   proc_setup__company_list: "company_list",
   proc_setup__site_list: "site_list",
   proc_setup__vendor_list: "vendor_list",

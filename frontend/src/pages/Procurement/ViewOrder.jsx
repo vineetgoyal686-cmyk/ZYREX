@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Search, Building2, User, Landmark, MapPin, Receipt, ShieldQuestion, FileText, CheckCircle2, Phone, FileDown, Download, Eye, X, Upload, Trash2, FileCheck, Lock, ShoppingCart, Package } from "lucide-react";
+import { ArrowLeft, Search, Building2, User, Landmark, MapPin, Receipt, ShieldQuestion, FileText, CheckCircle2, Phone, FileDown, Download, Eye, X, Upload, Trash2, FileCheck, Lock, ShoppingCart, Package, GitMerge } from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
@@ -50,6 +50,16 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {} }) => {
   const [amendFile, setAmendFile] = useState(null);
   const [amendLoading, setAmendLoading] = useState(false);
   const [amendHistory, setAmendHistory] = useState([]);
+  // Inline approve/reject (when this order IS the pending clone)
+  const [pendingAmend, setPendingAmend] = useState(null);     // amendment row for this clone
+  const [canManageAmend, setCanManageAmend] = useState(false);
+  const [amendActionLoading, setAmendActionLoading] = useState(false);
+  // Amendment History tab data
+  const [amendChain, setAmendChain] = useState([]);
+
+  // Order-module permissions for the current user (drives which buttons show)
+  const myOrderPerms = (thisUser.app_permissions || []).find(p => p.module_key === "order") || {};
+  const canRequestAmend = isGlobalAdmin || !!myOrderPerms.can_add;
 
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
 
@@ -131,14 +141,70 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {} }) => {
   }, [orderId]);
 
   const fetchAmendHistory = async () => {
+    const token = localStorage.getItem("bms_token") || "";
     try {
       const r = await fetch(`${API}/api/amendments/requests?order_id=${orderId}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem("bms_token") || ""}` }
+        headers: { Authorization: `Bearer ${token}` }
       });
       const d = await r.json();
       setAmendHistory(d.requests || []);
     } catch (err) {
       console.error("Amend history fetch failed", err);
+    }
+    // Pull the full version chain (every PO that shares this amendment lineage)
+    try {
+      const rc = await fetch(`${API}/api/amendments/chain/${orderId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const dc = await rc.json();
+      setAmendChain(dc.chain || []);
+    } catch (err) {
+      console.error("Amend chain fetch failed", err);
+    }
+    // If THIS order is the pending clone, pull the amendment row (reason/attachment)
+    try {
+      const rp = await fetch(`${API}/api/amendments/by-clone/${orderId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const dp = await rp.json();
+      setPendingAmend(dp.amendment || null);
+    } catch (err) {
+      console.error("Pending amend fetch failed", err);
+    }
+    // Permission check (drives whether approve/reject buttons render enabled)
+    try {
+      const rcm = await fetch(`${API}/api/amendments/can-manage`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const dcm = await rcm.json();
+      setCanManageAmend(!!dcm.canManage);
+    } catch { /* default false */ }
+  };
+
+  const handleAmendDecision = async (action) => {
+    if (!pendingAmend) return;
+    if (!confirm(`${action === "Approved" ? "Approve" : "Reject"} this amendment request?`)) return;
+    setAmendActionLoading(true);
+    try {
+      const res = await fetch(`${API}/api/amendments/action`, {
+        method: "POST",
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem("bms_token") || ""}` },
+        body: JSON.stringify({ request_id: pendingAmend.id, action }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Action failed");
+      showToast(action === "Approved" ? "Amendment approved — clone moved to Draft" : "Amendment rejected — clone removed");
+      // After Approve, this clone's status flipped to Draft. After Reject the clone is gone.
+      if (action === "Rejected" && onBack) {
+        onBack();
+      } else {
+        fetchOrderDetails();
+        fetchAmendHistory();
+      }
+    } catch (err) {
+      showToast(err.message, "error");
+    } finally {
+      setAmendActionLoading(false);
     }
   };
 
@@ -263,21 +329,23 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {} }) => {
 
   const handleAmendRequest = async () => {
     if (!amendReason.trim()) { showToast("Reason is required", "error"); return; }
+    if (!amendFile)          { showToast("Proof attachment is required", "error"); return; }
     setAmendLoading(true);
     try {
       let attachment_url = "";
-      if (amendFile) {
-        const formData = new FormData();
-        formData.append("file", amendFile);
-        const upRes = await fetch(`${API}/api/orders/upload`, {
-          method: "POST",
-          body: formData
-        });
-        if (upRes.ok) {
-          const upJson = await upRes.json();
-          attachment_url = upJson.url;
-        }
+      const formData = new FormData();
+      formData.append("file", amendFile);
+      const upRes = await fetch(`${API}/api/orders/upload`, {
+        method: "POST",
+        body: formData,
+      });
+      if (!upRes.ok) {
+        const errJson = await upRes.json().catch(() => ({}));
+        throw new Error(errJson.error || "Attachment upload failed");
       }
+      const upJson = await upRes.json();
+      attachment_url = upJson.url;
+      if (!attachment_url) throw new Error("Upload returned no URL");
 
       const res = await fetch(`${API}/api/amendments/request`, {
         method: "POST",
@@ -381,7 +449,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {} }) => {
   const vendorDisplayName = vend.vendorName || vend.vendor_name || "Vendor";
   const vendorSignatoryName = vend.contactPerson || vend.contact_person || vendorDisplayName || FALLBACK;
   const poDate = formatSignatureDate(order.purchase_order_date || order.created_at);
-  const TABS = ["Order Details", "Approvals", "Order Documents", "PDF View", "Goods receipts", "Vendor Invoices", "Payments"];
+  const TABS = ["Order Details", "Approvals", "Amendment History", "Order Documents", "PDF View", "Goods receipts", "Vendor Invoices", "Payments"];
 
   return (
     <div className="bg-slate-50 min-h-screen text-sm w-full mx-auto pb-20 relative">
@@ -528,10 +596,12 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {} }) => {
                 );
                 return (
                   <>
-                    <button onClick={() => setAmendModal(true)}
-                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-sm text-xs transition-all">
-                      Amend Request
-                    </button>
+                    {canRequestAmend && (
+                      <button onClick={() => setAmendModal(true)}
+                        className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-sm text-xs transition-all">
+                        Amend Request
+                      </button>
+                    )}
                     {canRecall && (
                       <button disabled={actionLoading}
                         onClick={() => { setActionComment(""); setActionModal({ open: true, type: 'Recalled' }); setActiveTab('Approvals'); }}
@@ -592,6 +662,58 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {} }) => {
 
       {activeTab === "Order Details" && (
         <div className="px-14 py-3 max-w-[1400px] print:hidden">
+          {/* ── INLINE AMENDMENT REVIEW BANNER ── */}
+          {/* Shown when this order IS the pending clone (status = Amendment Request)
+              and a matching pending row exists. Reviewer sees reason + attachment +
+              Approve/Reject inline so they don't have to bounce to Inbox. */}
+          {order.status === "Amendment Request" && pendingAmend && (
+            <div className="mb-6 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-5">
+              <div className="flex items-start gap-4">
+                <div className="h-10 w-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 shrink-0">
+                  <Package size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <h3 className="text-sm font-bold text-amber-900">Amendment Pending Review</h3>
+                    <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded">
+                      Requested by {pendingAmend.requestor?.name || "—"}
+                    </span>
+                  </div>
+                  <div className="bg-white border border-amber-100 rounded-lg p-3 mb-3">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Reason</p>
+                    <p className="text-sm text-slate-700 leading-relaxed">{pendingAmend.reason}</p>
+                  </div>
+                  {pendingAmend.attachment_url && (
+                    <a href={pendingAmend.attachment_url} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-amber-200 rounded-lg text-[11px] font-bold text-amber-700 hover:bg-amber-100 transition mb-3">
+                      <FileText size={12} /> View Attached Proof
+                    </a>
+                  )}
+                  <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-amber-200">
+                    {canManageAmend ? (
+                      <>
+                        <button
+                          disabled={amendActionLoading}
+                          onClick={() => handleAmendDecision("Approved")}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm text-xs transition disabled:opacity-50">
+                          {amendActionLoading ? "..." : "Approve Amendment"}
+                        </button>
+                        <button
+                          disabled={amendActionLoading}
+                          onClick={() => handleAmendDecision("Rejected")}
+                          className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold rounded-lg text-xs transition disabled:opacity-50">
+                          Reject
+                        </button>
+                      </>
+                    ) : (
+                      <p className="text-[11px] text-amber-700 italic">Only users with Manage Amend permission can approve or reject this request.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Top Info Block */}
           <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">
             <div className="flex items-center gap-3 mb-6">
@@ -1202,6 +1324,81 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {} }) => {
           </div>
         );
       })()}
+
+      {activeTab === "Amendment History" && (
+        <div className="px-14 py-3 max-w-[1400px] print:hidden">
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
+            <div className="flex items-center gap-3 mb-1">
+              <GitMerge size={18} className="text-indigo-500" />
+              <h2 className="text-base font-bold text-slate-800">Amendment History</h2>
+            </div>
+            <p className="text-xs text-slate-500 mb-5">All versions of this purchase order — original, every amended copy, and the active one.</p>
+
+            {amendChain.length === 0 ? (
+              <p className="py-8 text-center text-sm text-slate-400">No version history yet.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                    <tr>
+                      <th className="px-4 py-3 text-left border-b border-slate-200">Version</th>
+                      <th className="px-4 py-3 text-left border-b border-slate-200">Order Number</th>
+                      <th className="px-4 py-3 text-left border-b border-slate-200">Status</th>
+                      <th className="px-4 py-3 text-left border-b border-slate-200">Vendor</th>
+                      <th className="px-4 py-3 text-left border-b border-slate-200">Issued Date</th>
+                      <th className="px-4 py-3 text-left border-b border-slate-200">Amend Request Date</th>
+                      <th className="px-4 py-3 text-left border-b border-slate-200">Amend Date</th>
+                      <th className="px-4 py-3 text-center border-b border-slate-200">Open</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {amendChain.map((row, idx) => {
+                      const isCurrent = row.id === orderId;
+                      const isLatest = idx === amendChain.length - 1;
+                      const statusColor =
+                        row.status === "Issued"   ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                        row.status === "Amended"  ? "bg-slate-100 text-slate-600 border-slate-200" :
+                        row.status === "Draft"    ? "bg-blue-50 text-blue-700 border-blue-200" :
+                        row.status === "Amendment Request" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                                                    "bg-slate-50 text-slate-500 border-slate-200";
+                      const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString("en-IN") : <span className="text-slate-300">—</span>;
+                      return (
+                        <tr key={row.id} className={`${isCurrent ? "bg-indigo-50/40" : ""} border-b border-slate-100 last:border-0`}>
+                          <td className="px-4 py-3 font-semibold text-slate-700">v{idx + 1}</td>
+                          <td className="px-4 py-3 font-mono text-[12px] text-slate-700">{row.order_number}</td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded border ${statusColor}`}>
+                              {row.status}
+                            </span>
+                            {isLatest && row.status === "Issued" && (
+                              <span className="ml-2 inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 uppercase tracking-widest px-1.5 py-0.5 rounded bg-emerald-100 border border-emerald-200">Active</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-slate-600">{row.vendor_name || "—"}</td>
+                          <td className="px-4 py-3 text-[12px] text-slate-500 whitespace-nowrap">{fmtDate(row.issued_at)}</td>
+                          <td className="px-4 py-3 text-[12px] text-slate-500 whitespace-nowrap">{fmtDate(row.amend_request_at)}</td>
+                          <td className="px-4 py-3 text-[12px] text-slate-500 whitespace-nowrap">{fmtDate(row.amended_at)}</td>
+                          <td className="px-4 py-3 text-center">
+                            {isCurrent ? (
+                              <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">You are here</span>
+                            ) : (
+                              <button onClick={() => onBack && onBack(row.id)}
+                                className="p-1.5 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition"
+                                title="Open this version">
+                                <FileText size={14} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {activeTab === "Order Documents" && (
         <OrderDocumentsTab

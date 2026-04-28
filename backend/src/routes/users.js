@@ -111,11 +111,11 @@ router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
 /* PUT /api/users/:id */
 router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
   const { id } = req.params;
-  const { name, contact_no, designation, department, role, is_active, profile_permissions, reset_permissions } = req.body;
+  const { name, contact_no, designation, designation_id, department, role, is_active, profile_permissions, reset_permissions } = req.body;
 
   const admin = getAdminClient();
   const { data: targetUser } = await admin.from("users").select("role").eq("id", id).single();
-  
+
   if (!targetUser) return res.status(404).json({ error: "User not found" });
 
   if (req.user.role === "super_admin" && ["global_admin", "super_admin"].includes(targetUser.role)) {
@@ -123,11 +123,12 @@ router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
   }
 
   const updates = {};
-  if (name        !== undefined) updates.name        = name;
-  if (contact_no  !== undefined) updates.contact_no  = contact_no;
-  if (designation !== undefined) updates.designation = designation;
-  if (department  !== undefined) updates.department  = department;
-  if (is_active   !== undefined) updates.is_active   = is_active;
+  if (name           !== undefined) updates.name           = name;
+  if (contact_no     !== undefined) updates.contact_no     = contact_no;
+  if (designation    !== undefined) updates.designation    = designation;
+  if (designation_id !== undefined) updates.designation_id = designation_id || null;
+  if (department     !== undefined) updates.department     = department;
+  if (is_active      !== undefined) updates.is_active      = is_active;
 
   if (role !== undefined && role !== targetUser.role) {
     if (req.user.role === "global_admin") {

@@ -607,6 +607,9 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
   const [permissions, setPermissions] = useState([]);
   const [editingProfilePerms, setEditingProfilePerms] = useState(DEFAULT_PROFILE_PERMS);
   const [permLoading, setPermLoading] = useState(false);
+  // Tracks the designation template a user picked from "Apply Template"
+  // so savePerms can also update users.designation + users.designation_id.
+  const [pickedTemplate, setPickedTemplate] = useState(null);
   const [permFilter, setPermFilter]   = useState("all");
   const [viewType, setViewType]       = useState("list");
   const [confirmRoleChange, setConfirmRoleChange] = useState(null); // { member, newRole }
@@ -1113,6 +1116,7 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
     setPermLoading(true);
     setPermissions([]); // PURANI VALUES CLEAR KARO
     setEditingProfilePerms(DEFAULT_PROFILE_PERMS); // PROFILE PERMS BHI RESET KARO
+    setPickedTemplate(null); // Clear any leftover template selection from a previous user
     try {
       const { data } = await api.get(`/api/users/${member.id}/permissions`);
       setPermissions(data.permissions || []);
@@ -1135,12 +1139,39 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
   const savePerms = async () => {
     setPermLoading(true);
     try {
-      await api.put(`/api/users/${permUser.id}/permissions`, { 
-        permissions, 
-        profile_permissions: editingProfilePerms 
+      // Strip stale module entries — template snapshots may carry module_ids that
+      // no longer exist if those modules were deleted/renamed in DB.
+      const validIds = new Set(permissions.map(p => p.module_id).filter(Boolean));
+      const cleanPerms = permissions.filter(p => p.module_id && validIds.has(p.module_id));
+
+      await api.put(`/api/users/${permUser.id}/permissions`, {
+        permissions: cleanPerms,
+        profile_permissions: editingProfilePerms,
       });
+
+      if (pickedTemplate) {
+        await api.put(`/api/users/${permUser.id}`, {
+          designation:    pickedTemplate.name,
+          designation_id: pickedTemplate.id,
+        });
+        setMembers(prev => prev.map(m =>
+          m.id === permUser.id
+            ? { ...m, designation: pickedTemplate.name, designation_id: pickedTemplate.id }
+            : m
+        ));
+        if (permUser.id === currentUser.id) {
+          const updatedSelf = { ...currentUser, designation: pickedTemplate.name, designation_id: pickedTemplate.id };
+          localStorage.setItem("bms_user", JSON.stringify(updatedSelf));
+          onProfileUpdate?.(updatedSelf);
+        }
+        setPickedTemplate(null);
+      }
       showToast("Permissions saved");
-    } catch { showToast("Failed to save permissions", "error"); }
+    } catch (err) {
+      const apiMsg = err?.response?.data?.error || err?.message || "Save failed";
+      console.error("savePerms failed:", err?.response?.data || err);
+      showToast(apiMsg, "error");
+    }
     finally { setPermLoading(false); }
   };
 
@@ -1789,6 +1820,8 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                               };
                               return { ...m, ...match };
                             }));
+                            // Remember the template so savePerms can update designation + designation_id
+                            setPickedTemplate({ id: tpl.id, name: tpl.name });
                             showToast(`Applied "${tpl.name}" template — review & save`);
                           }}
                         />
@@ -2319,6 +2352,24 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                           </div>
                         </div>
 
+                        {/* Master toggle — Select All / Clear All */}
+                        <div className="flex items-center justify-between p-3.5 bg-gradient-to-r from-emerald-50 to-blue-50 rounded-xl border border-emerald-100">
+                          <label className="flex items-center gap-3 cursor-pointer select-none">
+                            <input type="checkbox"
+                              checked={isDesgAllChecked()}
+                              onChange={e => setAllDesgPerms(e.target.checked)}
+                              className="w-4 h-4 rounded accent-emerald-600 cursor-pointer" />
+                            <div>
+                              <p className="text-[13px] font-bold text-slate-800">Select All Permissions</p>
+                              <p className="text-[10px] text-slate-500">Ticks every profile section + every module action — useful for full-access roles like Vice President</p>
+                            </div>
+                          </label>
+                          <button type="button" onClick={() => setAllDesgPerms(false)}
+                            className="px-3 py-1.5 bg-white border border-rose-100 text-rose-600 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-rose-600 hover:text-white hover:border-rose-600 transition shrink-0">
+                            Clear All
+                          </button>
+                        </div>
+
                         {/* Profile section permissions */}
                         <div>
                           <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">Profile Section Access</p>
@@ -2672,11 +2723,14 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                       <div>
                         <span className={lbl}>Role Access</span>
                         <select className={inp} value={newUser.role}
-                          onChange={(e) => { const newRole = e.target.value; setNewUser((p) => ({ ...p, role: newRole })); applyRoleDefaults(newRole); }}>
+                          onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
                           {getManageableRoles(currentUser.role).includes("super_admin") && <option value="super_admin">Super Admin (Organization)</option>}
                           {getManageableRoles(currentUser.role).includes("admin") && <option value="admin">Administrator (Team)</option>}
                           <option value="user">Standard User (Staff)</option>
                         </select>
+                        <p className="text-[10px] text-slate-400 mt-1 ml-1">
+                          Role controls who this user can manage. App permissions come from the Designation template below.
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -2751,22 +2805,22 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                 <p className="text-sm font-medium text-slate-500 leading-relaxed px-4">
                   Aap <span className="font-bold text-slate-800">{confirmRoleChange.member.name}</span> ka role <span className="text-blue-600 font-bold uppercase tracking-wider">{confirmRoleChange.newRole}</span> par change kar rahe hain.
                   <br /><br />
-                  Kya aap permissions ko bhi reset karna chahte hain?
+                  Role sirf hierarchy decide karta hai — actual app permissions designation template se aati hain. Permissions same rakho aur baad me designation se update karo.
                 </p>
               </div>
 
               <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-2">
-                <button 
-                  onClick={() => executeRoleChange(true)}
-                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-sm font-bold shadow-lg shadow-blue-200 transition-all active:scale-95 flex items-center justify-center gap-2"
-                >
-                  Confirm & Reset to {confirmRoleChange.newRole} Defaults
-                </button>
-                <button 
+                <button
                   onClick={() => executeRoleChange(false)}
-                  className="w-full py-3 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-2xl text-sm font-bold transition-all active:scale-95"
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-sm font-bold shadow-lg shadow-blue-200 transition-all active:scale-95"
                 >
-                  Change Role Only (Keep Current Perms)
+                  Change Role Only (Recommended)
+                </button>
+                <button
+                  onClick={() => executeRoleChange(true)}
+                  className="w-full py-3 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 rounded-2xl text-sm font-bold transition-all active:scale-95"
+                >
+                  Also Wipe Permissions (Advanced)
                 </button>
                 <button 
                   onClick={() => setConfirmRoleChange(null)}

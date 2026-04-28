@@ -17,41 +17,66 @@ const intakeTitle = (intake) => intake.intake_number || `Intake ${intake.id?.sli
 const money = (value) => Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 
 export default function Approvals() {
-  const [activeTab, setActiveTab] = useState("orders");
+  const [activeTab, setActiveTab] = useState("intake");
   const [orders, setOrders] = useState([]);
   const [intakes, setIntakes] = useState([]);
   const [amendments, setAmendments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(null); // request_id being processed
   const [search, setSearch] = useState("");
+  const [canManageAmend, setCanManageAmend] = useState(false);
+  // Amendment-specific filters + PDF preview state
+  const [amendSiteFilter, setAmendSiteFilter] = useState("");
+  const [amendCompanyFilter, setAmendCompanyFilter] = useState("");
+  const [pdfPreviewId, setPdfPreviewId] = useState(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [ordersRes, intakesRes, amendRes] = await Promise.all([
+      const token = localStorage.getItem("bms_token") || "";
+      const [ordersRes, intakesRes, amendRes, capRes] = await Promise.all([
         fetch(`${API}/api/orders`),
         fetch(`${API}/api/intakes`),
         fetch(`${API}/api/amendments/requests`, {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem("bms_token") || ""}` }
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch(`${API}/api/amendments/can-manage`, {
+          headers: { 'Authorization': `Bearer ${token}` }
         }),
       ]);
-      const [ordersData, intakesData, amendData] = await Promise.all([
+      const [ordersData, intakesData, amendData, capData] = await Promise.all([
         ordersRes.json().catch(() => ({})),
         intakesRes.json().catch(() => ({})),
         amendRes.json().catch(() => ({})),
+        capRes.json().catch(() => ({})),
       ]);
       setOrders(ordersData.orders || []);
       setIntakes(intakesData.intakes || []);
       setAmendments(amendData.requests || []);
+      setCanManageAmend(!!capData.canManage);
     } catch {
       setOrders([]);
       setIntakes([]);
       setAmendments([]);
+      setCanManageAmend(false);
     }
     setLoading(false);
   };
 
   useEffect(() => { load(); }, []);
+
+  // Auto-refresh when the user comes back to this tab — picks up any new
+  // amendment requests they (or others) submitted from another page.
+  useEffect(() => {
+    const onFocus = () => load();
+    const onVisible = () => { if (!document.hidden) load(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
 
   const handleAmendAction = async (request_id, action) => {
     setActionLoading(request_id);
@@ -82,8 +107,8 @@ export default function Approvals() {
   ), [intakes]);
 
   const tabs = [
-    { key: "orders", label: "Orders", icon: ClipboardList, count: pendingOrders.length },
     { key: "intake", label: "Intake", icon: FileText, count: pendingIntakes.length },
+    { key: "orders", label: "Orders", icon: ClipboardList, count: pendingOrders.length },
     { key: "amendments", label: "Amendments", icon: RefreshCw, count: amendments.length },
     { key: "payments", label: "Payments", icon: IndianRupee, count: 0 },
   ];
@@ -176,56 +201,161 @@ export default function Approvals() {
             status: o.status,
           }))}
         />
+      ) : activeTab === "intake" ? (
+        <ApprovalTable
+          emptyText="No pending intake approval requests."
+          rows={filteredIntakes.map((i) => ({
+            id: i.id,
+            number: intakeTitle(i),
+            title: i.name || "Intake approval",
+            source: i.site_name || "-",
+            owner: i.requisition_by || "-",
+            amount: `${i.intake_items?.length || 0} items`,
+            status: i.status,
+          }))}
+        />
       ) : activeTab === "amendments" ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {amendments.length === 0 ? (
-            <div className={`${cardCls} col-span-full p-8 text-center text-sm font-semibold text-slate-400`}>No pending amendment requests.</div>
-          ) : amendments.map((req) => (
-            <div key={req.id} className={`${cardCls} p-5 flex flex-col`}>
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 bg-amber-50 rounded flex items-center justify-center text-amber-600">
-                    <RefreshCw size={16} />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-black text-slate-900 uppercase tracking-tight">{req.original_order?.order_number}</h3>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase">Requested by {req.requestor?.name}</p>
-                  </div>
-                </div>
-              </div>
+        (() => {
+          // Build site / company option lists from current pending amendments
+          const siteOpts    = Array.from(new Set(amendments.map(a => a.original_order?.site_code).filter(Boolean))).sort();
+          const companyOpts = Array.from(new Set(amendments.map(a => a.original_order?.company_code).filter(Boolean))).sort();
 
-              <div className="flex-1 space-y-3">
-                <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Reason</p>
-                  <p className="text-xs text-slate-700 leading-relaxed font-medium">{req.reason}</p>
-                </div>
-                
-                {req.attachment_url && (
-                  <a href={req.attachment_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-[10px] font-bold text-indigo-600 hover:underline">
-                    <FileText size={12} /> VIEW ATTACHED PROOF
-                  </a>
+          // Apply filters + search to the visible list
+          const visible = amendments.filter(a => {
+            if (amendSiteFilter    && a.original_order?.site_code    !== amendSiteFilter)    return false;
+            if (amendCompanyFilter && a.original_order?.company_code !== amendCompanyFilter) return false;
+            if (search) {
+              const blob = `${a.original_order?.order_number || ""} ${a.original_order?.subject || ""} ${a.requestor?.name || ""} ${a.reason || ""}`.toLowerCase();
+              if (!blob.includes(search.toLowerCase())) return false;
+            }
+            return true;
+          });
+
+          return (
+            <>
+              {/* Filter strip */}
+              <div className={`${cardCls} mb-4 p-3 flex flex-wrap items-center gap-3`}>
+                <select value={amendSiteFilter} onChange={e => setAmendSiteFilter(e.target.value)}
+                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[12px] font-medium outline-none focus:border-cyan-400">
+                  <option value="">All Sites</option>
+                  {siteOpts.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <select value={amendCompanyFilter} onChange={e => setAmendCompanyFilter(e.target.value)}
+                  className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[12px] font-medium outline-none focus:border-cyan-400">
+                  <option value="">All Companies</option>
+                  {companyOpts.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                {(amendSiteFilter || amendCompanyFilter) && (
+                  <button onClick={() => { setAmendSiteFilter(""); setAmendCompanyFilter(""); }}
+                    className="px-3 py-1.5 text-[11px] font-bold text-rose-600 hover:bg-rose-50 rounded-lg uppercase tracking-widest transition">
+                    Clear
+                  </button>
                 )}
+                <span className="ml-auto text-[11px] text-slate-400 font-medium">
+                  Showing {visible.length} of {amendments.length}
+                </span>
               </div>
 
-              <div className="mt-5 pt-4 border-t border-slate-100 flex gap-2">
-                <button
-                  disabled={actionLoading === req.id}
-                  onClick={() => handleAmendAction(req.id, "Rejected")}
-                  className="flex-1 px-3 py-2 bg-white border border-slate-200 text-slate-600 font-bold rounded-lg text-[11px] hover:bg-slate-50"
-                >
-                  REJECT
-                </button>
-                <button
-                  disabled={actionLoading === req.id}
-                  onClick={() => handleAmendAction(req.id, "Approved")}
-                  className="flex-1 px-3 py-2 bg-amber-500 text-white font-bold rounded-lg text-[11px] hover:bg-amber-600 shadow-sm"
-                >
-                  {actionLoading === req.id ? "..." : "APPROVE"}
-                </button>
+              {!canManageAmend && (
+                <div className={`${cardCls} mb-4 p-3 text-center text-[11px] font-medium text-amber-700 bg-amber-50 border-amber-200`}>
+                  You can view amendment requests but only users with <b>Manage Amend</b> permission can approve or reject them.
+                </div>
+              )}
+
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {visible.length === 0 ? (
+                  <div className={`${cardCls} col-span-full p-8 text-center text-sm font-semibold text-slate-400`}>
+                    {amendments.length === 0 ? "No pending amendment requests." : "No requests match the current filters."}
+                  </div>
+                ) : visible.map((req) => {
+                  const ord = req.original_order || {};
+                  return (
+                    <div key={req.id} className={`${cardCls} p-5 flex flex-col`}>
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="h-8 w-8 bg-amber-50 rounded flex items-center justify-center text-amber-600 shrink-0">
+                            <RefreshCw size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <button onClick={() => setPdfPreviewId(ord.id)}
+                              title="Click to preview PO/WO"
+                              className="text-xs font-black text-indigo-700 hover:text-indigo-900 hover:underline uppercase tracking-tight truncate text-left">
+                              {ord.order_number || "—"}
+                            </button>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase truncate">
+                              by {req.requestor?.name || "—"}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-0.5 shrink-0 ml-2">
+                          {ord.site_code    && <span className="text-[9px] font-black text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded uppercase tracking-widest">{ord.site_code}</span>}
+                          {ord.company_code && <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{ord.company_code}</span>}
+                        </div>
+                      </div>
+
+                      {ord.subject && (
+                        <p className="text-[12px] font-semibold text-slate-700 mb-3 line-clamp-2" title={ord.subject}>
+                          {ord.subject}
+                        </p>
+                      )}
+
+                      <div className="flex-1 space-y-3">
+                        <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Reason</p>
+                          <p className="text-xs text-slate-700 leading-relaxed font-medium">{req.reason}</p>
+                        </div>
+
+                        {req.attachment_url && (
+                          <a href={req.attachment_url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-[10px] font-bold text-indigo-600 hover:underline">
+                            <FileText size={12} /> VIEW ATTACHED PROOF
+                          </a>
+                        )}
+                      </div>
+
+                      <div className="mt-5 pt-4 border-t border-slate-100 flex gap-2">
+                        <button
+                          disabled={actionLoading === req.id || !canManageAmend}
+                          onClick={() => handleAmendAction(req.id, "Rejected")}
+                          title={canManageAmend ? "Reject this amendment" : "You do not have permission to action amendments"}
+                          className="flex-1 px-3 py-2 bg-white border border-slate-200 text-slate-600 font-bold rounded-lg text-[11px] hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                          REJECT
+                        </button>
+                        <button
+                          disabled={actionLoading === req.id || !canManageAmend}
+                          onClick={() => handleAmendAction(req.id, "Approved")}
+                          title={canManageAmend ? "Approve this amendment" : "You do not have permission to action amendments"}
+                          className="flex-1 px-3 py-2 bg-amber-500 text-white font-bold rounded-lg text-[11px] hover:bg-amber-600 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                          {actionLoading === req.id ? "..." : "APPROVE"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-          ))}
-        </div>
+
+              {/* Side panel — PDF preview when an order number is clicked */}
+              {pdfPreviewId && (
+                <div className="fixed inset-0 z-100 flex">
+                  <div className="flex-1 bg-slate-900/40 backdrop-blur-sm" onClick={() => setPdfPreviewId(null)} />
+                  <div className="w-full max-w-4xl h-full bg-white shadow-2xl flex flex-col">
+                    <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                      <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Order Preview</p>
+                      <button onClick={() => setPdfPreviewId(null)}
+                        className="text-slate-400 hover:text-slate-700 text-sm font-bold">
+                        Close ✕
+                      </button>
+                    </div>
+                    <iframe
+                      src={`${API}/api/orders/${pdfPreviewId}/preview`}
+                      className="flex-1 w-full"
+                      title="Order PDF Preview"
+                    />
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()
       ) : (
         <div className={`${cardCls} p-8 text-center`}>
           <Clock size={24} className="mx-auto mb-2 text-slate-300" />
