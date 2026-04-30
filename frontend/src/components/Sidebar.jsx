@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import api from "../utils/api";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -258,6 +259,13 @@ export default function Sidebar({
   }, [isCollapsed]);
   const [projOpen, setProjOpen] = useState(false);
   const [approvalCount, setApprovalCount] = useState(0);
+  const [avatarUrl, setAvatarUrl] = useState(currentUser.avatar || null);
+  const avatarRefreshed = useRef(false);
+
+  useEffect(() => {
+    setAvatarUrl(currentUserProp?.avatar || null);
+    avatarRefreshed.current = false;
+  }, [currentUserProp?.avatar]);
   const collapsed = isMobile ? false : isCollapsed;
   const isGlobalAdmin = currentUser.role === "global_admin";
   const projects = projectsProp || [];
@@ -568,7 +576,23 @@ export default function Sidebar({
             <div className="flex items-center gap-2 rounded-md border border-cyan-400/15 bg-cyan-400/[0.06] p-2">
               <button type="button" onClick={() => setActiveTab("profile")} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-cyan-500/20 text-sm font-bold text-cyan-100 ring-1 ring-cyan-300/30">
-                  {currentUser.avatar ? <img src={currentUser.avatar} alt="" className="h-full w-full object-cover" /> : initials}
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      onError={async () => {
+                        if (avatarRefreshed.current) return;
+                        avatarRefreshed.current = true;
+                        try {
+                          const { data } = await api.get("/api/auth/refresh-avatar");
+                          setAvatarUrl(data.url || null);
+                          const stored = JSON.parse(localStorage.getItem("bms_user") || "{}");
+                          localStorage.setItem("bms_user", JSON.stringify({ ...stored, avatar: data.url || null }));
+                        } catch { setAvatarUrl(null); }
+                      }}
+                    />
+                  ) : initials}
                 </div>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-white">{userDisplayName}</p>

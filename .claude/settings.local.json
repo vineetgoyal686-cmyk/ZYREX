@@ -28,7 +28,23 @@
       "Bash(npx --no -- esbuild --loader:.jsx=jsx src/pages/Profile.jsx)",
       "Bash(echo \"Profile=$?\")",
       "Bash(npx --no -- esbuild --loader:.jsx=jsx src/components/Sidebar.jsx)",
-      "Bash(echo \"Sidebar=$?\")"
+      "Bash(echo \"Sidebar=$?\")",
+      "Bash(supabase --version)",
+      "Bash(pg_dump --version)",
+      "Bash(npm list *)",
+      "Bash(winget --version)",
+      "Bash(winget install *)",
+      "Bash(winget search *)",
+      "Bash(curl -L -o \"d:/BMS l/database/supabase.exe\" \"https://github.com/supabase/cli/releases/latest/download/supabase_windows_amd64.tar.gz\")",
+      "Bash(tar -xzf supabase.exe)",
+      "Bash(\"d:/BMS l/database/supabase.exe\" --version)",
+      "PowerShell($env:Path += \";C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\"; $d=Get-Date -Format yyyyMMdd; pg_dump \"postgresql://postgres.flaxuaaytkvecoexbxej:Hobbs%40%23%212027@aws-1-ap-south-1.pooler.supabase.com:5432/postgres\" -f \"d:\\\\BMS l\\\\database\\\\prod\\\\prod_backup_$d.sql\" 2>&1)",
+      "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\PostgreSQL\\\\\" -ErrorAction SilentlyContinue | Select-Object Name; if \\(-not \\(Test-Path \"C:\\\\Program Files\\\\PostgreSQL\"\\)\\) { Write-Output \"PostgreSQL not installed at default path\" })",
+      "PowerShell(Get-Command pg_dump -ErrorAction SilentlyContinue)",
+      "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\\" | Select-Object Name | Where-Object {$_.Name -match \"post|pg|sql\"}; Get-ChildItem \"C:\\\\Program Files \\(x86\\)\\\\\" | Select-Object Name | Where-Object {$_.Name -match \"post|pg|sql\"})",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\jiten\\\\AppData\\\\Local\\\\\" | Where-Object {$_.Name -match \"post|pg\"} | Select-Object Name)",
+      "PowerShell(Get-ChildItem \"C:\\\\\", \"D:\\\\\", \"C:\\\\Program Files\\\\\", \"C:\\\\Program Files \\(x86\\)\\\\\" -Filter \"pg_dump.exe\" -Recurse -ErrorAction SilentlyContinue 2>&1 | Where-Object {$_ -notmatch \"denied\"} | Select-Object -First 5 FullName)",
+      "PowerShell(Get-ChildItem \"d:\\\\BMS l\\\\database\\\\prod\\\\\", \"d:\\\\BMS l\\\\database\\\\dev\\\\\" | Select-Object Name, @{N=\"Size\";E={\"{0:N2} KB\" -f \\($_.Length/1KB\\)}}, LastWriteTime)"
     ]
   }
 }

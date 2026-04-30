@@ -972,14 +972,15 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
   const changeHeaderTheme = async (themeValue) => {
     try {
       setHeaderTheme(themeValue);
-      setCoverImage(null); // Clear image so theme is visible
       setShowThemePicker(false);
-      
-      // Update DB: Set theme AND nullify cover image
-      await api.put("/api/auth/profile", { 
-        header_theme: themeValue,
-        cover_image: null 
-      });
+
+      // Agar cover image hai toh pehle Storage se delete karo
+      if (coverImage) {
+        setCoverImage(null);
+        await api.delete("/api/auth/cover");
+      }
+
+      await api.put("/api/auth/profile", { header_theme: themeValue });
 
       const updated = { ...currentUser, profile_permissions: { ...currentUser.profile_permissions, ui: { ...currentUser.profile_permissions?.ui, header_theme: themeValue, cover_image: null } } };
       localStorage.setItem("bms_user", JSON.stringify(updated));
@@ -1475,7 +1476,20 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                 {avatarLoading ? (
                   <Loader2 size={24} className="text-white animate-spin" />
                 ) : avatar ? (
-                  <img src={avatar} alt="avatar" className="w-full h-full object-cover" />
+                  <img
+                    src={avatar}
+                    alt="avatar"
+                    className="w-full h-full object-cover"
+                    onError={async () => {
+                      try {
+                        const { data } = await api.get("/api/auth/refresh-avatar");
+                        setAvatar(data.url || null);
+                        const updated = { ...currentUser, avatar: data.url || null };
+                        localStorage.setItem("bms_user", JSON.stringify(updated));
+                        if (!data.url) onProfileUpdate?.(updated);
+                      } catch { setAvatar(null); }
+                    }}
+                  />
                 ) : (
                   <span className="text-white font-black text-3xl select-none">
                     {currentUser.name?.charAt(0)?.toUpperCase() || "?"}

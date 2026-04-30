@@ -226,6 +226,15 @@ router.post("/avatar", async (req, res) => {
   const newFileName = `${dbUser.id}_${Date.now()}.${ext}`;
   const admin       = getAdminClient();
 
+  // Upload se pehle is user ki SAARI purani avatar files delete karo
+  const { data: existingFiles } = await admin.storage.from("avatars").list("", { search: `${dbUser.id}_` });
+  if (existingFiles && existingFiles.length > 0) {
+    const toDelete = existingFiles
+      .filter(f => f.name.startsWith(`${dbUser.id}_`) && !f.name.startsWith(`cover_`))
+      .map(f => f.name);
+    if (toDelete.length > 0) await admin.storage.from("avatars").remove(toDelete);
+  }
+
   // Naya file upload karo
   const { error: uploadError } = await admin.storage
     .from("avatars")
@@ -233,20 +242,20 @@ router.post("/avatar", async (req, res) => {
 
   if (uploadError) return res.status(500).json({ error: `Storage upload failed: ${uploadError.message}` });
 
-  const { data: urlData } = admin.storage.from("avatars").getPublicUrl(newFileName);
-  const avatarUrl = urlData.publicUrl;
+  const { data: signedData, error: signedError } = await admin.storage
+    .from("avatars")
+    .createSignedUrl(newFileName, 315360000); // 10 years
+
+  if (signedError || !signedData?.signedUrl)
+    return res.status(500).json({ error: "Failed to generate signed URL" });
+
+  const avatarUrl = signedData.signedUrl;
 
   // Users table me naya URL save karo
   const { error: dbError } = await admin.from("users")
     .update({ avatar: avatarUrl }).eq("id", dbUser.id);
 
   if (dbError) return res.status(500).json({ error: `DB update failed: ${dbError.message}` });
-
-  // Purani file Storage se delete karo (cleanup)
-  if (dbUser.avatar) {
-    const oldPath = dbUser.avatar.split("/avatars/")[1]?.split("?")[0];
-    if (oldPath) await admin.storage.from("avatars").remove([oldPath]);
-  }
 
   res.json({ success: true, url: avatarUrl });
 });
@@ -278,14 +287,29 @@ router.post("/cover", async (req, res) => {
   const newFileName = `cover_${dbUser.id}_${Date.now()}.${ext}`;
   const admin       = getAdminClient();
 
+  // Upload se pehle is user ki SAARI purani cover files delete karo
+  const { data: existingCovers } = await admin.storage.from("avatars").list("", { search: `cover_${dbUser.id}_` });
+  if (existingCovers && existingCovers.length > 0) {
+    const toDelete = existingCovers
+      .filter(f => f.name.startsWith(`cover_${dbUser.id}_`))
+      .map(f => f.name);
+    if (toDelete.length > 0) await admin.storage.from("avatars").remove(toDelete);
+  }
+
   const { error: uploadError } = await admin.storage
     .from("avatars")
     .upload(newFileName, buffer, { contentType: mimeType });
 
   if (uploadError) return res.status(500).json({ error: `Storage upload failed: ${uploadError.message}` });
 
-  const { data: urlData } = admin.storage.from("avatars").getPublicUrl(newFileName);
-  const coverUrl = urlData.publicUrl;
+  const { data: signedData, error: signedError } = await admin.storage
+    .from("avatars")
+    .createSignedUrl(newFileName, 315360000); // 10 years
+
+  if (signedError || !signedData?.signedUrl)
+    return res.status(500).json({ error: "Failed to generate signed URL" });
+
+  const coverUrl = signedData.signedUrl;
 
   const currentPerms = dbUser.profile_permissions || {};
   const ui = currentPerms.ui || {};
@@ -295,12 +319,6 @@ router.post("/cover", async (req, res) => {
     .update({ profile_permissions: { ...currentPerms, ui } }).eq("id", dbUser.id);
 
   if (dbError) return res.status(500).json({ error: `DB update failed: ${dbError.message}` });
-
-  // Cleanup old cover
-  if (dbUser.cover_image) {
-    const oldPath = dbUser.cover_image.split("/avatars/")[1]?.split("?")[0];
-    if (oldPath) await admin.storage.from("avatars").remove([oldPath]);
-  }
 
   res.json({ success: true, url: coverUrl });
 });
@@ -354,6 +372,46 @@ router.delete("/avatar", async (req, res) => {
   await admin.from("users").update({ avatar: null }).eq("id", dbUser.id);
 
   res.json({ success: true });
+});
+
+/* ─────────────────────────────────────────
+   GET /api/auth/refresh-avatar
+   Private bucket ke liye fresh signed URL generate karo
+   (purane public URLs jo ab 403 de rahe hain unke liye)
+───────────────────────────────────────── */
+router.get("/refresh-avatar", async (req, res) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Login required" });
+
+  const dbUser = await getUserFromToken(token);
+  if (!dbUser) return res.status(401).json({ error: "Invalid token" });
+
+  if (!dbUser.avatar) return res.json({ url: null });
+
+  const filename = dbUser.avatar.split("/avatars/")[1]?.split("?")[0];
+  if (!filename) return res.json({ url: null });
+
+  const admin = getAdminClient();
+
+  // File actually exists ki nahi check karo
+  const { data: fileList } = await admin.storage.from("avatars").list("", { search: filename });
+  const fileExists = fileList?.some(f => f.name === filename);
+
+  if (!fileExists) {
+    // File Storage se delete ho chuki — DB bhi clear karo
+    await admin.from("users").update({ avatar: null }).eq("id", dbUser.id);
+    return res.json({ url: null });
+  }
+
+  const { data, error } = await admin.storage
+    .from("avatars")
+    .createSignedUrl(filename, 315360000);
+
+  if (error || !data?.signedUrl) return res.json({ url: null });
+
+  await admin.from("users").update({ avatar: data.signedUrl }).eq("id", dbUser.id);
+
+  res.json({ url: data.signedUrl });
 });
 
 /* ─────────────────────────────────────────
