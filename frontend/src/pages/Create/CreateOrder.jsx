@@ -2650,6 +2650,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     // "Issued" is the broader bucket — includes amended orders that were issued
     // at some point in their lifecycle. "Amended" tab still shows only those.
     if (tabName === "Issued") return scoped.filter(o => ["Issued", "Amended"].includes(o.status)).length;
+    if (tabName === "To Issue") return scoped.filter(o => ["Pending Issue", "To Issue"].includes(o.status)).length;
     return scoped.filter(o => o.status === tabName).length;
   };
 
@@ -2695,7 +2696,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       ? (!o._history && !["Reverted", "Recalled"].includes(o.status))
       : activeTab === "Issued"
         ? ["Issued", "Amended"].includes(o.status)
-        : o.status === activeTab;
+        : activeTab === "To Issue"
+          ? ["Pending Issue", "To Issue"].includes(o.status)
+          : o.status === activeTab;
     const matchSite = !filterSite || getSiteCode(o) === filterSite;
     const matchCompany = !filterCompany || getCompanyCode(o) === filterCompany;
     const matchType = !filterType || o.order_type === filterType;
@@ -2941,7 +2944,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         ))}
       </div>
 
-      <div className="bg-white rounded-none border border-slate-100 shadow-sm">
+      <div className="bg-white rounded-none shadow-sm overflow-hidden border border-slate-200">
 
         <div className="flex px-5 pt-4 pb-0 border-b border-slate-100 bg-white gap-8 overflow-x-auto thin-scrollbar-light">
           {TABS.map(t => {
@@ -3028,12 +3031,12 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
             📦 Syncing orders... Please wait.
           </div>
         ) : (
-          <div className="overflow-x-auto w-full rounded-none thin-scrollbar-light">
+          <div className="overflow-x-auto w-full rounded-none thin-scrollbar-light border-r border-slate-200">
             <table className="w-full text-sm text-left border-separate border-spacing-0 whitespace-nowrap border-t border-l border-slate-200">
               <thead>
                 <tr className="bg-slate-100">
-                  <th className="sticky left-0 z-20 px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 bg-slate-100 whitespace-nowrap" style={{ width: '180px', minWidth: '180px', maxWidth: '180px' }}>Order No</th>
-                  <th className="sticky z-20 px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 bg-slate-100 whitespace-nowrap text-center" style={{ left: '180px', width: '120px', minWidth: '120px', maxWidth: '120px' }}>Status</th>
+                  <th className="sticky left-0 z-20 px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 bg-slate-100 whitespace-nowrap" style={{ width: '240px', minWidth: '240px', maxWidth: '240px' }}>Order No</th>
+                  <th className="sticky z-20 px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 bg-slate-100 whitespace-nowrap text-center" style={{ left: '240px', width: '120px', minWidth: '120px', maxWidth: '120px' }}>Status</th>
                   <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Order Type</th>
                   <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Created By</th>
                   <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Created On</th>
@@ -3042,7 +3045,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                   <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Issued At</th>
                   <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 text-right whitespace-nowrap">Taxable Amount</th>
                   <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 text-right whitespace-nowrap">Total Value</th>
-                  <th className="sticky right-0 z-20 px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 bg-slate-100 text-center whitespace-nowrap [box-shadow:-1px_0_0_0_#e2e8f0]" style={{ width: '190px', minWidth: '190px', maxWidth: '190px' }}>Actions</th>
+                  <th className="sticky right-0 z-30 px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-l border-slate-200 bg-slate-100 whitespace-nowrap [box-shadow:-1px_0_0_0_#e2e8f0]" style={{ width: '190px', minWidth: '190px', maxWidth: '190px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -3079,7 +3082,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
 
                   return (
                     <tr key={o.id} className="hover:bg-slate-50 transition-colors group bg-white">
-                      <td className="sticky left-0 z-10 px-5 py-1 border-b border-r border-slate-200 bg-white group-hover:bg-slate-50 transition-colors whitespace-nowrap" style={{ width: '180px', minWidth: '180px', maxWidth: '180px' }}>
+                      <td className="sticky left-0 z-10 px-5 py-1 border-b border-r border-slate-200 bg-white group-hover:bg-slate-50 transition-colors whitespace-nowrap" style={{ width: '240px', minWidth: '240px', maxWidth: '240px' }}>
                         {displayNo ? (
                           <div className="flex items-center gap-2">
                             <button
@@ -3100,7 +3103,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                           <span className="font-medium text-[13.5px] text-slate-300">-</span>
                         )}
                       </td>
-                      <td className="sticky z-10 px-5 py-1 border-b border-r border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors" style={{ left: '180px', width: '120px', minWidth: '120px', maxWidth: '120px' }}>
+                      <td className="sticky z-10 px-5 py-1 border-b border-r border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors" style={{ left: '240px', width: '120px', minWidth: '120px', maxWidth: '120px' }}>
                         <span style={{ whiteSpace: 'nowrap', display: 'inline-flex' }} className={`px-2.5 py-1 rounded-full text-[11px] font-medium
                            ${o.status === "Draft" ? "bg-slate-100 text-slate-600" :
                             o.status === "Approved" || o.status === "Issued" ? "bg-emerald-50 text-emerald-600" :
@@ -3109,10 +3112,11 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                                   o.status === "Rejected" ? "bg-red-50 text-red-600" :
                                     o.status === "Review" ? "bg-sky-50 text-sky-600" :
                                       o.status === "Reverted" ? "bg-orange-50 text-orange-600" :
-                                        o.status === "Recalled" ? "bg-purple-50 text-purple-600" :
-                                          o.status === "Cancelled" ? "bg-slate-100 text-slate-500 line-through" :
-                                            "bg-slate-100 text-slate-600"}`}>
-                          {o.status || "Draft"}
+                                        (o.status === "Pending Issue" || o.status === "To Issue") ? "bg-amber-50 text-amber-600" :
+                                          o.status === "Recalled" ? "bg-purple-50 text-purple-600" :
+                                            o.status === "Cancelled" ? "bg-slate-100 text-slate-500 line-through" :
+                                              "bg-slate-100 text-slate-600"}`}>
+                          {(o.status === "Pending Issue" || o.status === "To Issue") ? "To Issue" : (o.status || "Draft")}
                         </span>
                       </td>
                       <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
@@ -3124,18 +3128,18 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                       <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
                         {new Date(o.date_of_creation || o.created_at).toLocaleDateString("en-GB").replace(/\//g, '.')}
                       </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-normal min-w-[280px] leading-relaxed">
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-normal min-w-[280px] leading-relaxed bg-white group-hover:bg-slate-50 transition-colors">
                         {o.subject || "-"}
                       </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-normal min-w-[200px] leading-relaxed">
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-normal min-w-[200px] leading-relaxed bg-white group-hover:bg-slate-50 transition-colors">
                         {vName}
                       </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">
                         {(["Issued", "Amended"].includes(o.status) && (o.totals?.issuedAt || o.updated_at))
                           ? new Date(o.totals?.issuedAt || o.updated_at).toLocaleDateString("en-GB").replace(/\//g, '.')
                           : <span className="text-slate-300">-</span>}
                       </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-700 text-[13.5px] font-medium text-right whitespace-nowrap">
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-700 text-[13.5px] font-medium text-right whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">
                         {(() => {
                           const t = o.totals || {};
                           const sub = Number(t.subtotal) || 0;
@@ -3146,7 +3150,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                             : <span className="text-slate-300 font-normal">-</span>;
                         })()}
                       </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-700 text-[13.5px] font-medium text-right whitespace-nowrap">
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-700 text-[13.5px] font-medium text-right whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">
                         {(() => {
                           const totalVal = Number(o.totals?.grandTotal || 0);
                           return totalVal > 0
@@ -3154,7 +3158,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                             : <span className="text-slate-300 font-normal">-</span>;
                         })()}
                       </td>
-                      <td className="sticky right-0 z-10 px-5 py-1 border-b border-r border-slate-200 bg-white group-hover:bg-slate-50 transition-colors whitespace-nowrap [box-shadow:-1px_0_0_0_#e2e8f0]" style={{ width: '190px', minWidth: '190px', maxWidth: '190px' }}>
+                      <td className="sticky right-0 z-40 px-5 py-1 border-b border-l border-slate-200 bg-white group-hover:bg-slate-50 transition-colors whitespace-nowrap [box-shadow:-1px_0_0_0_#e2e8f0]" style={{ width: '190px', minWidth: '190px', maxWidth: '190px' }}>
                         <div className="flex items-center justify-center gap-1.5">
                           <button
                             onMouseEnter={() => preloadOrderDetails(o.id).catch(() => { })}
