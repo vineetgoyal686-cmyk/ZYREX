@@ -16,12 +16,13 @@ export const seedOrderDetails = (order) => {
   }
 };
 
-export const preloadOrderDetails = async (orderId) => {
+export const preloadOrderDetails = async (orderId, options = {}) => {
   const key = getOrderCacheKey(orderId);
   if (!key) return null;
 
+  const force = options.force === true;
   const cached = orderDetailsCache.get(key);
-  if (cached && !cached.__partial) return cached;
+  if (cached && !cached.__partial && !force) return cached;
   if (orderDetailsInflight.has(key)) return orderDetailsInflight.get(key);
 
   const promise = fetch(`${API}/api/orders/${orderId}`)
@@ -301,7 +302,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     }
 
     try {
-      const json = await preloadOrderDetails(orderId);
+      const json = await preloadOrderDetails(orderId, { force: true });
       if (json) setData(json);
     } catch (err) {
       console.error(err);
@@ -709,13 +710,15 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
         <div className="px-14 pb-4">
           {(() => {
             const isPending = order.order_number?.startsWith("PENDING-");
-            const displayNo = isPending ? (order.status || "DRAFT").toUpperCase() : order.order_number;
+            const statusLabel = order.status ? order.status.toString().trim().toUpperCase() : "DRAFT";
+            const displayNo = isPending
+              ? (statusLabel === "REVIEW" ? "IN REVIEW" : statusLabel)
+              : order.order_number;
             return (
               <div className="flex flex-col gap-1">
                 <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
                   {order.order_type === 'Supply' ? 'Purchase Order' : 'Work Order'}
-                  <span className="text-slate-400 font-medium">#</span>
-                  <span className={isPending ? "text-amber-500 italic bg-amber-50 px-3 py-1 rounded-lg border border-amber-100 uppercase" : "text-indigo-600 font-black tracking-tight"}>
+                  <span className={isPending ? "text-amber-600 font-semibold text-xs bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100 uppercase tracking-[0.15em]" : "text-indigo-600 font-black tracking-tight"}>
                     {displayNo}
                   </span>
                 </h1>
@@ -811,14 +814,6 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
               <h2 className="text-lg font-bold text-slate-800">
                 {order.order_type === 'Supply' ? 'Purchase Order' : 'Work Order'}
               </h2>
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-widest ${order.status === 'Approved' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                order.status === 'Issued' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
-                  order.status === 'Review' ? 'bg-sky-50 text-sky-600 border border-sky-100' :
-                    order.status === 'Draft' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
-                      'bg-amber-50 text-amber-600 border border-amber-100'
-                }`}>
-                {order.status || 'Pending'}
-              </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -829,7 +824,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
               <div>
                 <p className="text-xs text-slate-400 mb-1">{order.order_type === 'Supply' ? 'Purchase' : 'Work'} Order No.</p>
                 <p className={`font-semibold ${order.order_number?.startsWith("PENDING-") ? "text-amber-600 italic" : "text-slate-800"}`}>
-                  {order.order_number?.startsWith("PENDING-") ? "DRAFT (Assigned on Issue)" : order.order_number}
+                  {order.order_number?.startsWith("PENDING-") ? "Assigned on Issue" : order.order_number}
                 </p>
               </div>
               <div>
