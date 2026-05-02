@@ -131,7 +131,7 @@ const SpecViewModal = ({ html, onClose, onEdit }) => (
 
 const InlineSelect = ({ value, onChange, options, placeholder, className, disabled, onAdd, addLabel, onEdit, onView, renderHtml, searchable, minDropWidth }) => {
   const [open, setOpen] = useState(false);
-  const [pos, setPos]   = useState({ top: 0, left: 0, width: 0 });
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
   const [search, setSearch] = useState("");
   const triggerRef = useRef(null);
   const dropdownRef = useRef(null);
@@ -153,7 +153,7 @@ const InlineSelect = ({ value, onChange, options, placeholder, className, disabl
     const rect = triggerRef.current?.getBoundingClientRect();
     if (rect) {
       const dropW = Math.max(rect.width, minDropWidth ?? 220);
-      const left  = rect.left + dropW > window.innerWidth - 8 ? window.innerWidth - dropW - 8 : rect.left;
+      const left = rect.left + dropW > window.innerWidth - 8 ? window.innerWidth - dropW - 8 : rect.left;
       setPos({ top: rect.bottom + 4, left, width: dropW });
     }
     setSearch("");
@@ -165,9 +165,9 @@ const InlineSelect = ({ value, onChange, options, placeholder, className, disabl
 
   const filteredOptions = searchable && search.trim()
     ? options.filter(o => {
-        const lbl = typeof o === "string" ? o : (o.materialName || o.itemCode || o.name || "");
-        return lbl.toLowerCase().includes(search.toLowerCase());
-      })
+      const lbl = typeof o === "string" ? o : (o.materialName || o.itemCode || o.name || "");
+      return lbl.toLowerCase().includes(search.toLowerCase());
+    })
     : options;
 
   return (
@@ -217,30 +217,30 @@ const InlineSelect = ({ value, onChange, options, placeholder, className, disabl
               {filteredOptions.length === 0
                 ? <div className="px-3 py-3 text-center text-xs text-slate-400 italic">No options</div>
                 : filteredOptions.map((opt, i) => {
-                    const id  = typeof opt === "string" ? opt : opt.id;
-                    const lbl = typeof opt === "string" ? opt : (opt.materialName || opt.itemCode || opt.name || "");
-                    const isSel = value === id;
-                    return (
-                      <div key={i} className={`flex items-center group/opt border-b border-slate-50 last:border-0 ${isSel ? "bg-indigo-50" : "hover:bg-indigo-50"}`}>
-                        <div onClick={(e) => { e.stopPropagation(); onChange({ target: { value: id } }); setOpen(false); setSearch(""); }}
-                          className={`flex-1 px-3 py-2 text-xs cursor-pointer flex items-center justify-between transition-colors
+                  const id = typeof opt === "string" ? opt : opt.id;
+                  const lbl = typeof opt === "string" ? opt : (opt.materialName || opt.itemCode || opt.name || "");
+                  const isSel = value === id;
+                  return (
+                    <div key={i} className={`flex items-center group/opt border-b border-slate-50 last:border-0 ${isSel ? "bg-indigo-50" : "hover:bg-indigo-50"}`}>
+                      <div onClick={(e) => { e.stopPropagation(); onChange({ target: { value: id } }); setOpen(false); setSearch(""); }}
+                        className={`flex-1 px-3 py-2 text-xs cursor-pointer flex items-center justify-between transition-colors
                             ${isSel ? "text-indigo-700 font-semibold" : "text-slate-700"}`}>
-                          {renderHtml ? (
-                             <div className="whitespace-normal break-words leading-tight quill-content quill-compact" dangerouslySetInnerHTML={{ __html: normalizeRichTextHtml(lbl) }} />
-                          ) : (
-                             <span className="whitespace-normal break-words leading-tight">{lbl}</span>
-                          )}
-                          {isSel && <Check size={11} className="text-indigo-600 shrink-0 ml-2" strokeWidth={3}/>}
-                        </div>
-                        {onEdit && (
-                          <button onClick={(e) => { e.stopPropagation(); setOpen(false); onEdit(id); }}
-                            className="p-2 opacity-0 group-hover/opt:opacity-100 text-slate-400 hover:text-indigo-600 transition-all">
-                            <Pencil size={11} />
-                          </button>
+                        {renderHtml ? (
+                          <div className="whitespace-normal break-words leading-tight quill-content quill-compact" dangerouslySetInnerHTML={{ __html: normalizeRichTextHtml(lbl) }} />
+                        ) : (
+                          <span className="whitespace-normal break-words leading-tight">{lbl}</span>
                         )}
+                        {isSel && <Check size={11} className="text-indigo-600 shrink-0 ml-2" strokeWidth={3} />}
                       </div>
-                    );
-                  })
+                      {onEdit && (
+                        <button onClick={(e) => { e.stopPropagation(); setOpen(false); onEdit(id); }}
+                          className="p-2 opacity-0 group-hover/opt:opacity-100 text-slate-400 hover:text-indigo-600 transition-all">
+                          <Pencil size={11} />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })
               }
             </div>
             {onAdd && (
@@ -269,7 +269,7 @@ const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "
     return () => document.removeEventListener("mousedown", handleOutside);
   }, []);
 
-  const selectedOptions = isMulti 
+  const selectedOptions = isMulti
     ? options.filter(o => (value || []).includes(o[valueKey]))
     : options.filter(o => o[valueKey] === value);
 
@@ -295,7 +295,7 @@ const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "
       <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
         {label} {required && <span className="text-red-400 normal-case">*</span>}
       </label>
-      <div 
+      <div
         onClick={() => !disabled && setOpen(!open)}
         className={`w-full border rounded-xl px-3 py-2 text-sm outline-none transition-all flex justify-between items-center min-h-[42px]
           ${disabled ? "bg-slate-50 border-slate-100 cursor-not-allowed opacity-60" : "bg-white cursor-pointer border-slate-200 hover:border-slate-300"}
@@ -321,14 +321,14 @@ const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "
       {open && (
         <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col overflow-hidden min-w-[240px]">
           <div className="p-2 border-b border-slate-100 bg-slate-50">
-             <input type="text" autoFocus value={search} onChange={e => setSearch(e.target.value)} 
-               className="w-full px-2 py-1.5 text-sm bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-400" 
-               placeholder="Search here..." />
+            <input type="text" autoFocus value={search} onChange={e => setSearch(e.target.value)}
+              className="w-full px-2 py-1.5 text-sm bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-400"
+              placeholder="Search here..." />
           </div>
           <div className="overflow-y-auto max-h-56 w-full p-1 scrollbar-thin">
             {!required && !isMulti && (
               <div onClick={() => { onChange({ target: { value: "" } }); setOpen(false); setSearch(""); }}
-                   className={`px-3 py-2 text-sm cursor-pointer rounded-lg hover:bg-slate-50 transition-colors ${!value ? "text-slate-400 font-bold" : "text-slate-400"}`}>
+                className={`px-3 py-2 text-sm cursor-pointer rounded-lg hover:bg-slate-50 transition-colors ${!value ? "text-slate-400 font-bold" : "text-slate-400"}`}>
                 {placeholder || 'Clear Selection'}
               </div>
             )}
@@ -336,7 +336,7 @@ const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "
             {filteredOptions.map(o => {
               const isSelected = isMulti ? (value || []).includes(o[valueKey]) : value === o[valueKey];
               return (
-                <div key={o[valueKey]} 
+                <div key={o[valueKey]}
                   className={`flex items-center justify-between px-3 py-2 cursor-pointer rounded-lg hover:bg-indigo-50 transition-colors group ${isSelected ? "bg-indigo-50" : ""}`}>
                   <div className="flex-1 min-w-0" onClick={() => handleToggle(o[valueKey])}>
                     <p className={`text-sm truncate ${isSelected ? "text-indigo-700 font-bold" : "text-slate-700 font-semibold"}`}>{o[labelKey]}</p>
@@ -395,12 +395,12 @@ const MultiDocUpload = ({ label, files, onAdd, onRemove, onPreview, max = 6, req
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
       {files.map((f, i) => (
         <div key={i} className="flex items-center justify-between bg-white border border-emerald-100 rounded-xl px-3 py-2 shadow-sm animate-in fade-in slide-in-from-left-2 transition-all">
-          <div 
+          <div
             className={`flex items-center gap-2 min-w-0 ${onPreview ? 'cursor-pointer hover:opacity-80' : ''}`}
             onClick={() => onPreview && onPreview(f)}
           >
             <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
-               <FileText size={14} className="text-emerald-500" />
+              <FileText size={14} className="text-emerald-500" />
             </div>
             <span className={`text-xs font-medium text-slate-700 truncate ${onPreview ? 'hover:text-emerald-600 hover:underline' : ''}`}>{f.name}</span>
           </div>
@@ -432,21 +432,21 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const user = JSON.parse(localStorage.getItem("bms_user") || "{}");
 
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving]   = useState(false);
-  const [toast, setToast]     = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState(null);
   const [actionModal, setActionModal] = useState({ type: null, data: null });
   const [customInputModal, setCustomInputModal] = useState({ open: false, type: "", groupId: "", subId: "", itemId: "", text: "", originalValue: "" });
   const [specViewModal, setSpecViewModal] = useState({ open: false, html: '', onEdit: null });
   const [uomModal, setUomModal] = useState({ open: false, gid: null, name: "", code: "", saving: false });
 
   // Master Data
-  const [sites, setSites]         = useState([]);
+  const [sites, setSites] = useState([]);
   const [companies, setCompanies] = useState([]);
-  const [vendors, setVendors]     = useState([]);
-  const [contacts, setContacts]   = useState([]);
+  const [vendors, setVendors] = useState([]);
+  const [contacts, setContacts] = useState([]);
   const [itemsList, setItemsList] = useState([]);
-  const [clauses, setClauses]     = useState([]);
-  const [uomList, setUomList]     = useState([]);
+  const [clauses, setClauses] = useState([]);
+  const [uomList, setUomList] = useState([]);
 
   // Auto-select site based on project prop
   useEffect(() => {
@@ -470,13 +470,13 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const [nextSerial, setNextSerial] = useState(1);
 
   // Read-only populated details
-  const [siteDetails, setSiteDetails]     = useState(null);
+  const [siteDetails, setSiteDetails] = useState(null);
   const [companyDetails, setCompanyDetails] = useState(null);
   const [vendorDetails, setVendorDetails] = useState(null);
 
   // Form State - Items Table (grouped: each group = one item, multiple spec sub-rows)
   const [items, setItems] = useState([makeGroup()]);
-  
+
   // Settings / Toggles
   const [settings, setSettings] = useState({
     model: false, brand: true, remarks: false,
@@ -490,10 +490,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const [transactionDiscount, setTransactionDiscount] = useState(0);
   const [transactionTax, setTransactionTax] = useState(18);
   const [frightCharges, setFrightCharges] = useState(0);
-  const [frightTax, setFrightTax]           = useState(18);
+  const [frightTax, setFrightTax] = useState(18);
 
   // Form State - Clauses
-  const [tcPoints, setTcPoints]   = useState([]);
+  const [tcPoints, setTcPoints] = useState([]);
   const [payPoints, setPayPoints] = useState([]);
   const [govPoints, setGovPoints] = useState([]);
   const [anxPoints, setAnxPoints] = useState([]);
@@ -515,7 +515,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     }
   };
 
-  useEffect(() => { 
+  useEffect(() => {
     const init = async () => {
       await fetchMasterData();
       if (editOrderId) fetchOrderForEdit();
@@ -528,7 +528,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     try {
       const res = await fetch(`${API}/api/orders/${editOrderId}`);
       const { order, items: rawItems } = await res.json();
-      
+
       // 1. Map Header
       setHeader({
         orderType: order.order_type,
@@ -674,14 +674,14 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const computedOrderNumber = useMemo(() => {
     // If order number already exists and is properly formatted (edit mode or already fetched), use it
     if (header.orderNumber && header.orderNumber.includes('/')) return header.orderNumber;
-    
+
     // During creation: Show Draft Pattern
     if (!header.siteId || !header.companyId || !header.orderType) return "Draft/Comp/Site/Type";
-    
+
     const c = companies.find(x => x.id === header.companyId);
     const s = sites.find(x => x.id === header.siteId);
     const type = header.orderType === "Supply" ? "PO" : "WO";
-    
+
     return `${c?.companyCode || "COMP"} / ${s?.siteCode || "SITE"} / ${type}`;
   }, [header.orderNumber, header.siteId, header.companyId, header.orderType, companies, sites]);
 
@@ -717,8 +717,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     // User requested: "year and number issued me ayega"
     // So we skip pre-fetching the real serial here for new/draft orders.
     if (!editOrderId) {
-       setHeader(h => ({ ...h, orderNumber: "" }));
-       return;
+      setHeader(h => ({ ...h, orderNumber: "" }));
+      return;
     }
   }, [header.siteId, header.companyId, header.orderType, companies, editOrderId]);
 
@@ -834,7 +834,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     const { type, groupId, subId, itemId, text, originalValue } = customInputModal;
     const isEffectivelyEmpty = !text || !text.trim() || text.trim() === '<p><br></p>' || text.trim() === '<p></p>';
     if (isEffectivelyEmpty) return setCustomInputModal({ open: false, text: "", type: "", groupId: "", subId: "", itemId: "", originalValue: "" });
-    
+
     // 1. Update subrow immediately
     handleSubRowChange(groupId, subId, type, text.trim());
     setCustomInputModal({ open: false, text: "", type: "", groupId: "", subId: "", itemId: "", originalValue: "" });
@@ -849,11 +849,11 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     // 3. Make API call to append it to master item
     try {
       const isEdit = !!originalValue;
-      const url    = isEdit 
+      const url = isEdit
         ? `${API}/api/procurement/items/${itemId}/update-array-item`
         : `${API}/api/procurement/items/${itemId}/append-array`;
-      
-      const body = isEdit 
+
+      const body = isEdit
         ? { field, oldValue: originalValue, newValue: text.trim() }
         : { field, value: text.trim() };
 
@@ -866,23 +866,23 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       if (data.success && data.updatedArray) {
         // Update local itemsList so the dropdown updates!
         setItemsList(prev => prev.map(i => {
-           if (i.id === itemId) {
-              const updated = { ...i };
-              if (type === "specification") updated.specifications = data.updatedArray;
-              if (type === "make") updated.brands = data.updatedArray;
-              return updated;
-           }
-           return i;
+          if (i.id === itemId) {
+            const updated = { ...i };
+            if (type === "specification") updated.specifications = data.updatedArray;
+            if (type === "make") updated.brands = data.updatedArray;
+            return updated;
+          }
+          return i;
         }));
         showToast(isEdit ? "Master item updated!" : "Added to master item options!", "success");
       }
-    } catch(err) {
+    } catch (err) {
       console.error(err);
       showToast("Failed to save to master item, but applied to row", "error");
     }
-  };  const updateSettingsAndClearData = (key, val) => {
+  }; const updateSettingsAndClearData = (key, val) => {
     setSettings(prev => ({ ...prev, [key]: val }));
-    
+
     // Clear data if toggling off
     if (val === false || val === 'none') {
       setItems(prevItems => prevItems.map(group => ({
@@ -1039,10 +1039,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       payment_terms: normalizeRichTextArray(payPoints),
       governing_laws: normalizeRichTextArray(govPoints),
       annexures: normalizeRichTextArray(anxPoints),
-      totals: { 
-        ...totals, 
-        tax_mode: settings.tax ? "line" : "total", 
-        fright_mode: settings.frightMode, 
+      totals: {
+        ...totals,
+        tax_mode: settings.tax ? "line" : "total",
+        fright_mode: settings.frightMode,
         discount_mode: settings.discountMode,
         showBrand: settings.brand,
         showModel: settings.model,
@@ -1054,8 +1054,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       snapshot: { ...snapshot, proof_type: files.proof.type, notes: normalizeRichTextHtml(header.notes || "") }
     };
 
-    const mappedItems = items.flatMap(g => g.subRows.map(({ id, ...s }) => ({ 
-      item_id: g.itemId || null, 
+    const mappedItems = items.flatMap(g => g.subRows.map(({ id, ...s }) => ({
+      item_id: g.itemId || null,
       unit: g.unit || "",
       description: s.specification || "",
       model_number: settings.model && !s.hideModel ? (s.modelNumber || "") : "",
@@ -1073,18 +1073,18 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     try {
       const fd = new FormData();
       // Only append new files if they are actually File objects (not urls)
-      files.quotations.forEach(f => { if(f instanceof File) fd.append("quotation", f); });
-      files.proof.files.forEach(f => { if(f instanceof File) fd.append("comparative", f); });
+      files.quotations.forEach(f => { if (f instanceof File) fd.append("quotation", f); });
+      files.proof.files.forEach(f => { if (f instanceof File) fd.append("comparative", f); });
 
       const payload = {
         mainData: mappedMain,
         items: mappedItems,
         nextSerial: editOrderId ? nextSerial : nextSerial // nextSerial update only for new orders usually
       };
-      
+
       fd.append("data", JSON.stringify(payload));
-      
-      const url    = editOrderId ? `${API}/api/orders/${editOrderId}` : `${API}/api/orders`;
+
+      const url = editOrderId ? `${API}/api/orders/${editOrderId}` : `${API}/api/orders`;
       const method = editOrderId ? "PUT" : "POST";
 
       const res = await fetch(url, { method, body: fd });
@@ -1138,25 +1138,25 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     return (
       <div className="bg-slate-100/50 border border-slate-200 p-4 sm:p-5 rounded-2xl space-y-4">
         <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
-           <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
-           {title}
+          <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+          {title}
         </h3>
         <Select
           value=""
           onChange={e => {
             const v = e.target.value;
-            if(!v) return;
+            if (!v) return;
             const c = list.find(x => x.id === v);
-            if(c) {
+            if (c) {
               setPtsState([getCleanHTML(c.points)]);
             }
           }}
-          options={list} 
-          valueKey="id" 
-          labelKey="title" 
+          options={list}
+          valueKey="id"
+          labelKey="title"
           placeholder="- Select from Template -"
           onAdd={() => setActionModal({ type: 'manageClause', clauseType: type, initialAction: 'add' })}
-          addLabel={`Add New`} 
+          addLabel={`Add New`}
           onView={(c) => setActionModal({ type: 'manageClause', clauseType: type, initialViewId: c.id, initialAction: 'view', setPoints: setPtsState })}
         />
         {ptsState.length > 0 && (
@@ -1169,22 +1169,22 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
               {/* Action Overlay or Clear Button */}
               <div className="absolute top-4 right-4 opacity-0 group-hover/clause:opacity-100 transition-opacity">
-                 <button onClick={() => setPtsState([])} title="Remove Template"
-                   className="h-8 w-8 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-rose-400 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-100 shadow-sm transition-all">
-                   <X size={15} strokeWidth={2.5}/>
-                 </button>
+                <button onClick={() => setPtsState([])} title="Remove Template"
+                  className="h-8 w-8 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-rose-400 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-100 shadow-sm transition-all">
+                  <X size={15} strokeWidth={2.5} />
+                </button>
               </div>
             </div>
 
             <div className="flex justify-end pr-2">
-              <button 
+              <button
                 onClick={() => setPtsState([])}
                 className="text-[10px] font-bold text-slate-400 hover:text-rose-500 uppercase tracking-widest transition-all flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-rose-50 border border-transparent hover:border-rose-100"
               >
                 <Trash2 size={12} /> Clear Selected Clause
               </button>
             </div>
-            
+
             <style>{`
               .quill-content p { margin: 0; }
               .quill-content ul, .quill-content ol { padding-left: 1rem; margin: 0; }
@@ -1235,7 +1235,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         </div>
       )}
 
-          <div className="flex items-center justify-between mb-6 bg-white p-5 rounded-[1.5rem] border border-slate-100 shadow-sm">
+      <div className="flex items-center justify-between mb-6 bg-white p-5 rounded-[1.5rem] border border-slate-100 shadow-sm">
         <div className="flex items-center gap-4">
           <div className="h-12 w-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100">
             <FileSpreadsheet size={22} className="text-white" />
@@ -1264,25 +1264,25 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       </div>
 
       <div className="flex flex-col gap-6">
-        
+
         {/* TOP SECTION - Settings & Details */}
         <div className="grid grid-cols-1 gap-6">
           <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-5">
             <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2">Order Setup</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <Select label="Order Type" value={header.orderType} onChange={e => setHeader(h => ({ ...h, orderType: e.target.value }))}
-                options={[{id:"Supply",name:"Supply (PO)"}, {id:"SITC",name:"SITC (WO)"}, {id:"ITC",name:"ITC (WO)"}]} required />
-              <Input label={header.orderType === "Supply" ? "PO Number" : "WO Number"} 
-                value={header.orderNumber || "WILL BE ASSIGNED UPON ISSUANCE"} 
-                readOnly mono 
+                options={[{ id: "Supply", name: "Supply (PO)" }, { id: "SITC", name: "SITC (WO)" }, { id: "ITC", name: "ITC (WO)" }]} required />
+              <Input label={header.orderType === "Supply" ? "PO Number" : "WO Number"}
+                value={header.orderNumber || "WILL BE ASSIGNED UPON ISSUANCE"}
+                readOnly mono
                 className={!header.orderNumber ? "text-amber-600 font-bold italic text-[11px]" : ""}
               />
-              <Select label="Select Site" value={header.siteId} onChange={handleSiteChange} options={sites} valueKey="id" labelKey="siteName" subLabelKey="siteCode" required 
+              <Select label="Select Site" value={header.siteId} onChange={handleSiteChange} options={sites} valueKey="id" labelKey="siteName" subLabelKey="siteCode" required
                 disabled={!!project}
                 onAdd={() => setActionModal({ type: "addSite" })} addLabel="Add New Site" onView={(s) => setActionModal({ type: "viewSite", data: s })} />
-              <Select label="Select Company" value={header.companyId} onChange={handleCompanyChange} options={companies} valueKey="id" labelKey="companyName" subLabelKey="companyCode" required 
+              <Select label="Select Company" value={header.companyId} onChange={handleCompanyChange} options={companies} valueKey="id" labelKey="companyName" subLabelKey="companyCode" required
                 onAdd={() => setActionModal({ type: "addCompany" })} addLabel="Add New Company" onView={(c) => setActionModal({ type: "viewCompany", data: c })} />
-              <Select label="Select Vendor" value={header.vendorId} onChange={handleVendorChange} options={vendors} valueKey="id" labelKey="vendorName" subLabelKey="address" required 
+              <Select label="Select Vendor" value={header.vendorId} onChange={handleVendorChange} options={vendors} valueKey="id" labelKey="vendorName" subLabelKey="address" required
                 onAdd={() => setActionModal({ type: "addVendor" })} addLabel="Add New Vendor" onView={(v) => setActionModal({ type: "viewVendor", data: v })} />
               <Input label="Date of Creation" type="date" value={header.creationDate} onChange={e => setHeader(h => ({ ...h, creationDate: e.target.value }))} required />
               <Input label="Order Made By" value={header.madeBy} readOnly />
@@ -1291,26 +1291,26 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
           <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-6">
             <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
-               <div className="w-5 h-5 bg-indigo-50 rounded-md flex items-center justify-center"><FileText size={12} className="text-indigo-600" /></div>
-               Order Meta
+              <div className="w-5 h-5 bg-indigo-50 rounded-md flex items-center justify-center"><FileText size={12} className="text-indigo-600" /></div>
+              Order Meta
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="col-span-full">
-                <Input label="Subject" value={header.subject} onChange={e => setHeader(h => ({ ...h, subject: e.target.value }))} placeholder="Enter full order subject (e.g. Supply of IT Equipment for Varanasi Site)..." 
+                <Input label="Subject" value={header.subject} onChange={e => setHeader(h => ({ ...h, subject: e.target.value }))} placeholder="Enter full order subject (e.g. Supply of IT Equipment for Varanasi Site)..."
                   className="text-lg font-bold" />
               </div>
               <div className="lg:col-span-2">
-                 <Input label="Reference No" value={header.refNumber} onChange={e => setHeader(h => ({ ...h, refNumber: e.target.value }))} placeholder="e.g. BMS/PRO/2026/001" 
-                   className="font-bold text-slate-800" />
+                <Input label="Reference No" value={header.refNumber} onChange={e => setHeader(h => ({ ...h, refNumber: e.target.value }))} placeholder="e.g. BMS/PRO/2026/001"
+                  className="font-bold text-slate-800" />
               </div>
               <Input label="Date of Delivery" type="date" value={header.deliveryDate} onChange={e => setHeader(h => ({ ...h, deliveryDate: e.target.value }))} />
               <Select label="Priority" value={header.priority} onChange={e => setHeader(h => ({ ...h, priority: e.target.value }))}
-                options={[{id:"Low",name:"Low"}, {id:"Medium",name:"Medium"}, {id:"High",name:"High"}, {id:"Urgent",name:"Urgent"}]} />
+                options={[{ id: "Low", name: "Low" }, { id: "Medium", name: "Medium" }, { id: "High", name: "High" }, { id: "Urgent", name: "Urgent" }]} />
               <div className="lg:col-span-2">
                 <Select label="Contact Person(s)" value={header.contactPersonIds} isMulti
-                  onChange={e => setHeader(h => ({ ...h, contactPersonIds: e.target.value }))} 
-                  options={contacts} valueKey="id" labelKey="personName" subLabelKey="designation" 
-                  onAdd={() => setActionModal({ type: "addContact" })} addLabel="Add New Contact" 
+                  onChange={e => setHeader(h => ({ ...h, contactPersonIds: e.target.value }))}
+                  options={contacts} valueKey="id" labelKey="personName" subLabelKey="designation"
+                  onAdd={() => setActionModal({ type: "addContact" })} addLabel="Add New Contact"
                   onView={(c) => setActionModal({ type: "viewContact", data: c })} />
               </div>
               <div className="lg:col-span-2">
@@ -1321,8 +1321,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
           <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-6">
             <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
-               <div className="w-5 h-5 bg-indigo-50 rounded-md flex items-center justify-center"><FilePlus size={12} className="text-indigo-600" /></div>
-               Order Documentation
+              <div className="w-5 h-5 bg-indigo-50 rounded-md flex items-center justify-center"><FilePlus size={12} className="text-indigo-600" /></div>
+              Order Documentation
             </h2>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* QUOTATIONS */}
@@ -1330,7 +1330,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                 <MultiDocUpload label="Quotation(s) * (Min 1, Max 6)" files={files.quotations} max={6} required
                   onAdd={e => {
                     const f = e.target.files[0];
-                    if(f) setFiles(prev => ({ ...prev, quotations: [...prev.quotations, f] }));
+                    if (f) setFiles(prev => ({ ...prev, quotations: [...prev.quotations, f] }));
                   }}
                   onRemove={i => setFiles(prev => ({ ...prev, quotations: prev.quotations.filter((_, idx) => idx !== i) }))}
                   onPreview={handlePreviewDoc} />
@@ -1351,7 +1351,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                   <MultiDocUpload label={`${files.proof.type} *`} files={files.proof.files} max={3} required
                     onAdd={e => {
                       const f = e.target.files[0];
-                      if(f) setFiles(prev => ({ ...prev, proof: { ...prev.proof, files: [...prev.proof.files, f] } }));
+                      if (f) setFiles(prev => ({ ...prev, proof: { ...prev.proof, files: [...prev.proof.files, f] } }));
                     }}
                     onRemove={i => setFiles(prev => ({ ...prev, proof: { ...prev.proof, files: prev.proof.files.filter((_, idx) => idx !== i) } }))}
                     onPreview={handlePreviewDoc} />
@@ -1363,7 +1363,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                 <MultiDocUpload label="Other Documents (Max 2)" files={files.others} max={2}
                   onAdd={e => {
                     const f = e.target.files[0];
-                    if(f) setFiles(prev => ({ ...prev, others: [...prev.others, f] }));
+                    if (f) setFiles(prev => ({ ...prev, others: [...prev.others, f] }));
                   }}
                   onRemove={i => setFiles(prev => ({ ...prev, others: prev.others.filter((_, idx) => idx !== i) }))}
                   onPreview={handlePreviewDoc} />
@@ -1376,91 +1376,91 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
         {/* MIDDLE COLUMN - Table */}
         <div className="w-full space-y-6 min-w-0 flex-1">
-          
+
           {/* ITEMS TABLE */}
           <div className="bg-white rounded-[2rem] border border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.05)] overflow-hidden flex flex-col border-b-0">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
               <h2 className="text-base font-black text-slate-800 flex items-center gap-3">
-                 <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-xl shadow-indigo-100">
-                    <ShieldCheck size={20} strokeWidth={2.5} />
-                 </div>
-                 <div className="flex flex-col">
-                    <span className="leading-tight text-sm font-black">Table of Content</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Order Items & Specifications</span>
-                 </div>
+                <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-xl shadow-indigo-100">
+                  <ShieldCheck size={20} strokeWidth={2.5} />
+                </div>
+                <div className="flex flex-col">
+                  <span className="leading-tight text-sm font-black">Table of Content</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Order Items & Specifications</span>
+                </div>
               </h2>
               <div className="flex items-center gap-6">
-                 {/* COLUMN SETTINGS DROPDOWN */}
-                 <div className="relative">
-                    <button ref={settingsBtnRef} onClick={() => {
-                      const rect = settingsBtnRef.current?.getBoundingClientRect();
-                      if (rect) setSettingsPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
-                      setShowSettings(!showSettings);
-                    }}
-                      className={`flex items-center gap-2 px-5 py-2.5 text-xs font-black rounded-2xl transition-all border ${showSettings ? "bg-indigo-600 border-indigo-600 text-white shadow-2xl -translate-y-1" : "bg-white border-slate-200 text-slate-600 hover:border-indigo-400 hover:text-indigo-600 hover:shadow-xl"}`}>
-                       <Plus size={18} strokeWidth={3} /> Add Columns / Settings
-                    </button>
-                    {showSettings && (
-                      <>
-                        <div style={{ position: "fixed", top: settingsPos.top, right: settingsPos.right, zIndex: 1000 }}
-                          className="w-72 bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-y-auto max-h-[80vh]">
-                          {/* Columns */}
-                          <div className="p-4 border-b border-slate-100">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Add Columns</p>
-                            <div className="space-y-1.5">
-                              {[
-                                { key: 'model',   label: 'Model Number' },
-                                { key: 'brand',   label: 'Make / Brand' },
-                                { key: 'tax',     label: 'GST (Tax)' },
-                                { key: 'remarks', label: 'Remarks' }
-                              ].filter(({ key }) => !settings[key]).map(({ key, label }) => (
-                                <button key={key} onClick={() => setSettings(s => ({ ...s, [key]: true }))}
-                                  className="flex items-center gap-2.5 px-3 py-2 w-full text-left rounded-lg border border-dashed border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100 hover:border-indigo-400 transition-all group">
-                                  <Plus size={13} strokeWidth={3} className="text-indigo-500 shrink-0"/>
-                                  <span className="text-xs font-medium text-slate-700">{label}</span>
-                                </button>
-                              ))}
-                              {['model','remarks','brand','tax'].every(k => settings[k]) && (
-                                <p className="text-xs text-slate-400 italic text-center py-1 font-medium bg-slate-50 rounded-lg">All columns added</p>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Discount */}
-                          <div className="p-4 border-b border-slate-100">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Discount</p>
-                            <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
-                              {[['none','None'],['line','Per Line'],['total','Total']].map(([m,lbl]) => (
-                                <button key={m} onClick={() => updateSettingsAndClearData('discountMode', m)}
-                                  className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${settings.discountMode===m ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-                                  {lbl}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* Freight */}
-                          <div className="p-4">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Freight</p>
-                            <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
-                              {[['none','Off'],['before','+ GST']].map(([m,lbl]) => (
-                                <button key={m} onClick={() => updateSettingsAndClearData('frightMode', m)}
-                                  className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${settings.frightMode===m ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-                                  {lbl}
-                                </button>
-                              ))}
-
-                            </div>
+                {/* COLUMN SETTINGS DROPDOWN */}
+                <div className="relative">
+                  <button ref={settingsBtnRef} onClick={() => {
+                    const rect = settingsBtnRef.current?.getBoundingClientRect();
+                    if (rect) setSettingsPos({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
+                    setShowSettings(!showSettings);
+                  }}
+                    className={`flex items-center gap-2 px-5 py-2.5 text-xs font-black rounded-2xl transition-all border ${showSettings ? "bg-indigo-600 border-indigo-600 text-white shadow-2xl -translate-y-1" : "bg-white border-slate-200 text-slate-600 hover:border-indigo-400 hover:text-indigo-600 hover:shadow-xl"}`}>
+                    <Plus size={18} strokeWidth={3} /> Add Columns / Settings
+                  </button>
+                  {showSettings && (
+                    <>
+                      <div style={{ position: "fixed", top: settingsPos.top, right: settingsPos.right, zIndex: 1000 }}
+                        className="w-72 bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-y-auto max-h-[80vh]">
+                        {/* Columns */}
+                        <div className="p-4 border-b border-slate-100">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Add Columns</p>
+                          <div className="space-y-1.5">
+                            {[
+                              { key: 'model', label: 'Model Number' },
+                              { key: 'brand', label: 'Make / Brand' },
+                              { key: 'tax', label: 'GST (Tax)' },
+                              { key: 'remarks', label: 'Remarks' }
+                            ].filter(({ key }) => !settings[key]).map(({ key, label }) => (
+                              <button key={key} onClick={() => setSettings(s => ({ ...s, [key]: true }))}
+                                className="flex items-center gap-2.5 px-3 py-2 w-full text-left rounded-lg border border-dashed border-indigo-200 bg-indigo-50/50 hover:bg-indigo-100 hover:border-indigo-400 transition-all group">
+                                <Plus size={13} strokeWidth={3} className="text-indigo-500 shrink-0" />
+                                <span className="text-xs font-medium text-slate-700">{label}</span>
+                              </button>
+                            ))}
+                            {['model', 'remarks', 'brand', 'tax'].every(k => settings[k]) && (
+                              <p className="text-xs text-slate-400 italic text-center py-1 font-medium bg-slate-50 rounded-lg">All columns added</p>
+                            )}
                           </div>
                         </div>
-                        <div className="fixed inset-0 z-[999]" onClick={() => setShowSettings(false)} />
-                      </>
-                    )}
-                 </div>
+
+                        {/* Discount */}
+                        <div className="p-4 border-b border-slate-100">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Discount</p>
+                          <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
+                            {[['none', 'None'], ['line', 'Per Line'], ['total', 'Total']].map(([m, lbl]) => (
+                              <button key={m} onClick={() => updateSettingsAndClearData('discountMode', m)}
+                                className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${settings.discountMode === m ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                                {lbl}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Freight */}
+                        <div className="p-4">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Freight</p>
+                          <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
+                            {[['none', 'Off'], ['before', '+ GST']].map(([m, lbl]) => (
+                              <button key={m} onClick={() => updateSettingsAndClearData('frightMode', m)}
+                                className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${settings.frightMode === m ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                                {lbl}
+                              </button>
+                            ))}
+
+                          </div>
+                        </div>
+                      </div>
+                      <div className="fixed inset-0 z-[999]" onClick={() => setShowSettings(false)} />
+                    </>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="w-full premium-scroll" style={{overflowX:"auto"}}>
+            <div className="w-full premium-scroll" style={{ overflowX: "auto" }}>
               <table className="text-xs border-collapse" style={{ minWidth: '100%', tableLayout: 'auto' }}>
                 <thead>
                   <tr className="bg-slate-700 border-b border-slate-600">
@@ -1476,14 +1476,14 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                     {settings.model && (
                       <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-left group/th" style={{ minWidth: '110px' }}>
                         <div className="flex items-center gap-1 whitespace-nowrap">Model No
-                          <button onClick={() => updateSettingsAndClearData('model', false)} className="opacity-0 group-hover/th:opacity-100 ml-1 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Remove column"><X size={8} strokeWidth={3}/></button>
+                          <button onClick={() => updateSettingsAndClearData('model', false)} className="opacity-0 group-hover/th:opacity-100 ml-1 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Remove column"><X size={8} strokeWidth={3} /></button>
                         </div>
                       </th>
                     )}
                     {settings.brand && (
                       <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-left group/th" style={{ minWidth: '120px' }}>
                         <div className="flex items-center gap-1 whitespace-nowrap">Make / Brand
-                          <button onClick={() => updateSettingsAndClearData('brand', false)} className="opacity-0 group-hover/th:opacity-100 ml-1 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Remove column"><X size={8} strokeWidth={3}/></button>
+                          <button onClick={() => updateSettingsAndClearData('brand', false)} className="opacity-0 group-hover/th:opacity-100 ml-1 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Remove column"><X size={8} strokeWidth={3} /></button>
                         </div>
                       </th>
                     )}
@@ -1494,7 +1494,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                     {settings.tax && (
                       <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-center whitespace-nowrap group/th" style={{ width: '80px' }}>
                         <div className="flex items-center justify-center gap-1">GST%
-                          <button onClick={() => updateSettingsAndClearData('tax', false)} className="opacity-0 group-hover/th:opacity-100 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Move to summary"><X size={8} strokeWidth={3}/></button>
+                          <button onClick={() => updateSettingsAndClearData('tax', false)} className="opacity-0 group-hover/th:opacity-100 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Move to summary"><X size={8} strokeWidth={3} /></button>
                         </div>
                       </th>
                     )}
@@ -1502,7 +1502,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                     {settings.remarks && (
                       <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-left group/th" style={{ minWidth: '140px' }}>
                         <div className="flex items-center gap-1 whitespace-nowrap">Remarks
-                          <button onClick={() => updateSettingsAndClearData('remarks', false)} className="opacity-0 group-hover/th:opacity-100 ml-1 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Remove column"><X size={8} strokeWidth={3}/></button>
+                          <button onClick={() => updateSettingsAndClearData('remarks', false)} className="opacity-0 group-hover/th:opacity-100 ml-1 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Remove column"><X size={8} strokeWidth={3} /></button>
                         </div>
                       </th>
                     )}
@@ -1522,7 +1522,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                           {/* S.No � rowspan */}
                           {isFirst && (
                             <td rowSpan={group.subRows.length} className="px-1 py-2 text-center align-middle border-r border-slate-100">
-                              <span className="text-[11px] font-bold text-slate-400">{(gIdx+1).toString().padStart(2,"0")}</span>
+                              <span className="text-[11px] font-bold text-slate-400">{(gIdx + 1).toString().padStart(2, "0")}</span>
                             </td>
                           )}
 
@@ -1535,7 +1535,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                     Item / Service Name
                                   </p>
                                   <InlineSelect value={group.itemId} onChange={e => handleGroupChange(group.id, e.target.value)}
-                                    options={itemsList.filter(i => header.orderType === "ITC" ? ["SITC","ITC"].includes(i.itemType) : i.itemType === header.orderType)} placeholder="Select Item..." />
+                                    options={itemsList.filter(i => header.orderType === "ITC" ? ["SITC", "ITC"].includes(i.itemType) : i.itemType === header.orderType)} placeholder="Select Item..." />
                                 </div>
                               )}
                               <div className={!isFirst ? "pl-4 border-l-2 border-slate-100 mt-1" : "mt-1"}>
@@ -1556,7 +1556,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                               {isFirst && group.itemId && (
                                 <button onClick={() => addSubRow(group.id)}
                                   className="mt-3 flex items-center gap-1.5 text-[9px] font-bold text-indigo-500 hover:text-indigo-700 px-2.5 py-1.5 rounded-xl bg-indigo-50 overflow-hidden relative group/btn transition-all border border-indigo-100/50">
-                                  <Plus size={10} strokeWidth={3}/> Add Description Point
+                                  <Plus size={10} strokeWidth={3} /> Add Description Point
                                   <div className="absolute inset-0 bg-indigo-600 opacity-0 group-hover/btn:opacity-10 transition-opacity"></div>
                                 </button>
                               )}
@@ -1568,11 +1568,11 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                 <td rowSpan={group.subRows.length} className="px-2 py-2 align-middle border-r border-slate-100">
                                   <div className="border-l-2 border-indigo-300 pl-1.5">
                                     <InlineSelect value={group.itemId} onChange={e => handleGroupChange(group.id, e.target.value)}
-                                      options={itemsList.filter(i => header.orderType === "ITC" ? ["SITC","ITC"].includes(i.itemType) : i.itemType === header.orderType)} placeholder="Select Item..." />
+                                      options={itemsList.filter(i => header.orderType === "ITC" ? ["SITC", "ITC"].includes(i.itemType) : i.itemType === header.orderType)} placeholder="Select Item..." />
                                     {group.itemId && (
                                       <button onClick={() => addSubRow(group.id)}
                                         className="mt-1 flex items-center gap-0.5 text-[9px] font-bold text-indigo-400 hover:text-indigo-600 px-1 rounded hover:bg-indigo-50 transition-colors">
-                                        <Plus size={9} strokeWidth={3}/> Add Spec
+                                        <Plus size={9} strokeWidth={3} /> Add Spec
                                       </button>
                                     )}
                                   </div>
@@ -1685,7 +1685,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                   className="appearance-none text-center text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-md px-1 py-1.5 outline-none focus:border-indigo-400 cursor-pointer" style={{ width: '68px' }}>
                                   <option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option>
                                 </select>
-                                <ChevronDown size={9} className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none"/>
+                                <ChevronDown size={9} className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" />
                               </div>
                             </td>
                           )}
@@ -1693,8 +1693,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                           {/* Amount (Total) */}
                           <td className="px-2 py-2 text-right text-xs font-bold text-indigo-600 bg-indigo-50/50 font-mono border-l border-indigo-100 whitespace-nowrap" style={{ width: '140px' }}>
                             {(() => {
-                               const p = totals.processedItems.find(x => x.id === sub.id);
-                               return (p?.total || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
+                              const p = totals.processedItems.find(x => x.id === sub.id);
+                              return (p?.total || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
                             })()}
                           </td>
 
@@ -1711,7 +1711,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                             <button onClick={() => group.subRows.length > 1 ? removeSubRow(group.id, sub.id) : removeGroup(group.id)}
                               disabled={group.subRows.length === 1 && items.length === 1}
                               className="w-6 h-6 flex items-center justify-center mx-auto text-slate-300 hover:text-white hover:bg-rose-400 rounded transition-all disabled:opacity-0">
-                              <X size={11} strokeWidth={2.5}/>
+                              <X size={11} strokeWidth={2.5} />
                             </button>
                           </td>
                         </tr>
@@ -1719,7 +1719,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                     });
                   })}
                 </tbody>
-                </table>
+              </table>
             </div>
 
             {/* Footer: Add Item + Summary */}
@@ -1755,10 +1755,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                     </span>
                     <div className="flex items-center gap-2">
                       <div className="flex items-center border border-rose-200 rounded-md bg-rose-50 overflow-hidden">
-                        <input type="number" 
-                          value={transactionDiscount} 
+                        <input type="number"
+                          value={transactionDiscount}
                           onChange={e => setTransactionDiscount(e.target.value)}
-                          className="w-10 text-right outline-none font-mono text-xs bg-transparent text-rose-600 px-1.5 py-1 placeholder:text-rose-300" 
+                          className="w-10 text-right outline-none font-mono text-xs bg-transparent text-rose-600 px-1.5 py-1 placeholder:text-rose-300"
                           placeholder="0" />
                         <span className="text-[11px] text-rose-400 font-bold pr-1.5">%</span>
                       </div>
@@ -1781,10 +1781,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                         </select>
                       )}
                     </div>
-                    <input type="number" 
-                      value={frightCharges} 
+                    <input type="number"
+                      value={frightCharges}
                       onChange={e => setFrightCharges(e.target.value)}
-                      className="w-28 text-right border border-slate-200 rounded-lg px-2 py-1 outline-none font-mono text-xs focus:border-indigo-400 bg-white" 
+                      className="w-28 text-right border border-slate-200 rounded-lg px-2 py-1 outline-none font-mono text-xs focus:border-indigo-400 bg-white"
                       placeholder="0.00" />
                   </div>
                 )}
@@ -1856,7 +1856,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                     font-style: italic;
                   }
                 `}</style>
-                <ReactQuill 
+                <ReactQuill
                   theme="snow"
                   value={header.notes}
                   onChange={(val) => setHeader(h => ({ ...h, notes: val }))}
@@ -1864,7 +1864,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                   modules={{
                     toolbar: [
                       ['bold', 'italic', 'underline'],
-                      [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                      [{ 'list': 'ordered' }, { 'list': 'bullet' }],
                       ['clean']
                     ],
                   }}
@@ -1875,15 +1875,15 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
           {/* CLAUSES */}
           <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-5">
-            <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2"><ShieldCheck size={16} className="text-slate-400"/> Order Clauses & Terms</h2>
+            <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2"><ShieldCheck size={16} className="text-slate-400" /> Order Clauses & Terms</h2>
             <div className="grid grid-cols-1 gap-6">
               {renderClauses("Terms & Conditions", "TC", tcPoints, setTcPoints)}
               {renderClauses("Payment Terms", "PAY", payPoints, setPayPoints)}
               {renderClauses("Governing Laws", "GOV", govPoints, setGovPoints)}
-              
+
               {!showAnnexure && anxPoints.length === 0 ? (
                 <div className="flex justify-center p-4 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 hover:bg-slate-50 transition-colors">
-                  <button 
+                  <button
                     onClick={() => setShowAnnexure(true)}
                     className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
                   >
@@ -1892,16 +1892,16 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                 </div>
               ) : (
                 <div className="relative group/anx-outer">
-                   {renderClauses("Annexures", "ANX", anxPoints, setAnxPoints)}
-                   {anxPoints.length === 0 && (
-                     <button 
-                       onClick={() => setShowAnnexure(false)}
-                       className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all opacity-0 group-hover/anx-outer:opacity-100"
-                       title="Remove Section"
-                     >
-                       <X size={14} />
-                     </button>
-                   )}
+                  {renderClauses("Annexures", "ANX", anxPoints, setAnxPoints)}
+                  {anxPoints.length === 0 && (
+                    <button
+                      onClick={() => setShowAnnexure(false)}
+                      className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all opacity-0 group-hover/anx-outer:opacity-100"
+                      title="Remove Section"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1909,12 +1909,12 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
         </div>
       </div>
-      
+
       {/* Master Data Interactivity Modals */}
       {actionModal.type === "addSite" && <FullSiteModal onClose={() => setActionModal({ type: null })} onSuccess={(id) => { fetchMasterData(); setHeader(h => ({ ...h, siteId: id })); handleSiteChange({ target: { value: id } }); }} />}
       {actionModal.type === "addCompany" && <FullCompanyModal onClose={() => setActionModal({ type: null })} onSuccess={(id) => { fetchMasterData(); setHeader(h => ({ ...h, companyId: id })); handleCompanyChange({ target: { value: id } }); }} />}
       {actionModal.type === "addVendor" && <FullVendorModal onClose={() => setActionModal({ type: null })} onSuccess={(id) => { fetchMasterData(); setHeader(h => ({ ...h, vendorId: id })); handleVendorChange({ target: { value: id } }); }} />}
-      
+
       {actionModal.type === "editSite" && <FullSiteModal editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => fetchMasterData()} />}
       {actionModal.type === "editCompany" && <FullCompanyModal editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => fetchMasterData()} />}
       {actionModal.type === "editVendor" && <FullVendorModal editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => fetchMasterData()} />}
@@ -1927,7 +1927,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       {actionModal.type === "addContact" && <FullContactModal companies={companies} onClose={() => setActionModal({ type: null })} onSuccess={fetchMasterData} />}
       {actionModal.type === "editContact" && <FullContactModal companies={companies} editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={fetchMasterData} />}
       {actionModal.type === "viewContact" && <FullViewContactModal contact={actionModal.data} onClose={() => setActionModal({ type: null })} onEdit={(d) => setActionModal({ type: "editContact", data: d })} />}
-    
+
       {/* SPEC VIEW MODAL */}
       {specViewModal.open && (
         <SpecViewModal
@@ -2007,7 +2007,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                   />
                 </div>
               ) : (
-                <textarea autoFocus value={customInputModal.text} onChange={e => setCustomInputModal(prev => ({...prev, text: e.target.value}))}
+                <textarea autoFocus value={customInputModal.text} onChange={e => setCustomInputModal(prev => ({ ...prev, text: e.target.value }))}
                   className="w-full text-sm border border-slate-300 rounded-xl p-3 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 transition-all min-h-[120px]"
                   placeholder="Type here..." />
               )}
@@ -2016,10 +2016,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
               </p>
             </div>
             <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2 bg-slate-50">
-               <button onClick={() => setCustomInputModal({ open: false })} className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors">Cancel</button>
-               <button onClick={handleSaveCustomInput} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors flex items-center gap-1.5 shadow-md shadow-indigo-200">
-                 <Check size={14} strokeWidth={3} /> {customInputModal.originalValue ? "Update & Apply" : "Save & Apply"}
-               </button>
+              <button onClick={() => setCustomInputModal({ open: false })} className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors">Cancel</button>
+              <button onClick={handleSaveCustomInput} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors flex items-center gap-1.5 shadow-md shadow-indigo-200">
+                <Check size={14} strokeWidth={3} /> {customInputModal.originalValue ? "Update & Apply" : "Save & Apply"}
+              </button>
             </div>
           </div>
         </div>
@@ -2027,19 +2027,19 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
       {/* CLAUSES Modal Setup */}
       {actionModal.type === "manageClause" && (
-        <FullClauseModal 
-          type={actionModal.clauseType} 
+        <FullClauseModal
+          type={actionModal.clauseType}
           initialAction={actionModal.initialAction}
           initialViewId={actionModal.initialViewId}
-          onClose={() => setActionModal({ type: null })} 
+          onClose={() => setActionModal({ type: null })}
           onSuccess={(selectedPoints) => {
             fetchMasterData();
             if (selectedPoints) {
               const html = getCleanHTML(selectedPoints);
               if (actionModal.setPoints) actionModal.setPoints([html]);
             }
-            setActionModal({ type: null }); 
-          }} 
+            setActionModal({ type: null });
+          }}
         />
       )}
     </div>
@@ -2051,7 +2051,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const currentUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
   const isGlobalAdmin = currentUser.role === "global_admin";
   const myPerms = currentUser.app_permissions?.find(p => p.module_key === "create_order") || {};
-  const canEdit   = isGlobalAdmin || !!myPerms.can_edit;
+  const canEdit = isGlobalAdmin || !!myPerms.can_edit;
   const canDelete = isGlobalAdmin || !!myPerms.can_delete;
 
   // Per-order edit check: global_admin can always edit; otherwise only creator can edit editable orders
@@ -2086,6 +2086,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const bulkRef = React.useRef();
 
   const [copiedOrderId, setCopiedOrderId] = useState("");
+
   const copyOrderNumber = (text, id, e) => {
     e.stopPropagation();
     if (!text) return;
@@ -2105,7 +2106,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
-  const TABS = ["All", "Draft", "Review", "Pending Issue", "Amendment Request", "Amended", "Issued", "Rejected", "Reverted", "Recalled", "Cancelled"];
+  const TABS = ["All", "Draft", "Review", "To Issue", "Amendment Request", "Amended", "Issued", "Rejected", "Reverted", "Recalled", "Cancelled"];
 
   useEffect(() => {
     if (cachedOrders) fetchOrders(true);
@@ -2214,7 +2215,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       const updRes = await fetch(`${API}/api/orders/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: JSON.stringify({ mainData: { status: 'Pending Issue' } }) })
+        body: JSON.stringify({ data: JSON.stringify({ mainData: { status: 'To Issue' } }) })
       });
       if (!updRes.ok) throw new Error("Failed to update status");
 
@@ -2257,7 +2258,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const _exportPDF = async (orderId) => {
     try {
       showToast("Generating PDF... Please wait.");
-      
+
       // Dynamic import to avoid main bundle bloat
       const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
         import("jspdf"), import("jspdf-autotable")
@@ -2265,11 +2266,11 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
 
       const res = await fetch(`${API}/api/orders/${orderId}`);
       const { order, items } = await res.json();
-      
+
       const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
-      
+
       const snap = order.snapshot || {};
       const sComp = snap.company || order.companies || {};
       const sVend = snap.vendor || order.vendors || {};
@@ -2277,12 +2278,12 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
 
       const logoB64 = await _getBase64Image(sComp.logoUrl || sComp.logo_url);
       const signB64 = await _getBase64Image(sComp.signUrl || sComp.sign_url);
-      
+
       let cursorY = 15;
 
       /* ── HEADER ── */
       if (logoB64) doc.addImage(logoB64, "PNG", 15, cursorY, 30, 20, "", "FAST");
-      
+
       doc.setFont("helvetica", "bold");
       doc.setFontSize(14);
       doc.text(sComp.companyName?.toUpperCase() || sComp.company_name?.toUpperCase() || "", pageWidth - 15, cursorY + 5, { align: "right" });
@@ -2290,7 +2291,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       doc.setFontSize(9);
       doc.text(sComp.address || "", pageWidth - 15, cursorY + 10, { align: "right" });
       doc.text(`GSTIN: ${sComp.gstin || "N/A"}`, pageWidth - 15, cursorY + 14, { align: "right" });
-      
+
       cursorY += 25;
       doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.5);
       doc.line(15, cursorY, pageWidth - 15, cursorY);
@@ -2300,12 +2301,12 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       doc.setFont("helvetica", "bold"); doc.setFontSize(16);
       doc.text(order.order_type === "Supply" ? "PURCHASE ORDER" : "WORK ORDER", pageWidth / 2, cursorY, { align: "center" });
       cursorY += 10;
-      
+
       doc.setFontSize(10);
       doc.text("Order No:", 15, cursorY); doc.setFont("helvetica", "normal"); doc.text(order.order_number, 40, cursorY);
       doc.setFont("helvetica", "bold"); doc.text("Date:", pageWidth / 2 + 10, cursorY); doc.setFont("helvetica", "normal");
       doc.text(new Date(order.created_at).toLocaleDateString("en-IN"), pageWidth / 2 + 30, cursorY);
-      
+
       cursorY += 6;
       doc.setFont("helvetica", "bold"); doc.text("Subject:", 15, cursorY); doc.setFont("helvetica", "normal"); doc.text(order.subject || "N/A", 40, cursorY);
       cursorY += 6;
@@ -2319,7 +2320,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       doc.setFont("helvetica", "normal"); doc.text(sVend.vendorName || sVend.vendor_name || "", 18, cursorY + 11);
       doc.setFontSize(8); doc.text(doc.splitTextToSize(sVend.address || "", 80), 18, cursorY + 16);
       doc.text(`GSTIN: ${sVend.gstin || "N/A"}`, 18, cursorY + 31);
-      
+
       // SITE
       doc.rect(105, cursorY, 90, 35); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("SHIP TO / DELIVERY SITE:", 108, cursorY + 5);
       doc.setFont("helvetica", "normal"); doc.text(sSite.siteName || sSite.site_name || "", 108, cursorY + 11);
@@ -2355,7 +2356,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("ORDER NOTES:", 15, cursorY);
         cursorY += 6;
         doc.setFont("helvetica", "normal"); doc.setFontSize(9);
-        
+
         // Basic HTML to text conversion for PDF
         const cleanNotes = normalizeRichTextHtml(order.notes)
           .replace(/<br\s*\/?>/gi, "\n")
@@ -2363,7 +2364,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
           .replace(/<li>/gi, "• ")
           .replace(/<\/li>/gi, "\n")
           .replace(/<[^>]+>/g, ""); // strip remaining tags
-          
+
         const noteLines = doc.splitTextToSize(cleanNotes.trim(), 180);
         doc.text(noteLines, 15, cursorY);
         cursorY += (noteLines.length * 5) + 8;
@@ -2371,9 +2372,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
 
       /* ── CLAUSES ── */
       if (cursorY > pageHeight - 80) { doc.addPage(); cursorY = 20; }
-      
-      const tc = normalizeRichTextArray(order.terms_conditions || []); 
-      const pt = normalizeRichTextArray(order.payment_terms || []); 
+
+      const tc = normalizeRichTextArray(order.terms_conditions || []);
+      const pt = normalizeRichTextArray(order.payment_terms || []);
       const gl = normalizeRichTextArray(order.governing_laws || []);
       const anx = order.annexures || [];
 
@@ -2381,12 +2382,12 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         if (!arr.length) return;
         doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text(title, 15, cursorY); cursorY += 5;
         doc.setFont("helvetica", "normal"); doc.setFontSize(8);
-        arr.forEach((t, i) => { const lines = doc.splitTextToSize(`${i+1}. ${t}`, 180); doc.text(lines, 15, cursorY); cursorY += (lines.length * 4) + 1; });
+        arr.forEach((t, i) => { const lines = doc.splitTextToSize(`${i + 1}. ${t}`, 180); doc.text(lines, 15, cursorY); cursorY += (lines.length * 4) + 1; });
         cursorY += 5;
       };
 
-      printClauses("Terms & Conditions:", tc); 
-      printClauses("Payment Terms:", pt); 
+      printClauses("Terms & Conditions:", tc);
+      printClauses("Payment Terms:", pt);
       printClauses("Governing Laws:", gl);
       printClauses("Annexures:", anx);
 
@@ -2453,7 +2454,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Orders");
-    XLSX.writeFile(wb, `orders_export_${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(wb, `orders_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
     showToast("Export downloaded");
   };
 
@@ -2503,7 +2504,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       "Fright": 0,
       "Total Tax (₹)": isPO ? 7200 : 9000,
       "Total Amount (₹)": isPO ? 47200 : 59000,
-      "Order Notes": isPO 
+      "Order Notes": isPO
         ? "Deliver at site gate, Payment net 30, Quality check mandatory, Insurance included"
         : "Scraping of old paint, Application of primer coat, Final water-proofing coat with warranty",
       "TC ID": "TC-001",            // V1 (latest if no version specified — uses base record)
@@ -2666,7 +2667,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     const currMonth = now.getMonth(); // 0-indexed
     const fyStartYear = (currMonth >= 3 ? now.getFullYear() : now.getFullYear() - 1) + yearOffset;
     const from = new Date(fyStartYear, 3, 1);              // 1 Apr
-    const to   = new Date(fyStartYear + 1, 2, 31, 23, 59, 59); // 31 Mar
+    const to = new Date(fyStartYear + 1, 2, 31, 23, 59, 59); // 31 Mar
     return { from, to };
   };
 
@@ -2709,7 +2710,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       else if (dateRange === "last_year") ({ from, to } = getFYBounds(-1));
       else if (dateRange === "custom") {
         from = customFrom ? new Date(customFrom) : null;
-        to   = customTo ? new Date(customTo + "T23:59:59") : null;
+        to = customTo ? new Date(customTo + "T23:59:59") : null;
       }
       if (from && created < from) matchDate = false;
       if (to && created > to) matchDate = false;
@@ -2926,22 +2927,22 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
           { label: "Taxable Value", val: `₹ ${(stats.poValue + stats.woValue).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: IndianRupee, color: "text-[#9333ea] bg-[#faf5ff]" },
         ].map((s, i) => (
           <div key={i} className="bg-white p-3.5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)] flex items-center gap-3.5">
-             <div className={`w-11 h-11 rounded-[14px] ${s.color} flex items-center justify-center shrink-0`}>
-               <s.icon size={20} strokeWidth={2} />
-             </div>
-             <div className="min-w-0">
-               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-0.5">{s.label}</p>
-               <div className="flex items-baseline gap-1.5 flex-wrap">
-                 <span className="text-base font-black text-slate-800 leading-none">{s.val}</span>
-                 {s.sub && <span className="text-[10px] font-bold text-indigo-600 leading-none">{s.sub}</span>}
-               </div>
-             </div>
+            <div className={`w-11 h-11 rounded-[14px] ${s.color} flex items-center justify-center shrink-0`}>
+              <s.icon size={20} strokeWidth={2} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-0.5">{s.label}</p>
+              <div className="flex items-baseline gap-1.5 flex-wrap">
+                <span className="text-base font-black text-slate-800 leading-none">{s.val}</span>
+                {s.sub && <span className="text-[10px] font-bold text-indigo-600 leading-none">{s.sub}</span>}
+              </div>
+            </div>
           </div>
         ))}
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
-        
+      <div className="bg-white rounded-none border border-slate-100 shadow-sm">
+
         <div className="flex px-5 pt-4 pb-0 border-b border-slate-100 bg-white gap-8 overflow-x-auto thin-scrollbar-light">
           {TABS.map(t => {
             const count = getTabCount(t);
@@ -2950,9 +2951,8 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                 className={`pb-3.5 text-[13px] font-bold transition-all whitespace-nowrap border-b-[3px] flex items-center gap-2.5
                   ${activeTab === t ? "text-[#4f46e5] border-[#4f46e5]" : "text-slate-400 border-transparent hover:text-slate-600"}`}>
                 {t}
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                  activeTab === t ? "bg-[#4f46e5] text-white" : "bg-slate-100 text-slate-500"
-                }`}>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${activeTab === t ? "bg-[#4f46e5] text-white" : "bg-slate-100 text-slate-500"
+                  }`}>
                   {count}
                 </span>
               </button>
@@ -2960,110 +2960,111 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
           })}
         </div>
 
-        <div className="p-3 border-b border-slate-100 bg-[#f8fafc]/50 flex flex-col gap-3">
-           <div className="flex items-center flex-wrap gap-2">
-             {/* Search */}
-             <div className="relative flex-1 min-w-[180px] max-w-[260px]">
-               <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-               <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+        <div className="px-5 py-3 border-b border-slate-100 bg-[#f8fafc]/50 flex flex-col gap-3">
+          <div className="flex items-center flex-wrap gap-2">
+            {/* Search */}
+            <div className="relative flex-1 min-w-[180px] max-w-[260px]">
+              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                 placeholder="Search PO, subject, vendor..."
                 className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 bg-white shadow-sm" />
-             </div>
+            </div>
 
-             {/* Filters */}
-             <div className="flex items-center gap-2 ml-auto flex-wrap">
-               {[
-                 { val: filterCompany, set: setFilterCompany, placeholder: "Entity", opts: companyOptions, min: 110, icon: Building2 },
-                 !project && { val: filterSite, set: setFilterSite, placeholder: "Sites", opts: siteOptions, min: 100, icon: MapPin },
-                 { val: filterType, set: setFilterType, placeholder: "Type", opts: ["Supply", "SITC", "ITC"], min: 100, icon: Tag },
-                 activeTab === "All" && { val: filterStatus, set: setFilterStatus, placeholder: "Status", opts: ["Draft", "Review", "Pending Issue", "Amendment Request", "Amended", "Issued", "Rejected", "Cancelled"], min: 110, icon: CheckCircle2 },
-                 { val: filterMadeBy, set: setFilterMadeBy, placeholder: "Users", opts: madeByOptions, min: 105, icon: User }
-               ].filter(Boolean).map((f, i) => (
-                 <div key={i} className="relative" style={{ minWidth: f.min }}>
-                   <f.icon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                   <select value={f.val} onChange={e => f.set(e.target.value)}
-                     className="appearance-none w-full pl-7 pr-7 py-2 border border-slate-200 rounded-[12px] text-[11px] font-bold text-slate-600 bg-white outline-none focus:border-indigo-400 cursor-pointer shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)] hover:border-slate-300 transition-all">
-                     <option value="">{f.placeholder}</option>
-                     {f.opts.map(o => <option key={o} value={o}>{o}</option>)}
-                   </select>
-                   <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                 </div>
-               ))}
+            {/* Filters */}
+            <div className="flex items-center gap-2 ml-auto flex-wrap">
+              {[
+                { val: filterCompany, set: setFilterCompany, placeholder: "Entity", opts: companyOptions, min: 110, icon: Building2 },
+                !project && { val: filterSite, set: setFilterSite, placeholder: "Sites", opts: siteOptions, min: 100, icon: MapPin },
+                { val: filterType, set: setFilterType, placeholder: "Type", opts: ["Supply", "SITC", "ITC"], min: 100, icon: Tag },
+                activeTab === "All" && { val: filterStatus, set: setFilterStatus, placeholder: "Status", opts: ["Draft", "Review", "Pending Issue", "Amendment Request", "Amended", "Issued", "Rejected", "Cancelled"], min: 110, icon: CheckCircle2 },
+                { val: filterMadeBy, set: setFilterMadeBy, placeholder: "Users", opts: madeByOptions, min: 105, icon: User }
+              ].filter(Boolean).map((f, i) => (
+                <div key={i} className="relative" style={{ minWidth: f.min }}>
+                  <f.icon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                  <select value={f.val} onChange={e => f.set(e.target.value)}
+                    className="appearance-none w-full pl-7 pr-7 py-2 border border-slate-200 rounded-[12px] text-[11px] font-bold text-slate-600 bg-white outline-none focus:border-indigo-400 cursor-pointer shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)] hover:border-slate-300 transition-all">
+                    <option value="">{f.placeholder}</option>
+                    {f.opts.map(o => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                </div>
+              ))}
 
-               <div className="relative" style={{ minWidth: 105 }}>
-                 <CalendarDays size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                 <select value={dateRange} onChange={e => setDateRange(e.target.value)}
-                   className="appearance-none w-full pl-7 pr-7 py-2 border border-slate-200 rounded-[12px] text-[11px] font-bold text-slate-600 bg-white outline-none focus:border-indigo-400 cursor-pointer shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)] hover:border-slate-300 transition-all">
-                   <option value="all">All Time</option>
-                   <option value="this_year">This Year</option>
-                   <option value="last_year">Last Year</option>
-                   <option value="custom">Custom</option>
-                 </select>
-                 <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-               </div>
-             </div>
+              <div className="relative" style={{ minWidth: 105 }}>
+                <CalendarDays size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                <select value={dateRange} onChange={e => setDateRange(e.target.value)}
+                  className="appearance-none w-full pl-7 pr-7 py-2 border border-slate-200 rounded-[12px] text-[11px] font-bold text-slate-600 bg-white outline-none focus:border-indigo-400 cursor-pointer shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)] hover:border-slate-300 transition-all">
+                  <option value="all">All Time</option>
+                  <option value="this_year">This Year</option>
+                  <option value="last_year">Last Year</option>
+                  <option value="custom">Custom</option>
+                </select>
+                <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              </div>
+            </div>
 
-             {dateRange === "custom" && (
-               <>
-                 <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-                   className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 bg-white outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-50" />
-                 <span className="text-xs text-slate-400">to</span>
-                 <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-                   className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 bg-white outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-50" />
-               </>
-             )}
+            {dateRange === "custom" && (
+              <>
+                <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                  className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 bg-white outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-50" />
+                <span className="text-xs text-slate-400">to</span>
+                <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                  className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 bg-white outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-50" />
+              </>
+            )}
 
-             {hasActiveFilters && (
-               <button onClick={clearFilters}
-                 className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
-                 Clear
-               </button>
-             )}
+            {hasActiveFilters && (
+              <button onClick={clearFilters}
+                className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
+                Clear
+              </button>
+            )}
 
-           </div>
+          </div>
         </div>
-        
+
         {loading ? (
-           <div className="p-10 text-center text-slate-400 text-sm italic font-medium animate-pulse">
-             📦 Syncing orders... Please wait.
-           </div>
+          <div className="p-10 text-center text-slate-400 text-sm italic font-medium animate-pulse">
+            📦 Syncing orders... Please wait.
+          </div>
         ) : (
-          <div className="overflow-x-auto w-full rounded-b-2xl">
-            <table className="w-full text-sm text-left border-collapse" style={{minWidth:'700px'}}>
+          <div className="overflow-x-auto w-full rounded-none thin-scrollbar-light">
+            <table className="w-full text-sm text-left border-separate border-spacing-0 whitespace-nowrap border-t border-l border-slate-200">
               <thead>
-                <tr className="bg-white text-slate-500 font-semibold bg-slate-50">
-                  <th className="px-4 py-3 uppercase tracking-wider text-[10px] border-b border-r border-slate-200 bg-slate-50 font-bold text-slate-600 whitespace-nowrap w-[1%]">Order No</th>
-                  <th className="px-4 py-3 uppercase tracking-wider text-[10px] border-b border-r border-slate-200 font-bold text-slate-500">Type</th>
-                  <th className="px-4 py-3 uppercase tracking-wider text-[10px] border-b border-r border-slate-200 font-bold text-slate-500">Made By</th>
-                  <th className="px-4 py-3 uppercase tracking-wider text-[10px] border-b border-r border-slate-200 font-bold text-slate-500">Created Date</th>
-                  <th className="px-4 py-3 uppercase tracking-wider text-[10px] border-b border-r border-slate-200 font-bold text-slate-500">Issued Date</th>
-                  <th className="px-4 py-3 uppercase tracking-wider text-[10px] border-b border-r border-slate-200 font-bold text-slate-500">Subject</th>
-                  <th className="px-4 py-3 uppercase tracking-wider text-[10px] border-b border-r border-slate-200 font-bold text-slate-500">Vendor</th>
-                  <th className="px-4 py-3 uppercase tracking-wider text-[10px] border-b border-r border-slate-200 font-bold text-slate-500 text-right">Taxable Amount</th>
-                  <th className="px-4 py-3 uppercase tracking-wider text-[10px] border-b border-r border-slate-200 text-center font-bold text-slate-500">Status</th>
-                  <th className="px-4 py-3 uppercase tracking-wider text-[10px] border-b border-l border-slate-200 text-center bg-slate-50 font-bold text-slate-500 min-w-[140px]">Action</th>
+                <tr className="bg-slate-100">
+                  <th className="sticky left-0 z-20 px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 bg-slate-100 whitespace-nowrap" style={{ width: '180px', minWidth: '180px', maxWidth: '180px' }}>Order No</th>
+                  <th className="sticky z-20 px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 bg-slate-100 whitespace-nowrap text-center" style={{ left: '180px', width: '120px', minWidth: '120px', maxWidth: '120px' }}>Status</th>
+                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Order Type</th>
+                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Created By</th>
+                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Created On</th>
+                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Subject</th>
+                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Vendor</th>
+                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Issued At</th>
+                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 text-right whitespace-nowrap">Taxable Amount</th>
+                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 text-right whitespace-nowrap">Total Value</th>
+                  <th className="sticky right-0 z-20 px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 bg-slate-100 text-center whitespace-nowrap [box-shadow:-1px_0_0_0_#e2e8f0]" style={{ width: '190px', minWidth: '190px', maxWidth: '190px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan="10" className="py-24 text-center bg-white">
-                       <div className="flex flex-col items-center justify-center">
-                         <div className="h-16 w-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 border border-slate-100">
-                           <FileText size={24} className="text-slate-300" />
-                         </div>
-                         <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mb-1">
-                           {search ? "No matches found" : "No orders found"}
-                         </p>
-                         <p className="text-slate-300 text-[10px] mb-4 text-center max-w-[240px]">
-                           {search ? `Searching for "${search}" in ${activeTab} tab returned 0 results.` : `You don't have any orders in the ${activeTab} category yet.`}
-                         </p>
-                         {(search || activeTab !== "All") && (
-                           <button onClick={() => { setSearch(""); setActiveTab("All"); }} className="text-indigo-600 hover:text-indigo-700 text-xs font-bold underline underline-offset-4 decoration-indigo-200">
-                             Clear all filters
-                           </button>
-                         )}
-                       </div>
+                    <td colSpan="11" className="py-24 text-center bg-white">
+                      <div className="flex flex-col items-center justify-center">
+                        <div className="h-16 w-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 border border-slate-100">
+                          <FileText size={24} className="text-slate-300" />
+                        </div>
+                        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mb-1">
+                          {search ? "No matches found" : "No orders found"}
+                        </p>
+                        <p className="text-slate-300 text-[10px] mb-4 text-center max-w-[240px]">
+                          {search ? `Searching for "${search}" in ${activeTab} tab returned 0 results.` : `You don't have any orders in the ${activeTab} category yet.`}
+                        </p>
+                        {(search || activeTab !== "All") && (
+                          <button onClick={() => { setSearch(""); setActiveTab("All"); }} className="text-indigo-600 hover:text-indigo-700 text-xs font-bold underline underline-offset-4 decoration-indigo-200">
+                            Clear all filters
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ) : filtered.map(o => {
@@ -3071,60 +3072,70 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                   const cCode = snap.company?.companyCode || o.companies?.company_code || "-";
                   const sCode = snap.site?.siteCode || o.sites?.site_code || "-";
                   const vName = snap.vendor?.vendorName || o.vendors?.vendor_name || "-";
-                  
+
                   const typeCode = o.order_type === "Supply" ? "PO" : "WO";
                   const prefix = `${cCode}/${sCode}/${typeCode}/`;
                   const displayNo = o.order_number?.startsWith("PENDING-") ? prefix : o.order_number;
 
                   return (
-                    <tr key={o.id} className="hover:bg-indigo-50/30 transition-colors group">
-                      <td className="px-4 py-3.5 border-b border-r border-slate-200 bg-white group-hover:bg-indigo-50/30 transition-colors font-mono whitespace-nowrap">
+                    <tr key={o.id} className="hover:bg-slate-50 transition-colors group bg-white">
+                      <td className="sticky left-0 z-10 px-5 py-1 border-b border-r border-slate-200 bg-white group-hover:bg-slate-50 transition-colors whitespace-nowrap" style={{ width: '180px', minWidth: '180px', maxWidth: '180px' }}>
                         {displayNo ? (
                           <div className="flex items-center gap-2">
                             <button
-                              onMouseEnter={() => preloadOrderDetails(o.id).catch(() => {})}
-                              onFocus={() => preloadOrderDetails(o.id).catch(() => {})}
+                              onMouseEnter={() => preloadOrderDetails(o.id).catch(() => { })}
+                              onFocus={() => preloadOrderDetails(o.id).catch(() => { })}
                               onClick={() => onViewClick(o)}
-                              className="font-bold text-[11px] text-slate-900 hover:text-indigo-600 hover:underline hover:decoration-indigo-300 underline-offset-4 transition-all text-left">
+                              className="font-medium text-[13.5px] text-[#5b4fbe] hover:text-[#4236a1] transition-all text-left">
                               {displayNo}
                             </button>
                             <button
                               onClick={(e) => copyOrderNumber(displayNo, o.id, e)}
                               title={copiedOrderId === o.id ? "Copied!" : "Copy order number"}
-                              className={`p-1 rounded hover:bg-slate-100 transition-colors shrink-0 ${copiedOrderId === o.id ? "text-emerald-600" : "text-slate-300 hover:text-slate-500"}`}>
-                              {copiedOrderId === o.id ? <Check size={12} /> : <Copy size={11} />}
+                              className={`p-1 rounded transition-colors shrink-0 ${copiedOrderId === o.id ? "text-emerald-500" : "text-transparent group-hover:text-slate-300 hover:!text-slate-500"}`}>
+                              {copiedOrderId === o.id ? <Check size={12} /> : <Copy size={12} />}
                             </button>
                           </div>
                         ) : (
-                          <span className="font-bold text-[11px] text-slate-300">-</span>
+                          <span className="font-medium text-[13.5px] text-slate-300">-</span>
                         )}
                       </td>
-                      <td className="px-4 py-3.5 border-b border-r border-slate-100">
-                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider whitespace-nowrap
-                          ${o.order_type === "Supply" ? "bg-indigo-50 text-indigo-700 border border-indigo-100" : "bg-orange-50 text-orange-700 border border-orange-100"}`}>
-                          {o.order_type}
+                      <td className="sticky z-10 px-5 py-1 border-b border-r border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors" style={{ left: '180px', width: '120px', minWidth: '120px', maxWidth: '120px' }}>
+                        <span style={{ whiteSpace: 'nowrap', display: 'inline-flex' }} className={`px-2.5 py-1 rounded-full text-[11px] font-medium
+                           ${o.status === "Draft" ? "bg-slate-100 text-slate-600" :
+                            o.status === "Approved" || o.status === "Issued" ? "bg-emerald-50 text-emerald-600" :
+                              o.status === "Amendment Request" ? "bg-amber-100 text-amber-700" :
+                                o.status === "Amended" ? "bg-slate-100 text-slate-600" :
+                                  o.status === "Rejected" ? "bg-red-50 text-red-600" :
+                                    o.status === "Review" ? "bg-sky-50 text-sky-600" :
+                                      o.status === "Reverted" ? "bg-orange-50 text-orange-600" :
+                                        o.status === "Recalled" ? "bg-purple-50 text-purple-600" :
+                                          o.status === "Cancelled" ? "bg-slate-100 text-slate-500 line-through" :
+                                            "bg-slate-100 text-slate-600"}`}>
+                          {o.status || "Draft"}
                         </span>
                       </td>
-                      <td className="px-4 py-3.5 border-b border-r border-slate-100 text-slate-600 text-[10px] font-bold uppercase" title={o.made_by || "System"}>
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
+                        {o.order_type === "Supply" ? "Purchase Order" : o.order_type === "SITC" || o.order_type === "ITC" ? "Work Order" : (o.order_type || "-")}
+                      </td>
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
                         {o.made_by || "System"}
                       </td>
-                      <td className="px-4 py-3.5 border-b border-r border-slate-100 text-slate-500 text-[10px] font-medium whitespace-nowrap">
-                        {new Date(o.date_of_creation || o.created_at).toLocaleDateString("en-IN")}
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
+                        {new Date(o.date_of_creation || o.created_at).toLocaleDateString("en-GB").replace(/\//g, '.')}
                       </td>
-                      <td className="px-4 py-3.5 border-b border-r border-slate-100 text-slate-500 text-[10px] font-medium whitespace-nowrap">
-                        {/* Show issue date for both Issued and Amended — Amended orders were
-                            issued at some point, so the date shouldn't disappear when their status flips */}
-                        {["Issued", "Amended"].includes(o.status) && (o.totals?.issuedAt || o.updated_at)
-                          ? new Date(o.totals?.issuedAt || o.updated_at).toLocaleDateString("en-IN")
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-normal min-w-[280px] leading-relaxed">
+                        {o.subject || "-"}
+                      </td>
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-normal min-w-[200px] leading-relaxed">
+                        {vName}
+                      </td>
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
+                        {(["Issued", "Amended"].includes(o.status) && (o.totals?.issuedAt || o.updated_at))
+                          ? new Date(o.totals?.issuedAt || o.updated_at).toLocaleDateString("en-GB").replace(/\//g, '.')
                           : <span className="text-slate-300">-</span>}
                       </td>
-                      <td className="px-4 py-3.5 border-b border-r border-slate-100 text-slate-700 text-xs font-semibold">
-                        <span title={o.subject}>{o.subject || "-"}</span>
-                      </td>
-                      <td className="px-4 py-3.5 border-b border-r border-slate-100 text-slate-700 text-xs font-bold uppercase tracking-tight">
-                        <span title={vName}>{vName}</span>
-                      </td>
-                      <td className="px-4 py-3.5 border-b border-r border-slate-100 text-slate-800 text-[11px] font-mono font-bold text-right whitespace-nowrap">
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-700 text-[13.5px] font-medium text-right whitespace-nowrap">
                         {(() => {
                           const t = o.totals || {};
                           const sub = Number(t.subtotal) || 0;
@@ -3135,50 +3146,43 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                             : <span className="text-slate-300 font-normal">-</span>;
                         })()}
                       </td>
-                      <td className="px-4 py-3.5 border-b border-r border-slate-100 text-center">
-                        <span style={{whiteSpace:'nowrap', display:'inline-flex'}} className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest
-                           ${o.status === "Draft" ? "bg-slate-100 text-slate-600 border border-slate-200" :
-                             o.status === "Approved" || o.status === "Issued" ? "bg-emerald-50 text-emerald-600 border border-emerald-100" :
-                             o.status === "Amendment Request" ? "bg-amber-100 text-amber-700 border border-amber-200" :
-                             o.status === "Amended" ? "bg-slate-200 text-slate-700 border border-slate-300 italic" :
-                             o.status === "Rejected" ? "bg-red-50 text-red-600 border border-red-100" :
-                             o.status === "Review" ? "bg-sky-50 text-sky-600 border border-sky-100" :
-                             o.status === "Reverted" ? "bg-orange-50 text-orange-600 border border-orange-100" :
-                             o.status === "Recalled" ? "bg-purple-50 text-purple-600 border border-purple-100" :
-                             o.status === "Cancelled" ? "bg-slate-200 text-slate-500 border border-slate-300 line-through" :
-                             "bg-amber-50 text-amber-600 border border-amber-100"}`}>
-                           {o.status || "Draft"}
-                        </span>
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-700 text-[13.5px] font-medium text-right whitespace-nowrap">
+                        {(() => {
+                          const totalVal = Number(o.totals?.grandTotal || 0);
+                          return totalVal > 0
+                            ? `₹ ${totalVal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                            : <span className="text-slate-300 font-normal">-</span>;
+                        })()}
                       </td>
-                      <td className="px-4 py-3.5 border-b border-l border-slate-100 text-center bg-white group-hover:bg-indigo-50/30 transition-colors">
+                      <td className="sticky right-0 z-10 px-5 py-1 border-b border-r border-slate-200 bg-white group-hover:bg-slate-50 transition-colors whitespace-nowrap [box-shadow:-1px_0_0_0_#e2e8f0]" style={{ width: '190px', minWidth: '190px', maxWidth: '190px' }}>
                         <div className="flex items-center justify-center gap-1.5">
                           <button
-                            onMouseEnter={() => preloadOrderDetails(o.id).catch(() => {})}
-                            onFocus={() => preloadOrderDetails(o.id).catch(() => {})}
+                            onMouseEnter={() => preloadOrderDetails(o.id).catch(() => { })}
+                            onFocus={() => preloadOrderDetails(o.id).catch(() => { })}
                             onClick={() => onViewClick(o)}
-                            className="h-8 w-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-white transition-all shadow-sm"
+                            className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition-all shadow-sm"
                             title="Quick View">
                             <Eye size={14} />
                           </button>
                           {canEditOrder(o) && (
                             <button onClick={() => onEditClick(o.id)}
-                              className="h-8 w-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-600 hover:text-sky-600 hover:border-sky-200 hover:bg-white transition-all shadow-sm"
+                              className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-sky-600 hover:border-sky-200 hover:bg-sky-50 transition-all shadow-sm"
                               title="Full Edit">
                               <Pencil size={13} />
                             </button>
                           )}
                           {canDeleteOrder(o) && (
                             <button onClick={() => handleDelete(o.id)}
-                              className="h-8 w-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-200 hover:bg-white transition-all shadow-sm"
+                              className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all shadow-sm"
                               title="Delete">
                               <Trash2 size={13} />
                             </button>
                           )}
                           <button
                             onClick={() => openPDFPreview(o.id)}
-                            className="h-8 w-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-800 border-slate-300 transition-all shadow-sm hover:text-slate-900 hover:bg-white"
+                            className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-all shadow-sm"
                             title="Export PDF">
-                            <FileDown size={14} strokeWidth={2.5}/>
+                            <FileDown size={14} />
                           </button>
                         </div>
                       </td>
@@ -3213,28 +3217,28 @@ export default function CreateOrderWrapper({ project, editOrderId, onEditComplet
 
   if (view === "create") {
     return (
-      <OrderForm 
-        project={project} 
-        editOrderId={localEditId || editOrderId} 
-        onEditComplete={() => { if(onEditComplete) onEditComplete(); setLocalEditId(null); }}
-        onCancel={() => { setView("list"); setLocalEditId(null); if (onEditComplete) onEditComplete(); }} 
+      <OrderForm
+        project={project}
+        editOrderId={localEditId || editOrderId}
+        onEditComplete={() => { if (onEditComplete) onEditComplete(); setLocalEditId(null); }}
+        onCancel={() => { setView("list"); setLocalEditId(null); if (onEditComplete) onEditComplete(); }}
       />
     );
   }
   if (view === "view" && viewId) {
     return (
-        <ViewOrder 
-          orderId={viewId} 
+      <ViewOrder
+        orderId={viewId}
         initialOrder={viewSeed}
-        onBack={() => { setView("list"); setViewId(null); setViewSeed(null); }} 
+        onBack={() => { setView("list"); setViewId(null); setViewSeed(null); }}
         onEdit={(id) => { setViewId(null); setViewSeed(null); setLocalEditId(id); setView("create"); }} // switch to form
       />
     );
   }
   return (
-    <OrderList 
-      project={project} 
-      onCreateClick={() => { if(onEditComplete) onEditComplete(); setLocalEditId(null); setViewSeed(null); setView("create"); }} 
+    <OrderList
+      project={project}
+      onCreateClick={() => { if (onEditComplete) onEditComplete(); setLocalEditId(null); setViewSeed(null); setView("create"); }}
       onViewClick={(order) => {
         const id = typeof order === "object" ? order.id : order;
         const seed = typeof order === "object" ? order : null;
@@ -3242,7 +3246,7 @@ export default function CreateOrderWrapper({ project, editOrderId, onEditComplet
         setViewSeed(seed);
         setViewId(id);
         setView("view");
-      }} 
+      }}
       onEditClick={(id) => { setViewSeed(null); setLocalEditId(id); setView("create"); }}
     />
   );

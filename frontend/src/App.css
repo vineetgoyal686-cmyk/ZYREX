@@ -40,3 +40,79 @@
 .read-the-docs {
   color: #888;
 }
+
+/* Thin horizontal scrollbar for table containers */
+.thin-scroll {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: rgba(100,116,139,0.7) transparent;
+}
+.thin-scroll::-webkit-scrollbar {
+  height: 3px; /* thinner horizontal scrollbar */
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: rgba(100,116,139,0.45) !important;
+  border-radius: 9999px !important;
+  border: none !important;
+  min-height: 10px !important;
+}
+.thin-scroll::-webkit-scrollbar {
+  height: 4px !important;
+}
+.thin-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(100,116,139,0.6) !important;
+}
+.thin-scroll::-webkit-scrollbar-corner {
+  background: transparent !important;
+}
+
+/* Fallback: force thin scrollbar behavior for Firefox */
+.thin-scroll {
+  scrollbar-width: thin !important;
+  -ms-overflow-style: -ms-autohiding-scrollbar;
+}
+
+/* Hide native scrollbars for thin-scroll containers so we can show a custom thin overlay */
+.thin-scroll.hide-native::-webkit-scrollbar { display: none !important; }
+.thin-scroll.hide-native { scrollbar-width: none !important; }
+
+/* Custom overlay scrollbar visuals */
+.custom-scrollbar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 4px;
+  height: 3px;
+  display: block;
+  pointer-events: none;
+}
+.custom-scrollbar-thumb {
+  position: absolute;
+  top: 0;
+  height: 3px;
+  background: rgba(100,116,139,0.6);
+  border-radius: 9999px;
+  transition: left 120ms linear, width 120ms linear, background 120ms linear;
+}
+.custom-scrollbar-thumb:hover { background: rgba(100,116,139,0.8); }
+
+/* Force thinner global scrollbars as a fallback when the page/window scrollbar shows */
+html, body {
+  scrollbar-width: thin !important; /* Firefox */
+}
+html, body::-webkit-scrollbar {
+  height: 6px !important;
+  width: 8px !important;
+}
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb {
+  background: rgba(100,116,139,0.45) !important;
+  border-radius: 9999px !important;
+  border: none !important;
+}
+/* Ensure overlay corner isn't visible */
+html::-webkit-scrollbar-corner, body::-webkit-scrollbar-corner { background: transparent !important; }
+.thin-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}

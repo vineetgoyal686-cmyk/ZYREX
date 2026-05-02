@@ -602,7 +602,7 @@ export default function VendorList() {
           <div className="overflow-x-auto thin-scroll">
             <style>{`
               .thin-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
-              .thin-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
+              .thin-scroll::-webkit-scrollbar { height: 3px; width: 3px; }
               .thin-scroll::-webkit-scrollbar-track { background: transparent; }
               .thin-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
               .thin-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
