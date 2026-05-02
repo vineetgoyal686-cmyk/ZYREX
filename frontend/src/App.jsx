@@ -180,11 +180,15 @@ function App() {
   const handleLogin = (user) => {
     setUserRole(user.role);
     setCurrentUser(user);
-    setUserTabPermissions(() => {
-      const permMap = {};
-      (user.app_permissions || []).forEach(p => { permMap[p.module_key] = p; });
-      return { hasAny: (user.app_permissions || []).length > 0, map: permMap };
-    });
+    if (user.app_permissions?.length > 0) {
+      setUserTabPermissions(() => {
+        const permMap = {};
+        user.app_permissions.forEach(p => { permMap[p.module_key] = p; });
+        return { hasAny: true, map: permMap };
+      });
+    } else {
+      setUserTabPermissions(null);
+    }
     setIsLoggedIn(true);
     setActiveTab("global_dashboard");
     pushUrl("global_dashboard", null);

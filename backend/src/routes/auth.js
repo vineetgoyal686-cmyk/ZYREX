@@ -69,31 +69,6 @@ router.post("/login", async (req, res) => {
     return res.status(401).json({ error: "Invalid email or password" });
   }
 
-  // 4. Fetch App permissions and modules in parallel for faster login
-  const permsPromise   = admin.from("permissions").select("*").eq("user_id", profile.id);
-  const modulesPromise = admin.from("modules").select("*").eq("is_active", true);
-  const [{ data: perms }, { data: modules }] = await Promise.all([permsPromise, modulesPromise]);
-
-  const app_permissions = (modules || []).map(mod => {
-    const p = perms?.find(cp => cp.module_id === mod.id) || {};
-    return {
-      module_key:            mod.module_key,
-      can_view:              p.can_view              || false,
-      can_add:               p.can_add               || false,
-      can_edit:              p.can_edit              || false,
-      can_delete:            p.can_delete            || false,
-      can_bulk_upload:       p.can_bulk_upload       || false,
-      can_export:            p.can_export            || false,
-      can_download_document: p.can_download_document || false,
-      can_issue:             p.can_issue             || false,
-      can_recall:            p.can_recall            || false,
-      can_reject:            p.can_reject            || false,
-      can_revert:            p.can_revert            || false,
-      can_cancel:            p.can_cancel            || false,
-      can_manage_amend:      p.can_manage_amend      || false,
-    };
-  });
-
   const signedAvatarPromise = createSignedStorageUrl(admin, "avatars", profile.avatar);
   const signedProfilePermissions = { ...(profile.profile_permissions || {}) };
   const signedCoverPromise = signedProfilePermissions.ui?.cover_image
@@ -122,7 +97,6 @@ router.post("/login", async (req, res) => {
       cover_image:         profile.cover_image         || null,
       header_theme:        profile.header_theme        || null,
       profile_permissions: signedProfilePermissions,
-      app_permissions:     app_permissions,
     },
   });
 });
