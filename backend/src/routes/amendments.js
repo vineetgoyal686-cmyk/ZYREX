@@ -458,26 +458,56 @@ router.get("/chain/:orderId", requireAuth, async (req, res) => {
     // Amend Request Date (when raised) + Amend Date (when approved → child created)
     const orderIds = chain.map(c => c.id);
     const { data: amendEvents } = orderIds.length
-      ? await admin.from("order_amendments").select("original_order_id, status, created_at, actioned_at").in("original_order_id", orderIds)
+      ? await admin.from("order_amendments").select("*").in("original_order_id", orderIds)
       : { data: [] };
+
+    // Hydrate user names for requestors and approvers
+    const userIds = [...new Set([
+      ...(amendEvents || []).map(e => e.requestor_id),
+      ...(amendEvents || []).map(e => e.actioned_by_id)
+    ].filter(Boolean))];
+    let userMap = {};
+    if (userIds.length) {
+      const { data: users } = await admin.from("users").select("id, name").in("id", userIds);
+      userMap = Object.fromEntries((users || []).map(u => [u.id, u.name]));
+    }
+
     const amendByOrigin = {};
     (amendEvents || []).forEach(ev => {
       const list = (amendByOrigin[ev.original_order_id] ||= []);
-      list.push(ev);
+      list.push({
+        ...ev,
+        requestor_name: userMap[ev.requestor_id] || "Unknown",
+        approver_name:  userMap[ev.actioned_by_id] || "—"
+      });
     });
 
-    chain.forEach(c => {
+    for (const c of chain) {
       c.vendor_name = c.snapshot?.vendor?.vendorName || vendorMap[c.vendor_id] || null;
       // Issued Date — first time this order entered Issued state
       c.issued_at = c.totals?.issuedAt || (c.status === "Issued" || c.status === "Amended" ? c.created_at : null);
-      // Amend Request Date — most recent amendment request raised on this order
+      
+      // Amendment Details
       const events = amendByOrigin[c.id] || [];
-      const reqEvent = events.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-      c.amend_request_at = reqEvent?.created_at || null;
-      // Amend Date — when an amendment was Approved (so this order became Amended)
       const approvedEvent = events.find(e => e.status === "Approved");
+      const anyEvent = events.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+      
+      const targetEvent = approvedEvent || anyEvent;
+      if (targetEvent) {
+        c.amend_details = {
+          reason: targetEvent.reason,
+          attachment_url: (await signAmendmentAttachment(admin, targetEvent)).attachment_url,
+          requested_by: targetEvent.requestor_name,
+          requested_at: targetEvent.created_at,
+          approved_by:  targetEvent.approver_name,
+          approved_at:  targetEvent.actioned_at,
+          status:       targetEvent.status
+        };
+      }
+
+      c.amend_request_at = targetEvent?.created_at || null;
       c.amended_at = approvedEvent?.actioned_at || null;
-    });
+    }
 
     chain.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     res.json({ chain });

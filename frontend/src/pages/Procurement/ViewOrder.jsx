@@ -76,7 +76,7 @@ const amountToWords = (amount) => {
 const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = null }) => {
   const [data, setData] = useState({ order: null, items: [] });
   const [approvalData, setApprovalData] = useState({ request: null, timeline: [] });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [hydrating, setHydrating] = useState(false);
   const [activeTab, setActiveTab] = useState("Order Details");
   const thisUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
@@ -98,6 +98,9 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   // Inline approve/reject (when this order IS the pending clone)
   const [pendingAmend, setPendingAmend] = useState(null);     // amendment row for this clone
   const [canManageAmend, setCanManageAmend] = useState(false);
+
+  // Amendment Info Modal (for history tab)
+  const [infoModal, setInfoModal] = useState({ open: false, data: null });
   const [amendActionLoading, setAmendActionLoading] = useState(false);
   // Amendment History tab data
   const [amendChain, setAmendChain] = useState([]);
@@ -111,15 +114,36 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   const { subtotal, discAmt, netItems, fright, totalGst, grandTotal, frightTax, discountPct } = React.useMemo(() => {
     if (!data || !data.order) return { subtotal: 0, discAmt: 0, netItems: 0, fright: 0, totalGst: 0, grandTotal: 0, frightTax: 0, discountPct: 0 };
     const order = data.order;
-    const dbT = order.totals || {};
+    // Prefer order.totals, but fallback to snapshot.totals if root totals are missing/empty
+    let dbT = order.totals || {};
+    if ((!dbT || !dbT.subtotal) && order.snapshot?.totals) {
+      dbT = order.snapshot.totals;
+    }
 
     const fright = Number(dbT.frightCharges ?? dbT.fright) || 0;
     const frightTax = Number(dbT.frightTax ?? 18);
-    const subtotal = Number(dbT.subtotal) || 0;
-    const totalGst = Number(dbT.gst) || 0;
+    let subtotal = Number(dbT.subtotal) || 0;
+    let totalGst = Number(dbT.gst) || 0;
     const discAmt = Number(dbT.totalDiscountAmt) || 0;
     const discountPct = Number(dbT.txDiscountPct || dbT.discount_pct) || 0;
-    const grandTotal = Number(dbT.grandTotal) || (subtotal - discAmt + fright + totalGst);
+    let grandTotal = Number(dbT.grandTotal) || 0;
+
+    // Fallback: if totals are missing (e.g. amended/cloned orders), calculate from items
+    if (subtotal === 0 && data.items && data.items.length > 0) {
+      subtotal = data.items.reduce((sum, it) => sum + (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0), 0);
+      const itemsDiscSum = data.items.reduce((sum, it) => {
+        const gross = (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0);
+        return sum + (gross * (Number(it.discount_pct) || 0) / 100);
+      }, 0);
+      totalGst = data.items.reduce((sum, it) => {
+        const gross = (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0);
+        const net = gross * (1 - (Number(it.discount_pct) || 0) / 100);
+        return sum + (net * (Number(it.tax_pct) || 0) / 100);
+      }, 0);
+      grandTotal = subtotal - itemsDiscSum + fright + totalGst;
+    } else if (grandTotal === 0) {
+      grandTotal = subtotal - discAmt + fright + totalGst;
+    }
 
     return {
       subtotal,
@@ -190,23 +214,22 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       setData(seeded);
       setLoading(false);
       setHydrating(true);
-    } else {
-      setData({ order: null, items: [] });
-      setLoading(true);
-      setHydrating(false);
     }
 
+    // Initial parallel fetch for instant results
+    fetchAmendHistory(); // Call this FIRST for fastest box appearance
     fetchOrderDetails();
-    fetchAmendHistory();
+    fetchApprovalData();
 
     const scheduleIdle = window.requestIdleCallback || ((cb) => window.setTimeout(cb, 1500));
     const cancelIdle = window.cancelIdleCallback || window.clearTimeout;
     const idleId = scheduleIdle(() => {
-      // Prime the server-side preview HTML cache after the page has painted.
       fetch(`${API}/api/orders/${orderId}/preview`, { method: "GET" }).catch(() => {});
     });
 
-    return () => cancelIdle(idleId);
+    return () => {
+      cancelIdle(idleId);
+    };
   }, [orderId, initialOrder]);
 
   const fetchApprovalData = async () => {
@@ -225,48 +248,26 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
 
   const fetchAmendHistory = async () => {
     const token = localStorage.getItem("bms_token") || "";
-    try {
-      const r = await fetch(`${API}/api/amendments/requests?order_id=${orderId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const d = await r.json();
-      setAmendHistory(d.requests || []);
-    } catch (err) {
-      console.error("Amend history fetch failed", err);
-    }
-    // Pull the full version chain (every PO that shares this amendment lineage)
-    try {
-      const rc = await fetch(`${API}/api/amendments/chain/${orderId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const dc = await rc.json();
-      setAmendChain(dc.chain || []);
-    } catch (err) {
-      console.error("Amend chain fetch failed", err);
-    }
-    // If THIS order is the pending clone, pull the amendment row (reason/attachment)
-    try {
-      const rp = await fetch(`${API}/api/amendments/by-clone/${orderId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const dp = await rp.json();
-      setPendingAmend(dp.amendment || null);
-    } catch (err) {
-      console.error("Pending amend fetch failed", err);
-    }
-    // Permission check (drives whether approve/reject buttons render enabled)
-    try {
-      const rcm = await fetch(`${API}/api/amendments/can-manage`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      const dcm = await rcm.json();
-      setCanManageAmend(!!dcm.canManage);
-    } catch { /* default false */ }
+    const headers = { Authorization: `Bearer ${token}` };
+
+    // Parallelize all amendment related calls for maximum speed
+    Promise.all([
+      fetch(`${API}/api/amendments/requests?order_id=${orderId}`, { headers }).then(r => r.json()),
+      fetch(`${API}/api/amendments/chain/${orderId}`, { headers }).then(r => r.json()),
+      fetch(`${API}/api/amendments/by-clone/${orderId}`, { headers }).then(r => r.json()),
+      fetch(`${API}/api/amendments/can-manage`, { headers }).then(r => r.json()).catch(() => ({ canManage: false }))
+    ]).then(([dRequests, dChain, dClone, dManage]) => {
+      setAmendHistory(dRequests.requests || []);
+      setAmendChain(dChain.chain || []);
+      setPendingAmend(dClone.amendment || null);
+      setCanManageAmend(!!dManage.canManage);
+    }).catch(err => {
+      console.error("Amend fetch failed", err);
+    });
   };
 
   const handleAmendDecision = async (action) => {
     if (!pendingAmend) return;
-    if (!confirm(`${action === "Approved" ? "Approve" : "Reject"} this amendment request?`)) return;
     setAmendActionLoading(true);
     try {
       const res = await fetch(`${API}/api/amendments/action`, {
@@ -277,6 +278,14 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Action failed");
       showToast(action === "Approved" ? "Amendment approved — clone moved to Draft" : "Amendment rejected — clone removed");
+      
+      // FORCE UI UPDATE: Immediately hide the box by clearing state
+      setPendingAmend(null);
+      setData(prev => ({
+        ...prev,
+        order: prev.order ? { ...prev.order, status: action === "Approved" ? "Draft" : prev.order.status } : null
+      }));
+
       // After Approve, this clone's status flipped to Draft. After Reject the clone is gone.
       if (action === "Rejected" && onBack) {
         onBack();
@@ -295,11 +304,8 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     const cached = getCachedOrderDetails(orderId);
     if (cached?.order) {
       setData(cached);
-      setLoading(false);
       setHydrating(!!cached.__partial);
-    } else if (!initialOrder) {
-      setLoading(true);
-    }
+    } 
 
     try {
       const json = await preloadOrderDetails(orderId, { force: true });
@@ -345,6 +351,22 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   };
 
   const updateStatus = async (newStatus, initApproval = false) => {
+    // ── Document validation before submitting to Review ──
+    if (newStatus === 'Review') {
+      const preDocs = Array.isArray(order.pre_documents) ? order.pre_documents : [];
+      const hasQuotation = !!order.quotation_url || preDocs.some(d => d.category === 'quotations');
+      const hasProof = !!order.comparative_sheet_url || preDocs.some(d => d.category === 'comparative' || d.category === 'vendor-docs');
+
+      if (!hasQuotation) {
+        showToast("At least 1 Quotation Document is mandatory before submitting for Review.", "error");
+        return;
+      }
+      if (!hasProof) {
+        showToast("At least 1 Proof Document (Comparative Sheet or Vendor Doc) is mandatory before submitting for Review.", "error");
+        return;
+      }
+    }
+
     setActionLoading(true);
     try {
       showToast(`Moving to ${newStatus}...`);
@@ -456,17 +478,8 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   };
 
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center p-10 h-64">
-        <div className="h-8 w-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-slate-500 font-medium">Loading Order Details...</p>
-      </div>
-    );
-  }
-
   const { order, items } = data;
-  if (!order) return <div className="p-10 text-center">Order not found.</div>;
+  if (!order) return null; // Silent while initial data is missing or syncing
 
   const getVal = (v) => Array.isArray(v) ? v[0] : v;
   const normalizeRichTextHtml = (html) =>
@@ -703,6 +716,36 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                   </>
                 );
               })()}
+
+              {/* Amended order (was previously Issued) — show Recall/Cancel if permitted */}
+              {order.status === 'Amended' && (() => {
+                const tl = approvalData.timeline || [];
+                const canRecall = isGlobalAdmin || tl.some(s =>
+                  String(s.approver_id) === String(thisUser.id) && s.permissions?.recall_after_issue
+                );
+                const canCancel = isGlobalAdmin || tl.some(s =>
+                  String(s.approver_id) === String(thisUser.id) && s.permissions?.cancel_after_issue
+                );
+                if (!canRecall && !canCancel) return null;
+                return (
+                  <>
+                    {canRecall && (
+                      <button disabled={actionLoading}
+                        onClick={() => { setActionComment(""); setActionModal({ open: true, type: 'Recalled' }); setActiveTab('Approvals'); }}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-sm text-xs transition-all disabled:opacity-60">
+                        Recall
+                      </button>
+                    )}
+                    {canCancel && (
+                      <button disabled={actionLoading}
+                        onClick={() => { setActionComment(""); setActionModal({ open: true, type: 'Cancelled' }); setActiveTab('Approvals'); }}
+                        className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-lg shadow-sm text-xs transition-all disabled:opacity-60">
+                        Cancel Order
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -710,19 +753,34 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
         <div className="px-14 pb-4">
           {(() => {
             const isPending = order.order_number?.startsWith("PENDING-");
-            const statusLabel = order.status ? order.status.toString().trim().toUpperCase() : "DRAFT";
+            const statusRaw = order.status ? order.status.toString().trim() : "Draft";
+            const statusLabel = statusRaw.toUpperCase();
+            
             const displayNo = isPending
-              ? (statusLabel === "REVIEW" ? "IN REVIEW" : statusLabel)
+              ? (statusLabel === "DRAFT" ? "DRAFT" : (statusLabel === "REVIEW" ? "IN REVIEW" : statusLabel))
               : order.order_number;
+
+            // Status Badge Colors (Matching Table View)
+            const getStatusColor = (s) => {
+              const low = s.toLowerCase();
+              if (low === 'draft') return 'bg-slate-100 text-slate-600 border-slate-200';
+              if (low === 'issued') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+              if (low === 'amended') return 'bg-amber-50 text-amber-700 border-amber-200';
+              if (low === 'review' || low === 'in review') return 'bg-blue-50 text-blue-700 border-blue-200';
+              return 'bg-slate-100 text-slate-600 border-slate-200';
+            };
+
             return (
               <div className="flex flex-col gap-1">
-                <h1 className="text-2xl font-black text-slate-800 flex items-center gap-2">
-                  {order.order_type === 'Supply' ? 'Purchase Order' : 'Work Order'}
-                  <span className={isPending ? "text-amber-600 font-semibold text-xs bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100 uppercase tracking-[0.15em]" : "text-indigo-600 font-black tracking-tight"}>
-                    {displayNo}
+                <div className="flex items-center gap-3 flex-wrap">
+                  <h1 className="text-2xl font-black text-slate-800">
+                    {order.order_type === 'Supply' ? 'Purchase Order' : 'Work Order'}
+                  </h1>
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border shadow-sm ${getStatusColor(statusRaw)}`}>
+                    {statusRaw}
                   </span>
-                </h1>
-                <div className="mt-3 flex items-center gap-4 bg-indigo-50/50 px-5 py-3 rounded-r-xl border-l-4 border-[#1b3e8a] shadow-sm max-w-4xl">
+                </div>
+                <div className="mt-3 flex items-center gap-4 bg-indigo-50/50 px-5 py-2.5 rounded-r-xl border-l-4 border-[#1b3e8a] shadow-sm max-w-4xl">
                   <span className="text-[10px] font-black text-[#1b3e8a] uppercase tracking-[0.2em] shrink-0">Subject :</span>
                   <span className="text-[13px] font-bold text-slate-700 uppercase tracking-tight leading-none">{order.subject || order.order_name || 'N/A'}</span>
                 </div>
@@ -760,49 +818,44 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
           {/* Shown when this order IS the pending clone (status = Amendment Request)
               and a matching pending row exists. Reviewer sees reason + attachment +
               Approve/Reject inline so they don't have to bounce to Inbox. */}
-          {order.status === "Amendment Request" && pendingAmend && (
-            <div className="mb-6 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-5">
-              <div className="flex items-start gap-4">
-                <div className="h-10 w-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600 shrink-0">
-                  <Package size={20} />
+          {/* ── INLINE AMENDMENT REVIEW BANNER ── */}
+          {/* Only show if we have a pending amendment AND the current order status IS 'Amendment Request' */}
+          {pendingAmend && (order.status === "Amendment Request" || order.status === "Amend Request") && (
+            <div className="mb-6 print:hidden">
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl px-6 py-4 flex items-start justify-between shadow-sm">
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="bg-amber-600 text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">Amend Request</span>
+                    <span className="text-xs font-medium text-slate-500">Requested by: <span className="text-slate-900 font-bold">{pendingAmend?.user_name || "User"}</span></span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="text-[10px] font-bold text-amber-800/40 uppercase tracking-widest mt-1 shrink-0">Reason:</span>
+                    <p className="text-sm text-slate-700 font-medium leading-relaxed">{pendingAmend.reason}</p>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2 flex-wrap">
-                    <h3 className="text-sm font-bold text-amber-900">Amendment Pending Review</h3>
-                    <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded">
-                      Requested by {pendingAmend.requestor?.name || "—"}
-                    </span>
-                  </div>
-                  <div className="bg-white border border-amber-100 rounded-lg p-3 mb-3">
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Reason</p>
-                    <p className="text-sm text-slate-700 leading-relaxed">{pendingAmend.reason}</p>
-                  </div>
+
+                <div className="flex items-center gap-3 shrink-0 pt-1 ml-10">
                   {pendingAmend.attachment_url && (
-                    <a href={pendingAmend.attachment_url} target="_blank" rel="noreferrer"
-                      className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-amber-200 rounded-lg text-[11px] font-bold text-amber-700 hover:bg-amber-100 transition mb-3">
-                      <FileText size={12} /> View Attached Proof
+                    <a href={pendingAmend.attachment_url} target="_blank" rel="noreferrer preconnect" 
+                       className="h-9 w-9 flex items-center justify-center bg-white border border-amber-200 text-amber-700 hover:bg-amber-100 rounded-xl transition-all shadow-sm"
+                       title="View Attachment">
+                      <FileText size={18} />
                     </a>
                   )}
-                  <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-amber-200">
-                    {canManageAmend ? (
-                      <>
-                        <button
-                          disabled={amendActionLoading}
-                          onClick={() => handleAmendDecision("Approved")}
-                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm text-xs transition disabled:opacity-50">
-                          {amendActionLoading ? "..." : "Approve Amendment"}
-                        </button>
-                        <button
-                          disabled={amendActionLoading}
-                          onClick={() => handleAmendDecision("Rejected")}
-                          className="px-4 py-2 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold rounded-lg text-xs transition disabled:opacity-50">
-                          Reject
-                        </button>
-                      </>
-                    ) : (
-                      <p className="text-[11px] text-amber-700 italic">Only users with Manage Amend permission can approve or reject this request.</p>
-                    )}
-                  </div>
+                  {canManageAmend ? (
+                    <div className="flex items-center gap-2 border-l border-amber-200 pl-3">
+                      <button disabled={amendActionLoading} onClick={() => handleAmendDecision("Approved")}
+                        className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-all shadow-sm">
+                        Approve
+                      </button>
+                      <button disabled={amendActionLoading} onClick={() => handleAmendDecision("Rejected")}
+                        className="px-6 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-all shadow-sm">
+                        Reject
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-amber-700 italic">Approval permissions required.</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -865,8 +918,8 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                   <div className="space-y-1">
                     <div className="flex gap-3"><span className="text-slate-400 w-32 shrink-0">GST No</span><span className="font-bold font-mono uppercase text-slate-900 text-[11px]">{vend.gstin || 'NA'}</span></div>
                     <div className="flex gap-3"><span className="text-slate-400 w-32 shrink-0">Pan No</span><span className="font-bold font-mono uppercase text-slate-900 text-[11px]">{vend.pan || 'NA'}</span></div>
-                    <div className="flex gap-3"><span className="text-slate-400 w-32 shrink-0">Aadhar No</span><span className="font-bold font-mono uppercase text-sky-600 text-[11px] italic">{vend.aadhar || vend.aadhar_no || 'NA'}</span></div>
-                    <div className="flex gap-3"><span className="text-slate-400 w-32 shrink-0">MSME No</span><span className="font-bold font-mono uppercase text-sky-600 text-[11px] italic">{vend.msme_number || vend.msme || vend.msme_no || 'NA'}</span></div>
+                    <div className="flex gap-3"><span className="text-slate-400 w-32 shrink-0">Aadhar No</span><span className="font-bold font-mono uppercase text-slate-900 text-[11px]">{vend.aadhar || vend.aadhar_no || 'N/A'}</span></div>
+                    <div className="flex gap-3"><span className="text-slate-400 w-32 shrink-0">MSME No</span><span className="font-bold font-mono uppercase text-slate-900 text-[11px]">{vend.msme_number || vend.msme || vend.msme_no || 'N/A'}</span></div>
                   </div>
                 </div>
                 <div className="pt-2">
@@ -899,11 +952,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                       {contacts.map((c, i) => (
                         <div key={i} className="flex flex-col gap-0.5">
                           <p className="text-slate-900 font-bold text-[11px]">{c.personName || c.person_name}</p>
-                          <div className="flex gap-2 text-[10px] text-slate-500">
-                            <span>{c.designation}</span>
-                            <span>�</span>
-                            <span>{c.contactNumber || c.contact_number}</span>
-                          </div>
+                          <p className="text-[10px] text-slate-500">{c.contactNumber || c.contact_number}</p>
                         </div>
                       ))}
                     </div>
@@ -950,11 +999,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {hydrating && groupedItems.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} className="px-6 py-8 text-center text-xs font-semibold text-slate-400">
-                        Loading line items...
-                      </td>
-                    </tr>
+                    null
                   ) : groupedItems.map((it, idx) => (
                     <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                       {!it._isSubRow && (
@@ -1322,7 +1367,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
 
             <div className="space-y-8">
               {approvalData.timeline.length === 0 ? (
-                <div className="p-8 text-center bg-white rounded-xl border border-slate-200 text-slate-400">No approvals found</div>
+                null
               ) : (
                 approvalData.timeline.map((step, idx) => (
                   <div key={idx} className="relative flex gap-4">
@@ -1429,21 +1474,22 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
             {amendChain.length === 0 ? (
               <p className="py-8 text-center text-sm text-slate-400">No version history yet.</p>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-slate-200">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+              <div className="overflow-hidden rounded-xl border border-slate-200 shadow-sm">
+                <table className="w-full text-sm border-collapse">
+                  <thead className="bg-slate-100/80 text-[10px] font-black text-slate-500 uppercase tracking-widest">
                     <tr>
-                      <th className="px-4 py-3 text-left border-b border-slate-200">Version</th>
-                      <th className="px-4 py-3 text-left border-b border-slate-200">Order Number</th>
-                      <th className="px-4 py-3 text-left border-b border-slate-200">Status</th>
-                      <th className="px-4 py-3 text-left border-b border-slate-200">Vendor</th>
-                      <th className="px-4 py-3 text-left border-b border-slate-200">Issued Date</th>
-                      <th className="px-4 py-3 text-left border-b border-slate-200">Amend Request Date</th>
-                      <th className="px-4 py-3 text-left border-b border-slate-200">Amend Date</th>
-                      <th className="px-4 py-3 text-center border-b border-slate-200">Open</th>
+                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Version</th>
+                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Order Number</th>
+                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Status</th>
+                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Vendor</th>
+                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Issued Date</th>
+                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Amend Req.</th>
+                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Amend Date</th>
+                      <th className="px-4 py-3.5 text-center border-r border-slate-200/60">Audit</th>
+                      <th className="px-4 py-3.5 text-center">Open</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {amendChain.map((row, idx) => {
                       const isCurrent = row.id === orderId;
                       const isLatest = idx === amendChain.length - 1;
@@ -1452,32 +1498,49 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                         row.status === "Amended"  ? "bg-slate-100 text-slate-600 border-slate-200" :
                         row.status === "Draft"    ? "bg-blue-50 text-blue-700 border-blue-200" :
                         row.status === "Amendment Request" ? "bg-amber-50 text-amber-700 border-amber-200" :
-                                                    "bg-slate-50 text-slate-500 border-slate-200";
+                                                     "bg-slate-50 text-slate-500 border-slate-200";
                       const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString("en-IN") : <span className="text-slate-300">—</span>;
                       return (
-                        <tr key={row.id} className={`${isCurrent ? "bg-indigo-50/40" : ""} border-b border-slate-100 last:border-0`}>
-                          <td className="px-4 py-3 font-semibold text-slate-700">v{idx + 1}</td>
-                          <td className="px-4 py-3 font-mono text-[12px] text-slate-700">{row.order_number}</td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded border ${statusColor}`}>
-                              {row.status}
-                            </span>
-                            {isLatest && row.status === "Issued" && (
-                              <span className="ml-2 inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 uppercase tracking-widest px-1.5 py-0.5 rounded bg-emerald-100 border border-emerald-200">Active</span>
+                        <tr key={row.id} className={`${isCurrent ? "bg-indigo-50/40" : "hover:bg-slate-50/50"} transition-colors`}>
+                          <td className="px-4 py-4 font-bold text-slate-800 border-r border-slate-100">v{idx + 1}</td>
+                          <td className="px-4 py-4 font-mono text-[11px] font-bold text-indigo-900 whitespace-nowrap border-r border-slate-100">{row.order_number}</td>
+                          <td className="px-4 py-4 border-r border-slate-100">
+                            <div className="flex flex-wrap gap-1.5 items-center">
+                              <span className={`inline-flex items-center text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${statusColor}`}>
+                                {row.status}
+                              </span>
+                              {isLatest && row.status === "Issued" && (
+                                <span className="inline-flex items-center text-[9px] font-black text-white uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-600 shadow-sm shadow-emerald-100">Active</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 text-[13px] font-medium text-slate-600 border-r border-slate-100">{row.vendor_name || "—"}</td>
+                          <td className="px-4 py-4 text-[12px] font-medium text-slate-500 whitespace-nowrap border-r border-slate-100">{fmtDate(row.issued_at)}</td>
+                          <td className="px-4 py-4 text-[12px] font-medium text-slate-500 whitespace-nowrap border-r border-slate-100">{fmtDate(row.amend_request_at)}</td>
+                          <td className="px-4 py-4 text-[12px] font-medium text-slate-500 whitespace-nowrap border-r border-slate-100">{fmtDate(row.amended_at)}</td>
+                          <td className="px-4 py-4 text-center border-r border-slate-100">
+                            {row.amend_details ? (
+                              <button onClick={() => setInfoModal({ open: true, data: row.amend_details })}
+                                className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-all border border-indigo-100"
+                                title="View Request Details">
+                                <ShieldQuestion size={14} />
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">—</span>
                             )}
                           </td>
-                          <td className="px-4 py-3 text-slate-600">{row.vendor_name || "—"}</td>
-                          <td className="px-4 py-3 text-[12px] text-slate-500 whitespace-nowrap">{fmtDate(row.issued_at)}</td>
-                          <td className="px-4 py-3 text-[12px] text-slate-500 whitespace-nowrap">{fmtDate(row.amend_request_at)}</td>
-                          <td className="px-4 py-3 text-[12px] text-slate-500 whitespace-nowrap">{fmtDate(row.amended_at)}</td>
-                          <td className="px-4 py-3 text-center">
+                          <td className="px-4 py-4 text-center">
                             {isCurrent ? (
-                              <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">You are here</span>
+                              <div className="flex flex-col items-center">
+                                <span className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">You are</span>
+                                <span className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">here</span>
+                              </div>
                             ) : (
                               <button onClick={() => onBack && onBack(row.id)}
-                                className="p-1.5 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition"
+                                className="group/btn flex items-center gap-1.5 mx-auto px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 hover:border-indigo-200 hover:shadow-sm transition-all shadow-sm shadow-slate-100"
                                 title="Open this version">
-                                <FileText size={14} />
+                                <Eye size={14} className="group-hover/btn:scale-110 transition-transform" />
+                                <span className="text-[10px] font-bold uppercase tracking-tight">View</span>
                               </button>
                             )}
                           </td>
@@ -1488,6 +1551,72 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                 </table>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Amendment Info Modal */}
+      {infoModal.open && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600 shadow-sm">
+                  <ShieldQuestion size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Amendment Audit</h3>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">History Details</p>
+                </div>
+              </div>
+              <button onClick={() => setInfoModal({ open: false, data: null })} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Requested By</p>
+                  <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5"><User size={12} className="text-indigo-400" /> {infoModal.data.requested_by}</p>
+                  <p className="text-[10px] font-medium text-slate-500 italic">{new Date(infoModal.data.requested_at).toLocaleString("en-IN")}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Approved By</p>
+                  <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5"><ShieldQuestion size={12} className="text-emerald-400" /> {infoModal.data.approved_by}</p>
+                  <p className="text-[10px] font-medium text-slate-500 italic">{infoModal.data.approved_at ? new Date(infoModal.data.approved_at).toLocaleString("en-IN") : "Pending"}</p>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Reason for Amendment</p>
+                <p className="text-[13px] text-slate-700 leading-relaxed font-medium">"{infoModal.data.reason}"</p>
+              </div>
+
+              {infoModal.data.attachment_url && (
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Supporting Document</p>
+                  <a href={infoModal.data.attachment_url} target="_blank" rel="noreferrer" 
+                    className="flex items-center gap-3 p-3 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-all group">
+                    <div className="w-8 h-8 bg-white rounded-lg flex items-center justify-center text-indigo-600 shadow-sm">
+                      <FileText size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold text-indigo-900 truncate">View Proof Document</p>
+                      <p className="text-[10px] text-indigo-400 font-medium italic">Click to open in new tab</p>
+                    </div>
+                    <Download size={14} className="text-indigo-300 group-hover:text-indigo-600 transition-colors" />
+                  </a>
+                </div>
+              )}
+
+              <button
+                onClick={() => setInfoModal({ open: false, data: null })}
+                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition-all shadow-lg shadow-slate-200"
+              >
+                Close Details
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1514,7 +1643,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
             <div className="flex justify-center px-4 pb-8 bg-slate-300">
               <iframe
                 title="Order PDF"
-                src={`${API}/api/orders/${data.order.id}/preview?t=${Date.now()}`}
+                src={`${API}/api/orders/${data.order.id}/preview`}
                 className="bg-white shadow-xl"
                 style={{ border: 0, width: "210mm", maxWidth: "100%", height: "297mm" }}
               />
@@ -1872,26 +2001,22 @@ const DocCard = ({ doc, readOnly = false, onDelete, isImage, formatBytes, accent
   const isPdf = /\.pdf(\?|$)/i.test(doc.name) || /\.pdf(\?|$)/i.test(doc.url || "");
   return (
     <div className="group bg-slate-50 border border-slate-200 rounded-xl overflow-hidden hover:shadow-md hover:border-slate-300 transition-all">
-      <a href={doc.url} target="_blank" rel="noreferrer" className="relative block aspect-[4/3] bg-slate-100 overflow-hidden">
+      <a href={doc.url} target="_blank" rel="noreferrer" className="relative block aspect-[4/3] bg-slate-50 overflow-hidden group/link">
         {img ? (
-          <img src={doc.url} alt={doc.name} className="w-full h-full object-cover" />
-        ) : isPdf ? (
-          <>
-            <iframe
-              src={`${doc.url}#toolbar=0&navpanes=0&scrollbar=0&view=FitH&page=1`}
-              title={doc.name}
-              scrolling="no"
-              className="pointer-events-none absolute top-0 left-0"
-              style={{ width: "calc(100% + 24px)", height: "calc(100% + 24px)" }}
-              loading="lazy"
-            />
-            <div className="absolute inset-0 bg-transparent" />
-          </>
+          <img src={doc.url} alt={doc.name} className="w-full h-full object-cover group-hover/link:scale-110 transition-transform duration-500" />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <FileText size={36} className="text-rose-400" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${isPdf ? 'bg-rose-50 text-rose-500' : 'bg-blue-50 text-blue-500'}`}>
+              {isPdf ? <FileText size={28} /> : <FileCheck size={28} />}
+            </div>
+            {isPdf && <span className="text-[9px] font-black uppercase tracking-widest text-rose-400/70">PDF Document</span>}
           </div>
         )}
+        <div className="absolute inset-0 bg-slate-900/0 group-hover/link:bg-slate-900/5 transition-colors flex items-center justify-center">
+          <div className="opacity-0 group-hover/link:opacity-100 translate-y-2 group-hover/link:translate-y-0 transition-all">
+            <Eye size={20} className="text-slate-700" />
+          </div>
+        </div>
       </a>
       <div className="px-2.5 py-2 flex items-center justify-between gap-1 bg-white border-t border-slate-100">
         <span className={`text-[10px] font-semibold truncate ${accent === "emerald" ? "text-emerald-700" : "text-purple-700"}`} title={doc.name}>

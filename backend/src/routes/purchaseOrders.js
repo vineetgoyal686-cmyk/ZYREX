@@ -425,6 +425,36 @@ router.get("/", async (req, res) => {
       }
       return { ...order, made_by: displayName };
     });
+
+    // For orders with missing totals (e.g. amended clones), compute from items
+    const emptyTotalsIds = orders
+      .filter(o => !o.totals || !Number(o.totals.subtotal))
+      .map(o => o.id);
+
+    if (emptyTotalsIds.length > 0) {
+      const { data: itemRows } = await supabase.schema("procurement")
+        .from("purchase_order_items")
+        .select("order_id, qty, unit_rate, tax_pct, amount")
+        .in("order_id", emptyTotalsIds);
+
+      const itemsByOrder = {};
+      (itemRows || []).forEach(it => {
+        if (!itemsByOrder[it.order_id]) itemsByOrder[it.order_id] = [];
+        itemsByOrder[it.order_id].push(it);
+      });
+
+      orders.forEach(o => {
+        if (emptyTotalsIds.includes(o.id) && itemsByOrder[o.id]?.length > 0) {
+          const its = itemsByOrder[o.id];
+          const subtotal = its.reduce((s, it) => s + (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0), 0);
+          const gst = its.reduce((s, it) => {
+            const base = Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0;
+            return s + (base * (Number(it.tax_pct) || 0) / 100);
+          }, 0);
+          o.totals = { ...(o.totals || {}), subtotal, gst, grandTotal: subtotal + gst };
+        }
+      });
+    }
     
     // Skip generating signed URLs for list view to drastically improve load times
     const sanitized = sanitizeRichTextDeep(orders);
@@ -448,7 +478,7 @@ router.get("/master/vendor-data", async (_req, res) => {
       supabase.schema("procurement")
         .from("purchase_orders")
         .select("id, order_number, order_type, status, totals, vendor_id, site_id, snapshot, created_at, date_of_creation, sites(site_code, city, state), companies(company_code), vendors(id, vendor_code, vendor_name, email, mobile, bank_city, bank_state, address, company_codes)")
-        .eq("status", "Issued")
+        .in("status", ["Issued", "Amended"])
         .order("created_at", { ascending: false }),
       supabase.schema("procurement")
         .from("vendors")
@@ -640,6 +670,13 @@ router.get("/:id", async (req, res) => {
     if (itemErr) throw itemErr;
 
     const signedOrder = await signOrderStorageUrls(order);
+
+    // Resolve made_by UUID → user name (same as list route)
+    if (signedOrder.made_by && signedOrder.made_by.length === 36 && signedOrder.made_by.includes('-')) {
+      const { data: u } = await supabase.from("users").select("name").eq("id", signedOrder.made_by).single();
+      if (u?.name) signedOrder.made_by = u.name;
+    }
+
     res.json({ order: sanitizeRichTextDeep(signedOrder), items: sanitizeRichTextDeep(items || []) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1128,7 +1165,11 @@ router.put("/:id", upload.fields([
         .eq("id", req.params.id)
         .single();
 
-      const needsNumber = curr && (!mainData.order_number || mainData.order_number.startsWith("PENDING-") || curr.order_number?.startsWith("PENDING-"));
+      // Only generate a new number if the current one is a temporary "PENDING-" ID.
+      // If it's already a final number (like .../1A from an amendment), keep it.
+      const isPending = curr?.order_number?.startsWith("PENDING-") || mainData.order_number?.startsWith("PENDING-");
+      const needsNumber = curr && isPending;
+
       if (needsNumber && curr.site_id) {
         try {
           const fy = getFinancialYear();
@@ -1164,6 +1205,42 @@ router.put("/:id", upload.fields([
           }
         } catch (numErr) {
           console.error("Number assignment failed:", numErr.message);
+        }
+      }
+    }
+
+    // If this is a status-only update and totals are missing, auto-calculate from existing items
+    if (!itemsProvided && (!mainData.totals || !Number(mainData.totals?.subtotal))) {
+      const { data: existingOrder } = await supabase.schema("procurement")
+        .from("purchase_orders").select("totals").eq("id", req.params.id).single();
+
+      if (!existingOrder?.totals || !Number(existingOrder.totals?.subtotal)) {
+        const { data: itsRows } = await supabase.schema("procurement")
+          .from("purchase_order_items")
+          .select("qty, unit_rate, tax_pct, discount_pct, amount")
+          .eq("order_id", req.params.id);
+
+        if (itsRows && itsRows.length > 0) {
+          const subtotal = itsRows.reduce((s, it) => s + (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0), 0);
+          const itemsDiscSum = itsRows.reduce((s, it) => s + (Number(it.qty) * Number(it.unit_rate) * (Number(it.discount_pct) || 0) / 100), 0);
+          const itemGst = itsRows.reduce((s, it) => {
+            const net = (Number(it.qty) * Number(it.unit_rate)) * (1 - (Number(it.discount_pct) || 0) / 100);
+            return s + (net * (Number(it.tax_pct) || 0) / 100);
+          }, 0);
+
+          const existingT = existingOrder?.totals || {};
+          const fAmt = Number(existingT.frightCharges || existingT.fright || 0);
+          const fTax = Number(existingT.frightTax || 0);
+          const fGst = fAmt * (fTax / 100);
+
+          mainData.totals = {
+            ...existingT,
+            ...(mainData.totals || {}),
+            subtotal,
+            totalDiscountAmt: itemsDiscSum,
+            gst: itemGst + fGst,
+            grandTotal: Math.round(subtotal - itemsDiscSum + fAmt + itemGst + fGst),
+          };
         }
       }
     }

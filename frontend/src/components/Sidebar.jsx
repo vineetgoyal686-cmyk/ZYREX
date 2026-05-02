@@ -282,7 +282,12 @@ export default function Sidebar({
 
   useEffect(() => {
     let alive = true;
-    (async () => {
+
+    // 1. Instant Render from Cache
+    const cachedCount = localStorage.getItem("last_approval_count");
+    if (cachedCount) setApprovalCount(parseInt(cachedCount, 10));
+
+    const fetchCounts = async () => {
       try {
         const [ordersRes, intakesRes, amendRes] = await Promise.all([
           fetch(`${API}/api/orders`),
@@ -295,16 +300,25 @@ export default function Sidebar({
         const intakesData = intakesRes.ok ? await intakesRes.json().catch(() => ({})) : {};
         const amendData = amendRes.ok ? await amendRes.json().catch(() => ({})) : {};
 
-        const orderCount = (ordersData.orders || []).filter((o) => ["Review", "Pending Issue"].includes(o?.status)).length;
+        const orderCount = (ordersData.orders || []).filter((o) => ["Pending Issue", "To Issue"].includes(o?.status)).length;
         const intakeCount = (intakesData.intakes || []).filter((i) => ["submitted", "in_review"].includes(i?.status)).length;
         const amendmentCount = (amendData.requests || []).length;
-        if (alive) setApprovalCount(orderCount + intakeCount + amendmentCount);
+        
+        const newTotal = orderCount + intakeCount + amendmentCount;
+        if (alive) {
+          setApprovalCount(newTotal);
+          // 2. Update Cache for next time
+          localStorage.setItem("last_approval_count", newTotal.toString());
+        }
       } catch (err) {
         console.error("Sidebar fetch error:", err);
         if (alive) setApprovalCount(0);
       }
-    })();
-    return () => { alive = false; };
+    };
+
+    fetchCounts();
+    const interval = setInterval(fetchCounts, 3000); 
+    return () => { alive = false; clearInterval(interval); };
   }, []);
 
   const isTabVisible = (tabId) => {

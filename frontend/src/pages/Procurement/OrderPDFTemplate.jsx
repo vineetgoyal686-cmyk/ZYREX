@@ -1760,7 +1760,7 @@ table tbody td[rowspan] {
                             <div style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', borderBottom: '1.5px solid #94a3b8' }} />
                           )}
                         </div>
-                        <p style={{ fontSize: '13px', fontWeight: 600, fontStyle: 'italic', color: '#000000', marginBottom: '14px' }}>
+                        <p style={{ fontSize: '13px', fontWeight: 600, color: '#000000', marginBottom: '14px' }}>
                           (Authorized Signature)
                         </p>
                         <div style={{ fontSize: '13px', lineHeight: '1.8', color: '#000000' }}>
@@ -1795,7 +1795,7 @@ table tbody td[rowspan] {
                         <div style={{ display: 'none' }}>
                           <div style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', borderBottom: '1.5px solid #94a3b8' }} />
                         </div>
-                        <p style={{ fontSize: '13px', fontWeight: 600, fontStyle: 'italic', color: '#000000', marginBottom: '14px' }}>
+                        <p style={{ fontSize: '13px', fontWeight: 600, color: '#000000', marginBottom: '14px' }}>
                           (Agreed & Accepted by)
                         </p>
                         <div style={{ fontSize: '13px', lineHeight: '1.8', color: '#000000' }}>

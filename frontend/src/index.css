@@ -34,3 +34,18 @@ body {
 .quill-content strong { font-weight: bold; }
 .quill-content em     { font-style: italic; }
 .quill-content u      { text-decoration: underline; }
+ 
+/* Custom Smooth Loader */
+.smooth-loader {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: conic-gradient(#0000 10%, currentColor);
+  -webkit-mask: radial-gradient(farthest-side, #0000 calc(100% - 3px), #000 0);
+  animation: smooth-spin 0.8s linear infinite;
+}
+
+@keyframes smooth-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

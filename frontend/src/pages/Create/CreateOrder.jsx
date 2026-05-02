@@ -431,7 +431,13 @@ function makeGroup() {
 function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const user = JSON.parse(localStorage.getItem("bms_user") || "{}");
 
-  const [loading, setLoading] = useState(false);
+  const [orders, setOrders] = useState(() => {
+    try {
+      const cached = localStorage.getItem("bms_procurement_orders");
+      return cached ? JSON.parse(cached) : [];
+    } catch { return []; }
+  });
+  const [loading, setLoading] = useState(orders.length === 0);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
   const [actionModal, setActionModal] = useState({ type: null, data: null });
@@ -447,6 +453,26 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const [itemsList, setItemsList] = useState([]);
   const [clauses, setClauses] = useState([]);
   const [uomList, setUomList] = useState([]);
+
+  useEffect(() => {
+    fetchOrders();
+    const interval = setInterval(fetchOrders, 30000); // Background sync every 30s
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchOrders = async () => {
+    try {
+      const res = await fetch(`${API}/api/orders`);
+      const data = await res.json();
+      const newOrders = data.orders || [];
+      setOrders(newOrders);
+      localStorage.setItem("bms_procurement_orders", JSON.stringify(newOrders));
+    } catch (err) {
+      console.error("Fetch orders failed", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Auto-select site based on project prop
   useEffect(() => {
@@ -584,7 +610,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       });
 
       // 2. Map Settings & Totals
-      const t = order.totals || {};
+      let t = order.totals || {};
+      if ((!t || !t.subtotal) && order.snapshot?.totals) {
+        t = order.snapshot.totals;
+      }
       setSettings(s => ({
         ...s,
         tax: t.tax_mode === "line",
@@ -926,13 +955,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
       let rowGst = 0;
       if (settings.tax) {
-        if (settings.discountMode === "total") {
-          // Proportionate global discount applies before tax
-          const discountedBase = gross * (1 - txPct / 100);
-          rowGst = discountedBase * (tax / 100);
-        } else {
-          rowGst = base * (tax / 100);
-        }
+        // Item-level GST always uses the item's own base (line discount only, not global)
+        rowGst = base * (tax / 100);
       }
 
       subtotal += gross;
@@ -957,6 +981,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       finalGst = taxableBase * (Number(transactionTax) / 100);
     } else {
       // Individual Tax Mode
+      // If global discount is applied, proportionally reduce GST on items too
+      if (settings.discountMode === "total" && txPct > 0) {
+        finalGst = itemGstSum * (1 - txPct / 100);
+      }
       if (settings.frightMode === "before") {
         frightGst = fAmt * (Number(frightTax) / 100);
         finalGst += frightGst;
@@ -1736,13 +1764,13 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
               <div className="p-5 space-y-2.5">
                 <div className="flex justify-between text-xs font-medium text-slate-500 pb-2 border-b border-slate-100">
                   <span>Subtotal</span>
-                  <span className="font-mono font-semibold text-slate-700">₹ {totals.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                  <span className="font-mono font-bold text-indigo-600">₹ {totals.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
                 </div>
 
                 {settings.discountMode === "line" && totals.lineDiscountSum > 0 && (
                   <div className="flex justify-between items-center text-xs font-medium text-rose-500">
                     <span>Discount (Line)</span>
-                    <span className="font-mono font-semibold">
+                    <span className="font-mono font-bold text-rose-500">
                       - ₹ {totals.lineDiscountSum.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                     </span>
                   </div>
@@ -1750,10 +1778,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
                 {settings.discountMode === "total" && (
                   <div className="flex justify-between items-center text-xs font-medium text-rose-500">
-                    <span className="flex items-center gap-1">
-                      Discount <span className="text-[10px] font-normal italic">(Global)</span>
-                    </span>
-                    <div className="flex items-center gap-2">
+                    <span className="flex items-center gap-2">
+                      <span className="flex items-center gap-1">
+                        Discount <span className="text-[10px] font-normal italic">(Global)</span>
+                      </span>
                       <div className="flex items-center border border-rose-200 rounded-md bg-rose-50 overflow-hidden">
                         <input type="number"
                           value={transactionDiscount}
@@ -1762,10 +1790,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                           placeholder="0" />
                         <span className="text-[11px] text-rose-400 font-bold pr-1.5">%</span>
                       </div>
-                      <span className="font-mono font-semibold text-rose-500 w-[90px] text-right">
-                        - ₹ {(Number(totals.txDiscountAmt) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                      </span>
-                    </div>
+                    </span>
+                    <span className="font-mono font-bold text-rose-500 whitespace-nowrap text-right">
+                      - ₹ {(Number(totals.txDiscountAmt) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    </span>
                   </div>
                 )}
 
@@ -1802,7 +1830,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                       </div>
                     )}
                   </div>
-                  <span className="font-mono font-semibold text-slate-700 w-[120px] text-right">
+                  <span className="font-mono font-bold text-indigo-600 whitespace-nowrap text-right">
                     ₹ {(Number(totals.gst) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                   </span>
                 </div>
@@ -2107,7 +2135,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const [customTo, setCustomTo] = useState("");
   const [showMoreTabs, setShowMoreTabs] = useState(false);
 
-  const PRIMARY_TABS = ["All", "Draft", "Review", "To Issue", "Amendment Request", "Amended", "Issued"];
+  const PRIMARY_TABS = ["All", "Draft", "Review", "To Issue", "Issued", "Amend Request", "Amended"];
   const MORE_TABS = ["Reverted", "Rejected", "Recalled", "Cancelled"];
   const TABS = [...PRIMARY_TABS, ...MORE_TABS];
 
@@ -2654,6 +2682,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     // at some point in their lifecycle. "Amended" tab still shows only those.
     if (tabName === "Issued") return scoped.filter(o => ["Issued", "Amended"].includes(o.status)).length;
     if (tabName === "To Issue") return scoped.filter(o => ["Pending Issue", "To Issue"].includes(o.status)).length;
+    if (tabName === "Amend Request") return scoped.filter(o => ["Amendment Request", "Amend Request"].includes(o.status)).length;
     return scoped.filter(o => o.status === tabName).length;
   };
 
@@ -2701,7 +2730,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         ? ["Issued", "Amended"].includes(o.status)
         : activeTab === "To Issue"
           ? ["Pending Issue", "To Issue"].includes(o.status)
-          : o.status === activeTab;
+          : activeTab === "Amend Request"
+            ? ["Amendment Request", "Amend Request"].includes(o.status)
+            : o.status === activeTab;
     const matchSite = !filterSite || getSiteCode(o) === filterSite;
     const matchCompany = !filterCompany || getCompanyCode(o) === filterCompany;
     const matchType = !filterType || o.order_type === filterType;
@@ -3047,7 +3078,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                 { val: filterCompany, set: setFilterCompany, placeholder: "Entity", opts: companyOptions, min: 110, icon: Building2 },
                 !project && { val: filterSite, set: setFilterSite, placeholder: "Sites", opts: siteOptions, min: 100, icon: MapPin },
                 { val: filterType, set: setFilterType, placeholder: "Type", opts: ["Supply", "SITC", "ITC"], min: 100, icon: Tag },
-                activeTab === "All" && { val: filterStatus, set: setFilterStatus, placeholder: "Status", opts: ["Draft", "Review", "Pending Issue", "Amendment Request", "Amended", "Issued", "Rejected", "Cancelled"], min: 110, icon: CheckCircle2 },
+                activeTab === "All" && { val: filterStatus, set: setFilterStatus, placeholder: "Status", opts: ["Draft", "Review", "To Issue", "Amend Request", "Amended", "Issued", "Rejected", "Cancelled"], min: 110, icon: CheckCircle2 },
                 { val: filterMadeBy, set: setFilterMadeBy, placeholder: "Users", opts: madeByOptions, min: 105, icon: User }
               ].filter(Boolean).map((f, i) => (
                 <div key={i} className="relative" style={{ minWidth: f.min }}>
@@ -3094,51 +3125,52 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
           </div>
         </div>
 
-        {loading ? (
-          <div className="p-10 text-center text-slate-400 text-sm italic font-medium animate-pulse">
-            📦 Syncing orders... Please wait.
-          </div>
-        ) : (
-          <div className="overflow-x-auto w-full rounded-none thin-scrollbar-light border-r border-slate-200">
+        <div className="overflow-x-auto w-full rounded-none thin-scrollbar-light border-r border-slate-200">
             <table className="w-full text-sm text-left border-separate border-spacing-0 whitespace-nowrap border-t border-l border-slate-200">
               <thead>
                 <tr className="bg-slate-100">
-                  <th className="sticky left-0 z-20 px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 bg-slate-100 whitespace-nowrap" style={{ width: '240px', minWidth: '240px', maxWidth: '240px' }}>Order No</th>
-                  <th className="sticky z-20 px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 bg-slate-100 whitespace-nowrap text-center" style={{ left: '240px', width: '120px', minWidth: '120px', maxWidth: '120px' }}>Status</th>
-                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Order Type</th>
-                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Created By</th>
-                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Created On</th>
-                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Subject</th>
-                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Vendor</th>
-                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Issued At</th>
-                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 text-right whitespace-nowrap">Taxable Amount</th>
-                  <th className="px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-r border-slate-200 text-right whitespace-nowrap">Total Value</th>
-                  <th className="sticky right-0 z-30 px-5 py-2 text-[13px] font-semibold text-slate-500 border-b border-l border-slate-200 bg-slate-100 whitespace-nowrap [box-shadow:-1px_0_0_0_#e2e8f0]" style={{ width: '190px', minWidth: '190px', maxWidth: '190px' }}>Actions</th>
+                  <th className="sticky left-0 z-20 px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 bg-slate-100 whitespace-nowrap" style={{ width: '240px', minWidth: '240px' }}>Order No</th>
+                  <th className="sticky z-20 px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 bg-slate-100 whitespace-nowrap text-center" style={{ left: '240px', width: '130px', minWidth: '130px' }}>Status</th>
+                  <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Order Type</th>
+                  <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Created By</th>
+                  <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Created On</th>
+                  <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Subject</th>
+                  <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Vendor</th>
+                  <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Issued At</th>
+                  <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 text-right whitespace-nowrap">Taxable Amount</th>
+                  <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 text-right whitespace-nowrap">Total Value</th>
+                  <th className="sticky right-0 z-30 px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-l border-slate-200 bg-slate-100 whitespace-nowrap [box-shadow:-1px_0_0_0_#e2e8f0]" style={{ width: '180px', minWidth: '180px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.length === 0 ? (
+                {loading && filtered.length > 0 && (
+                  <tr>
+                    <td colSpan="11" className="py-4 text-center">
+                      <div className="smooth-loader w-5 h-5 text-indigo-500 mx-auto"></div>
+                    </td>
+                  </tr>
+                )}
+                {loading && filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan="11" className="py-32 text-center bg-white">
+                      <div className="smooth-loader w-8 h-8 text-indigo-600 mx-auto"></div>
+                    </td>
+                  </tr>
+                ) : filtered.length === 0 ? (
                   <tr>
                     <td colSpan="11" className="py-24 text-center bg-white">
                       <div className="flex flex-col items-center justify-center">
                         <div className="h-16 w-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 border border-slate-100">
                           <FileText size={24} className="text-slate-300" />
                         </div>
-                        <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mb-1">
-                          {search ? "No matches found" : "No orders found"}
+                        <p className="text-slate-500 font-black uppercase tracking-[0.2em] text-[10px]">
+                          No records found
                         </p>
-                        <p className="text-slate-300 text-[10px] mb-4 text-center max-w-[240px]">
-                          {search ? `Searching for "${search}" in ${activeTab} tab returned 0 results.` : `You don't have any orders in the ${activeTab} category yet.`}
-                        </p>
-                        {(search || activeTab !== "All") && (
-                          <button onClick={() => { setSearch(""); setActiveTab("All"); }} className="text-indigo-600 hover:text-indigo-700 text-xs font-bold underline underline-offset-4 decoration-indigo-200">
-                            Clear all filters
-                          </button>
-                        )}
                       </div>
                     </td>
                   </tr>
-                ) : filtered.map(o => {
+                ) :
+                  filtered.map(o => {
                   const snap = o.snapshot || {};
                   const cCode = snap.company?.companyCode || o.companies?.company_code || "-";
                   const sCode = snap.site?.siteCode || o.sites?.site_code || "-";
@@ -3150,7 +3182,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
 
                   return (
                     <tr key={o.id} className="hover:bg-slate-50 transition-colors group bg-white">
-                      <td className="sticky left-0 z-10 px-5 py-1 border-b border-r border-slate-200 bg-white group-hover:bg-slate-50 transition-colors whitespace-nowrap" style={{ width: '240px', minWidth: '240px', maxWidth: '240px' }}>
+                      <td className="sticky left-0 z-10 px-5 py-2 border-b border-r border-slate-200 bg-white group-hover:bg-slate-50 transition-colors whitespace-nowrap" style={{ width: '240px', minWidth: '240px' }}>
                         {displayNo ? (
                           <div className="flex items-center gap-2">
                             <button
@@ -3171,8 +3203,8 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                           <span className="font-medium text-[13.5px] text-slate-300">-</span>
                         )}
                       </td>
-                      <td className="sticky z-10 px-5 py-1 border-b border-r border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors" style={{ left: '240px', width: '120px', minWidth: '120px', maxWidth: '120px' }}>
-                        <span style={{ whiteSpace: 'nowrap', display: 'inline-flex' }} className={`px-2.5 py-1 rounded-full text-[11px] font-medium
+                      <td className="sticky z-10 px-5 py-2 border-b border-r border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors" style={{ left: '240px', width: '130px', minWidth: '130px' }}>
+                        <span className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold
                            ${o.status === "Draft" ? "bg-slate-100 text-slate-600" :
                             o.status === "Approved" || o.status === "Issued" ? "bg-emerald-50 text-emerald-600" :
                               o.status === "Amendment Request" ? "bg-amber-100 text-amber-700" :
@@ -3184,7 +3216,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                                           o.status === "Recalled" ? "bg-purple-50 text-purple-600" :
                                             o.status === "Cancelled" ? "bg-slate-100 text-slate-500 line-through" :
                                               "bg-slate-100 text-slate-600"}`}>
-                          {(o.status === "Pending Issue" || o.status === "To Issue") ? "To Issue" : (o.status || "Draft")}
+                          {(o.status === "Pending Issue" || o.status === "To Issue") ? "To Issue" : 
+                           (o.status === "Amendment Request" || o.status === "Amend Request") ? "Amend Request" :
+                           (o.status || "Draft")}
                         </span>
                       </td>
                       <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
@@ -3210,8 +3244,15 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                       <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-700 text-[13.5px] font-medium text-right whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">
                         {(() => {
                           const t = o.totals || {};
-                          const sub = Number(t.subtotal) || 0;
+                          let sub = Number(t.subtotal) || 0;
                           const disc = Number(t.totalDiscountAmt) || 0;
+                          // Fallback: calculate from items or snapshot if totals missing
+                          if (sub === 0) {
+                            const its = o.order_items || o.snapshot?.items || [];
+                            if (its.length > 0) {
+                              sub = its.reduce((s, it) => s + (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0), 0);
+                            }
+                          }
                           const taxable = sub - disc;
                           return taxable > 0
                             ? `₹ ${taxable.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -3220,7 +3261,19 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                       </td>
                       <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-700 text-[13.5px] font-medium text-right whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">
                         {(() => {
-                          const totalVal = Number(o.totals?.grandTotal || 0);
+                          let totalVal = Number(o.totals?.grandTotal || 0);
+                          // Fallback: calculate from items or snapshot if totals missing
+                          if (totalVal === 0) {
+                            const its = o.order_items || o.snapshot?.items || [];
+                            if (its.length > 0) {
+                              const sub = its.reduce((s, it) => s + (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0), 0);
+                              const gst = its.reduce((s, it) => {
+                                const base = Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0;
+                                return s + (base * (Number(it.tax_pct) || 0) / 100);
+                              }, 0);
+                              totalVal = sub + gst;
+                            }
+                          }
                           return totalVal > 0
                             ? `₹ ${totalVal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                             : <span className="text-slate-300 font-normal">-</span>;
@@ -3264,10 +3317,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
               </tbody>
             </table>
           </div>
-        )}
+        </div>
       </div>
-    </div>
-  );
+    );
 }
 
 // ============== MAIN CONTROLLER ==============

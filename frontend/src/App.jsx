@@ -117,11 +117,15 @@ function App() {
   // Restore tab + project from URL on load
   const [activeTab, setActiveTab] = useState(() => {
     const { isReset, tab } = parseHash();
-    return (!isReset && loggedIn) ? tab : "global_dashboard";
+    if (!isReset && loggedIn) return tab;
+    return "global_dashboard";
   });
   const [selectedProject, setSelectedProject] = useState(() => {
     const { isReset, project } = parseHash();
-    return (!isReset && loggedIn) ? project : null;
+    if (!isReset && loggedIn) {
+      return project || localStorage.getItem("last_selected_project") || null;
+    }
+    return null;
   });
 
   const [editingOrderId, setEditingOrderId] = useState(null);
@@ -224,6 +228,8 @@ function App() {
 
   const handleSetSelectedProject = (project) => {
     setSelectedProject(project);
+    if (project) localStorage.setItem("last_selected_project", project);
+    else localStorage.removeItem("last_selected_project");
     pushUrl(activeTab, project);
   };
 
@@ -254,7 +260,9 @@ function App() {
     if (activeTab === "master_data__orders") return <GlobalCreateOrder project={null} editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
     if (activeTab === "global_dashboard") return <Dashboard project="All Project" />;
     if (activeTab === "profile") return <Profile onProfileUpdate={handleProfileUpdate} onProjectsUpdate={handleProjectsUpdate} />;
-    if (activeTab === "approvals") return <Approvals />;
+    
+    // Approvals / Inbox is GLOBAL (no project needed)
+    if (activeTab === "approvals" || activeTab === "intake" || activeTab === "orders" || activeTab === "amendments") return <Approvals />;
 
     // Global Create tabs
     if (activeTab === "create__intake") return <IntakeList />;
