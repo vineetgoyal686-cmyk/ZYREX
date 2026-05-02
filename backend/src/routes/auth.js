@@ -69,9 +69,10 @@ router.post("/login", async (req, res) => {
     return res.status(401).json({ error: "Invalid email or password" });
   }
 
-  // 4. Fetch App permissions
-  const { data: perms } = await admin.from("permissions").select("*").eq("user_id", profile.id);
-  const { data: modules } = await admin.from("modules").select("*").eq("is_active", true);
+  // 4. Fetch App permissions and modules in parallel for faster login
+  const permsPromise   = admin.from("permissions").select("*").eq("user_id", profile.id);
+  const modulesPromise = admin.from("modules").select("*").eq("is_active", true);
+  const [{ data: perms }, { data: modules }] = await Promise.all([permsPromise, modulesPromise]);
 
   const app_permissions = (modules || []).map(mod => {
     const p = perms?.find(cp => cp.module_id === mod.id) || {};
@@ -93,12 +94,17 @@ router.post("/login", async (req, res) => {
     };
   });
 
-  const signedAvatar = await createSignedStorageUrl(admin, "avatars", profile.avatar);
+  const signedAvatarPromise = createSignedStorageUrl(admin, "avatars", profile.avatar);
   const signedProfilePermissions = { ...(profile.profile_permissions || {}) };
-  if (signedProfilePermissions.ui?.cover_image) {
+  const signedCoverPromise = signedProfilePermissions.ui?.cover_image
+    ? createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.cover_image)
+    : Promise.resolve(null);
+
+  const [signedAvatar, signedCoverImage] = await Promise.all([signedAvatarPromise, signedCoverPromise]);
+  if (signedCoverImage) {
     signedProfilePermissions.ui = {
       ...signedProfilePermissions.ui,
-      cover_image: await createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.cover_image),
+      cover_image: signedCoverImage,
     };
   }
 

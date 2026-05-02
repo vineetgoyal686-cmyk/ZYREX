@@ -172,12 +172,19 @@ function App() {
 
   // Fetch projects + permissions whenever logged in
   useEffect(() => {
-    if (isLoggedIn) { fetchProjects(); fetchUserPermissions(); }
-  }, [isLoggedIn]);
+    if (!isLoggedIn) return;
+    fetchProjects();
+    if (!userTabPermissions) fetchUserPermissions();
+  }, [isLoggedIn, userTabPermissions]);
 
   const handleLogin = (user) => {
     setUserRole(user.role);
     setCurrentUser(user);
+    setUserTabPermissions(() => {
+      const permMap = {};
+      (user.app_permissions || []).forEach(p => { permMap[p.module_key] = p; });
+      return { hasAny: (user.app_permissions || []).length > 0, map: permMap };
+    });
     setIsLoggedIn(true);
     setActiveTab("global_dashboard");
     pushUrl("global_dashboard", null);
@@ -189,6 +196,7 @@ function App() {
     setIsLoggedIn(false);
     setUserRole(null);
     setCurrentUser({});
+    setUserTabPermissions(null);
     setSelectedProject(null);
     setActiveTab("global_dashboard");
     window.history.replaceState(null, "", window.location.pathname);
@@ -208,7 +216,6 @@ function App() {
     setActiveTab(tab);
     pushUrl(tab, proj);
     if (isMobile) setMobileOpen(false);
-    fetchUserPermissions(); // refresh permissions on every tab switch
   };
 
   const handleSetSelectedProject = (project) => {
