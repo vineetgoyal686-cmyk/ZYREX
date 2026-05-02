@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { Plus, Upload, Search, Pencil, Trash2, X, Package, Image as ImageIcon, Eye, ChevronDown, Download, FileSpreadsheet, FileText } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -6,7 +7,7 @@ import autoTable from "jspdf-autotable";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const PER_PAGE = 10;
 const TABS = ["Supply", "SITC"];
 
@@ -93,15 +94,7 @@ function SearchableSelect({ options, value, onChange, placeholder }) {
 }
 
 export default function ItemList() {
-  const user = JSON.parse(localStorage.getItem("bms_user") || "{}");
-  const isGlobalAdmin = user.role === "global_admin";
-  const myPerms = user.app_permissions?.find(p => p.module_key === "item_list") || {};
-
-  const canAdd        = isGlobalAdmin || !!myPerms.can_add;
-  const canEdit       = isGlobalAdmin || !!myPerms.can_edit;
-  const canDelete     = isGlobalAdmin || !!myPerms.can_delete;
-  const canBulkUpload = isGlobalAdmin || !!myPerms.can_bulk_upload;
-  const canExport     = isGlobalAdmin || !!myPerms.can_export;
+  const { isGlobalAdmin, canAdd, canEdit, canDelete, canBulk: canBulkUpload, canExport } = useModulePermissions("item_list");
 
   const [items, setItems]         = useState([]);
   const [categories, setCategories] = useState([]);

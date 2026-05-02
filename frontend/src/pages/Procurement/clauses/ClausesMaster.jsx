@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useModulePermissions } from "../../../hooks/useModulePermissions";
 import {
   FileText, CreditCard, Scale, Plus, Download, Upload, X, Search,
   ChevronDown, Pencil, Trash2, FileSpreadsheet, AlignLeft, History,
@@ -10,7 +11,7 @@ import * as XLSX from "xlsx";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const PER_PAGE = 9;
 const normalizeRichTextHtml = (value) =>
   typeof value === "string"
@@ -155,6 +156,14 @@ const getCurrentUser = () => {
 export default function ClausesMaster({ type, initialViewId, initialAction, isActionOnly, onCloseModal }) {
   const cfg = TYPE_CONFIG[type] || TYPE_CONFIG.TC;
   const { label, desc, prefix, Icon: CfgIcon, iconBg, iconColor, badgeCls, numBg, numColor, borderAccent, headerBg, accentRing } = cfg;
+  const actionLabel = type === "TC" ? "T&C" : type === "PAY" ? "Payment Term" : type === "GOV" ? "Government Law" : "Annexure";
+  const titlePlaceholder = type === "TC"
+    ? "e.g. Standard Terms"
+    : type === "PAY"
+      ? "e.g. Milestone Payment"
+      : type === "GOV"
+        ? "e.g. Labour Law"
+        : "e.g. Annexure A";
 
   const [clauses,    setClauses]    = useState([]);
   const [categories, setCategories] = useState([]);
@@ -188,23 +197,10 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
   const exportRef = useRef();
   const textareaRef = useRef();
 
-  const [permissions, setPermissions] = useState({});
-  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+  const mkey = type === "TC" ? "term_condition" : type === "PAY" ? "payment_terms" : type === "GOV" ? "government_laws" : "annexure";
+  const { isGlobalAdmin, canAdd, canEdit, canDelete, canExport, canBulk } = useModulePermissions(mkey);
 
-  useEffect(() => {
-    const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
-    setIsGlobalAdmin(u.role === "global_admin");
-    const mkey = type === "TC" ? "term_condition" : type === "PAY" ? "payment_terms" : "government_laws";
-    const p = u.app_permissions?.find(ap => ap.module_key === mkey) || {};
-    setPermissions(p);
-    fetchAll();
-  }, [type]);
-
-  const canAdd = isGlobalAdmin || !!permissions.can_add;
-  const canEdit = isGlobalAdmin || !!permissions.can_edit;
-  const canDelete = isGlobalAdmin || !!permissions.can_delete;
-  const canExport = isGlobalAdmin || !!permissions.can_export;
-  const canBulk = isGlobalAdmin || !!permissions.can_bulk_upload;
+  useEffect(() => { fetchAll(); }, [type]);
 
   const fetchAll = async () => {
     setLoading(true); setPage(1);
@@ -649,7 +645,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
           {canAdd && (
           <button onClick={openAdd}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 transition-all">
-            <Plus size={15} /> Add {type === "TC" ? "T&C" : type === "PAY" ? "Payment Term" : "Law"}
+            <Plus size={15} /> Add {actionLabel}
           </button>
           )}
         </div>
@@ -734,7 +730,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-5">
             {paginated.map((c) => (
               <div key={c.id}
-                className={`bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden border-l-4 ${borderAccent} ${c.code?.startsWith('TC') ? 'xl:col-span-2' : ''} flex flex-col h-[220px]`}>
+                className={`bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden border-l-4 ${borderAccent} ${["TC", "ANX"].includes(type) ? 'xl:col-span-2' : ''} flex flex-col h-[220px]`}>
 
                 {/* Card Header */}
                 <div className={`px-5 py-3.5 bg-gradient-to-r ${headerBg} border-b border-slate-100 flex items-center justify-between gap-3`}>
@@ -901,7 +897,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                 </div>
                 <div>
                   <h2 className="text-base font-bold text-slate-800">
-                    {editId ? "Edit" : "Add"} {type === "TC" ? "T&C" : type === "PAY" ? "Payment Term" : "Government Law"}
+                    {editId ? "Edit" : "Add"} {actionLabel}
                   </h2>
                   <p className="text-xs text-slate-400">
                     {editId ? "A new version will be saved automatically" : `Code auto-generated (${prefix}-XXX)`}
@@ -920,7 +916,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                     Title <span className="text-red-400">*</span>
                   </label>
                   <input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-                    placeholder={type === "TC" ? "e.g. Standard Terms" : type === "PAY" ? "e.g. Milestone Payment" : "e.g. Labour Law"}
+                    placeholder={titlePlaceholder}
                     className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-slate-400 text-slate-700" />
                 </div>
                 <div>

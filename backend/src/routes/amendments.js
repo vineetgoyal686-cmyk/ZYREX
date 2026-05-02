@@ -1,12 +1,21 @@
 const express = require("express");
 const router  = express.Router();
 const { createClient } = require("@supabase/supabase-js");
+const {
+  normalizeStoragePath,
+  createSignedStorageUrl,
+} = require("../helpers/storageHelper");
 
 const getAdminClient = () => createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY,
   { auth: { persistSession: false, autoRefreshToken: false } }
 );
+
+const signAmendmentAttachment = async (admin, row = {}) => ({
+  ...row,
+  attachment_url: await createSignedStorageUrl(admin, "procurement-docs", row.attachment_url),
+});
 
 const extractUserId = (token) => {
   try {
@@ -147,7 +156,7 @@ router.post("/request", requireAuth, async (req, res) => {
         original_order_id: order_id,
         requestor_id:      req.userId,
         reason:            reason.trim(),
-        attachment_url:    attachment_url,
+        attachment_url:    normalizeStoragePath(attachment_url, "procurement-docs"),
         status:            "Pending",
       })
       .select()
@@ -273,11 +282,11 @@ router.get("/requests", requireAuth, async (req, res) => {
     const orderById = Object.fromEntries((orders || []).map(o => [o.id, enrichOrder(o)]));
     const userById  = Object.fromEntries((users  || []).map(u => [u.id, u]));
 
-    const enriched = rows.map(r => ({
-      ...r,
+    const enriched = await Promise.all(rows.map(async r => ({
+      ...(await signAmendmentAttachment(admin, r)),
       original_order: orderById[r.original_order_id] || null,
       requestor:      userById[r.requestor_id]  || null,
-    }));
+    })));
 
     // Debug log — trace what we're sending so we can see why cards render blank
     console.log("[/amendments/requests] amendment rows:", rows.length,
@@ -524,7 +533,7 @@ router.get("/by-clone/:cloneId", requireAuth, async (req, res) => {
     ]);
 
     res.json({
-      amendment: { ...row, original_order: orig || null, requestor: user || null },
+      amendment: { ...(await signAmendmentAttachment(admin, row)), original_order: orig || null, requestor: user || null },
     });
   } catch (err) {
     console.error("GET /amendments/by-clone failed:", err);

@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 
 const cx = (...classes) => classes.filter(Boolean).join(" ");
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
 const TAB_MODULE_KEY = {
   global_dashboard: "global_dashboard",
@@ -46,6 +46,7 @@ const TAB_MODULE_KEY = {
   master_data__products: "master_data_products",
   master_data__orders:   "master_data_orders",
   master_data__intakes:  "master_data_intakes",
+  master_data__clauses:  "master_data_clauses",
   audit: "audit",
   proc_setup__contact_list: "contact_list",
   proc_setup__company_list: "company_list",
@@ -93,6 +94,7 @@ const masterDataRows = [
   { id: "master_data__products", label: "Products Master" },
   { id: "master_data__orders", label: "Orders Master" },
   { id: "master_data__intakes", label: "Intakes Master" },
+  { id: "master_data__clauses", label: "Clauses Master" },
 ];
 
 const setupRows = [

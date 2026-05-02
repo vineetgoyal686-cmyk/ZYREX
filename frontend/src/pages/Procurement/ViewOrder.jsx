@@ -1,7 +1,50 @@
 import React, { useState, useEffect, useRef } from "react";
 import { ArrowLeft, Search, Building2, User, Landmark, MapPin, Receipt, ShieldQuestion, FileText, CheckCircle2, Phone, FileDown, Download, Eye, X, Upload, Trash2, FileCheck, Lock, ShoppingCart, Package, GitMerge } from "lucide-react";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
+const orderDetailsCache = new Map();
+const orderDetailsInflight = new Map();
+
+const getOrderCacheKey = (orderId) => String(orderId || "");
+
+export const seedOrderDetails = (order) => {
+  if (!order?.id) return;
+  const key = getOrderCacheKey(order.id);
+  const existing = orderDetailsCache.get(key);
+  if (!existing || existing.__partial) {
+    orderDetailsCache.set(key, { order, items: [], __partial: true });
+  }
+};
+
+export const preloadOrderDetails = async (orderId) => {
+  const key = getOrderCacheKey(orderId);
+  if (!key) return null;
+
+  const cached = orderDetailsCache.get(key);
+  if (cached && !cached.__partial) return cached;
+  if (orderDetailsInflight.has(key)) return orderDetailsInflight.get(key);
+
+  const promise = fetch(`${API}/api/orders/${orderId}`)
+    .then(async (res) => {
+      if (!res.ok) throw new Error("Failed to fetch order");
+      const json = await res.json();
+      const fullDetails = { ...json, __partial: false };
+      orderDetailsCache.set(key, fullDetails);
+      return fullDetails;
+    })
+    .catch((err) => {
+      orderDetailsInflight.delete(key);
+      throw err;
+    })
+    .finally(() => {
+      orderDetailsInflight.delete(key);
+    });
+
+  orderDetailsInflight.set(key, promise);
+  return promise;
+};
+
+const getCachedOrderDetails = (orderId) => orderDetailsCache.get(getOrderCacheKey(orderId)) || null;
 
 const amountToWords = (amount) => {
   if (!amount || isNaN(amount) || amount === 0) return "Zero Rupees Only";
@@ -29,10 +72,11 @@ const amountToWords = (amount) => {
 };
 
 
-const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {} }) => {
+const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = null }) => {
   const [data, setData] = useState({ order: null, items: [] });
   const [approvalData, setApprovalData] = useState({ request: null, timeline: [] });
   const [loading, setLoading] = useState(true);
+  const [hydrating, setHydrating] = useState(false);
   const [activeTab, setActiveTab] = useState("Order Details");
   const thisUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
   const isGlobalAdmin = thisUser.role === "global_admin";
@@ -132,13 +176,51 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {} }) => {
   }, [data.items]);
 
   useEffect(() => {
-    if (orderId) {
-      fetchOrderDetails();
-      fetchAmendHistory();
-      // Prime the server-side preview HTML cache so clicking "PDF View" is instant
-      fetch(`${API}/api/orders/${orderId}/preview`, { method: "GET" }).catch(() => {});
+    if (!orderId) return undefined;
+
+    const cached = getCachedOrderDetails(orderId);
+    if (cached?.order) {
+      setData(cached);
+      setLoading(false);
+      setHydrating(!!cached.__partial);
+    } else if (initialOrder) {
+      const seeded = { order: initialOrder, items: [], __partial: true };
+      seedOrderDetails(initialOrder);
+      setData(seeded);
+      setLoading(false);
+      setHydrating(true);
+    } else {
+      setData({ order: null, items: [] });
+      setLoading(true);
+      setHydrating(false);
     }
-  }, [orderId]);
+
+    fetchOrderDetails();
+    fetchAmendHistory();
+
+    const scheduleIdle = window.requestIdleCallback || ((cb) => window.setTimeout(cb, 1500));
+    const cancelIdle = window.cancelIdleCallback || window.clearTimeout;
+    const idleId = scheduleIdle(() => {
+      // Prime the server-side preview HTML cache after the page has painted.
+      fetch(`${API}/api/orders/${orderId}/preview`, { method: "GET" }).catch(() => {});
+    });
+
+    return () => cancelIdle(idleId);
+  }, [orderId, initialOrder]);
+
+  const fetchApprovalData = async () => {
+    try {
+      const wRes = await fetch(`${API}/api/approvals/requests/${orderId}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem("bms_token") || ""}` }
+      });
+      if (wRes.ok) {
+        const wJson = await wRes.json();
+        setApprovalData({ request: wJson.request || null, timeline: wJson.timeline || [] });
+      }
+    } catch (err) {
+      console.error("Approval fetch failed", err);
+    }
+  };
 
   const fetchAmendHistory = async () => {
     const token = localStorage.getItem("bms_token") || "";
@@ -209,25 +291,26 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {} }) => {
   };
 
   const fetchOrderDetails = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`${API}/api/orders/${orderId}`);
-      if (!res.ok) throw new Error("Failed to fetch order");
-      const json = await res.json();
-      setData(json);
+    const cached = getCachedOrderDetails(orderId);
+    if (cached?.order) {
+      setData(cached);
+      setLoading(false);
+      setHydrating(!!cached.__partial);
+    } else if (!initialOrder) {
+      setLoading(true);
+    }
 
-      // Fetch workflow request
-      const wRes = await fetch(`${API}/api/approvals/requests/${orderId}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem("bms_token") || ""}` }
-      });
-      if (wRes.ok) {
-        const wJson = await wRes.json();
-        setApprovalData({ request: wJson.request || null, timeline: wJson.timeline || [] });
-      }
+    try {
+      const json = await preloadOrderDetails(orderId);
+      if (json) setData(json);
     } catch (err) {
       console.error(err);
+    } finally {
+      setLoading(false);
+      setHydrating(false);
     }
-    setLoading(false);
+
+    fetchApprovalData();
   };
 
   const handleApprovalAction = async (actionType) => {
@@ -660,6 +743,14 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {} }) => {
         </div>
       </div>
 
+      {hydrating && (
+        <div className="px-14 pt-3 print:hidden">
+          <div className="max-w-[1400px] rounded-lg border border-indigo-100 bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-700">
+            Loading full line items and documents...
+          </div>
+        </div>
+      )}
+
       {activeTab === "Order Details" && (
         <div className="px-14 py-3 max-w-[1400px] print:hidden">
           {/* ── INLINE AMENDMENT REVIEW BANNER ── */}
@@ -863,7 +954,13 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {} }) => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {groupedItems.map((it, idx) => (
+                  {hydrating && groupedItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="px-6 py-8 text-center text-xs font-semibold text-slate-400">
+                        Loading line items...
+                      </td>
+                    </tr>
+                  ) : groupedItems.map((it, idx) => (
                     <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
                       {!it._isSubRow && (
                         <td rowSpan={it._rowSpan} className="px-4 py-3 text-center text-slate-600 font-bold text-[10px] border-r border-slate-200/40 sticky left-0 bg-white z-10 align-top">

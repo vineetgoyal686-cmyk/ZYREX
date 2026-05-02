@@ -2,6 +2,11 @@ const express  = require("express");
 const router   = express.Router();
 const multer   = require("multer");
 const supabase  = require("../helpers/supabaseHelper");
+const {
+  normalizeStoragePath,
+  uploadStorageFile,
+  createSignedStorageUrl,
+} = require("../helpers/storageHelper");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -10,12 +15,7 @@ const uploadLogo = async (files) => {
   if (!files?.logo) return null;
   const file = files.logo[0];
   const path = `projects/logo_${Date.now()}_${file.originalname}`;
-  const { error } = await supabase.storage
-    .from("procurement-images")
-    .upload(path, file.buffer, { contentType: file.mimetype, upsert: true });
-  if (error) throw new Error(`Storage upload failed: ${error.message}`);
-  const { data } = supabase.storage.from("procurement-images").getPublicUrl(path);
-  return data.publicUrl;
+  return uploadStorageFile(supabase, "procurement-images", path, file.buffer, file.mimetype);
 };
 
 /* ── GET all projects ── */
@@ -26,7 +26,7 @@ router.get("/", async (_req, res) => {
       .select("*")
       .order("created_at", { ascending: true });
     if (error) throw error;
-    const projects = (data || []).map(r => ({
+    const projects = await Promise.all((data || []).map(async r => ({
       id:          r.id,
       projectName: r.project_name || "",
       projectCode: r.project_code || "",
@@ -34,9 +34,9 @@ router.get("/", async (_req, res) => {
       state:       r.state        || "",
       pincode:     r.pincode      || "",
       address:     r.address      || "",
-      logoUrl:     r.logo_url     || "",
+      logoUrl:     await createSignedStorageUrl(supabase, "procurement-images", r.logo_url),
       isActive:    r.is_active !== false,
-    }));
+    })));
     res.json({ projects });
   } catch (err) {
     console.error("Projects read error:", err.message);
@@ -81,7 +81,7 @@ router.put("/:id", upload.fields([{ name: "logo", maxCount: 1 }]), async (req, r
       state:        b.state       || "",
       pincode:      b.pincode     || "",
       address:      b.address     || "",
-      logo_url:     newLogo || b.logoUrl || "",
+      logo_url:     newLogo || normalizeStoragePath(b.logoUrl, "procurement-images") || "",
     }).eq("id", req.params.id);
     if (error) throw error;
     res.json({ success: true });

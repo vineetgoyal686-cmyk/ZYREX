@@ -3,7 +3,7 @@ import { ChevronDown, Database, Download, Eye, FileText, IndianRupee, Loader2, P
 import * as XLSX from "xlsx";
 import ViewOrder from "./Procurement/ViewOrder";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const LOCAL_ROWS_KEY = "bms_vendor_master_manual_rows";
 
 const formatINR = (value) =>

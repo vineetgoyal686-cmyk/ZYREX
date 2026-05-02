@@ -4,7 +4,7 @@ import {
   ChevronDown, Loader2, CheckCircle2, PackagePlus, Hash,
 } from "lucide-react";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
 const inp  = "w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-50 text-slate-700 bg-white transition-all";
 const lbl  = "block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider";

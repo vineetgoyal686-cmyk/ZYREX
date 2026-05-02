@@ -19,7 +19,8 @@
                                          ],
                       "category":  "Civil",
                       "unit":  "bag",
-                      "imageUrl":  "https://lhxgohcxcslbtnuubrsg.supabase.co/storage/v1/object/public/procurement-images/items/1775492159286_shopping.webp",
+                      // WARNING: Do not use this file for real data. Use backend API for item images (returns signed URLs for private buckets).
+                      "imageUrl":  "",
                       "scopeOfWork":  "",
                       "remarks":  "",
                       "createdById":  "",

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { Plus, Search, Pencil, Trash2, X, Building2, Upload, FileText, ChevronLeft, ChevronRight, Download, FileSpreadsheet, ChevronDown, Eye, Copy, Check, Trash, RotateCcw } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const PER_PAGE = 15;
 
 const emptyForm = {
@@ -105,18 +106,16 @@ const MODAL_TABS = [
   { key: "docs",  label: "Documents"    },
 ];
 
+// Module-level cache for SWR (Stale-While-Revalidate)
+let cachedVendors = null;
+let cachedSites = null;
+let cachedCompanies = null;
+
 export default function VendorList() {
-  const user = JSON.parse(localStorage.getItem("bms_user") || "{}");
-  const isGlobalAdmin = user.role === "global_admin";
-  const myPerms = user.app_permissions?.find(p => p.module_key === "vendor_list") || {};
+  const { isGlobalAdmin, canAdd, canEdit, canDelete, canExport } = useModulePermissions("vendor_list");
 
-  const canAdd    = isGlobalAdmin || !!myPerms.can_add;
-  const canEdit   = isGlobalAdmin || !!myPerms.can_edit;
-  const canDelete = isGlobalAdmin || !!myPerms.can_delete;
-  const canExport = isGlobalAdmin || !!myPerms.can_export;
-
-  const [vendors, setVendors]     = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [vendors, setVendors]     = useState(cachedVendors || []);
+  const [loading, setLoading]     = useState(!cachedVendors);
   const [showModal, setShowModal] = useState(false);
   const [viewVendor, setViewVendor] = useState(null);
   const [showTrash, setShowTrash] = useState(false);
@@ -140,7 +139,7 @@ export default function VendorList() {
       await fetch(`${API}/api/procurement/vendors/${id}/restore`, { method: "POST" });
       showToast("Vendor restored");
       fetchTrash();
-      fetchVendors();
+      fetchVendors(true);
     } catch { showToast("Failed to restore", "error"); }
   };
 
@@ -167,8 +166,8 @@ export default function VendorList() {
   const [bulkFile, setBulkFile]   = useState("");
   const [bulkSaving, setBulkSaving] = useState(false);
   const [showExport, setShowExport] = useState(false);
-  const [sites, setSites]         = useState([]);
-  const [companies, setCompanies] = useState([]);
+  const [sites, setSites]         = useState(cachedSites || []);
+  const [companies, setCompanies] = useState(cachedCompanies || []);
   const [showCompanySearch, setShowCompanySearch] = useState(false);
   const [showSiteSearch, setShowSiteSearch] = useState(false);
   const [copiedKey, setCopiedKey] = useState(""); // `${vendorId}:${field}`
@@ -185,7 +184,11 @@ export default function VendorList() {
   const siteRef                   = useRef();
   const companyRef                = useRef();
 
-  useEffect(() => { fetchVendors(); fetchSites(); fetchCompanies(); }, []);
+  useEffect(() => { 
+    if (!cachedVendors) fetchVendors(); else fetchVendors(true);
+    if (!cachedSites) fetchSites(); else fetchSites(true);
+    if (!cachedCompanies) fetchCompanies(); else fetchCompanies(true);
+  }, []);
 
   useEffect(() => {
     const click = (e) => {
@@ -196,30 +199,33 @@ export default function VendorList() {
     return () => document.removeEventListener("mousedown", click);
   }, []);
 
-  const fetchSites = async () => {
+  const fetchSites = async (isBackground = false) => {
     try {
       const res = await fetch(`${API}/api/procurement/sites`);
       const data = await res.json();
-      setSites(data.sites || []);
-    } catch { setSites([]); }
+      cachedSites = data.sites || [];
+      setSites(cachedSites);
+    } catch { if (!cachedSites) setSites([]); }
   };
 
-  const fetchCompanies = async () => {
+  const fetchCompanies = async (isBackground = false) => {
     try {
       const res = await fetch(`${API}/api/procurement/companies`);
       const data = await res.json();
-      setCompanies(data.companies || []);
-    } catch { setCompanies([]); }
+      cachedCompanies = data.companies || [];
+      setCompanies(cachedCompanies);
+    } catch { if (!cachedCompanies) setCompanies([]); }
   };
 
-  const fetchVendors = async () => {
-    setLoading(true);
+  const fetchVendors = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       const res  = await fetch(`${API}/api/procurement/vendors`);
       const data = await res.json();
-      setVendors(data.vendors || []);
-    } catch { setVendors([]); }
-    setLoading(false);
+      cachedVendors = data.vendors || [];
+      setVendors(cachedVendors);
+    } catch { if (!cachedVendors) setVendors([]); }
+    if (!isBackground) setLoading(false);
   };
 
   const showToast = (msg, type = "success") => {

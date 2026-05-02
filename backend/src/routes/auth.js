@@ -2,6 +2,11 @@ const express = require("express");
 const router = express.Router();
 const supabase = require("../helpers/supabaseHelper");
 const { createClient } = require("@supabase/supabase-js");
+const {
+  normalizeStoragePath,
+  createSignedStorageUrl,
+  removeStorageFile,
+} = require("../helpers/storageHelper");
 
 // Fresh admin client for DB queries after signInWithPassword
 // (shared client ka session signInWithPassword se pollute ho jaata hai)
@@ -88,6 +93,15 @@ router.post("/login", async (req, res) => {
     };
   });
 
+  const signedAvatar = await createSignedStorageUrl(admin, "avatars", profile.avatar);
+  const signedProfilePermissions = { ...(profile.profile_permissions || {}) };
+  if (signedProfilePermissions.ui?.cover_image) {
+    signedProfilePermissions.ui = {
+      ...signedProfilePermissions.ui,
+      cover_image: await createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.cover_image),
+    };
+  }
+
   res.json({
     token: data.session.access_token,
     user: {
@@ -98,10 +112,10 @@ router.post("/login", async (req, res) => {
       designation:         profile.designation,
       department:          profile.department,
       contact_no:          profile.contact_no          || "",
-      avatar:              profile.avatar              || null,
+      avatar:              signedAvatar                || null,
       cover_image:         profile.cover_image         || null,
       header_theme:        profile.header_theme        || null,
-      profile_permissions: profile.profile_permissions || {},
+      profile_permissions: signedProfilePermissions,
       app_permissions:     app_permissions,
     },
   });
@@ -251,9 +265,9 @@ router.post("/avatar", async (req, res) => {
 
   const avatarUrl = signedData.signedUrl;
 
-  // Users table me naya URL save karo
+  // Users table me storage path save karo; UI ko signed URL return hota hai.
   const { error: dbError } = await admin.from("users")
-    .update({ avatar: avatarUrl }).eq("id", dbUser.id);
+    .update({ avatar: newFileName }).eq("id", dbUser.id);
 
   if (dbError) return res.status(500).json({ error: `DB update failed: ${dbError.message}` });
 
@@ -313,7 +327,7 @@ router.post("/cover", async (req, res) => {
 
   const currentPerms = dbUser.profile_permissions || {};
   const ui = currentPerms.ui || {};
-  ui.cover_image = coverUrl;
+  ui.cover_image = newFileName;
 
   const { error: dbError } = await admin.from("users")
     .update({ profile_permissions: { ...currentPerms, ui } }).eq("id", dbUser.id);
@@ -337,8 +351,7 @@ router.delete("/cover", async (req, res) => {
   const admin = getAdminClient();
 
   if (dbUser.profile_permissions?.ui?.cover_image) {
-    const oldPath = dbUser.profile_permissions.ui.cover_image.split("/avatars/")[1]?.split("?")[0];
-    if (oldPath) await admin.storage.from("avatars").remove([oldPath]);
+    await removeStorageFile(admin, "avatars", dbUser.profile_permissions.ui.cover_image);
   }
 
   const currentPerms = dbUser.profile_permissions || {};
@@ -364,8 +377,7 @@ router.delete("/avatar", async (req, res) => {
 
   // Purani avatar file Storage se hatao
   if (dbUser.avatar) {
-    const oldPath = dbUser.avatar.split("/avatars/")[1]?.split("?")[0];
-    if (oldPath) await admin.storage.from("avatars").remove([oldPath]);
+    await removeStorageFile(admin, "avatars", dbUser.avatar);
   }
 
   // DB me null set karo
@@ -388,7 +400,7 @@ router.get("/refresh-avatar", async (req, res) => {
 
   if (!dbUser.avatar) return res.json({ url: null });
 
-  const filename = dbUser.avatar.split("/avatars/")[1]?.split("?")[0];
+  const filename = normalizeStoragePath(dbUser.avatar, "avatars");
   if (!filename) return res.json({ url: null });
 
   const admin = getAdminClient();
@@ -408,8 +420,6 @@ router.get("/refresh-avatar", async (req, res) => {
     .createSignedUrl(filename, 315360000);
 
   if (error || !data?.signedUrl) return res.json({ url: null });
-
-  await admin.from("users").update({ avatar: data.signedUrl }).eq("id", dbUser.id);
 
   res.json({ url: data.signedUrl });
 });
@@ -495,7 +505,15 @@ router.get("/me", async (req, res) => {
     .single();
 
   if (!profile) return res.status(401).json({ error: "User not found" });
-  res.json({ user: profile });
+  const signedAvatar = await createSignedStorageUrl(admin, "avatars", profile.avatar);
+  const signedProfilePermissions = { ...(profile.profile_permissions || {}) };
+  if (signedProfilePermissions.ui?.cover_image) {
+    signedProfilePermissions.ui = {
+      ...signedProfilePermissions.ui,
+      cover_image: await createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.cover_image),
+    };
+  }
+  res.json({ user: { ...profile, avatar: signedAvatar || null, profile_permissions: signedProfilePermissions } });
 });
 
 /* ─────────────────────────────────────────

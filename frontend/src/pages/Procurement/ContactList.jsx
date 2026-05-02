@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { Plus, Search, Pencil, Trash2, X, Users, Upload, Download,
          FileSpreadsheet, FileText, ChevronDown, Eye, Phone } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const PER_PAGE = 10;
 const emptyForm = { personName: "", contactNumber: "", designation: "", company: "" };
 
@@ -31,14 +32,9 @@ export default function ContactList() {
   const [page, setPage]                 = useState(1);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef();
-  const [permissions, setPermissions]   = useState({});
-  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+  const { isGlobalAdmin, canAdd, canEdit, canDelete, canExport } = useModulePermissions("contact_list");
 
   useEffect(() => {
-    const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
-    setIsGlobalAdmin(u.role === "global_admin");
-    const p = u.app_permissions?.find(ap => ap.module_key === "contact_list") || {};
-    setPermissions(p);
     fetchContacts();
     fetch(`${API}/api/procurement/companies`)
       .then(r => r.json())
@@ -53,11 +49,6 @@ export default function ContactList() {
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
-
-  const canAdd    = isGlobalAdmin || !!permissions.can_add;
-  const canEdit   = isGlobalAdmin || !!permissions.can_edit;
-  const canDelete = isGlobalAdmin || !!permissions.can_delete;
-  const canExport = isGlobalAdmin || !!permissions.can_export;
 
   const fetchContacts = async () => {
     setLoading(true);

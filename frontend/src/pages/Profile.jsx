@@ -11,7 +11,7 @@ import api from "../utils/api";
 import ManageProjects from "../components/ManageProjects";
 import ApprovalConfig from "../components/ApprovalConfig";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
 const ROLE_BADGE = {
   global_admin: { label: "Global Admin", color: "bg-violet-100 text-violet-700 border border-violet-200" },
@@ -21,17 +21,17 @@ const ROLE_BADGE = {
 };
 
 const PROFILE_SECTIONS = [
-  { key: "manage_user",   label: "Manage Users"   },
-  { key: "add_project",   label: "Add Project"    },
-  { key: "serialization", label: "Serialization"  },
-  { key: "approval_flow", label: "Approval Flow"  },
+  { key: "manage_user",    label: "Users",         keys: [{ k: "view", label: "View" }, { k: "add", label: "Add" }, { k: "edit", label: "Edit" }, { k: "delete", label: "Delete" }, { k: "manage_permissions", label: "Manage Permissions" }] },
+  { key: "manage_project", label: "Projects",      keys: [{ k: "view", label: "View" }, { k: "add", label: "Add" }, { k: "edit", label: "Edit" }, { k: "delete", label: "Delete" }] },
+  { key: "serialization",  label: "Serialization", keys: [{ k: "view", label: "View" }, { k: "edit", label: "Edit" }] },
+  { key: "approval_flow",  label: "Approval Flow", keys: [{ k: "view", label: "View" }, { k: "edit", label: "Edit" }] },
 ];
 
 const DEFAULT_PROFILE_PERMS = {
-  manage_user:   { view: false, edit: false },
-  add_project:   { view: false, edit: false },
-  serialization: { view: false, edit: false },
-  approval_flow: { view: false, edit: false },
+  manage_user:    { view: false, add: false, edit: false, delete: false, manage_permissions: false },
+  manage_project: { view: false, add: false, edit: false, delete: false },
+  serialization:  { view: false, edit: false },
+  approval_flow:  { view: false, edit: false },
 };
 
 const MODULE_PERM_KEYS = [
@@ -80,6 +80,7 @@ const MODULE_PERM_CONFIG = {
   master_data_products:   ["can_view", "can_edit", "can_export"],
   master_data_orders:     ["can_view", "can_edit", "can_export"],
   master_data_intakes:    ["can_view", "can_edit", "can_export"],
+  master_data_clauses:    ["can_view", "can_add", "can_edit", "can_export", "can_bulk_upload"],
 
   /* ── Project Display ── */
   dashboard:              ["can_view"],
@@ -137,7 +138,7 @@ const DEFAULT_MODULE_PERMS = ["can_view", "can_add", "can_edit", "can_delete", "
 const MODULE_BUILT_STATUS = {
   global_dashboard: true, inbox: true, audit: true, annexure: true,
   master_data_vendor: true, master_data_products: true,
-  master_data_orders: true, master_data_intakes: true,
+  master_data_orders: true, master_data_intakes: true, master_data_clauses: true,
   dashboard: true, view_3d: true,
   intake: true, order: true,
   company_list: true, vendor_list: true, site_list: true, uom: true,
@@ -165,7 +166,7 @@ const MODULE_SECTIONS = [
     groups: [
       { label: "Top Level",         keys: ["global_dashboard", "inbox"] },
       { label: "Procurement Setup", keys: ["company_list","site_list","vendor_list","uom","category_list","item_list","contact_list","term_condition","payment_terms","government_laws","annexure"] },
-      { label: "Master Data",       keys: ["master_data_vendor","master_data_products","master_data_orders","master_data_intakes"] },
+      { label: "Master Data",       keys: ["master_data_vendor","master_data_products","master_data_orders","master_data_intakes","master_data_clauses"] },
       { label: "Audit",             keys: ["audit"], single: true },
     ],
   },
@@ -520,9 +521,7 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
   const isGlobalAdmin    = currentUser.role === "global_admin";
 
   const canManage = (viewerRole, targetRole, targetId) => {
-    // Global Admin can manage themselves (assign their own designation/permissions).
-    // Everyone else needs a higher admin to manage them.
-    if (targetRole === "global_admin" && viewerRole !== "global_admin") return false;
+    if (targetRole === "global_admin" && targetId !== currentUser.id) return false;
     if (targetId === currentUser.id && viewerRole !== "global_admin") return false;
     if (viewerRole === "global_admin") return true;
     if (viewerRole === "super_admin") return ["admin", "user"].includes(targetRole);
@@ -740,7 +739,12 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
     setEditingDesg(d);
     setDesgName(d.name || "");
     setDesgDescription(d.description || "");
-    setDesgProfilePerms(d.profile_permissions || DEFAULT_PROFILE_PERMS);
+    const draw = d.profile_permissions || {};
+    if (draw.add_project && !draw.manage_project) draw.manage_project = { view: !!draw.add_project.view, add: !!draw.add_project.edit, edit: !!draw.add_project.edit, delete: false };
+    if (draw.manage_user && draw.manage_user.edit !== undefined && draw.manage_user.add === undefined) { const e = !!draw.manage_user.edit; draw.manage_user = { view: !!draw.manage_user.view, add: e, edit: e, delete: e, manage_permissions: e }; }
+    const dmerged = {};
+    PROFILE_SECTIONS.forEach(sec => { dmerged[sec.key] = { ...Object.fromEntries(sec.keys.map(({ k }) => [k, false])), ...(draw[sec.key] || {}) }; });
+    setDesgProfilePerms(dmerged);
     // Merge stored app_permissions onto fresh module list
     const fresh = await blankDesgModules();
     const stored = d.app_permissions || [];
@@ -763,7 +767,9 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
   // every available app-tab permission for every module.
   const setAllDesgPerms = (checked) => {
     const nextProfile = {};
-    PROFILE_SECTIONS.forEach(s => { nextProfile[s.key] = { view: checked, edit: checked }; });
+    PROFILE_SECTIONS.forEach(s => {
+      nextProfile[s.key] = Object.fromEntries(s.keys.map(({ k }) => [k, checked]));
+    });
     setDesgProfilePerms(nextProfile);
     setDesgModules(prev => prev.map(m => {
       const availKeys = getModulePerms(m.module_key);
@@ -775,7 +781,7 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
   const isDesgAllChecked = () => {
     if (!desgModules.length) return false;
     const profileFull = PROFILE_SECTIONS.every(s =>
-      desgProfilePerms[s.key]?.view && desgProfilePerms[s.key]?.edit
+      s.keys.every(({ k }) => desgProfilePerms[s.key]?.[k])
     );
     const modulesFull = desgModules.every(m => {
       const availKeys = getModulePerms(m.module_key);
@@ -908,7 +914,15 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
     setTeamLoading(true);
     try {
       const { data } = await api.get("/api/users");
-      setMembers(data.users || []);
+      const users = data.users || [];
+      setMembers(users);
+      // Sync current user's role/data if it changed in DB
+      const fresh = users.find(u => u.id === currentUser.id);
+      if (fresh && (fresh.role !== currentUser.role || fresh.name !== currentUser.name)) {
+        const updatedUser = { ...currentUser, ...fresh };
+        localStorage.setItem("bms_user", JSON.stringify(updatedUser));
+        onProfileUpdate?.(updatedUser);
+      }
     } catch { showToast("Failed to load team", "error"); }
     finally { setTeamLoading(false); }
   };
@@ -1121,7 +1135,20 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
     try {
       const { data } = await api.get(`/api/users/${member.id}/permissions`);
       setPermissions(data.permissions || []);
-      setEditingProfilePerms(data.profile_permissions || DEFAULT_PROFILE_PERMS);
+      const raw = data.profile_permissions || {};
+      // migrate old add_project key → manage_project
+      if (raw.add_project && !raw.manage_project) raw.manage_project = { view: !!raw.add_project.view, add: !!raw.add_project.edit, edit: !!raw.add_project.edit, delete: false };
+      // migrate old manage_user { view, edit } → new granular keys
+      if (raw.manage_user && raw.manage_user.edit !== undefined && raw.manage_user.add === undefined) {
+        const e = !!raw.manage_user.edit;
+        raw.manage_user = { view: !!raw.manage_user.view, add: e, edit: e, delete: e, manage_permissions: e };
+      }
+      // merge with defaults so all keys exist
+      const merged = {};
+      PROFILE_SECTIONS.forEach(sec => {
+        merged[sec.key] = { ...Object.fromEntries(sec.keys.map(({ k }) => [k, false])), ...(raw[sec.key] || {}) };
+      });
+      setEditingProfilePerms(merged);
     } catch { showToast("Failed to load permissions", "error"); }
     finally { setPermLoading(false); }
   };
@@ -1149,6 +1176,18 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
         permissions: cleanPerms,
         profile_permissions: editingProfilePerms,
       });
+
+      // If saving permissions for the currently logged-in user,
+      // sync localStorage immediately so components read fresh permissions
+      if (permUser.id === currentUser.id) {
+        const updatedSelf = {
+          ...currentUser,
+          app_permissions: cleanPerms,
+          profile_permissions: editingProfilePerms,
+        };
+        localStorage.setItem("bms_user", JSON.stringify(updatedSelf));
+        onProfileUpdate?.(updatedSelf);
+      }
 
       if (pickedTemplate) {
         await api.put(`/api/users/${permUser.id}`, {
@@ -1376,7 +1415,7 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
     { id: "security",      label: "Security",        show: true },
     { id: "team",          label: "Manage Users",    show: isGlobalAdmin || !!pp.manage_user?.view   },
     { id: "permissions",   label: "Permissions",     show: isGlobalAdmin || currentUser.role === "super_admin" },
-    { id: "projects",      label: "Projects",        show: isGlobalAdmin || !!pp.add_project?.view   },
+    { id: "projects",      label: "Projects",        show: isGlobalAdmin || !!pp.manage_project?.view },
     { id: "serialization", label: "Serialization",   show: isGlobalAdmin || !!pp.serialization?.view },
     { id: "approval_flow", label: "Approval Flow",   show: isGlobalAdmin || !!pp.approval_flow?.view },
   ].filter(t => t.show);
@@ -1822,7 +1861,12 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                           designations={designations}
                           onPick={(tpl) => {
                             if (!confirm(`Apply "${tpl.name}" template? This will overwrite current permissions (you can still customize before saving).`)) return;
-                            setEditingProfilePerms(tpl.profile_permissions || DEFAULT_PROFILE_PERMS);
+                            const traw = tpl.profile_permissions || {};
+                            if (traw.add_project && !traw.manage_project) traw.manage_project = { view: !!traw.add_project.view, add: !!traw.add_project.edit, edit: !!traw.add_project.edit, delete: false };
+                            if (traw.manage_user && traw.manage_user.edit !== undefined && traw.manage_user.add === undefined) { const e = !!traw.manage_user.edit; traw.manage_user = { view: !!traw.manage_user.view, add: e, edit: e, delete: e, manage_permissions: e }; }
+                            const tmerged = {};
+                            PROFILE_SECTIONS.forEach(sec => { tmerged[sec.key] = { ...Object.fromEntries(sec.keys.map(({ k }) => [k, false])), ...(traw[sec.key] || {}) }; });
+                            setEditingProfilePerms(tmerged);
                             const stored = tpl.app_permissions || [];
                             setPermissions(prev => prev.map(m => {
                               const match = stored.find(s => s.module_id === m.module_id);
@@ -1855,30 +1899,40 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                             {/* Profile Management Section */}
                             <div className="border-b border-slate-100 pb-5">
                               <p className={lbl + " mb-3"}>Profile Management Access</p>
-                              <div className="rounded-xl border border-slate-100 bg-slate-50 overflow-hidden">
-                                <div className="flex items-center gap-3 px-4 py-2 border-b border-slate-100 bg-slate-100/60">
-                                  <span className="flex-1 text-[10px] font-bold uppercase tracking-widest text-slate-400">Section</span>
-                                  <span className="w-14 text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">View</span>
-                                  <span className="w-14 text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">Edit</span>
-                                </div>
-                                {PROFILE_SECTIONS.map(sec => (
-                                  <div key={sec.key} className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-50 last:border-0">
-                                    <span className="flex-1 text-sm font-medium text-slate-700">{sec.label}</span>
-                                    {["view", "edit"].map(k => (
-                                      <div key={k} className="w-14 flex justify-center">
-                                        <input type="checkbox"
-                                          checked={editingProfilePerms[sec.key]?.[k] || false}
-                                          onChange={e => {
-                                            setEditingProfilePerms(prev => ({
-                                              ...prev,
-                                              [sec.key]: { ...prev[sec.key], [k]: e.target.checked }
-                                            }));
-                                          }}
-                                          className="w-4 h-4 rounded accent-blue-600" />
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {PROFILE_SECTIONS.map(sec => {
+                                  const allChecked = sec.keys.every(({ k }) => editingProfilePerms[sec.key]?.[k]);
+                                  const anyChecked = sec.keys.some(({ k }) => editingProfilePerms[sec.key]?.[k]);
+                                  return (
+                                    <div key={sec.key} className={`rounded-xl border p-3.5 transition-all ${anyChecked ? "border-blue-200 bg-blue-50/40" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+                                      <div className="flex items-start justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
+                                        <div className="min-w-0 flex-1">
+                                          <p className="text-[13px] font-bold text-slate-800">{sec.label}</p>
+                                          <p className="text-[9px] font-medium text-slate-400 uppercase tracking-widest mt-0.5">{sec.key}</p>
+                                        </div>
+                                        <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0 px-2 py-1 rounded-md hover:bg-slate-100/70 transition">
+                                          <input type="checkbox"
+                                            checked={allChecked}
+                                            ref={el => { if (el) el.indeterminate = anyChecked && !allChecked; }}
+                                            onChange={e => setEditingProfilePerms(prev => ({ ...prev, [sec.key]: Object.fromEntries(sec.keys.map(({ k }) => [k, e.target.checked])) }))}
+                                            className="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer" />
+                                          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">All</span>
+                                        </label>
                                       </div>
-                                    ))}
-                                  </div>
-                                ))}
+                                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-2">
+                                        {sec.keys.map(({ k, label }) => (
+                                          <label key={k} className="flex items-center gap-1.5 cursor-pointer select-none group/item">
+                                            <input type="checkbox"
+                                              checked={editingProfilePerms[sec.key]?.[k] || false}
+                                              onChange={e => setEditingProfilePerms(prev => ({ ...prev, [sec.key]: { ...prev[sec.key], [k]: e.target.checked } }))}
+                                              className="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer shrink-0" />
+                                            <span className="text-[11px] font-medium text-slate-600 group-hover/item:text-slate-900 transition-colors">{label}</span>
+                                          </label>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
 
@@ -1900,7 +1954,9 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                                                 }));
                                                 // Also sync profile perms for consistency
                                                 const next = {};
-                                                Object.keys(DEFAULT_PROFILE_PERMS).forEach(k => { next[k] = { view: checked, edit: checked }; });
+                                                PROFILE_SECTIONS.forEach(sec => {
+                                                  next[sec.key] = Object.fromEntries(sec.keys.map(({ k }) => [k, checked]));
+                                                });
                                                 setEditingProfilePerms(next);
                                             }}
                                             className="w-4 h-4 rounded accent-blue-600" />
@@ -1951,7 +2007,7 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                           </div>
                         )}
                       </div>
-                      {(isGlobalAdmin || !!pp.manage_user?.edit) && (
+                      {(isGlobalAdmin || !!pp.manage_user?.add) && (
                         <button 
                           onClick={() => setShowAddUser(true)}
                           className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-200 transition-all active:scale-95"
@@ -1992,8 +2048,12 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                               {members.map((m, idx) => {
                                 const mb = ROLE_BADGE[m.role] || ROLE_BADGE.user;
                                 const initials = m.name?.split(" ").map(n => n[0]).join("").toUpperCase() || "?";
-                                const manageable = canManage(currentUser.role, m.role, m.id) && (isGlobalAdmin || !!pp.manage_user?.edit);
                                 const isSelf = m.id === currentUser.id;
+                                const canHierarchy = canManage(currentUser.role, m.role, m.id);
+                                const canShield  = canHierarchy && (isGlobalAdmin || !!pp.manage_user?.manage_permissions);
+                                const canToggle  = canHierarchy && !isSelf && (isGlobalAdmin || !!pp.manage_user?.edit);
+                                const canDel     = canHierarchy && !isSelf && (isGlobalAdmin || !!pp.manage_user?.delete);
+                                const canManageRole = canHierarchy && m.role !== "global_admin" && (isGlobalAdmin || !!pp.manage_user?.edit);
                                 return (
                                   <tr key={m.id}
                                     className={`hover:bg-blue-50/30 transition group ${idx !== members.length - 1 ? "border-b border-slate-200" : ""}`}>
@@ -2040,7 +2100,7 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                                     </td>
                                     {/* ROLE */}
                                     <td className="px-5 py-3.5 border-r border-slate-100">
-                                      {manageable && editingRoleId === m.id ? (
+                                      {canManageRole && editingRoleId === m.id ? (
                                         <select autoFocus
                                           className="text-[11px] font-bold px-2 py-1 rounded-lg border border-blue-400 bg-white text-slate-700 outline-none shadow-sm"
                                           defaultValue={m.role}
@@ -2052,10 +2112,10 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                                         </select>
                                       ) : (
                                         <span
-                                          onClick={() => manageable && setEditingRoleId(m.id)}
-                                          className={`inline-flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1 rounded-lg ${mb.color} ${manageable ? "cursor-pointer hover:shadow-sm" : ""}`}>
+                                          onClick={() => canManageRole && setEditingRoleId(m.id)}
+                                          className={`inline-flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1 rounded-lg ${mb.color} ${canManageRole ? "cursor-pointer hover:shadow-sm" : ""}`}>
                                           {mb.label.toUpperCase()}
-                                          {manageable && <Pencil size={9} className="opacity-50" />}
+                                          {canManageRole && <Pencil size={9} className="opacity-50" />}
                                         </span>
                                       )}
                                     </td>
@@ -2069,23 +2129,25 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                                     {/* ACTIONS */}
                                     <td className="px-5 py-3.5">
                                       <div className="flex items-center justify-end gap-1.5">
-                                        {manageable ? (
+                                        {(canShield || canToggle || canDel) ? (
                                           <>
-                                            <button onClick={() => viewPerms(m)} title="Manage Permissions"
-                                              className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition border border-transparent hover:border-blue-200">
-                                              <ShieldCheck size={16} />
-                                            </button>
-                                            {!isSelf && (
-                                              <>
-                                                <button onClick={() => toggleActive(m)} title={m.is_active ? "Deactivate" : "Activate"}
-                                                  className={`p-2 rounded-lg transition border border-transparent ${m.is_active ? "text-slate-400 hover:text-amber-600 hover:bg-amber-50 hover:border-amber-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200"}`}>
-                                                  {m.is_active ? <XCircle size={16} /> : <CheckCircle2 size={16} />}
-                                                </button>
-                                                <button onClick={() => removeUser(m)} title="Remove User"
-                                                  className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition border border-transparent hover:border-rose-200">
-                                                  <Trash2 size={16} />
-                                                </button>
-                                              </>
+                                            {canShield && (
+                                              <button onClick={() => viewPerms(m)} title="Manage Permissions"
+                                                className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition border border-transparent hover:border-blue-200">
+                                                <ShieldCheck size={16} />
+                                              </button>
+                                            )}
+                                            {canToggle && (
+                                              <button onClick={() => toggleActive(m)} title={m.is_active ? "Deactivate" : "Activate"}
+                                                className={`p-2 rounded-lg transition border border-transparent ${m.is_active ? "text-slate-400 hover:text-amber-600 hover:bg-amber-50 hover:border-amber-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200"}`}>
+                                                {m.is_active ? <XCircle size={16} /> : <CheckCircle2 size={16} />}
+                                              </button>
+                                            )}
+                                            {canDel && (
+                                              <button onClick={() => removeUser(m)} title="Remove User"
+                                                className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition border border-transparent hover:border-rose-200">
+                                                <Trash2 size={16} />
+                                              </button>
                                             )}
                                           </>
                                         ) : (
@@ -2147,23 +2209,19 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
 
                                 {/* Hover Actions */}
                                 <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100">
-                                  {canManage(currentUser.role, m.role, m.id) && (isGlobalAdmin || !!pp.manage_user?.edit) && (
-                                    <>
-                                      <button onClick={() => viewPerms(m)} title="Permissions"
-                                        className="p-2 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm">
-                                        <ShieldCheck size={16} />
-                                      </button>
-                                      <button onClick={() => toggleActive(m)} title={m.is_active ? "Deactivate" : "Activate"}
-                                        className={`p-2 rounded-xl transition-all shadow-sm
-                                          ${m.is_active ? "bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white" : "bg-green-50 text-green-600 hover:bg-green-600 hover:text-white"}`}>
-                                        {m.is_active ? <XCircle size={16} /> : <CheckCircle2 size={16} />}
-                                      </button>
-                                      <button onClick={() => removeUser(m)} title="Remove"
-                                        className="p-2 rounded-xl bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm">
-                                        <Trash2 size={16} />
-                                      </button>
-                                    </>
-                                  )}
+                                  {(() => {
+                                    const ch = canManage(currentUser.role, m.role, m.id);
+                                    const cShield = ch && (isGlobalAdmin || !!pp.manage_user?.manage_permissions);
+                                    const cToggle = ch && m.id !== currentUser.id && (isGlobalAdmin || !!pp.manage_user?.edit);
+                                    const cDel    = ch && m.id !== currentUser.id && (isGlobalAdmin || !!pp.manage_user?.delete);
+                                    return (
+                                      <>
+                                        {cShield && <button onClick={() => viewPerms(m)} title="Permissions" className="p-2 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm"><ShieldCheck size={16} /></button>}
+                                        {cToggle && <button onClick={() => toggleActive(m)} title={m.is_active ? "Deactivate" : "Activate"} className={`p-2 rounded-xl transition-all shadow-sm ${m.is_active ? "bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white" : "bg-green-50 text-green-600 hover:bg-green-600 hover:text-white"}`}>{m.is_active ? <XCircle size={16} /> : <CheckCircle2 size={16} />}</button>}
+                                        {cDel    && <button onClick={() => removeUser(m)} title="Remove" className="p-2 rounded-xl bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm"><Trash2 size={16} /></button>}
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             );
@@ -2195,26 +2253,16 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                                   
                                   <div className="flex items-center gap-2">
                                     {/* Role Select / Badge */}
-                                    {canManage(currentUser.role, m.role, m.id) && editingRoleId === m.id ? (
-                                      <select
-                                        autoFocus
-                                        className="text-[11px] font-bold px-2 py-1 rounded-lg border border-blue-400 bg-white text-slate-700 outline-none shadow-sm"
-                                        defaultValue={m.role}
-                                        onChange={e => changeRole(m, e.target.value)}
-                                        onBlur={() => setEditingRoleId(null)}>
-                                        {getManageableRoles(currentUser.role).map(r => (
-                                          <option key={r} value={r}>{ROLE_BADGE[r]?.label || r}</option>
-                                        ))}
+                                    {(() => { const cmr = canManage(currentUser.role, m.role, m.id) && m.role !== "global_admin" && (isGlobalAdmin || !!pp.manage_user?.edit); return cmr && editingRoleId === m.id ? (
+                                      <select autoFocus className="text-[11px] font-bold px-2 py-1 rounded-lg border border-blue-400 bg-white text-slate-700 outline-none shadow-sm" defaultValue={m.role} onChange={e => changeRole(m, e.target.value)} onBlur={() => setEditingRoleId(null)}>
+                                        {getManageableRoles(currentUser.role).map(r => (<option key={r} value={r}>{ROLE_BADGE[r]?.label || r}</option>))}
                                       </select>
                                     ) : (
-                                      <div
-                                        onClick={() => canManage(currentUser.role, m.role, m.id) && setEditingRoleId(m.id)}
-                                        className={`flex items-center gap-1.5 text-[10px] font-black px-3 py-1 rounded-lg transition-all ${mb.color} ${canManage(currentUser.role, m.role, m.id) ? "cursor-pointer hover:shadow-md" : ""}`}
-                                      >
+                                      <div onClick={() => cmr && setEditingRoleId(m.id)} className={`flex items-center gap-1.5 text-[10px] font-black px-3 py-1 rounded-lg transition-all ${mb.color} ${cmr ? "cursor-pointer hover:shadow-md" : ""}`}>
                                         {mb.label.toUpperCase()}
-                                        {canManage(currentUser.role, m.role, m.id) && <Pencil size={10} className="opacity-60" />}
+                                        {cmr && <Pencil size={10} className="opacity-60" />}
                                       </div>
-                                    )}
+                                    ); })()}
                                     {m.designation && (
                                       <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-500 text-[10px] font-bold uppercase tracking-wide">
                                         <Briefcase size={10} /> {m.designation}
@@ -2226,23 +2274,19 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
 
                               {/* Actions - Premium Buttons */}
                               <div className="flex items-center gap-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                                {canManage(currentUser.role, m.role, m.id) && (isGlobalAdmin || !!pp.manage_user?.edit) && (
-                                  <>
-                                    <button onClick={() => viewPerms(m)} title="Manage Permissions"
-                                      className="p-2.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm">
-                                      <ShieldCheck size={18} />
-                                    </button>
-                                    <button onClick={() => toggleActive(m)} title={m.is_active ? "Deactivate User" : "Activate User"}
-                                      className={`p-2.5 rounded-xl transition-all shadow-sm
-                                        ${m.is_active ? "bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white" : "bg-green-50 text-green-600 hover:bg-green-600 hover:text-white"}`}>
-                                      {m.is_active ? <XCircle size={18} /> : <CheckCircle2 size={18} />}
-                                    </button>
-                                    <button onClick={() => removeUser(m)} title="Remove User"
-                                      className="p-2.5 rounded-xl bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm">
-                                      <Trash2 size={18} />
-                                    </button>
-                                  </>
-                                )}
+                                {(() => {
+                                    const ch = canManage(currentUser.role, m.role, m.id);
+                                    const cShield = ch && (isGlobalAdmin || !!pp.manage_user?.manage_permissions);
+                                    const cToggle = ch && m.id !== currentUser.id && (isGlobalAdmin || !!pp.manage_user?.edit);
+                                    const cDel    = ch && m.id !== currentUser.id && (isGlobalAdmin || !!pp.manage_user?.delete);
+                                    return (
+                                      <>
+                                        {cShield && <button onClick={() => viewPerms(m)} title="Manage Permissions" className="p-2.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm"><ShieldCheck size={18} /></button>}
+                                        {cToggle && <button onClick={() => toggleActive(m)} title={m.is_active ? "Deactivate User" : "Activate User"} className={`p-2.5 rounded-xl transition-all shadow-sm ${m.is_active ? "bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white" : "bg-green-50 text-green-600 hover:bg-green-600 hover:text-white"}`}>{m.is_active ? <XCircle size={18} /> : <CheckCircle2 size={18} />}</button>}
+                                        {cDel    && <button onClick={() => removeUser(m)} title="Remove User" className="p-2.5 rounded-xl bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm"><Trash2 size={18} /></button>}
+                                      </>
+                                    );
+                                  })()}
                               </div>
                             </div>
                           );
@@ -2387,26 +2431,40 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                         {/* Profile section permissions */}
                         <div>
                           <p className="text-[11px] font-black uppercase tracking-widest text-slate-500 mb-2">Profile Section Access</p>
-                          <div className="bg-slate-50 rounded-xl p-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                            {PROFILE_SECTIONS.map(s => (
-                              <div key={s.key} className="bg-white rounded-lg p-3 border border-slate-100">
-                                <p className="text-[12px] font-bold text-slate-700 mb-2">{s.label}</p>
-                                <div className="flex gap-3">
-                                  <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
-                                    <input type="checkbox" checked={!!desgProfilePerms[s.key]?.view}
-                                      onChange={e => setDesgProfilePerms(prev => ({ ...prev, [s.key]: { ...prev[s.key], view: e.target.checked } }))}
-                                      className="w-3.5 h-3.5 accent-indigo-600" />
-                                    View
-                                  </label>
-                                  <label className="flex items-center gap-1.5 text-[11px] cursor-pointer">
-                                    <input type="checkbox" checked={!!desgProfilePerms[s.key]?.edit}
-                                      onChange={e => setDesgProfilePerms(prev => ({ ...prev, [s.key]: { ...prev[s.key], edit: e.target.checked } }))}
-                                      className="w-3.5 h-3.5 accent-indigo-600" />
-                                    Edit
-                                  </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {PROFILE_SECTIONS.map(s => {
+                              const allChecked = s.keys.every(({ k }) => desgProfilePerms[s.key]?.[k]);
+                              const anyChecked = s.keys.some(({ k }) => desgProfilePerms[s.key]?.[k]);
+                              return (
+                                <div key={s.key} className={`rounded-xl border p-3.5 transition-all ${anyChecked ? "border-blue-200 bg-blue-50/40" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+                                  <div className="flex items-start justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-[13px] font-bold text-slate-800">{s.label}</p>
+                                      <p className="text-[9px] font-medium text-slate-400 uppercase tracking-widest mt-0.5">{s.key}</p>
+                                    </div>
+                                    <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0 px-2 py-1 rounded-md hover:bg-slate-100/70 transition">
+                                      <input type="checkbox"
+                                        checked={allChecked}
+                                        ref={el => { if (el) el.indeterminate = anyChecked && !allChecked; }}
+                                        onChange={e => setDesgProfilePerms(prev => ({ ...prev, [s.key]: Object.fromEntries(s.keys.map(({ k }) => [k, e.target.checked])) }))}
+                                        className="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer" />
+                                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">All</span>
+                                    </label>
+                                  </div>
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-2">
+                                    {s.keys.map(({ k, label }) => (
+                                      <label key={k} className="flex items-center gap-1.5 cursor-pointer select-none group/item">
+                                        <input type="checkbox"
+                                          checked={!!desgProfilePerms[s.key]?.[k]}
+                                          onChange={e => setDesgProfilePerms(prev => ({ ...prev, [s.key]: { ...prev[s.key], [k]: e.target.checked } }))}
+                                          className="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer shrink-0" />
+                                        <span className="text-[11px] font-medium text-slate-600 group-hover/item:text-slate-900 transition-colors">{label}</span>
+                                      </label>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
 
@@ -2435,8 +2493,8 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
             )}
 
             {/* ─── MANAGE PROJECTS ─── */}
-            {section === "projects" && (isGlobalAdmin || !!pp.add_project?.view) && (
-              <ManageProjects isGlobalAdmin={isGlobalAdmin} permissions={pp.add_project} onProjectsUpdate={onProjectsUpdate} />
+            {section === "projects" && (isGlobalAdmin || !!pp.manage_project?.view) && (
+              <ManageProjects isGlobalAdmin={isGlobalAdmin} permissions={pp.manage_project} onProjectsUpdate={onProjectsUpdate} />
             )}
 
             {/* ─── SERIALIZATION ─── */}

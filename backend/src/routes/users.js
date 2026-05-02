@@ -1,6 +1,7 @@
 const express = require("express");
 const router  = express.Router();
 const { createClient } = require("@supabase/supabase-js");
+const { createSignedStorageUrl } = require("../helpers/storageHelper");
 
 const getAdminClient = () => createClient(
   process.env.SUPABASE_URL,
@@ -60,7 +61,11 @@ router.get("/", requireAuth, async (req, res) => {
     .order("created_at", { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ users: data });
+  const users = await Promise.all((data || []).map(async user => ({
+    ...user,
+    avatar: await createSignedStorageUrl(admin, "avatars", user.avatar),
+  })));
+  res.json({ users });
 });
 
 /* POST /api/users — invite */
@@ -118,8 +123,12 @@ router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
 
   if (!targetUser) return res.status(404).json({ error: "User not found" });
 
-  if (req.user.role === "super_admin" && ["global_admin", "super_admin"].includes(targetUser.role)) {
-    return res.status(403).json({ error: "You don't have permission to edit a user at this level" });
+  const ROLE_RANK = { global_admin: 4, super_admin: 3, admin: 2, user: 1 };
+  const callerRank = ROLE_RANK[req.user.role] ?? 0;
+  const targetRank = ROLE_RANK[targetUser.role] ?? 0;
+
+  if (targetRank >= callerRank && id !== req.user.id) {
+    return res.status(403).json({ error: "You don't have permission to edit this user" });
   }
 
   const updates = {};
@@ -158,21 +167,22 @@ router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
         can_manage_amend:      false, // Restricted: only global_admin grants this manually
       }));
       
+      const isSA = updates.role === "super_admin";
       if (updates.role === "user") {
         await admin.from("permissions").delete().eq("user_id", id);
         updates.profile_permissions = {
-          manage_user:   { view: false, edit: false },
-          add_project:   { view: false, edit: false },
-          serialization: { view: false, edit: false },
-          approval_flow: { view: false, edit: false },
+          manage_user:    { view: false, add: false, edit: false, delete: false, manage_permissions: false },
+          manage_project: { view: false, add: false, edit: false, delete: false },
+          serialization:  { view: false, edit: false },
+          approval_flow:  { view: false, edit: false },
         };
       } else {
         await admin.from("permissions").upsert(rows, { onConflict: "user_id,module_id" });
         updates.profile_permissions = {
-          manage_user:   { view: true, edit: updates.role === "super_admin" },
-          add_project:   { view: true, edit: updates.role === "super_admin" },
-          serialization: { view: true, edit: updates.role === "super_admin" },
-          approval_flow: { view: true, edit: updates.role === "super_admin" },
+          manage_user:    { view: true, add: isSA, edit: isSA, delete: isSA, manage_permissions: isSA },
+          manage_project: { view: true, add: isSA, edit: isSA, delete: isSA },
+          serialization:  { view: true, edit: isSA },
+          approval_flow:  { view: true, edit: isSA },
         };
       }
     }
@@ -196,6 +206,10 @@ router.delete("/:id", requireAuth, requireGlobalAdmin, async (req, res) => {
     return res.status(400).json({ error: "You cannot delete your own account" });
 
   const admin = getAdminClient();
+
+  const { data: targetUser } = await admin.from("users").select("role").eq("id", id).single();
+  if (targetUser?.role === "global_admin")
+    return res.status(403).json({ error: "Global Admin users can only be removed directly in the database" });
 
   // Remove from our users table first
   const { error: dbError } = await admin.from("users").delete().eq("id", id);

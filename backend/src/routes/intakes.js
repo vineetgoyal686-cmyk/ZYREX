@@ -2,6 +2,11 @@ const express = require("express");
 const router  = express.Router();
 const multer  = require("multer");
 const supabase = require("../helpers/supabaseHelper");
+const {
+  normalizeStoragePath,
+  uploadStorageFile,
+  createSignedStorageUrl,
+} = require("../helpers/storageHelper");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -9,13 +14,24 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 const uploadFile = async (file, folder) => {
   if (!file) return null;
   const path = `intakes/${folder}/${Date.now()}_${file.originalname}`;
-  const { error } = await supabase.storage
-    .from("procurement-images")
-    .upload(path, file.buffer, { contentType: file.mimetype, upsert: true });
-  if (error) throw new Error(`Storage upload failed: ${error.message}`);
-  const { data } = supabase.storage.from("procurement-images").getPublicUrl(path);
-  return { url: data.publicUrl, name: file.originalname, type: file.mimetype };
+  const storagePath = await uploadStorageFile(supabase, "procurement-images", path, file.buffer, file.mimetype);
+  return { url: storagePath, storage_path: storagePath, name: file.originalname, type: file.mimetype };
 };
+
+const withSignedAttachmentUrls = async (intake) => ({
+  ...intake,
+  intake_items: await Promise.all((intake.intake_items || []).map(async item => ({
+    ...item,
+    attachments: await Promise.all((Array.isArray(item.attachments) ? item.attachments : []).map(async att => {
+      const storagePath = normalizeStoragePath(att.storage_path || att.url, "procurement-images");
+      return {
+        ...att,
+        storage_path: storagePath,
+        url: await createSignedStorageUrl(supabase, "procurement-images", storagePath),
+      };
+    })),
+  }))),
+});
 
 /* ════════════════════════════════════════
    SERIALIZATION
@@ -123,7 +139,8 @@ router.get("/", async (_req, res) => {
       .schema("store").from("intakes").select("*, intake_items(*)")
       .order("created_at", { ascending: false });
     if (error) throw error;
-    res.json({ intakes: data || [] });
+    const intakes = await Promise.all((data || []).map(withSignedAttachmentUrls));
+    res.json({ intakes });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -136,7 +153,7 @@ router.get("/:id", async (req, res) => {
       .schema("store").from("intakes").select("*, intake_items(*)")
       .eq("id", req.params.id).single();
     if (error) throw error;
-    res.json({ intake: data });
+    res.json({ intake: await withSignedAttachmentUrls(data) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

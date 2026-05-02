@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import { FullSiteModal, FullCompanyModal, FullVendorModal, FullViewSiteModal, FullViewCompanyModal, FullViewVendorModal, FullContactModal, FullViewContactModal, FullClauseModal } from "./FullMasterModals";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
-import ViewOrder from "../Procurement/ViewOrder";
+import ViewOrder, { preloadOrderDetails, seedOrderDetails } from "../Procurement/ViewOrder";
 
 const QUILL_MODULES = {
   toolbar: [
@@ -25,7 +25,8 @@ const SCROLLBAR_STYLE = `
   .table-fixed-header th { position: sticky; top: 0; z-index: 10; }
 `;
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
+let cachedOrders = null;
 const normalizeRichTextHtml = (value) =>
   typeof value === "string"
     ? value.replace(/&nbsp;|&#160;|\u00A0/g, " ")
@@ -1488,7 +1489,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                     )}
                     <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-center whitespace-nowrap" style={{ width: '60px' }}>Unit</th>
                     <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-center whitespace-nowrap" style={{ width: '90px' }}>Qty</th>
-                    <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-right whitespace-nowrap" style={{ width: '120px' }}>Rate (?)</th>
+                    <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-right whitespace-nowrap" style={{ width: '120px' }}>Rate (₹)</th>
                     {settings.discountMode === "line" && <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-center whitespace-nowrap" style={{ width: '70px' }}>Disc%</th>}
                     {settings.tax && (
                       <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-center whitespace-nowrap group/th" style={{ width: '80px' }}>
@@ -1497,7 +1498,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                         </div>
                       </th>
                     )}
-                    <th className="px-2 py-2.5 text-[10px] font-bold text-indigo-300 uppercase tracking-wider text-right whitespace-nowrap" style={{ width: '140px' }}>Amount (?)</th>
+                    <th className="px-2 py-2.5 text-[10px] font-bold text-indigo-300 uppercase tracking-wider text-right whitespace-nowrap" style={{ width: '140px' }}>Amount (₹)</th>
                     {settings.remarks && (
                       <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-left group/th" style={{ minWidth: '140px' }}>
                         <div className="flex items-center gap-1 whitespace-nowrap">Remarks
@@ -1662,7 +1663,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                           {/* Rate */}
                           <td className="px-1 py-2 whitespace-nowrap" style={{ width: '120px' }}>
                             <div className="relative">
-                              <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-300">?</span>
+                              <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-300">₹</span>
                               <input type="number" value={sub.unitRate || ""} onChange={e => handleSubRowChange(group.id, sub.id, "unitRate", Number(e.target.value))}
                                 className="text-right text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-md pl-4 pr-1 py-1.5 outline-none focus:border-indigo-400" style={{ width: '108px' }} placeholder="0.00" />
                             </div>
@@ -1735,14 +1736,14 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
               <div className="p-5 space-y-2.5">
                 <div className="flex justify-between text-xs font-medium text-slate-500 pb-2 border-b border-slate-100">
                   <span>Subtotal</span>
-                  <span className="font-mono font-semibold text-slate-700">? {totals.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                  <span className="font-mono font-semibold text-slate-700">₹ {totals.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
                 </div>
 
                 {settings.discountMode === "line" && totals.lineDiscountSum > 0 && (
                   <div className="flex justify-between items-center text-xs font-medium text-rose-500">
                     <span>Discount (Line)</span>
                     <span className="font-mono font-semibold">
-                      - ? {totals.lineDiscountSum.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      - ₹ {totals.lineDiscountSum.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                     </span>
                   </div>
                 )}
@@ -1762,7 +1763,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                         <span className="text-[11px] text-rose-400 font-bold pr-1.5">%</span>
                       </div>
                       <span className="font-mono font-semibold text-rose-500 w-[90px] text-right">
-                        - ? {(Number(totals.txDiscountAmt) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                        - ₹ {(Number(totals.txDiscountAmt) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                   </div>
@@ -1802,14 +1803,14 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                     )}
                   </div>
                   <span className="font-mono font-semibold text-slate-700 w-[120px] text-right">
-                    ? {(Number(totals.gst) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    ₹ {(Number(totals.gst) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                   </span>
                 </div>
 
                 <div className="pt-3 border-t-2 border-slate-200 mt-1 space-y-1.5">
                   <div className="flex justify-between items-center">
                     <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Grand Total</p>
-                    <p className="text-2xl font-black text-indigo-600 font-mono">? {totals.grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</p>
+                    <p className="text-2xl font-black text-indigo-600 font-mono">₹ {totals.grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</p>
                   </div>
                   <p className="text-[11px] text-slate-400 italic leading-snug">
                     {header.orderType === "Supply" ? "Total Purchase Order Value: " : "Total Work Order Value: "}
@@ -2066,8 +2067,8 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     if (o._history || ["Issued", "Rejected", "Cancelled", "Reverted", "Recalled"].includes(o.status)) return false;
     return canDelete;
   };
-  const [orders, setOrders] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState(cachedOrders || []);
+  const [loading, setLoading] = useState(!cachedOrders);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState("All");
@@ -2106,18 +2107,22 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
 
   const TABS = ["All", "Draft", "Review", "Pending Issue", "Amendment Request", "Amended", "Issued", "Rejected", "Reverted", "Recalled", "Cancelled"];
 
-  useEffect(() => { fetchOrders(); }, []);
+  useEffect(() => {
+    if (cachedOrders) fetchOrders(true);
+    else fetchOrders();
+  }, []);
 
-  const fetchOrders = async () => {
-    setLoading(true);
+  const fetchOrders = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       const res = await fetch(`${API}/api/orders`);
       const data = await res.json();
-      setOrders(data.orders || []);
+      cachedOrders = data.orders || [];
+      setOrders(cachedOrders);
     } catch {
       showToast("Failed to fetch orders", "error");
     }
-    setLoading(false);
+    if (!isBackground) setLoading(false);
   };
 
   const handleDelete = async (id) => {
@@ -2498,7 +2503,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       "Fright": 0,
       "Total Tax (₹)": isPO ? 7200 : 9000,
       "Total Amount (₹)": isPO ? 47200 : 59000,
-      "Order Notes": "Deliver at site gate",
+      "Order Notes": isPO 
+        ? "Deliver at site gate, Payment net 30, Quality check mandatory, Insurance included"
+        : "Scraping of old paint, Application of primer coat, Final water-proofing coat with warranty",
       "TC ID": "TC-001",            // V1 (latest if no version specified — uses base record)
       "Payment Terms ID": "PAY-001/V2", // V2 of PAY-001
       "Govern Laws ID": "GOV-001",
@@ -2935,7 +2942,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
         
-        <div className="flex px-5 pt-4 pb-0 border-b border-slate-100 bg-white gap-8 overflow-x-auto no-scrollbar">
+        <div className="flex px-5 pt-4 pb-0 border-b border-slate-100 bg-white gap-8 overflow-x-auto thin-scrollbar-light">
           {TABS.map(t => {
             const count = getTabCount(t);
             return (
@@ -3074,7 +3081,10 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                       <td className="px-4 py-3.5 border-b border-r border-slate-200 bg-white group-hover:bg-indigo-50/30 transition-colors font-mono whitespace-nowrap">
                         {displayNo ? (
                           <div className="flex items-center gap-2">
-                            <button onClick={() => onViewClick(o.id)}
+                            <button
+                              onMouseEnter={() => preloadOrderDetails(o.id).catch(() => {})}
+                              onFocus={() => preloadOrderDetails(o.id).catch(() => {})}
+                              onClick={() => onViewClick(o)}
                               className="font-bold text-[11px] text-slate-900 hover:text-indigo-600 hover:underline hover:decoration-indigo-300 underline-offset-4 transition-all text-left">
                               {displayNo}
                             </button>
@@ -3142,7 +3152,10 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                       </td>
                       <td className="px-4 py-3.5 border-b border-l border-slate-100 text-center bg-white group-hover:bg-indigo-50/30 transition-colors">
                         <div className="flex items-center justify-center gap-1.5">
-                          <button onClick={() => onViewClick(o.id)}
+                          <button
+                            onMouseEnter={() => preloadOrderDetails(o.id).catch(() => {})}
+                            onFocus={() => preloadOrderDetails(o.id).catch(() => {})}
+                            onClick={() => onViewClick(o)}
                             className="h-8 w-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-600 hover:text-indigo-600 hover:border-indigo-200 hover:bg-white transition-all shadow-sm"
                             title="Quick View">
                             <Eye size={14} />
@@ -3185,6 +3198,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
 export default function CreateOrderWrapper({ project, editOrderId, onEditComplete }) {
   const [view, setView] = useState("list");
   const [viewId, setViewId] = useState(null);
+  const [viewSeed, setViewSeed] = useState(null);
   const [localEditId, setLocalEditId] = useState(null);
 
   useEffect(() => {
@@ -3209,19 +3223,27 @@ export default function CreateOrderWrapper({ project, editOrderId, onEditComplet
   }
   if (view === "view" && viewId) {
     return (
-      <ViewOrder 
-        orderId={viewId} 
-        onBack={() => { setView("list"); setViewId(null); }} 
-        onEdit={(id) => { setViewId(null); setLocalEditId(id); setView("create"); }} // switch to form
+        <ViewOrder 
+          orderId={viewId} 
+        initialOrder={viewSeed}
+        onBack={() => { setView("list"); setViewId(null); setViewSeed(null); }} 
+        onEdit={(id) => { setViewId(null); setViewSeed(null); setLocalEditId(id); setView("create"); }} // switch to form
       />
     );
   }
   return (
     <OrderList 
       project={project} 
-      onCreateClick={() => { if(onEditComplete) onEditComplete(); setLocalEditId(null); setView("create"); }} 
-      onViewClick={(id) => { setViewId(id); setView("view"); }} 
-      onEditClick={(id) => { setLocalEditId(id); setView("create"); }}
+      onCreateClick={() => { if(onEditComplete) onEditComplete(); setLocalEditId(null); setViewSeed(null); setView("create"); }} 
+      onViewClick={(order) => {
+        const id = typeof order === "object" ? order.id : order;
+        const seed = typeof order === "object" ? order : null;
+        if (seed) seedOrderDetails(seed);
+        setViewSeed(seed);
+        setViewId(id);
+        setView("view");
+      }} 
+      onEditClick={(id) => { setViewSeed(null); setLocalEditId(id); setView("create"); }}
     />
   );
 }

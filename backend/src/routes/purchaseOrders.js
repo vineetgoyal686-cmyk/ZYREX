@@ -3,6 +3,11 @@ const express  = require("express");
 const router   = express.Router();
 const multer   = require("multer");
 const supabase = require("../helpers/supabaseHelper");
+const {
+  normalizeStoragePath,
+  uploadStorageFile,
+  createSignedStorageUrl,
+} = require("../helpers/storageHelper");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -127,12 +132,160 @@ const parseJsonArr = (v) => {
 
 /* ─── Storage upload helper ─── */
 const uploadToStorage = async (bucket, path, buffer, mimetype) => {
-  const { error } = await supabase.storage
-    .from(bucket)
-    .upload(path, buffer, { contentType: mimetype, upsert: true });
-  if (error) throw new Error(`Storage upload failed: ${error.message}`);
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data.publicUrl;
+  return uploadStorageFile(supabase, bucket, path, buffer, mimetype);
+};
+
+const signOrderDocUrl = (value) => createSignedStorageUrl(supabase, "procurement-docs", value);
+const signProcImageUrl = (value) => createSignedStorageUrl(supabase, "procurement-images", value);
+const signVendorDocUrl = (value) => createSignedStorageUrl(supabase, "vendor-docs", value);
+
+const signDocArray = async (docs = []) => Promise.all((Array.isArray(docs) ? docs : []).map(async doc => {
+  const storagePath = normalizeStoragePath(doc.storage_path || doc.url, "procurement-docs");
+  return {
+    ...doc,
+    storage_path: storagePath || doc.storage_path,
+    url: await signOrderDocUrl(storagePath || doc.url),
+  };
+}));
+
+const signCompanyImages = async (company = {}) => {
+  const [logoUrl, stampUrl, signUrl] = await Promise.all([
+    signProcImageUrl(company.logo_url || company.logoUrl),
+    signProcImageUrl(company.stamp_url || company.stampUrl),
+    signProcImageUrl(company.sign_url || company.signUrl),
+  ]);
+
+  return {
+    ...company,
+    logo_url: logoUrl,
+    logoUrl,
+    stamp_url: stampUrl,
+    stampUrl,
+    sign_url: signUrl,
+    signUrl,
+  };
+};
+
+const signVendorDocs = async (vendor = {}) => {
+  const [
+    logoUrl,
+    docGstUrl,
+    docPanUrl,
+    docAadhaarUrl,
+    docCoiUrl,
+    docMsmeUrl,
+    docCancelChequeUrl,
+    docOtherUrl,
+    docOther2Url,
+  ] = await Promise.all([
+    signVendorDocUrl(vendor.logo_url || vendor.logoUrl),
+    signVendorDocUrl(vendor.doc_gst_url || vendor.docGstUrl),
+    signVendorDocUrl(vendor.doc_pan_url || vendor.docPanUrl),
+    signVendorDocUrl(vendor.doc_aadhaar_url || vendor.docAadhaarUrl),
+    signVendorDocUrl(vendor.doc_coi_url || vendor.docCoiUrl),
+    signVendorDocUrl(vendor.doc_msme_url || vendor.docMsmeUrl),
+    signVendorDocUrl(vendor.doc_cancel_cheque_url || vendor.docCancelChequeUrl),
+    signVendorDocUrl(vendor.doc_other_url || vendor.docOtherUrl),
+    signVendorDocUrl(vendor.doc_other2_url || vendor.docOther2Url),
+  ]);
+
+  return {
+    ...vendor,
+    logo_url: logoUrl,
+    logoUrl,
+    doc_gst_url: docGstUrl,
+    docGstUrl,
+    doc_pan_url: docPanUrl,
+    docPanUrl,
+    doc_aadhaar_url: docAadhaarUrl,
+    docAadhaarUrl,
+    doc_coi_url: docCoiUrl,
+    docCoiUrl,
+    doc_msme_url: docMsmeUrl,
+    docMsmeUrl,
+    doc_cancel_cheque_url: docCancelChequeUrl,
+    docCancelChequeUrl,
+    doc_other_url: docOtherUrl,
+    docOtherUrl,
+    doc_other2_url: docOther2Url,
+    docOther2Url,
+  };
+};
+
+const signOrderStorageUrls = async (order = {}) => {
+  const snapshot = { ...(order.snapshot || {}) };
+  const [
+    quotationUrl,
+    comparativeSheetUrl,
+    preDocuments,
+    postDocuments,
+    companies,
+    vendors,
+    snapshotCompany,
+    snapshotVendor,
+  ] = await Promise.all([
+    signOrderDocUrl(order.quotation_url),
+    signOrderDocUrl(order.comparative_sheet_url),
+    signDocArray(order.pre_documents),
+    signDocArray(order.post_documents),
+    order.companies ? signCompanyImages(order.companies) : Promise.resolve(order.companies),
+    order.vendors ? signVendorDocs(order.vendors) : Promise.resolve(order.vendors),
+    snapshot.company ? signCompanyImages(snapshot.company) : Promise.resolve(snapshot.company),
+    snapshot.vendor ? signVendorDocs(snapshot.vendor) : Promise.resolve(snapshot.vendor),
+  ]);
+
+  if (snapshot.company) snapshot.company = snapshotCompany;
+  if (snapshot.vendor) snapshot.vendor = snapshotVendor;
+
+  return {
+    ...order,
+    quotation_url: quotationUrl,
+    comparative_sheet_url: comparativeSheetUrl,
+    pre_documents: preDocuments,
+    post_documents: postDocuments,
+    companies,
+    vendors,
+    snapshot,
+  };
+};
+
+const normalizeOrderSnapshotStoragePaths = (mainData = {}) => {
+  const snapshot = { ...(mainData.snapshot || {}) };
+  if (snapshot.company) {
+    snapshot.company = {
+      ...snapshot.company,
+      logoUrl: normalizeStoragePath(snapshot.company.logoUrl || snapshot.company.logo_url, "procurement-images"),
+      logo_url: normalizeStoragePath(snapshot.company.logo_url || snapshot.company.logoUrl, "procurement-images"),
+      stampUrl: normalizeStoragePath(snapshot.company.stampUrl || snapshot.company.stamp_url, "procurement-images"),
+      stamp_url: normalizeStoragePath(snapshot.company.stamp_url || snapshot.company.stampUrl, "procurement-images"),
+      signUrl: normalizeStoragePath(snapshot.company.signUrl || snapshot.company.sign_url, "procurement-images"),
+      sign_url: normalizeStoragePath(snapshot.company.sign_url || snapshot.company.signUrl, "procurement-images"),
+    };
+  }
+  if (snapshot.vendor) {
+    snapshot.vendor = {
+      ...snapshot.vendor,
+      logoUrl: normalizeStoragePath(snapshot.vendor.logoUrl || snapshot.vendor.logo_url, "vendor-docs"),
+      logo_url: normalizeStoragePath(snapshot.vendor.logo_url || snapshot.vendor.logoUrl, "vendor-docs"),
+      docGstUrl: normalizeStoragePath(snapshot.vendor.docGstUrl || snapshot.vendor.doc_gst_url, "vendor-docs"),
+      doc_gst_url: normalizeStoragePath(snapshot.vendor.doc_gst_url || snapshot.vendor.docGstUrl, "vendor-docs"),
+      docPanUrl: normalizeStoragePath(snapshot.vendor.docPanUrl || snapshot.vendor.doc_pan_url, "vendor-docs"),
+      doc_pan_url: normalizeStoragePath(snapshot.vendor.doc_pan_url || snapshot.vendor.docPanUrl, "vendor-docs"),
+      docAadhaarUrl: normalizeStoragePath(snapshot.vendor.docAadhaarUrl || snapshot.vendor.doc_aadhaar_url, "vendor-docs"),
+      doc_aadhaar_url: normalizeStoragePath(snapshot.vendor.doc_aadhaar_url || snapshot.vendor.docAadhaarUrl, "vendor-docs"),
+      docCoiUrl: normalizeStoragePath(snapshot.vendor.docCoiUrl || snapshot.vendor.doc_coi_url, "vendor-docs"),
+      doc_coi_url: normalizeStoragePath(snapshot.vendor.doc_coi_url || snapshot.vendor.docCoiUrl, "vendor-docs"),
+      docMsmeUrl: normalizeStoragePath(snapshot.vendor.docMsmeUrl || snapshot.vendor.doc_msme_url, "vendor-docs"),
+      doc_msme_url: normalizeStoragePath(snapshot.vendor.doc_msme_url || snapshot.vendor.docMsmeUrl, "vendor-docs"),
+      docCancelChequeUrl: normalizeStoragePath(snapshot.vendor.docCancelChequeUrl || snapshot.vendor.doc_cancel_cheque_url, "vendor-docs"),
+      doc_cancel_cheque_url: normalizeStoragePath(snapshot.vendor.doc_cancel_cheque_url || snapshot.vendor.docCancelChequeUrl, "vendor-docs"),
+      docOtherUrl: normalizeStoragePath(snapshot.vendor.docOtherUrl || snapshot.vendor.doc_other_url, "vendor-docs"),
+      doc_other_url: normalizeStoragePath(snapshot.vendor.doc_other_url || snapshot.vendor.docOtherUrl, "vendor-docs"),
+      docOther2Url: normalizeStoragePath(snapshot.vendor.docOther2Url || snapshot.vendor.doc_other2_url, "vendor-docs"),
+      doc_other2_url: normalizeStoragePath(snapshot.vendor.doc_other2_url || snapshot.vendor.docOther2Url, "vendor-docs"),
+    };
+  }
+  return { ...mainData, snapshot };
 };
 
 /* ─── Helper: Get Current Financial Year ─── */
@@ -253,16 +406,37 @@ router.get("/", async (req, res) => {
       throw error;
     }
     console.log(`Fetched ${data?.length || 0} orders from DB`);
-    const orders = sanitizeRichTextDeep(data || []);
+    
+    // Convert UUID made_by to user names (Optimized N+1)
+    const userIds = [...new Set((data || [])
+      .map(o => o.made_by)
+      .filter(id => id && id.length === 36 && id.includes('-')))];
+
+    let userMap = {};
+    if (userIds.length > 0) {
+      const { data: users } = await supabase.from("users").select("id, name").in("id", userIds);
+      userMap = (users || []).reduce((acc, u) => { acc[u.id] = u.name; return acc; }, {});
+    }
+
+    const orders = (data || []).map(order => {
+      let displayName = order.made_by || "System";
+      if (displayName && displayName.length === 36 && displayName.includes('-')) {
+        displayName = userMap[displayName] || displayName;
+      }
+      return { ...order, made_by: displayName };
+    });
+    
+    // Skip generating signed URLs for list view to drastically improve load times
+    const sanitized = sanitizeRichTextDeep(orders);
     const historyOrders = [];
-    for (const order of orders) {
+    for (const order of sanitized) {
       for (const history of getHistoryRows(order)) {
         if (["Reverted", "Recalled"].includes(history.action)) {
           historyOrders.push(makeHistoryListOrder(order, history));
         }
       }
     }
-    res.json({ orders: [...orders, ...historyOrders] });
+    res.json({ orders: [...sanitized, ...historyOrders] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -380,7 +554,7 @@ router.post("/", upload.fields([
     const bodyData = JSON.parse(req.body.data || "{}");
     const files    = req.files || {};
     let { mainData, items, nextSerial } = bodyData;
-    mainData = sanitizeRichTextDeep(mainData || {});
+    mainData = normalizeOrderSnapshotStoragePaths(sanitizeRichTextDeep(mainData || {}));
     items = sanitizeRichTextDeep(items || []);
 
     // 1. Handle File Uploads
@@ -448,6 +622,7 @@ router.get("/:id", async (req, res) => {
     if (isHistoryId(req.params.id)) {
       const historical = await loadHistoryOrder(req.params.id);
       if (!historical) return res.status(404).json({ error: "History snapshot not found" });
+      historical.order = await signOrderStorageUrls(historical.order);
       return res.json(historical);
     }
 
@@ -464,7 +639,8 @@ router.get("/:id", async (req, res) => {
       .eq("order_id", req.params.id);
     if (itemErr) throw itemErr;
 
-    res.json({ order: sanitizeRichTextDeep(order), items: sanitizeRichTextDeep(items || []) });
+    const signedOrder = await signOrderStorageUrls(order);
+    res.json({ order: sanitizeRichTextDeep(signedOrder), items: sanitizeRichTextDeep(items || []) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -528,10 +704,11 @@ router.post("/bulk-import", async (req, res) => {
        "TC-001/V2"       → version 2 points
        "TC-001; TC-002"  → multiple, joined
        Falls back to literal text if code not found. */
-    const resolveClauseCell = (cell) => {
-      if (!cell) return [];
+    const resolveClauseSelection = (cell, expectedType) => {
+      if (!cell) return { points: [], refs: [] };
       const tokens = String(cell).split(/\r?\n|;/).map(s => s.trim()).filter(Boolean);
-      const out = [];
+      const pointsOut = [];
+      const refs = [];
       for (const tok of tokens) {
         const m = tok.match(/^([A-Z]+-\d+)(?:\/V(\d+))?$/i);
         if (m) {
@@ -541,12 +718,29 @@ router.post("/bulk-import", async (req, res) => {
           if (cl) {
             const versions = versionMap.get(cl.id) || {};
             const points = versions[ver] || (ver === 1 ? (Array.isArray(cl.points) ? cl.points : []) : []);
-            if (points && points.length) { out.push(...points); continue; }
+            if (points && points.length) {
+              pointsOut.push(...points);
+              refs.push({
+                type: cl.type || expectedType,
+                code: ver > 1 ? `${code}/V${ver}` : code,
+                category: cl.category || "",
+                title: cl.title || "",
+                points,
+              });
+              continue;
+            }
           }
         }
-        out.push(tok); // literal fallback
+        pointsOut.push(tok);
+        refs.push({
+          type: expectedType,
+          code: "Custom",
+          category: "",
+          title: tok.slice(0, 80),
+          points: [tok],
+        });
       }
-      return out;
+      return { points: pointsOut, refs };
     };
 
     const fy = getFinancialYear();
@@ -773,6 +967,11 @@ router.post("/bulk-import", async (req, res) => {
           return s.split(/\r?\n|;/).map(x => x.trim()).filter(Boolean);
         };
 
+        const tcSelection = resolveClauseSelection(pick(h, ["TC ID", "Terms & Conditions ID", "Term Condition", "Terms & Conditions"]), "TC");
+        const paySelection = resolveClauseSelection(pick(h, ["Payment Terms ID", "Payment Terms"]), "PAY");
+        const govSelection = resolveClauseSelection(pick(h, ["Govern Laws ID", "Governing Laws ID", "Governlaws", "Governing Laws"]), "GOV");
+        const anxSelection = resolveClauseSelection(pick(h, ["Annexure ID", "Annexures ID", "Annexure", "Annexures"]), "ANX");
+
         const insertRow = {
           order_number: orderNumber,
           order_type: orderType,
@@ -785,11 +984,19 @@ router.post("/bulk-import", async (req, res) => {
           made_by:       String(pick(h, ["Created By"]) || createdBy || "Bulk Import").trim(),
           request_by:    String(pick(h, ["Requisition By"])).trim() || null,
           date_of_creation: parseDate(pick(h, ["Created On", "Created Date", "Order Date"])) || new Date().toISOString(),
-          notes:         String(pick(h, ["Order Notes"])).trim() || null,
-          terms_conditions: resolveClauseCell(pick(h, ["TC ID", "Terms & Conditions ID", "Term Condition", "Terms & Conditions"])),
-          payment_terms:    resolveClauseCell(pick(h, ["Payment Terms ID", "Payment Terms"])),
-          governing_laws:   resolveClauseCell(pick(h, ["Govern Laws ID", "Governing Laws ID", "Governlaws", "Governing Laws"])),
-          annexures:        resolveClauseCell(pick(h, ["Annexure ID", "Annexures ID", "Annexure", "Annexures"])),
+          notes:         (() => {
+            const notesText = String(pick(h, ["Order Notes"]) || "").trim();
+            if (!notesText) return null;
+            // If contains comma or newline, split into points array; else keep as text
+            if (notesText.includes(',') || notesText.includes('\n') || notesText.includes('\r')) {
+              return notesText.split(/[,\r\n]+/).map(x => x.trim()).filter(Boolean);
+            }
+            return notesText;
+          })(),
+          terms_conditions: tcSelection.points,
+          payment_terms:    paySelection.points,
+          governing_laws:   govSelection.points,
+          annexures:        anxSelection.points,
           totals,
           // FREEZE snapshot at import time so later master edits don't affect this order
           snapshot: {
@@ -797,6 +1004,12 @@ router.post("/bulk-import", async (req, res) => {
             site: siteSnap,
             vendor: vendorSnap,
             contacts: resolveContactsCell(pick(h, ["Contact IDs", "Contact ID", "Contacts"])),
+            clauses: [
+              ...tcSelection.refs,
+              ...paySelection.refs,
+              ...govSelection.refs,
+              ...anxSelection.refs,
+            ],
           },
         };
 
@@ -841,7 +1054,7 @@ router.put("/:id", upload.fields([
     const bodyData = JSON.parse(req.body.data || "{}");
     const files    = req.files || {};
     let { mainData } = bodyData;
-    mainData = sanitizeRichTextDeep(mainData || {});
+    mainData = normalizeOrderSnapshotStoragePaths(sanitizeRichTextDeep(mainData || {}));
     // Distinguish "items omitted from payload" vs "items: []".
     // If caller didn't send items at all (status-only updates etc.), DO NOT
     // touch the items table. Only replace items when caller explicitly sends an array.
@@ -1101,9 +1314,17 @@ const fetchAsDataUri = async (url) => {
   const cached = logoCache.get(url);
   if (cached && Date.now() - cached.t < LOGO_TTL_MS) return cached.v;
   try {
-    const r = await fetch(url);
-    if (!r.ok) return "";
-    const rawBuf = Buffer.from(await r.arrayBuffer());
+    let rawBuf;
+    if (!/^https?:/i.test(String(url)) || String(url).includes("/storage/v1/object/")) {
+      const path = normalizeStoragePath(url, "procurement-images");
+      const { data, error } = await supabase.storage.from("procurement-images").download(path);
+      if (error || !data) return "";
+      rawBuf = Buffer.from(await data.arrayBuffer());
+    } else {
+      const r = await fetch(url);
+      if (!r.ok) return "";
+      rawBuf = Buffer.from(await r.arrayBuffer());
+    }
     const { buf, ct } = await compressImage(rawBuf);
     const v = `data:${ct};base64,${buf.toString("base64")}`;
     logoCache.set(url, { v, t: Date.now() });
@@ -1213,7 +1434,7 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
     const storagePath = `orders/amendments/${Date.now()}_${safeName}`;
     const url = await uploadToStorage("procurement-docs", storagePath, req.file.buffer, req.file.mimetype);
-    res.json({ success: true, url, storage_path: storagePath, name: req.file.originalname, size: req.file.size });
+    res.json({ success: true, url, storage_path: url, name: req.file.originalname, size: req.file.size });
   } catch (err) {
     console.error("Generic order upload failed:", err);
     res.status(500).json({ error: err.message });
@@ -1263,7 +1484,7 @@ router.post("/:id/post-documents", upload.single("file"), async (req, res) => {
       .eq("id", id);
     if (updErr) throw updErr;
 
-    res.json({ success: true, document: newDoc });
+    res.json({ success: true, document: { ...newDoc, url: await signOrderDocUrl(newDoc.url) } });
   } catch (err) {
     console.error("Post-doc upload error:", err.message);
     res.status(500).json({ error: err.message });

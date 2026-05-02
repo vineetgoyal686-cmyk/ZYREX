@@ -9,7 +9,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const API    = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API    = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const ACCEPT = "image/jpeg,image/jpg,image/png,image/gif,image/webp,image/bmp,image/svg+xml";
 
 const emptyForm = {
@@ -83,7 +83,9 @@ const GRADIENTS = [
 const getGradient = (name) => GRADIENTS[(name?.charCodeAt(0) || 0) % GRADIENTS.length];
 
 export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProjectsUpdate }) {
-  const canEdit = isGlobalAdmin || !!permissions.edit;
+  const canAdd    = isGlobalAdmin || !!permissions.add;
+  const canEdit   = isGlobalAdmin || !!permissions.edit;
+  const canDelete = isGlobalAdmin || !!permissions.delete;
   const [projects, setProjects]       = useState([]);
   const [loading, setLoading]         = useState(true);
   const [showModal, setShowModal]     = useState(false);
@@ -341,7 +343,7 @@ export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProj
             </div>
 
             {/* Bulk Upload */}
-            {canEdit && (
+            {canAdd && (
               <button onClick={() => { setShowBulk(true); setBulkRows([]); setBulkFile(""); }}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
                 <Upload size={14} /> Bulk Upload
@@ -349,7 +351,7 @@ export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProj
             )}
 
             {/* Add */}
-            {canEdit && (
+            {canAdd && (
               <button onClick={openAdd}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-linear-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold hover:shadow-md hover:shadow-blue-200 transition-all">
                 <Plus size={15} /> Add Project
@@ -435,16 +437,16 @@ export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProj
                       <Eye size={14} />
                     </button>
                     {canEdit && (
-                      <>
-                        <button onClick={() => openEdit(p)} title="Edit"
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors">
-                          <Pencil size={14} />
-                        </button>
-                        <button onClick={() => handleDelete(p)} title="Delete"
-                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
-                          <Trash2 size={14} />
-                        </button>
-                      </>
+                      <button onClick={() => openEdit(p)} title="Edit"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors">
+                        <Pencil size={14} />
+                      </button>
+                    )}
+                    {canDelete && (
+                      <button onClick={() => handleDelete(p)} title="Delete"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                        <Trash2 size={14} />
+                      </button>
                     )}
                   </div>
                   {/* Toggle switch */}

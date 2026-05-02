@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { CircleCheck, ClipboardList, Clock, FileText, IndianRupee, RefreshCw, Search } from "lucide-react";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
 const cardCls = "rounded-lg border border-slate-200 bg-white shadow-sm";
 const statusCls = {

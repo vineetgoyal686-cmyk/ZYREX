@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { Plus, Search, Pencil, Trash2, X, Tag, Upload, Download, FileSpreadsheet, FileText, ChevronDown, Eye } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const PER_PAGE = 10;
 const emptyForm = { categoryName: "", description: "", status: "Active" };
 
@@ -38,22 +39,9 @@ export default function CategoryList() {
   const exportMenuRef = useRef();
   const bulkMenuRef   = useRef();
   const csvRef        = useRef();
-  const [permissions, setPermissions] = useState({});
-  const [isGlobalAdmin, setIsGlobalAdmin] = useState(false);
+  const { isGlobalAdmin, canAdd, canEdit, canDelete, canExport, canBulk } = useModulePermissions("category_list");
 
-  useEffect(() => {
-    const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
-    setIsGlobalAdmin(u.role === "global_admin");
-    const p = u.app_permissions?.find(ap => ap.module_key === "category_list") || {};
-    setPermissions(p);
-    fetchCategories();
-  }, []);
-
-  const canAdd = isGlobalAdmin || !!permissions.can_add;
-  const canEdit = isGlobalAdmin || !!permissions.can_edit;
-  const canDelete = isGlobalAdmin || !!permissions.can_delete;
-  const canExport = isGlobalAdmin || !!permissions.can_export;
-  const canBulk = isGlobalAdmin || !!permissions.can_bulk_upload;
+  useEffect(() => { fetchCategories(); }, []);
 
   useEffect(() => {
     const handler = (e) => {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { BarChart3, TrendingUp, CheckCircle2, Clock, XCircle, IndianRupee, FileText, Package } from "lucide-react";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
 const STATUS_COLORS = {
   Draft:          { bg: "bg-slate-100",   text: "text-slate-700",   bar: "#94a3b8" },

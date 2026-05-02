@@ -24,6 +24,7 @@ const pushUrl = (tab, project) => {
 
 import Profile from "./pages/Profile";
 import MasterData from "./pages/MasterData";
+import ClauseMasterData from "./pages/ClauseMasterData";
 import Approvals from "./pages/Approvals";
  
 import View3D from "./pages/Model";
@@ -81,7 +82,7 @@ import CompareImages from "./pages/Images/CompareImages";
 // Attendance
 import Attendance from "./pages/Attendance/Attendance";
  
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
 function App() {
   // Detect Supabase password-recovery / invite redirect
@@ -158,6 +159,14 @@ function App() {
       const permMap = {};
       (data.permissions || []).forEach(p => { permMap[p.module_key] = p; });
       setUserTabPermissions({ hasAny: data.has_any_permissions, map: permMap });
+      // Sync app_permissions into localStorage so all components get fresh data
+      const stored = localStorage.getItem("bms_user");
+      if (stored) {
+        const user = JSON.parse(stored);
+        user.app_permissions = data.permissions || [];
+        localStorage.setItem("bms_user", JSON.stringify(user));
+        window.dispatchEvent(new CustomEvent("bms_permissions_updated"));
+      }
     } catch { /* silent — don't break the app */ }
   };
 
@@ -199,6 +208,7 @@ function App() {
     setActiveTab(tab);
     pushUrl(tab, proj);
     if (isMobile) setMobileOpen(false);
+    fetchUserPermissions(); // refresh permissions on every tab switch
   };
 
   const handleSetSelectedProject = (project) => {
@@ -254,6 +264,7 @@ function App() {
     if (activeTab === "approvals__config") return <ApprovalConfig showToast={(msg, type) => alert(`${type?.toUpperCase()}: ${msg}`)} />;
 
     if (activeTab === "master_data" || activeTab === "master_data__vendor") return <MasterData view="vendor" />;
+    if (activeTab === "master_data__clauses") return <ClauseMasterData />;
     
     if (activeTab === "master_data__products" || activeTab === "master_data__orders" || activeTab === "master_data__intakes") {
       return (

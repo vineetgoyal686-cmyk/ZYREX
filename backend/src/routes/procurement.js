@@ -2,6 +2,12 @@ const express  = require("express");
 const router   = express.Router();
 const multer   = require("multer");
 const supabase  = require("../helpers/supabaseHelper");
+const {
+  normalizeStoragePath,
+  uploadStorageFile,
+  createSignedStorageUrl,
+  removeStorageFile,
+} = require("../helpers/storageHelper");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -19,14 +25,48 @@ const sanitizeRichTextDeep = (value) => {
 };
 
 /* ─── Storage upload helper ─── */
+router.post('/sign-urls', async (req, res) => {
+  try {
+    const { bucket, paths } = req.body;
+    if (!bucket || typeof bucket !== "string") return res.status(400).json({ error: "Bucket is required" });
+    if (!paths || !Array.isArray(paths) || paths.length === 0) return res.json({ urls: {} });
+    
+    const validPaths = paths
+      .map(raw => ({ raw, path: normalizeStoragePath(raw, bucket) }))
+      .filter(item => item.path && !/^data:|^blob:/i.test(item.path));
+    if (validPaths.length === 0) return res.json({ urls: {} });
+
+    const uniquePaths = [...new Set(validPaths.map(item => item.path))];
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrls(uniquePaths, 60 * 60 * 24);
+    if (error) throw error;
+
+    const signedByPath = new Map();
+    (data || []).forEach(item => {
+      if (item.signedUrl) signedByPath.set(item.path, item.signedUrl);
+    });
+
+    const urls = {};
+    validPaths.forEach(({ raw, path }) => {
+      const signedUrl = signedByPath.get(path);
+      if (signedUrl) {
+        urls[raw] = signedUrl;
+        urls[path] = signedUrl;
+      }
+    });
+    
+    res.json({ urls });
+  } catch (err) {
+    console.error('Sign urls error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 const uploadToStorage = async (bucket, path, buffer, mimetype) => {
-  const { error } = await supabase.storage
-    .from(bucket)
-    .upload(path, buffer, { contentType: mimetype, upsert: true });
-  if (error) throw new Error(`Storage upload failed: ${error.message}`);
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
-  return data.publicUrl;
+  return uploadStorageFile(supabase, bucket, path, buffer, mimetype);
 };
+
+const signProcurementImageUrl = (value) => createSignedStorageUrl(supabase, "procurement-images", value);
+const signVendorDocUrl = (value) => createSignedStorageUrl(supabase, "vendor-docs", value);
 
 /* ════════════════════════════════════
    ITEMS
@@ -56,7 +96,7 @@ router.get("/items", async (_req, res) => {
       .select("*")
       .order("item_code", { ascending: true });
     if (error) throw error;
-    const items = (data || []).map(r => ({
+    const items = await Promise.all((data || []).map(async r => ({
       id:           r.id,
       itemCode:     r.item_code     || "",
       itemType:     r.item_type     || "Supply",
@@ -65,11 +105,11 @@ router.get("/items", async (_req, res) => {
       specifications: parseJsonArr(r.description),
       category:     r.category      || "",
       unit:         r.unit          || "",
-      imageUrl:     r.image_url     || "",
+      imageUrl:     await createSignedStorageUrl(supabase, "procurement-images", r.image_url),
       remarks:      r.remarks       || "",
       createdById:  r.created_by_id || "",
       createdByName: r.created_by_name || "",
-    }));
+    })));
     res.json({ items });
   } catch (err) {
     console.error("Items read error:", err.message);
@@ -113,12 +153,12 @@ router.put("/items/:id", upload.single("image"), async (req, res) => {
     const { materialName, category, unit, itemType, remarks } = req.body;
     const brands         = JSON.parse(req.body.brands         || "[]");
     const specifications = JSON.parse(req.body.specifications || "[]");
-    let image_url        = req.body.imageUrl || "";
+    let image_url        = normalizeStoragePath(req.body.imageUrl, "procurement-images") || "";
 
     if (req.file) {
       if (req.body.imageUrl) {
-        const oldPath = req.body.imageUrl.split("/procurement-images/")[1]?.split("?")[0];
-        if (oldPath) await supabase.storage.from("procurement-images").remove([oldPath]);
+        await removeStorageFile(supabase, "procurement-images", req.body.imageUrl)
+          .catch(err => console.warn("Item image cleanup failed:", err.message));
       }
       image_url = await uploadToStorage(
         "procurement-images",
@@ -204,8 +244,8 @@ router.delete("/items/:id", async (req, res) => {
     const { id } = req.params;
     const { data } = await supabase.schema("procurement").from("items").select("image_url").eq("id", id).single();
     if (data?.image_url) {
-      const path = data.image_url.split("/procurement-images/")[1]?.split("?")[0];
-      if (path) await supabase.storage.from("procurement-images").remove([path]);
+      await removeStorageFile(supabase, "procurement-images", data.image_url)
+        .catch(err => console.warn("Item image cleanup failed:", err.message));
     }
     const { error } = await supabase.schema("procurement").from("items").delete().eq("id", id);
     if (error) throw error;
@@ -269,12 +309,19 @@ router.post("/items/bulk", async (req, res) => {
 });
 
 /* ════════════════════════════════════
-   CLAUSES  (TC / PAY / GOV)
+   CLAUSES  (TC / PAY / GOV / ANX)
 ════════════════════════════════════ */
+
+const getClausePrefix = (type) => ({
+  TC: "TC",
+  PAY: "PAY",
+  GOV: "GOV",
+  ANX: "ANX",
+}[type] || "TC");
 
 /* helper: next clause code per type */
 const getNextClauseCode = async (type) => {
-  const prefix = type === "PAY" ? "PAY" : type === "GOV" ? "GOV" : "TC";
+  const prefix = getClausePrefix(type);
   const { data } = await supabase.schema("procurement").from("clauses")
     .select("code").eq("type", type);
   const nums = (data || []).map(r => parseInt((r.code || "").replace(`${prefix}-`, "")) || 0);
@@ -470,7 +517,7 @@ router.post("/clauses/bulk", async (req, res) => {
   try {
     const { rows, type } = req.body;
     if (!rows?.length) return res.status(400).json({ error: "No rows provided" });
-    const prefix = type === "PAY" ? "PAY" : type === "GOV" ? "GOV" : "TC";
+    const prefix = getClausePrefix(type);
 
     const { data: existing } = await supabase.schema("procurement").from("clauses")
       .select("title, type").eq("type", type);
@@ -568,39 +615,63 @@ router.get("/vendors", async (_req, res) => {
       (users || []).forEach(u => userNameById.set(u.id, u.name || u.email || ""));
     }
 
-    const vendors = (data || []).map(r => ({
-      id:             r.id,
-      vendorCode:     r.vendor_code     || "",
-      vendorName:     r.vendor_name     || "",
-      address:        r.address         || "",
-      bankName:       r.bank_name       || "",
-      accountHolder:  r.account_holder  || "",
-      accountNumber:  r.account_number  || "",
-      ifscCode:       r.ifsc_code       || "",
-      bankBranch:     r.bank_branch     || "",
-      bankCity:       r.bank_city       || "",
-      bankState:      r.bank_state      || "",
-      gstin:          r.gstin           || "",
-      msmeNumber:     r.msme_number     || "",
-      pan:            r.pan             || "",
-      aadharNo:       r.aadhar_no       || "",
-      contactPerson:  r.contact_person  || "",
-      mobile:         r.mobile          || "",
-      email:          r.email           || "",
-      companyCodes:   parseJsonArr(r.company_codes).map(x => String(x || "").trim()).filter(Boolean),
-      logoUrl:             r.logo_url              || "",
-      docGstUrl:           r.doc_gst_url           || "",
-      docPanUrl:           r.doc_pan_url           || "",
-      docAadhaarUrl:       r.doc_aadhaar_url       || "",
-      docCoiUrl:           r.doc_coi_url           || "",
-      docMsmeUrl:          r.doc_msme_url          || "",
-      docCancelChequeUrl:  r.doc_cancel_cheque_url || "",
-      docOtherUrl:         r.doc_other_url         || "",
-      docOther2Url:        r.doc_other2_url        || "",
-      siteCodes:           parseJsonArr(r.site_codes),
-      createdById:         r.created_by_id         || "",
-      createdByName:       r.created_by_name       || userNameById.get(r.created_by_id) || "",
-      createdAt:           r.created_at            || "",
+    const vendors = await Promise.all((data || []).map(async r => {
+      const [
+        logoUrl,
+        docGstUrl,
+        docPanUrl,
+        docAadhaarUrl,
+        docCoiUrl,
+        docMsmeUrl,
+        docCancelChequeUrl,
+        docOtherUrl,
+        docOther2Url,
+      ] = await Promise.all([
+        r.logo_url,
+        r.doc_gst_url,
+        r.doc_pan_url,
+        r.doc_aadhaar_url,
+        r.doc_coi_url,
+        r.doc_msme_url,
+        r.doc_cancel_cheque_url,
+        r.doc_other_url,
+        r.doc_other2_url,
+      ].map(signVendorDocUrl));
+
+      return {
+        id:             r.id,
+        vendorCode:     r.vendor_code     || "",
+        vendorName:     r.vendor_name     || "",
+        address:        r.address         || "",
+        bankName:       r.bank_name       || "",
+        accountHolder:  r.account_holder  || "",
+        accountNumber:  r.account_number  || "",
+        ifscCode:       r.ifsc_code       || "",
+        bankBranch:     r.bank_branch     || "",
+        bankCity:       r.bank_city       || "",
+        bankState:      r.bank_state      || "",
+        gstin:          r.gstin           || "",
+        msmeNumber:     r.msme_number     || "",
+        pan:            r.pan             || "",
+        aadharNo:       r.aadhar_no       || "",
+        contactPerson:  r.contact_person  || "",
+        mobile:         r.mobile          || "",
+        email:          r.email           || "",
+        companyCodes:   parseJsonArr(r.company_codes).map(x => String(x || "").trim()).filter(Boolean),
+        logoUrl,
+        docGstUrl,
+        docPanUrl,
+        docAadhaarUrl,
+        docCoiUrl,
+        docMsmeUrl,
+        docCancelChequeUrl,
+        docOtherUrl,
+        docOther2Url,
+        siteCodes:           parseJsonArr(r.site_codes),
+        createdById:         r.created_by_id         || "",
+        createdByName:       r.created_by_name       || userNameById.get(r.created_by_id) || "",
+        createdAt:           r.created_at            || "",
+      };
     }));
     res.json({ vendors });
   } catch (err) {
@@ -714,15 +785,15 @@ router.put("/vendors/:id", vendorUpload, async (req, res) => {
       mobile:          b.mobile         || "",
       email:           b.email          || "",
       company_codes:   JSON.stringify(parseJsonArr(b.companyCodes).map(x => String(x || "").trim()).filter(Boolean)),
-      logo_url:              newLogo             || b.logoUrl            || "",
-      doc_gst_url:           newDocGst           || b.docGstUrl          || "",
-      doc_pan_url:           newDocPan           || b.docPanUrl          || "",
-      doc_aadhaar_url:       newDocAadhaar       || b.docAadhaarUrl      || "",
-      doc_coi_url:           newDocCoi           || b.docCoiUrl          || "",
-      doc_msme_url:          newDocMsme          || b.docMsmeUrl         || "",
-      doc_cancel_cheque_url: newDocCancelCheque  || b.docCancelChequeUrl || "",
-      doc_other_url:         newDocOther         || b.docOtherUrl        || "",
-      doc_other2_url:        newDocOther2        || b.docOther2Url       || "",
+      logo_url:              newLogo             || normalizeStoragePath(b.logoUrl, "vendor-docs")            || "",
+      doc_gst_url:           newDocGst           || normalizeStoragePath(b.docGstUrl, "vendor-docs")          || "",
+      doc_pan_url:           newDocPan           || normalizeStoragePath(b.docPanUrl, "vendor-docs")          || "",
+      doc_aadhaar_url:       newDocAadhaar       || normalizeStoragePath(b.docAadhaarUrl, "vendor-docs")      || "",
+      doc_coi_url:           newDocCoi           || normalizeStoragePath(b.docCoiUrl, "vendor-docs")          || "",
+      doc_msme_url:          newDocMsme          || normalizeStoragePath(b.docMsmeUrl, "vendor-docs")         || "",
+      doc_cancel_cheque_url: newDocCancelCheque  || normalizeStoragePath(b.docCancelChequeUrl, "vendor-docs") || "",
+      doc_other_url:         newDocOther         || normalizeStoragePath(b.docOtherUrl, "vendor-docs")        || "",
+      doc_other2_url:        newDocOther2        || normalizeStoragePath(b.docOther2Url, "vendor-docs")       || "",
       site_codes:            b.siteCodes         || "[]",
     }).eq("id", id);
     if (error) throw error;
@@ -805,12 +876,7 @@ router.delete("/vendors/:id/permanent", async (req, res) => {
         vendor.doc_coi_url, vendor.doc_msme_url, vendor.doc_cancel_cheque_url,
         vendor.doc_other_url, vendor.doc_other2_url
       ];
-      const paths = urls.map(url => {
-        if (!url) return null;
-        const bucketPath = "/storage/v1/object/public/vendor-docs/";
-        const idx = url.indexOf(bucketPath);
-        return idx !== -1 ? decodeURIComponent(url.substring(idx + bucketPath.length)) : null;
-      }).filter(Boolean);
+      const paths = urls.map(url => normalizeStoragePath(url, "vendor-docs")).filter(Boolean);
       
       if (paths.length > 0) {
         await supabase.storage.from("vendor-docs").remove(paths).catch(err => console.warn("Storage cleanup failed:", err.message));
@@ -1265,23 +1331,31 @@ router.get("/companies", async (_req, res) => {
     const { data, error } = await supabase
       .schema("procurement").from("companies").select("*").order("company_name", { ascending: true });
     if (error) throw error;
-    const companies = (data || []).map(r => ({
-      id:          r.id,
-      companyName:  r.company_name  || "",
-      companyCode:  r.company_code  || "",
-      personName:   r.person_name   || "",
-      designation:  r.designation   || "",
-      phone:        r.phone         || "",
-      email:        r.email         || "",
-      gstin:        r.gstin         || "",
-      pan:          r.pan           || "",
-      pincode:      r.pincode       || "",
-      state:        r.state         || "",
-      district:     r.district      || "",
-      address:      r.address       || "",
-      logoUrl:      r.logo_url      || "",
-      stampUrl:     r.stamp_url     || "",
-      signUrl:      r.sign_url      || "",
+    const companies = await Promise.all((data || []).map(async r => {
+      const [logoUrl, stampUrl, signUrl] = await Promise.all([
+        r.logo_url,
+        r.stamp_url,
+        r.sign_url,
+      ].map(signProcurementImageUrl));
+
+      return {
+        id:          r.id,
+        companyName:  r.company_name  || "",
+        companyCode:  r.company_code  || "",
+        personName:   r.person_name   || "",
+        designation:  r.designation   || "",
+        phone:        r.phone         || "",
+        email:        r.email         || "",
+        gstin:        r.gstin         || "",
+        pan:          r.pan           || "",
+        pincode:      r.pincode       || "",
+        state:        r.state         || "",
+        district:     r.district      || "",
+        address:      r.address       || "",
+        logoUrl,
+        stampUrl,
+        signUrl,
+      };
     }));
     res.json({ companies });
   } catch (err) {
@@ -1343,9 +1417,9 @@ router.put("/companies/:id", companyUpload, async (req, res) => {
       gstin: b.gstin || "", pan: b.pan || "",
       pincode: b.pincode || "", state: b.state || "",
       district: b.district || "", address: b.address || "",
-      logo_url:  newLogo  || b.logoUrl  || "",
-      stamp_url: newStamp || b.stampUrl || "",
-      sign_url:  newSign  || b.signUrl  || "",
+      logo_url:  newLogo  || normalizeStoragePath(b.logoUrl, "procurement-images")  || "",
+      stamp_url: newStamp || normalizeStoragePath(b.stampUrl, "procurement-images") || "",
+      sign_url:  newSign  || normalizeStoragePath(b.signUrl, "procurement-images")  || "",
     }).eq("id", id);
     if (error) throw error;
     res.json({ success: true });

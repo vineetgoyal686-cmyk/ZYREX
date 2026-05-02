@@ -1,6 +1,8 @@
 const express = require("express");
+const path = require("path");
 const router = express.Router();
 const supabase = require("../helpers/supabaseHelper");
+const { createSignedStorageUrl } = require("../helpers/storageHelper");
 
 console.log("✅ VIEW ROUTE LOADED");
 
@@ -34,13 +36,33 @@ router.get("/model/:project", async (req, res) => {
     }
 
     // Build public URL — Supabase resolves relative .bin / Textures/ refs automatically
-    const { data: urlData } = supabase.storage
+    const gltfPath = `${project}/${gltfFile.name}`;
+    const { data: fileData, error: downloadError } = await supabase.storage
       .from(BUCKET)
-      .getPublicUrl(`${project}/${gltfFile.name}`);
+      .download(gltfPath);
+    if (downloadError) throw downloadError;
+
+    const gltfJson = JSON.parse(await fileData.text());
+    const signRelativeUri = async (uri) => {
+      if (!uri || /^(data:|https?:)/i.test(uri)) return uri;
+      const objectPath = path.posix.normalize(path.posix.join(project, uri));
+      return createSignedStorageUrl(supabase, BUCKET, objectPath);
+    };
+
+    gltfJson.buffers = await Promise.all((gltfJson.buffers || []).map(async buffer => ({
+      ...buffer,
+      uri: await signRelativeUri(buffer.uri),
+    })));
+    gltfJson.images = await Promise.all((gltfJson.images || []).map(async image => ({
+      ...image,
+      uri: await signRelativeUri(image.uri),
+    })));
+
+    const gltfDataUri = `data:application/json;base64,${Buffer.from(JSON.stringify(gltfJson)).toString("base64")}`;
 
     return res.json({
       project,
-      gltf: urlData.publicUrl,
+      gltf: gltfDataUri,
       fileName: gltfFile.name,
     });
 

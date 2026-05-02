@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { X, Building2, Upload, FileText, Download, MapPin, Landmark, Pencil, Image as ImageIcon, Plus, Users, Phone } from "lucide-react";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const ACCEPT_IMAGES = "image/jpeg,image/jpg,image/png,image/gif,image/webp,image/bmp,image/svg+xml,image/tiff";
 
 /* ── helper: Force Download ── */

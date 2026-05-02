@@ -1,13 +1,61 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { Plus, Search, Pencil, Trash2, X, Landmark, Eye, Image, Download, FileSpreadsheet, FileText, ChevronDown } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
-// Supabase Storage URLs are direct public URLs — no proxy needed
+// SWR Cache
+let cachedCompanies = null;
+const preloadedCompanyImageUrls = new Set();
+
 const imgUrl = (url) => url || "";
+
+const preloadCompanyImages = (company) => {
+  if (typeof window === "undefined" || !company) return;
+  [company.logoUrl, company.stampUrl, company.signUrl].filter(Boolean).forEach((url) => {
+    if (preloadedCompanyImageUrls.has(url)) return;
+    preloadedCompanyImageUrls.add(url);
+    const img = new window.Image();
+    img.decoding = "async";
+    img.src = url;
+  });
+};
+
+const DeferredImage = ({ src, alt, className }) => {
+  const [activeSrc, setActiveSrc] = useState("");
+
+  useEffect(() => {
+    if (!src) {
+      setActiveSrc("");
+      return undefined;
+    }
+
+    let cancelled = false;
+    const showImage = () => {
+      if (!cancelled) setActiveSrc(src);
+    };
+
+    if (typeof window !== "undefined" && window.requestAnimationFrame) {
+      const frame = window.requestAnimationFrame(() => window.setTimeout(showImage, 0));
+      return () => {
+        cancelled = true;
+        window.cancelAnimationFrame(frame);
+      };
+    }
+
+    const timer = setTimeout(showImage, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [src]);
+
+  if (!activeSrc) return null;
+  return <img src={activeSrc} alt={alt} className={className} loading="lazy" decoding="async" />;
+};
 
 
 const ACCEPT = "image/jpeg,image/jpg,image/png,image/gif,image/webp,image/bmp,image/svg+xml,image/tiff";
@@ -89,17 +137,10 @@ const ImgUpload = ({ label, fieldKey, previewKey, form, setForm }) => {
 
 
 export default function CompanyList() {
-  const user = JSON.parse(localStorage.getItem("bms_user") || "{}");
-  const isGlobalAdmin = user.role === "global_admin";
-  const myPerms = user.app_permissions?.find(p => p.module_key === "company_list") || {};
+  const { isGlobalAdmin, canAdd, canEdit, canDelete, canExport } = useModulePermissions("company_list");
 
-  const canAdd    = isGlobalAdmin || !!myPerms.can_add;
-  const canEdit   = isGlobalAdmin || !!myPerms.can_edit;
-  const canDelete = isGlobalAdmin || !!myPerms.can_delete;
-  const canExport = isGlobalAdmin || !!myPerms.can_export;
-
-  const [companies, setCompanies] = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [companies, setCompanies] = useState(cachedCompanies || []);
+  const [loading, setLoading]     = useState(!cachedCompanies);
   const [showModal, setShowModal] = useState(false);
   const [showView, setShowView]   = useState(false);
   const [viewData, setViewData]   = useState(null);
@@ -115,7 +156,9 @@ export default function CompanyList() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef();
 
-  useEffect(() => { fetchCompanies(); }, []);
+  useEffect(() => { 
+    if (!cachedCompanies) fetchCompanies(); else fetchCompanies(true); 
+  }, []);
 
   useEffect(() => {
     const handler = (e) => {
@@ -125,14 +168,15 @@ export default function CompanyList() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const fetchCompanies = async () => {
-    setLoading(true);
+  const fetchCompanies = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       const res  = await fetch(`${API}/api/procurement/companies`);
       const data = await res.json();
-      setCompanies(data.companies || []);
-    } catch { setCompanies([]); }
-    setLoading(false);
+      cachedCompanies = data.companies || [];
+      setCompanies(cachedCompanies);
+    } catch { if (!cachedCompanies) setCompanies([]); }
+    if (!isBackground) setLoading(false);
   };
 
   const showToast = (msg, type = "success") => {
@@ -159,7 +203,11 @@ export default function CompanyList() {
     setShowModal(true);
   };
 
-  const openView = (c) => { setViewData(c); setShowView(true); };
+  const openView = (c) => {
+    preloadCompanyImages(c);
+    setViewData(c);
+    setShowView(true);
+  };
 
   const handleSave = async () => {
     if (!form.companyName.trim()) return showToast("Company Name required", "error");
@@ -195,15 +243,19 @@ export default function CompanyList() {
     } catch { showToast("Failed to delete", "error"); }
   };
 
-  const filtered = companies.filter(c =>
-    c.companyName?.toLowerCase().includes(search.toLowerCase()) ||
-    c.companyCode?.toLowerCase().includes(search.toLowerCase()) ||
-    c.gstin?.toLowerCase().includes(search.toLowerCase()) ||
-    c.personName?.toLowerCase().includes(search.toLowerCase()) ||
-    c.designation?.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return companies;
+    return companies.filter(c =>
+      c.companyName?.toLowerCase().includes(q) ||
+      c.companyCode?.toLowerCase().includes(q) ||
+      c.gstin?.toLowerCase().includes(q) ||
+      c.personName?.toLowerCase().includes(q) ||
+      c.designation?.toLowerCase().includes(q)
+    );
+  }, [companies, search]);
   const totalPages = Math.ceil(filtered.length / perPage) || 1;
-  const paginated  = filtered.slice((page - 1) * perPage, page * perPage);
+  const paginated  = useMemo(() => filtered.slice((page - 1) * perPage, page * perPage), [filtered, page, perPage]);
 
   const exportExcel = () => {
     const data = filtered.map((c, i) => ({
@@ -328,14 +380,14 @@ export default function CompanyList() {
           <p className="text-slate-300 font-bold uppercase tracking-widest text-xs">No companies found</p>
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-200 shadow-sm overflow-hidden max-w-full">
+        <div className="rounded-none border border-slate-200 shadow-sm overflow-hidden max-w-full">
           <div className="overflow-x-auto w-full">
-            <table className="w-full text-sm border-collapse">
+            <table className="w-full min-w-[1500px] text-sm border-collapse">
               <thead>
                 <tr className="bg-slate-800 text-white">
-                  <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 text-center sticky-left-0 w-[45px]">S.No</th>
-                  <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 text-left sticky-left-1 w-[140px]" style={{left:'45px'}}>Company Name</th>
-                  <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 text-left w-20">Code</th>
+                  <th className="sticky left-0 z-30 bg-slate-800 px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 text-center w-[45px] min-w-[45px]">S.No</th>
+                  <th className="sticky left-[45px] z-30 bg-slate-800 px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 text-left w-[140px] min-w-[140px]">Company Name</th>
+                  <th className="sticky left-[185px] z-30 bg-slate-800 px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 text-left w-[100px] min-w-[100px]">Code</th>
                   <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 text-left min-w-36">Person Name</th>
                   <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 text-left w-32">Designation</th>
                   <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 text-left w-28">Phone</th>
@@ -346,7 +398,7 @@ export default function CompanyList() {
                   <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 text-left w-24">State</th>
                   <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 text-left w-28">District</th>
                   <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 text-left min-w-52 whitespace-normal break-words leading-tight">Address</th>
-                  <th className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-center sticky-right-0 w-[100px] border-l border-slate-700">Action</th>
+                  <th className="sticky right-0 z-30 bg-slate-800 px-3 py-3 text-xs font-semibold uppercase tracking-wide text-center w-[100px] min-w-[100px] border-l border-slate-700">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -354,15 +406,15 @@ export default function CompanyList() {
                   const even = idx % 2 === 0;
                   const rowBg    = even ? "bg-white"   : "bg-slate-50";
                   return (
-                  <tr key={idx} className={`transition-colors ${rowBg} hover:bg-emerald-50 group`}>
+                  <tr key={c.id || idx} className={`transition-colors ${rowBg} hover:bg-emerald-50 group`}>
                     {/* sticky S.No */}
-                    <td className="px-3 py-3 text-slate-400 text-xs border-r border-b border-slate-200 text-center align-middle font-medium sticky-left-0 w-[45px]">{(page - 1) * perPage + idx + 1}</td>
+                    <td className={`sticky left-0 z-20 ${rowBg} group-hover:bg-emerald-50 px-3 py-3 text-slate-400 text-xs border-r border-b border-slate-200 text-center align-middle font-medium w-[45px] min-w-[45px]`}>{(page - 1) * perPage + idx + 1}</td>
                     {/* sticky Company Name */}
-                    <td className="px-3 py-3 border-r border-b border-slate-200 align-middle sticky-left-1 w-[140px]" style={{left:'45px'}}>
+                    <td className={`sticky left-[45px] z-20 ${rowBg} group-hover:bg-emerald-50 px-3 py-3 border-r border-b border-slate-200 align-middle w-[140px] min-w-[140px]`}>
                       <span className="font-semibold text-slate-800 text-xs leading-snug whitespace-normal break-words">{c.companyName}</span>
                     </td>
-                    {/* scrollable */}
-                    <td className="px-3 py-3 border border-slate-200 align-middle">
+                    {/* sticky Company Code */}
+                    <td className={`sticky left-[185px] z-20 ${rowBg} group-hover:bg-emerald-50 px-3 py-3 border border-slate-200 align-middle w-[100px] min-w-[100px]`}>
                       <span className="inline-block px-2 py-0.5 bg-green-50 text-green-700 rounded-lg text-xs font-mono font-semibold whitespace-nowrap">{c.companyCode}</span>
                     </td>
                     <td className="px-3 py-3 text-slate-600 text-xs border border-slate-200 align-middle whitespace-normal break-words">{c.personName || <span className="text-slate-300">—</span>}</td>
@@ -376,9 +428,9 @@ export default function CompanyList() {
                     <td className="px-3 py-3 text-slate-600 text-xs border border-slate-200 align-middle whitespace-normal break-words">{c.district}</td>
                     <td className="px-3 py-3 text-slate-500 text-xs border border-slate-200 align-top leading-relaxed min-w-52 whitespace-normal break-words">{c.address}</td>
                     {/* sticky Action */}
-                    <td className="px-3 py-3 border-l border-b border-slate-200 align-middle sticky-right-0 w-[100px]">
+                    <td className={`sticky right-0 z-20 ${rowBg} group-hover:bg-emerald-50 px-3 py-3 border-l border-b border-slate-200 align-middle w-[100px] min-w-[100px]`}>
                       <div className="flex items-center gap-1 justify-center">
-                        <button onClick={() => openView(c)} title="View"
+                        <button onMouseEnter={() => preloadCompanyImages(c)} onFocus={() => preloadCompanyImages(c)} onClick={() => openView(c)} title="View"
                           className="p-1.5 rounded-lg text-slate-400 hover:text-green-600 hover:bg-green-50 transition-all">
                           <Eye size={13} />
                         </button>
@@ -530,14 +582,14 @@ export default function CompanyList() {
 
       {/* ── VIEW MODAL ── */}
       {showView && viewData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/35">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
 
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-3">
                 {viewData.logoUrl
-                  ? <img src={imgUrl(viewData.logoUrl)} alt="" className="w-10 h-10 rounded-xl object-contain border border-slate-100 bg-slate-50 p-1" />
+                  ? <DeferredImage src={imgUrl(viewData.logoUrl)} alt="" className="w-10 h-10 rounded-xl object-contain border border-slate-100 bg-slate-50 p-1" />
                   : <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center"><Landmark size={18} className="text-green-600" /></div>
                 }
                 <div>
@@ -590,7 +642,7 @@ export default function CompanyList() {
                     <div key={label}>
                       <div className="h-32 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden mb-2">
                         {url
-                          ? <img src={url} alt={label} className="max-h-full max-w-full object-contain p-2" />
+                          ? <DeferredImage src={url} alt={label} className="max-h-full max-w-full object-contain p-2" />
                           : <div className="flex flex-col items-center gap-1 text-slate-300">
                               <Image size={22} />
                               <span className="text-[10px]">Not uploaded</span>
