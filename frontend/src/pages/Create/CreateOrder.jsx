@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag } from "lucide-react";
+import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag } from "lucide-react";
 import * as XLSX from "xlsx";
 import { FullSiteModal, FullCompanyModal, FullVendorModal, FullViewSiteModal, FullViewCompanyModal, FullViewVendorModal, FullContactModal, FullViewContactModal, FullClauseModal } from "./FullMasterModals";
 import ReactQuill from "react-quill-new";
@@ -2105,8 +2105,11 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const [dateRange, setDateRange] = useState("all"); // all | this_year | last_year | custom
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [showMoreTabs, setShowMoreTabs] = useState(false);
 
-  const TABS = ["All", "Draft", "Review", "To Issue", "Amendment Request", "Amended", "Issued", "Rejected", "Reverted", "Recalled", "Cancelled"];
+  const PRIMARY_TABS = ["All", "Draft", "Review", "To Issue", "Amendment Request", "Amended", "Issued"];
+  const MORE_TABS = ["Reverted", "Rejected", "Recalled", "Cancelled"];
+  const TABS = [...PRIMARY_TABS, ...MORE_TABS];
 
   useEffect(() => {
     if (cachedOrders) fetchOrders(true);
@@ -2944,13 +2947,13 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         ))}
       </div>
 
-      <div className="bg-white rounded-none shadow-sm overflow-hidden border border-slate-200">
+      <div className="bg-white rounded-none shadow-sm border border-slate-200">
 
-        <div className="flex px-5 pt-4 pb-0 border-b border-slate-100 bg-white gap-8 overflow-x-auto thin-scrollbar-light">
-          {TABS.map(t => {
+        <div className="flex px-5 pt-4 pb-0 border-b border-slate-100 bg-white gap-8 overflow-visible relative">
+          {PRIMARY_TABS.map(t => {
             const count = getTabCount(t);
             return (
-              <button key={t} onClick={() => setActiveTab(t)}
+              <button key={t} onClick={() => { setActiveTab(t); setShowMoreTabs(false); }}
                 className={`pb-3.5 text-[13px] font-bold transition-all whitespace-nowrap border-b-[3px] flex items-center gap-2.5
                   ${activeTab === t ? "text-[#4f46e5] border-[#4f46e5]" : "text-slate-400 border-transparent hover:text-slate-600"}`}>
                 {t}
@@ -2961,6 +2964,71 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
               </button>
             );
           })}
+
+          {/* More Dropdown */}
+          <div className="relative pb-3.5 flex items-center">
+            <div className="flex items-center">
+              <button
+                onClick={() => setShowMoreTabs(!showMoreTabs)}
+                className={`text-[13px] font-bold transition-all whitespace-nowrap flex items-center gap-2.5 px-3 py-1.5 rounded-lg
+                  ${MORE_TABS.includes(activeTab) ? "text-[#4f46e5] bg-indigo-50/50" : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"}`}>
+                {MORE_TABS.includes(activeTab) ? activeTab : "More"}
+                <ChevronDown size={14} className={`transition-transform ${showMoreTabs ? "rotate-180" : ""}`} />
+                {(() => {
+                  const currentTabCount = MORE_TABS.includes(activeTab) ? getTabCount(activeTab) : MORE_TABS.reduce((acc, t) => acc + getTabCount(t), 0);
+                  return currentTabCount > 0 ? (
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${MORE_TABS.includes(activeTab) ? "bg-[#4f46e5] text-white" : "bg-slate-100 text-slate-500"}`}>
+                      {currentTabCount}
+                    </span>
+                  ) : null;
+                })()}
+              </button>
+
+              {MORE_TABS.includes(activeTab) && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setActiveTab("All"); }}
+                  className="ml-1 p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+                  title="Clear selection">
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {showMoreTabs && (
+              <>
+                <div className="fixed inset-0 z-[60]" onClick={() => setShowMoreTabs(false)}></div>
+                <div className="absolute top-[100%] right-0 mt-1 w-52 bg-white border border-slate-200 shadow-2xl rounded-xl py-2 z-[70] animate-in fade-in zoom-in-95 duration-150 origin-top-right">
+                  <div className="px-4 py-1.5 mb-1 border-b border-slate-50">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Status</span>
+                  </div>
+                  {MORE_TABS.map(t => {
+                    const count = getTabCount(t);
+                    return (
+                      <button
+                        key={t}
+                        onClick={() => {
+                          setActiveTab(t);
+                          setShowMoreTabs(false);
+                        }}
+                        className={`w-full px-4 py-2.5 text-left text-[13px] flex items-center justify-between transition-all
+                          ${activeTab === t ? "bg-indigo-50 text-indigo-700 font-bold" : "text-slate-600 hover:bg-slate-50 hover:pl-5"}`}>
+                        <div className="flex items-center gap-3">
+                          {t === "Reverted" && <RotateCcw size={14} className={activeTab === t ? "text-indigo-500" : "text-slate-400"} />}
+                          {t === "Rejected" && <Ban size={14} className={activeTab === t ? "text-red-500" : "text-slate-400"} />}
+                          {t === "Recalled" && <RefreshCw size={14} className={activeTab === t ? "text-amber-500" : "text-slate-400"} />}
+                          {t === "Cancelled" && <Trash2 size={14} className={activeTab === t ? "text-slate-500" : "text-slate-400"} />}
+                          {t}
+                        </div>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${activeTab === t ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500"}`}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="px-5 py-3 border-b border-slate-100 bg-[#f8fafc]/50 flex flex-col gap-3">
