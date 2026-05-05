@@ -42,15 +42,19 @@ const createSignedStorageUrl = async (
   const path = normalizeStoragePath(value, bucket);
   if (!path || /^data:|^blob:/i.test(path)) return path || "";
 
-  const { data, error } = await client.storage
-    .from(bucket)
-    .createSignedUrl(path, expiresIn);
+  try {
+    const { data, error } = await client.storage
+      .from(bucket)
+      .createSignedUrl(path, expiresIn);
 
-  if (error || !data?.signedUrl) {
-    console.warn(`Signed URL failed for ${bucket}/${path}:`, error?.message || "unknown error");
-    return "";
+    if (error || !data?.signedUrl) {
+      // Fallback to public URL if signing fails
+      return getPublicStorageUrl(client, bucket, path);
+    }
+    return data.signedUrl;
+  } catch (err) {
+    return getPublicStorageUrl(client, bucket, path);
   }
-  return data.signedUrl;
 };
 
 const removeStorageFile = async (client, bucket, value) => {

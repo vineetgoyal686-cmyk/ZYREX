@@ -74,14 +74,12 @@ router.post("/login", async (req, res) => {
   const signedCoverPromise = signedProfilePermissions.ui?.cover_image
     ? createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.cover_image)
     : Promise.resolve(null);
+  const signedSignaturePromise = signedProfilePermissions.ui?.signature
+    ? createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.signature)
+    : Promise.resolve(null);
 
-  const [signedAvatar, signedCoverImage] = await Promise.all([signedAvatarPromise, signedCoverPromise]);
-  if (signedCoverImage) {
-    signedProfilePermissions.ui = {
-      ...signedProfilePermissions.ui,
-      cover_image: signedCoverImage,
-    };
-  }
+  const [signedAvatar, signedCoverImage, signedSignature] = await Promise.all([signedAvatarPromise, signedCoverPromise, signedSignaturePromise]);
+  const ui = signedProfilePermissions.ui || {};
 
   res.json({
     token: data.session.access_token,
@@ -94,8 +92,9 @@ router.post("/login", async (req, res) => {
       department:          profile.department,
       contact_no:          profile.contact_no          || "",
       avatar:              signedAvatar                || null,
-      cover_image:         profile.cover_image         || null,
-      header_theme:        profile.header_theme        || null,
+      cover_image:         signedCoverImage            || null,
+      signature:           signedSignature             || null,
+      header_theme:        ui.header_theme             || null,
       profile_permissions: signedProfilePermissions,
     },
   });
@@ -167,8 +166,6 @@ router.put("/profile", async (req, res) => {
   const dbUser = await getUserFromToken(token);
   if (!dbUser) return res.status(401).json({ error: "Invalid token" });
 
-  // Designation is admin-managed (linked to permission templates) — user cannot
-  // self-edit it from Personal Info. Update flow is via Manage Users / Permissions tab.
   const { name, contact_no, department } = req.body;
   const admin = getAdminClient();
   const currentPerms = dbUser.profile_permissions || {};
@@ -178,7 +175,6 @@ router.put("/profile", async (req, res) => {
   if (contact_no  !== undefined) updates.contact_no  = contact_no;
   if (department  !== undefined) updates.department  = department;
 
-  // If header_theme or cover_image provided, nest them in profile_permissions.ui
   if (req.body.header_theme !== undefined || req.body.cover_image !== undefined) {
     const ui = currentPerms.ui || {};
     if (req.body.header_theme !== undefined) ui.header_theme = req.body.header_theme;
@@ -190,7 +186,32 @@ router.put("/profile", async (req, res) => {
     .from("users").update(updates).eq("id", dbUser.id).select().single();
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json({ success: true, user: data });
+
+  // Return signed URLs so frontend doesn't get raw filenames
+  const signedAvatar = await createSignedStorageUrl(admin, "avatars", data.avatar);
+  const signedProfilePermissions = { ...(data.profile_permissions || {}) };
+  let signedCover = null;
+  if (signedProfilePermissions.ui?.cover_image) {
+    signedCover = await createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.cover_image);
+    signedProfilePermissions.ui = { ...signedProfilePermissions.ui, cover_image: signedCover };
+  }
+  let signedSig = null;
+  if (signedProfilePermissions.ui?.signature) {
+    signedSig = await createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.signature);
+    signedProfilePermissions.ui = { ...signedProfilePermissions.ui, signature: signedSig };
+  }
+
+  res.json({
+    success: true,
+    user: {
+      ...data,
+      avatar: signedAvatar || null,
+      cover_image: signedCover || null,
+      signature: signedSig || null,
+      header_theme: signedProfilePermissions.ui?.header_theme || null,
+      profile_permissions: signedProfilePermissions
+    }
+  });
 });
 
 /* ─────────────────────────────────────────
@@ -220,38 +241,43 @@ router.post("/avatar", async (req, res) => {
   const newFileName = `${dbUser.id}_${Date.now()}.${ext}`;
   const admin       = getAdminClient();
 
-  // Upload se pehle is user ki SAARI purani avatar files delete karo
-  const { data: existingFiles } = await admin.storage.from("avatars").list("", { search: `${dbUser.id}_` });
-  if (existingFiles && existingFiles.length > 0) {
-    const toDelete = existingFiles
-      .filter(f => f.name.startsWith(`${dbUser.id}_`) && !f.name.startsWith(`cover_`))
-      .map(f => f.name);
-    if (toDelete.length > 0) await admin.storage.from("avatars").remove(toDelete);
+  // Upload se pehle is user ki SAARI purani avatar files delete karo (cleanup)
+  try {
+    const { data: existingFiles } = await admin.storage.from("avatars").list();
+    if (existingFiles && existingFiles.length > 0) {
+      const toDelete = existingFiles
+        .filter(f => f.name.startsWith(`${dbUser.id}_`))
+        .map(f => f.name);
+      if (toDelete.length > 0) await admin.storage.from("avatars").remove(toDelete);
+    }
+  } catch (err) {
+    console.error("Cleanup failed, proceeding with upload:", err.message);
   }
 
   // Naya file upload karo
   const { error: uploadError } = await admin.storage
     .from("avatars")
-    .upload(newFileName, buffer, { contentType: mimeType });
+    .upload(newFileName, buffer, { contentType: mimeType, upsert: true });
 
   if (uploadError) return res.status(500).json({ error: `Storage upload failed: ${uploadError.message}` });
 
+  // DB update: filename save karo
+  const { error: dbError } = await admin.from("users")
+    .update({ avatar: newFileName })
+    .eq("id", dbUser.id)
+    .select();
+
+  if (dbError) return res.status(500).json({ error: `DB update failed: ${dbError.message}` });
+
+  // UI ke liye signed URL generate karo
   const { data: signedData, error: signedError } = await admin.storage
     .from("avatars")
     .createSignedUrl(newFileName, 315360000); // 10 years
 
   if (signedError || !signedData?.signedUrl)
-    return res.status(500).json({ error: "Failed to generate signed URL" });
+    return res.status(500).json({ error: "Failed to generate signed URL for preview" });
 
-  const avatarUrl = signedData.signedUrl;
-
-  // Users table me storage path save karo; UI ko signed URL return hota hai.
-  const { error: dbError } = await admin.from("users")
-    .update({ avatar: newFileName }).eq("id", dbUser.id);
-
-  if (dbError) return res.status(500).json({ error: `DB update failed: ${dbError.message}` });
-
-  res.json({ success: true, url: avatarUrl });
+  res.json({ success: true, url: signedData.signedUrl });
 });
 
 /* ─────────────────────────────────────────
@@ -337,6 +363,91 @@ router.delete("/cover", async (req, res) => {
   const currentPerms = dbUser.profile_permissions || {};
   const ui = currentPerms.ui || {};
   ui.cover_image = null;
+
+  await admin.from("users").update({ profile_permissions: { ...currentPerms, ui } }).eq("id", dbUser.id);
+  res.json({ success: true });
+});
+
+/* ─────────────────────────────────────────
+   POST /api/auth/signature
+   Upload user signature to Supabase Storage
+   Body: { signature: "data:image/png;base64,..." }
+───────────────────────────────────────── */
+router.post("/signature", async (req, res) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Login required" });
+
+  const dbUser = await getUserFromToken(token);
+  if (!dbUser) return res.status(401).json({ error: "Invalid token" });
+
+  const { signature } = req.body;
+  if (!signature) return res.status(400).json({ error: "Signature required" });
+
+  const matches = signature.match(/^data:(.+);base64,(.+)$/);
+  if (!matches) return res.status(400).json({ error: "Invalid image format" });
+
+  const mimeType   = matches[1];
+  const base64Data = matches[2];
+  const buffer     = Buffer.from(base64Data, "base64");
+  const ext        = mimeType.split("/")[1] || "png";
+
+  const newFileName = `sig_${dbUser.id}_${Date.now()}.${ext}`;
+  const admin       = getAdminClient();
+
+  // Purani signature files delete karo
+  try {
+    const { data: existingFiles } = await admin.storage.from("avatars").list();
+    if (existingFiles?.length > 0) {
+      const toDelete = existingFiles.filter(f => f.name.startsWith(`sig_${dbUser.id}_`)).map(f => f.name);
+      if (toDelete.length > 0) await admin.storage.from("avatars").remove(toDelete);
+    }
+  } catch { /* ignore cleanup errors */ }
+
+  const { error: uploadError } = await admin.storage
+    .from("avatars")
+    .upload(newFileName, buffer, { contentType: mimeType, upsert: true });
+
+  if (uploadError) return res.status(500).json({ error: `Storage upload failed: ${uploadError.message}` });
+
+  const { data: signedData, error: signedError } = await admin.storage
+    .from("avatars")
+    .createSignedUrl(newFileName, 315360000);
+
+  if (signedError || !signedData?.signedUrl)
+    return res.status(500).json({ error: "Failed to generate signed URL" });
+
+  const currentPerms = dbUser.profile_permissions || {};
+  const ui = currentPerms.ui || {};
+  ui.signature = newFileName;
+
+  const { error: dbError } = await admin.from("users")
+    .update({ profile_permissions: { ...currentPerms, ui } }).eq("id", dbUser.id);
+
+  if (dbError) return res.status(500).json({ error: `DB update failed: ${dbError.message}` });
+
+  res.json({ success: true, url: signedData.signedUrl });
+});
+
+/* ─────────────────────────────────────────
+   DELETE /api/auth/signature
+   Remove signature from Storage + DB
+───────────────────────────────────────── */
+router.delete("/signature", async (req, res) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Login required" });
+
+  const dbUser = await getUserFromToken(token);
+  if (!dbUser) return res.status(401).json({ error: "Invalid token" });
+
+  const admin = getAdminClient();
+
+  if (dbUser.profile_permissions?.ui?.signature) {
+    await removeStorageFile(admin, "avatars", dbUser.profile_permissions.ui.signature);
+  }
+
+  const currentPerms = dbUser.profile_permissions || {};
+  const ui = currentPerms.ui || {};
+  ui.signature = null;
 
   await admin.from("users").update({ profile_permissions: { ...currentPerms, ui } }).eq("id", dbUser.id);
   res.json({ success: true });
@@ -480,7 +591,7 @@ router.get("/me", async (req, res) => {
   const admin = getAdminClient();
   const { data: profile } = await admin
     .from("users")
-    .select("*, permissions(*, modules(module_key, module_name))")
+    .select("id, name, email, role, designation, department, contact_no, avatar, profile_permissions, permissions(*, modules(module_key, module_name))")
     .eq("id", userId)
     .single();
 
@@ -493,7 +604,13 @@ router.get("/me", async (req, res) => {
       cover_image: await createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.cover_image),
     };
   }
-  res.json({ user: { ...profile, avatar: signedAvatar || null, profile_permissions: signedProfilePermissions } });
+  let signedSignature = null;
+  if (signedProfilePermissions.ui?.signature) {
+    signedSignature = await createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.signature);
+    signedProfilePermissions.ui = { ...signedProfilePermissions.ui, signature: signedSignature };
+  }
+
+  res.json({ user: { ...profile, avatar: signedAvatar || null, signature: signedSignature || null, profile_permissions: signedProfilePermissions } });
 });
 
 /* ─────────────────────────────────────────

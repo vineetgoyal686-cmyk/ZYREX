@@ -200,6 +200,17 @@ router.get("/requests/:document_id", requireAuth, async (req, res) => {
 
   if (reqErr || !request) return res.json({ request: null });
 
+  // Resolve user names for logs
+  const actionByids = [...new Set((request.logs || []).map(l => l.action_by).filter(Boolean))];
+  let userMap = {};
+  if (actionByids.length > 0) {
+    const { data: users } = await admin.from("users").select("id, name").in("id", actionByids);
+    userMap = Object.fromEntries((users || []).map(u => [u.id, u.name]));
+  }
+  (request.logs || []).forEach(l => {
+    l.action_by_name = userMap[l.action_by] || 'Unknown';
+  });
+
   // Prepare UI friendly timelines
   const timeline = [];
   const steps = request.workflow?.steps || [];
@@ -295,6 +306,7 @@ const ACTION_PERM_MAP = {
 };
 
 router.post("/action", requireAuth, async (req, res) => {
+  try {
   const admin = getAdminClient();
   const { request_id, action, comments } = req.body;
 
@@ -381,12 +393,16 @@ router.post("/action", requireAuth, async (req, res) => {
   if (request.module_key === "procurement" || request.module_key === "create_order") {
      const docUpd = {};
      if (action === 'Reverted' || action === 'Recalled' || action === 'Cancelled' || action === 'Rejected') {
-        await appendOrderHistorySnapshot(admin, {
-          documentId: request.document_id,
-          action,
-          comments,
-          actionBy: userId,
-        });
+        try {
+          await appendOrderHistorySnapshot(admin, {
+            documentId: request.document_id,
+            action,
+            comments,
+            actionBy: userId,
+          });
+        } catch (snapErr) {
+          console.error("[approvals/action] snapshot failed (non-fatal):", snapErr.message);
+        }
      }
      if (action === 'Reverted' || action === 'Recalled') docUpd.status = 'Draft';
      if (action === 'Rejected') docUpd.status = 'Rejected';
@@ -405,10 +421,21 @@ router.post("/action", requireAuth, async (req, res) => {
             .eq("id", request.document_id)
             .single();
 
-          // Stamp issuedAt into totals JSON
-          docUpd.totals = { ...(order?.totals || {}), issuedAt: new Date().toISOString() };
+          // Stamp issuedAt + issuing user info into totals JSON
+          const { data: issuerProfile } = await admin.from("users")
+            .select("name, designation, profile_permissions")
+            .eq("id", userId)
+            .single();
+          const issuedBy = {
+            id: userId,
+            name: issuerProfile?.name || "",
+            designation: issuerProfile?.designation || "",
+            signatureFile: issuerProfile?.profile_permissions?.ui?.signature || null,
+          };
+          docUpd.totals = { ...(order?.totals || {}), issuedAt: new Date().toISOString(), issuedBy };
           
-          if (order && order.order_number?.startsWith("PENDING-")) {
+          const isDraftNum = (n) => /^(PO|WO)-\d+$/.test(n || '') || (n || '').startsWith('PENDING-');
+          if (order && isDraftNum(order.order_number)) {
             // 2. Compute current financial year in 2024-25 format
             const now = new Date();
             const fyStart = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
@@ -458,6 +485,17 @@ router.post("/action", requireAuth, async (req, res) => {
               console.error("❌ Could not create/find serialization_settings record");
             }
           }
+
+          // Append Issued entry to snapshot activity_log
+          const existingSnap = order?.snapshot || {};
+          const actLog = Array.isArray(existingSnap.activity_log) ? [...existingSnap.activity_log] : [];
+          actLog.push({
+            action: 'Issued',
+            action_by: issuerProfile?.name || "",
+            action_at: new Date().toISOString(),
+            ...(docUpd.order_number ? { order_number: docUpd.order_number } : {})
+          });
+          docUpd.snapshot = { ...existingSnap, activity_log: actLog };
         } catch (numErr) {
           console.error("Number assignment failed:", numErr);
         }
@@ -469,6 +507,10 @@ router.post("/action", requireAuth, async (req, res) => {
   }
 
   res.json({ success: true, newStatus: nextStatus, isFinal });
+  } catch (err) {
+    console.error("[approvals/action] error:", err.message);
+    res.status(500).json({ error: err.message || "Action failed" });
+  }
 });
 
 module.exports = router;

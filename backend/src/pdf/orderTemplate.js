@@ -162,7 +162,7 @@ const css = `
   .sig-area { position: relative; height: 110px; margin-bottom: 12px; }
   .sig-stamp { position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 90px; width: auto; object-fit: contain; opacity: 0.75; }
   .sig-sign { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); height: 70px; width: auto; object-fit: contain; z-index: 2; }
-  .sig-italic { font-size: 11px; font-weight: 700; color: #9ca3af; font-style: italic; margin-bottom: 8px; }
+  .sig-italic { font-size: 11px; font-weight: 700; color: #111827; font-style: italic; margin-bottom: 8px; }
   .sig-kv { font-size: 10.5px; line-height: 1.55; }
   .sig-kv b { font-weight: 800; color: #111827; }
 `;
@@ -227,7 +227,7 @@ const renderVendorCard = (vend) => `
   </div>
 `;
 
-const renderCompanyCard = (comp, site, contacts) => `
+const renderCompanyCard = (comp, site, contacts, billingProfile) => `
   <div class="details-col">
     <div class="details-tab">Company Details</div>
     <div class="party-name">${escapeHtml(comp.company_name || comp.companyName || "N/A")}</div>
@@ -237,11 +237,11 @@ const renderCompanyCard = (comp, site, contacts) => `
     </div>
     <div class="card">
       <div class="card-title">Billing Address</div>
-      <div class="card-text">${escapeHtml(site.billing_address || site.billingAddress || "N/A")}</div>
+      <div class="card-text">${escapeHtml(billingProfile?.address || "N/A")}</div>
     </div>
     <div class="card">
       <div class="card-title">Tax / GST Details</div>
-      <div class="kv"><span class="kv-label">GST No:</span><span class="kv-value">${escapeHtml(comp.gstin || comp.gst_no || "N/A")}</span></div>
+      <div class="kv"><span class="kv-label">GST No:</span><span class="kv-value">${escapeHtml(billingProfile?.gstin || "N/A")}</span></div>
     </div>
     <div class="card">
       <div class="card-title">Contact Persons</div>
@@ -485,18 +485,17 @@ const renderAnnexure = (order) => {
   `;
 };
 
-const renderSignatures = (order, comp, vend) => {
+const renderSignatures = (order, comp, vend, issuer = null) => {
   const companyName = comp.company_name || comp.companyName || "Company";
   const vendorName = vend.vendor_name || vend.vendorName || "Vendor";
-  const companyPerson = comp.person_name || comp.personName || order.made_by || "";
-  const companyDesig = comp.designation || "";
-  const vendorPerson =
-    vend.contact_person ||
-    vend.contactPerson ||
-    "";
-  const poDate = formatDate(order.date_of_creation || order.created_at);
+  const companyPerson = issuer?.name || comp.person_name || comp.personName || order.made_by || "";
+  const companyDesig = issuer?.designation || comp.designation || "";
+  const vendorPerson = vend.contact_person || vend.contactPerson || "";
+  const poDate = issuer
+    ? formatDate(order.totals?.issuedAt || order.date_of_creation || order.created_at)
+    : formatDate(order.date_of_creation || order.created_at);
   const stampUrl = comp.stampDataUri || comp.stampUrl || comp.stamp_url || "";
-  const signUrl = comp.signDataUri || comp.signUrl || comp.sign_url || "";
+  const signUrl = issuer?.signDataUri || comp.signDataUri || comp.signUrl || comp.sign_url || "";
   return `
     <div class="signatures">
       <div class="sig-side">
@@ -622,8 +621,36 @@ const previewCss = `
   .page + .page { page-break-before: auto; margin-top: 24px; }
 `;
 
-const renderOrderHtml = ({ order, items = [], comp = {}, vend = {}, site = {}, contacts = [], previewHeaderHtml = "" }, { preview = false } = {}) => {
+const resolveBillingProfile = (order, comp, site) => {
+  // Prefer snapshot-saved profile (set at order creation time)
+  if (order.snapshot?.billingProfile) return order.snapshot.billingProfile;
+
+  const siteState = site.state || site.site_state;
+  const blocks = comp.state_billing_profiles || comp.stateBillingProfiles || [];
+
+  // 1. Try state-specific profile
+  if (siteState && blocks.length) {
+    const block = blocks.find(b => {
+      const name = b.stateName || b.state_name || b.state || "";
+      return name.toLowerCase() === siteState.toLowerCase();
+    });
+    const profiles = block?.profiles || [];
+    const profile = profiles.find(p => p.isDefault) || profiles[0];
+    if (profile) return profile;
+  }
+
+  // 2. Fallback: entity-level billing address + gstin
+  const fallbackAddr = comp.billing_address || comp.billingAddress || comp.address || "";
+  const fallbackGstin = comp.billing_gstin || comp.billingGstin || comp.gstin || "";
+  if (fallbackAddr || fallbackGstin) {
+    return { address: fallbackAddr, gstin: fallbackGstin };
+  }
+  return null;
+};
+
+const renderOrderHtml = ({ order, items = [], comp = {}, vend = {}, site = {}, contacts = [], issuer = null, previewHeaderHtml = "" }, { preview = false } = {}) => {
   const subject = order.subject || order.order_name || "";
+  const billingProfile = resolveBillingProfile(order, comp, site);
   const extraCss = preview ? previewCss : "";
   const openWrap = preview ? `<div class="sheet">` : "";
   const closeWrap = preview ? `</div>` : "";
@@ -648,13 +675,13 @@ ${preview ? previewHeaderHtml : ""}
   ${renderMetaGrid(order, site)}
   <div class="details-wrap">
     ${renderVendorCard(vend)}
-    ${renderCompanyCard(comp, site, contacts)}
+    ${renderCompanyCard(comp, site, contacts, billingProfile)}
   </div>
   ${subject ? `<div class="subject-bar"><span class="lbl">Subject :</span>${escapeHtml(subject)}</div>` : ""}
   ${renderItemsTable(order, items)}
   ${renderTotals(order)}
   ${renderSupplementary(order)}
-  ${renderSignatures(order, comp, vend)}
+  ${renderSignatures(order, comp, vend, issuer)}
 </div>
 ${mainClose}
 ${annexureBlock}

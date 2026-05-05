@@ -7,9 +7,38 @@ const {
   normalizeStoragePath,
   uploadStorageFile,
   createSignedStorageUrl,
+  removeStorageFile,
 } = require("../helpers/storageHelper");
+const { addClient, removeClient, broadcast } = require("../sse");
+
+// SSE endpoint — frontend subscribes here for instant order updates
+router.get("/events", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+  res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
+  addClient(res);
+  req.on("close", () => removeClient(res));
+});
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+// Draft number helpers — PO-N / WO-N assigned on create, replaced with full number on issue
+const isDraftNumber = (n) => /^(PO|WO)-\d+$/.test(n || '') || (n || '').startsWith('PENDING-');
+
+const getNextDraftNumber = async (orderType) => {
+  const prefix = orderType === 'Supply' ? 'PO' : 'WO';
+  const { data } = await supabase.schema("procurement")
+    .from("purchase_orders")
+    .select("order_number")
+    .like("order_number", `${prefix}-%`);
+  const max = (data || []).reduce((m, o) => {
+    const match = o.order_number?.match(/^(?:PO|WO)-(\d+)$/);
+    return match ? Math.max(m, parseInt(match[1])) : m;
+  }, 0);
+  return `${prefix}-${max + 1}`;
+};
 
 const normalizeNbsp = (value) =>
   typeof value === "string"
@@ -23,6 +52,8 @@ const sanitizeRichTextDeep = (value) => {
   }
   return normalizeNbsp(value);
 };
+
+const shortDbError = (error) => error?.message || error?.details || String(error || "Unknown database error");
 
 const HISTORY_ID_PREFIX = "history:";
 const isHistoryId = (id = "") => String(id).startsWith(HISTORY_ID_PREFIX);
@@ -402,7 +433,7 @@ router.get("/", async (req, res) => {
       .order("created_at", { ascending: false });
     
     if (error) {
-      console.error("Supabase Error fetching orders:", error);
+      console.warn("Supabase Error fetching orders:", shortDbError(error));
       throw error;
     }
     console.log(`Fetched ${data?.length || 0} orders from DB`);
@@ -594,22 +625,21 @@ router.post("/", upload.fields([
     if (files.quotation) {
       quotationUrl = await uploadToStorage(
         "procurement-docs",
-        `orders/${mainData.order_number}/quotation_${Date.now()}_${files.quotation[0].originalname}`,
+        `orders/${mainData.order_number}/quotations/quotation_${Date.now()}_${files.quotation[0].originalname}`,
         files.quotation[0].buffer, files.quotation[0].mimetype
       );
     }
     if (files.comparative) {
       comparativeUrl = await uploadToStorage(
         "procurement-docs",
-        `orders/${mainData.order_number}/comparative_${Date.now()}_${files.comparative[0].originalname}`,
+        `orders/${mainData.order_number}/comparative/comparative_${Date.now()}_${files.comparative[0].originalname}`,
         files.comparative[0].buffer, files.comparative[0].mimetype
       );
     }
 
-    // 1.1 Override order_number to DRAFT if not Issued
-    // The official number is now assigned in approvals.js ONLY when Issued.
+    // 1.1 Assign draft number (PO-N / WO-N) on create; final number assigned on Issue.
     if (mainData.status !== 'Issued') {
-       mainData.order_number = `PENDING-${Date.now()}`;
+      mainData.order_number = await getNextDraftNumber(mainData.order_type || 'Supply');
     }
 
     // 2. Insert main order
@@ -856,7 +886,7 @@ router.post("/bulk-import", async (req, res) => {
             orderNumber = `${company.company_code}/${site.site_code}/${typeCode}/${fy}/${nextSerial}`;
             incrementSerial = true;
           } else {
-            orderNumber = `PENDING-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            orderNumber = await getNextDraftNumber(order.order_type || 'Supply');
           }
         }
 
@@ -1115,9 +1145,24 @@ router.put("/:id", upload.fields([
         comments: mainData.comments || mainData.reason || "",
         actionBy: mainData.action_by || "",
       });
+      // Also log to activity_log for the Log tab timeline
+      const actLog = Array.isArray(nextSnapshot?.activity_log) ? [...nextSnapshot.activity_log] : [];
+      actLog.push({ action: mainData.status, action_by: mainData.action_by || "", action_at: new Date().toISOString(), comments: mainData.comments || mainData.reason || "" });
       mainData.status = "Draft";
-      mainData.snapshot = nextSnapshot;
+      mainData.snapshot = { ...nextSnapshot, activity_log: actLog };
+    } else if (mainData.status && mainData.status !== existing?.status) {
+      // Lightweight activity log for Review, Pending Issue, Issued, Draft, etc.
+      const { data: curOrder } = await supabase.schema("procurement")
+        .from("purchase_orders").select("snapshot").eq("id", req.params.id).single();
+      const curSnap = curOrder?.snapshot || {};
+      const actLog = Array.isArray(curSnap.activity_log) ? [...curSnap.activity_log] : [];
+      actLog.push({ action: mainData.status, action_by: mainData.action_by || "", action_at: new Date().toISOString(), ...(mainData.comments ? { comments: mainData.comments } : {}) });
+      mainData.snapshot = { ...curSnap, ...(mainData.snapshot || {}), activity_log: actLog };
     }
+
+    // These are not DB columns — used only for activity_log above
+    delete mainData.action_by;
+    delete mainData.comments;
 
     let quotationUrl    = existing?.quotation_url    || "";
     let comparativeUrl  = existing?.comparative_sheet_url || "";
@@ -1125,14 +1170,14 @@ router.put("/:id", upload.fields([
     if (files.quotation) {
       quotationUrl = await uploadToStorage(
         "procurement-docs",
-        `orders/${mainData.order_number}/quotation_${Date.now()}_${files.quotation[0].originalname}`,
+        `orders/${mainData.order_number}/quotations/quotation_${Date.now()}_${files.quotation[0].originalname}`,
         files.quotation[0].buffer, files.quotation[0].mimetype
       );
     }
     if (files.comparative) {
       comparativeUrl = await uploadToStorage(
         "procurement-docs",
-        `orders/${mainData.order_number}/comparative_${Date.now()}_${files.comparative[0].originalname}`,
+        `orders/${mainData.order_number}/comparative/comparative_${Date.now()}_${files.comparative[0].originalname}`,
         files.comparative[0].buffer, files.comparative[0].mimetype
       );
     }
@@ -1140,24 +1185,30 @@ router.put("/:id", upload.fields([
     // 2.1 Override order_number to DRAFT if not Issued (prevent premature numbering on Edit)
     // Exception: amendment clones (e.g. PO-4A, PO-4B) keep their assigned number — they
     // are NOT new pending orders, they're versions of an issued one.
-    if (mainData.status !== 'Issued' && !mainData.order_number?.startsWith("PENDING-")) {
+    if (mainData.status !== 'Issued' && !isDraftNumber(mainData.order_number)) {
         const { data: curr } = await supabase.schema("procurement")
-          .from("purchase_orders").select("order_number, amended_from_id").eq("id", req.params.id).single();
+          .from("purchase_orders").select("order_number, amended_from_id, order_type").eq("id", req.params.id).single();
 
         if (curr?.amended_from_id) {
           // Amendment clone — keep its existing number (e.g. .../4A)
           mainData.order_number = curr.order_number;
-        } else if (!curr?.order_number?.startsWith("PENDING-")) {
-          mainData.order_number = `PENDING-${Date.now()}`;
+        } else if (isDraftNumber(curr?.order_number)) {
+          mainData.order_number = curr.order_number; // Preserve existing PO-N / WO-N
         } else {
-          mainData.order_number = curr.order_number; // Preserve existing pending ID
+          // Shouldn't happen for orders created after this update, but handle gracefully
+          mainData.order_number = curr?.order_number || await getNextDraftNumber(curr?.order_type || 'Supply');
         }
     }
 
     // 2.2 Assign final order number when status → Issued and current number is PENDING-
     if (mainData.status === 'Issued') {
-      // Stamp issuedAt into totals JSON for display
-      mainData.totals = { ...(mainData.totals || {}), issuedAt: new Date().toISOString() };
+      const passedIssuedBy = mainData.issuedBy || null;
+      delete mainData.issuedBy;
+      mainData.totals = {
+        ...(mainData.totals || {}),
+        issuedAt: new Date().toISOString(),
+        ...(passedIssuedBy ? { issuedBy: passedIssuedBy } : {}),
+      };
 
       const { data: curr } = await supabase.schema("procurement")
         .from("purchase_orders")
@@ -1165,9 +1216,9 @@ router.put("/:id", upload.fields([
         .eq("id", req.params.id)
         .single();
 
-      // Only generate a new number if the current one is a temporary "PENDING-" ID.
+      // Only generate a new number if the current one is a draft ID (PO-N / WO-N / PENDING-).
       // If it's already a final number (like .../1A from an amendment), keep it.
-      const isPending = curr?.order_number?.startsWith("PENDING-") || mainData.order_number?.startsWith("PENDING-");
+      const isPending = isDraftNumber(curr?.order_number) || isDraftNumber(mainData.order_number);
       const needsNumber = curr && isPending;
 
       if (needsNumber && curr.site_id) {
@@ -1207,6 +1258,32 @@ router.put("/:id", upload.fields([
           console.error("Number assignment failed:", numErr.message);
         }
       }
+    }
+
+    // When order gets issued and has a real order number, move files from PENDING folder to proper folder
+    if (mainData.status === 'Issued' && mainData.order_number && mainData.order_number.includes('/')) {
+      const moveStorageFile = async (currentUrl, subfolder) => {
+        if (!currentUrl) return currentUrl;
+        const currentPath = normalizeStoragePath(currentUrl, 'procurement-docs');
+        if (!currentPath || !isDraftNumber(currentPath.split('/')[1])) return currentUrl;
+        const fileName = currentPath.split('/').pop();
+        const newPath = `orders/${mainData.order_number}/${subfolder}/${fileName}`;
+        try {
+          const { error } = await supabase.storage.from('procurement-docs').move(currentPath, newPath);
+          if (error) throw error;
+          return newPath;
+        } catch (e) {
+          console.error(`[Storage Move] Failed: ${currentPath} → ${newPath}:`, e.message);
+          return currentUrl;
+        }
+      };
+
+      const [movedQuotation, movedComparative] = await Promise.all([
+        moveStorageFile(existing.quotation_url, 'quotations'),
+        moveStorageFile(existing.comparative_sheet_url, 'comparative'),
+      ]);
+      if (movedQuotation   !== existing.quotation_url)          quotationUrl   = movedQuotation;
+      if (movedComparative !== existing.comparative_sheet_url)  comparativeUrl = movedComparative;
     }
 
     // If this is a status-only update and totals are missing, auto-calculate from existing items
@@ -1250,6 +1327,9 @@ router.put("/:id", upload.fields([
       .update({ ...mainData, quotation_url: quotationUrl, comparative_sheet_url: comparativeUrl, updated_at: new Date().toISOString() })
       .eq("id", req.params.id);
     if (orderErr) throw orderErr;
+
+    // Notify all connected inbox clients instantly when order status changes
+    if (mainData.status) broadcast({ type: "order_updated", status: mainData.status });
 
     // Replace items ONLY if the caller explicitly sent an items array.
     // Status-only updates (Cancel / Send to Approval / Amend Request flip)
@@ -1313,10 +1393,15 @@ const loadOrderForRender = async (orderId) => {
   const comp = cleanOrder.companies || {};
   const vend = cleanOrder.vendors || {};
   const site = cleanOrder.sites || {};
-  // Use contacts from snapshot (same as ViewOrder component)
-  const finalContacts = cleanOrder.snapshot?.contacts || [];
-  
-  return { cleanOrder, cleanItems, comp, vend, site, contacts: finalContacts };
+  // Mirror ViewOrder logic: snapshot contacts first, fallback to live JOIN
+  const snapContacts = cleanOrder.snapshot?.contacts;
+  const liveContact = cleanOrder.contact_person;
+  const finalContacts = (snapContacts && snapContacts.length > 0)
+    ? snapContacts
+    : liveContact ? [liveContact] : [];
+
+  const issuedByRaw = cleanOrder.totals?.issuedBy || null;
+  return { cleanOrder, cleanItems, comp, vend, site, contacts: finalContacts, issuedByRaw };
 };
 
 const previewHtmlCache = new Map();
@@ -1324,18 +1409,20 @@ const PREVIEW_CACHE_MAX = 50;
 
 router.get("/:id/preview", async (req, res) => {
   try {
-    const { cleanOrder, cleanItems, comp, vend, site, contacts } = await loadOrderForRender(req.params.id);
+    const { cleanOrder, cleanItems, comp, vend, site, contacts, issuedByRaw } = await loadOrderForRender(req.params.id);
 
     const cacheKey = `${cleanOrder.id}__${cleanOrder.updated_at || cleanOrder.created_at || ""}`;
     let html = previewHtmlCache.get(cacheKey);
 
     if (!html) {
-      const [logoDataUri, stampDataUri, signDataUri] = await Promise.all([
+      const [logoDataUri, stampDataUri, signDataUri, issuerSignDataUri] = await Promise.all([
         fetchAsDataUri(comp.logo_url || comp.logoUrl),
         fetchAsDataUri(comp.stamp_url || comp.stampUrl),
         fetchAsDataUri(comp.sign_url || comp.signUrl),
+        fetchSignatureDataUri(issuedByRaw?.signatureFile),
       ]);
       const compWithImages = { ...comp, stampDataUri, signDataUri };
+      const issuer = issuedByRaw ? { ...issuedByRaw, signDataUri: issuerSignDataUri } : null;
       html = renderOrderHtml(
         {
           order: cleanOrder,
@@ -1344,6 +1431,7 @@ router.get("/:id/preview", async (req, res) => {
           vend,
           site,
           contacts,
+          issuer,
           previewHeaderHtml: renderPreviewHeader(cleanOrder, comp, logoDataUri),
         },
         { preview: true }
@@ -1412,19 +1500,35 @@ const fetchAsDataUri = async (url) => {
   }
 };
 
+const fetchSignatureDataUri = async (filename) => {
+  if (!filename) return "";
+  try {
+    const { data, error } = await supabase.storage.from("avatars").download(filename);
+    if (error || !data) return "";
+    const rawBuf = Buffer.from(await data.arrayBuffer());
+    const { buf, ct } = await compressImage(rawBuf);
+    return `data:${ct};base64,${buf.toString("base64")}`;
+  } catch (e) {
+    console.warn("Issuer signature fetch failed:", e.message);
+    return "";
+  }
+};
+
 const pdfCache = new Map();
 const PDF_CACHE_MAX = 50;
 
 router.get("/:id/pdf", async (req, res) => {
   try {
-    const { cleanOrder, cleanItems, comp, vend, site, contacts } = await loadOrderForRender(req.params.id);
-    const [logoDataUri, stampDataUri, signDataUri] = await Promise.all([
+    const { cleanOrder, cleanItems, comp, vend, site, contacts, issuedByRaw } = await loadOrderForRender(req.params.id);
+    const [logoDataUri, stampDataUri, signDataUri, issuerSignDataUri] = await Promise.all([
       fetchAsDataUri(comp.logo_url || comp.logoUrl),
       fetchAsDataUri(comp.stamp_url || comp.stampUrl),
       fetchAsDataUri(comp.sign_url || comp.signUrl),
+      fetchSignatureDataUri(issuedByRaw?.signatureFile),
     ]);
     const compWithImages = { ...comp, stampDataUri, signDataUri };
-    const html = renderOrderHtml({ order: cleanOrder, items: cleanItems, comp: compWithImages, vend, site, contacts });
+    const issuer = issuedByRaw ? { ...issuedByRaw, signDataUri: issuerSignDataUri } : null;
+    const html = renderOrderHtml({ order: cleanOrder, items: cleanItems, comp: compWithImages, vend, site, contacts, issuer });
     const headerTemplate = renderHeaderTemplate(cleanOrder, comp, logoDataUri);
     const footerTemplate = renderFooterTemplate(comp);
     const cacheKey = crypto
@@ -1471,7 +1575,7 @@ router.delete("/:id", async (req, res) => {
     }
     const { data: order, error: orderErr } = await supabase.schema("procurement")
       .from("purchase_orders")
-      .select("status")
+      .select("status, quotation_url, comparative_sheet_url, pre_documents, post_documents")
       .eq("id", req.params.id)
       .single();
     if (orderErr) throw orderErr;
@@ -1484,6 +1588,18 @@ router.delete("/:id", async (req, res) => {
     if (linkedAmend) {
       return res.status(400).json({ error: "This order has amendment history and cannot be deleted." });
     }
+
+    // Delete storage files (non-blocking — don't fail delete if storage cleanup fails)
+    try {
+      const filesToDelete = [
+        order.quotation_url,
+        order.comparative_sheet_url,
+        ...((Array.isArray(order.pre_documents)  ? order.pre_documents  : []).map(d => d?.url).filter(Boolean)),
+        ...((Array.isArray(order.post_documents) ? order.post_documents : []).map(d => d?.url).filter(Boolean)),
+      ].filter(Boolean);
+      await Promise.allSettled(filesToDelete.map(url => removeStorageFile(supabase, "procurement-docs", url)));
+    } catch { /* silent */ }
+
     await supabase.schema("procurement").from("purchase_order_items").delete().eq("order_id", req.params.id);
     const { error } = await supabase.schema("procurement").from("purchase_orders").delete().eq("id", req.params.id);
     if (error) throw error;
@@ -1509,7 +1625,9 @@ router.post("/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "File is required" });
     const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const storagePath = `orders/amendments/${Date.now()}_${safeName}`;
+    const orderNumber = (req.body.order_number || "").trim();
+    const folder = orderNumber ? `orders/amendments/${orderNumber}` : "orders/amendments";
+    const storagePath = `${folder}/${Date.now()}_${safeName}`;
     const url = await uploadToStorage("procurement-docs", storagePath, req.file.buffer, req.file.mimetype);
     res.json({ success: true, url, storage_path: url, name: req.file.originalname, size: req.file.size });
   } catch (err) {

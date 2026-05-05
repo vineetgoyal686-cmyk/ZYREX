@@ -12,6 +12,8 @@ const getAdminClient = () => createClient(
   { auth: { persistSession: false, autoRefreshToken: false } }
 );
 
+const shortDbError = (error) => error?.message || error?.details || String(error || "Unknown database error");
+
 const signAmendmentAttachment = async (admin, row = {}) => ({
   ...row,
   attachment_url: await createSignedStorageUrl(admin, "procurement-docs", row.attachment_url),
@@ -35,7 +37,7 @@ const requireAuth = async (req, res, next) => {
     const admin = getAdminClient();
     const { data: profile, error } = await admin.from("users").select("*").eq("id", userId).single();
     if (error) {
-      console.error("amendments requireAuth DB error:", error);
+      console.warn("amendments requireAuth DB error:", shortDbError(error));
       return res.status(500).json({ error: `Auth lookup failed: ${error.message}` });
     }
     if (!profile || !profile.is_active) return res.status(403).json({ error: "Account inactive" });
@@ -235,7 +237,11 @@ router.get("/requests", requireAuth, async (req, res) => {
 
     // 2. Fetch related orders + requestor users in 2 batched lookups
     const orderIds     = [...new Set(rows.map(r => r.original_order_id).filter(Boolean))];
-    const requestorIds = [...new Set(rows.map(r => r.requestor_id).filter(Boolean))];
+    const requestorIds = [...new Set([
+      ...rows.map(r => r.requestor_id),
+      ...rows.map(r => r.actioned_by_id),
+      ...rows.map(r => r.approved_by_id),
+    ].filter(Boolean))];
 
     const ordersRes = orderIds.length
       ? await admin.schema("procurement").from("purchase_orders")
@@ -285,7 +291,9 @@ router.get("/requests", requireAuth, async (req, res) => {
     const enriched = await Promise.all(rows.map(async r => ({
       ...(await signAmendmentAttachment(admin, r)),
       original_order: orderById[r.original_order_id] || null,
-      requestor:      userById[r.requestor_id]  || null,
+      requestor:      userById[r.requestor_id]    || null,
+      actioner:       userById[r.actioned_by_id]  || null,
+      approver:       userById[r.approved_by_id]  || null,
     })));
 
     // Debug log — trace what we're sending so we can see why cards render blank
@@ -492,7 +500,7 @@ router.get("/chain/:orderId", requireAuth, async (req, res) => {
       const approvedEvent = events.find(e => e.status === "Approved");
       const anyEvent = events.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
       
-      const targetEvent = approvedEvent || anyEvent;
+      const targetEvent = approvedEvent || null;
       if (targetEvent) {
         c.amend_details = {
           reason: targetEvent.reason,
@@ -505,7 +513,7 @@ router.get("/chain/:orderId", requireAuth, async (req, res) => {
         };
       }
 
-      c.amend_request_at = targetEvent?.created_at || null;
+      c.amend_request_at = approvedEvent?.created_at || null;
       c.amended_at = approvedEvent?.actioned_at || null;
     }
 
@@ -567,6 +575,112 @@ router.get("/by-clone/:cloneId", requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error("GET /amendments/by-clone failed:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ─────────────────────────────────────────
+   POST /api/amendments/cancel
+   Cancels an approved amendment clone that is still in Draft.
+   Deletes the clone, restores original to Issued, marks amendment row Cancelled.
+   Allowed by: the original requestor OR global admin.
+───────────────────────────────────────── */
+router.post("/cancel", requireAuth, async (req, res) => {
+  const admin = getAdminClient();
+  const { clone_order_id } = req.body;
+  if (!clone_order_id) return res.status(400).json({ error: "clone_order_id is required" });
+
+  try {
+    // 1. Fetch and validate the clone order itself
+    const { data: clone, error: cErr } = await admin.schema("procurement")
+      .from("purchase_orders")
+      .select("id, status, amended_from_id, created_by_id")
+      .eq("id", clone_order_id)
+      .single();
+    if (cErr || !clone) return res.status(404).json({ error: "Clone order not found." });
+    if (clone.status !== "Draft") {
+      return res.status(400).json({ error: `Cannot cancel — amendment is already in "${clone.status}" status.` });
+    }
+    const originalOrderId = clone.amended_from_id;
+    if (!originalOrderId) {
+      return res.status(400).json({ error: "This order is not an amendment clone." });
+    }
+
+    // 2. Permission: created_by or global admin
+    const isGlobalAdmin = req.user?.role === "global_admin";
+    if (!isGlobalAdmin && String(clone.created_by_id) !== String(req.userId)) {
+      return res.status(403).json({ error: "Only the amendment creator or a global admin can cancel this amendment." });
+    }
+
+    const now = new Date().toISOString();
+
+    // 3. Best-effort audit lookup. The clone order is the source of truth here:
+    // old failed attempts may already have nulled new_order_id or marked the row Cancelled.
+    const { data: linkedRows, error: linkedErr } = await admin
+      .from("order_amendments")
+      .select("id")
+      .eq("new_order_id", clone_order_id);
+    if (linkedErr) throw linkedErr;
+
+    let amendmentRows = (linkedRows || []);
+    if (amendmentRows.length === 0) {
+      const { data: latestRow, error: latestErr } = await admin
+        .from("order_amendments")
+        .select("id, actioned_by_id, actioned_at")
+        .eq("original_order_id", originalOrderId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latestErr) throw latestErr;
+      amendmentRows = latestRow ? [latestRow] : [];
+    } else {
+      const { data: fullRows } = await admin
+        .from("order_amendments")
+        .select("id, actioned_by_id, actioned_at")
+        .in("id", amendmentRows.map(r => r.id));
+      amendmentRows = fullRows || [];
+    }
+
+    const amendmentIds = amendmentRows.map(r => r.id).filter(Boolean);
+
+    if (amendmentIds.length > 0) {
+      const existingRow = amendmentRows[0];
+      const { error: amendErr } = await admin
+        .from("order_amendments")
+        .update({
+          status: "Cancelled",
+          new_order_id: null,
+          approved_by_id: existingRow?.actioned_by_id || null,
+          approved_at:    existingRow?.actioned_at    || null,
+          actioned_by_id: req.user.id,
+          actioned_at: now,
+        })
+        .in("id", amendmentIds);
+      if (amendErr) throw amendErr;
+    } else {
+      console.warn("Cancel amendment: no amendment audit row found for clone", clone_order_id);
+    }
+
+    // 4. Delete clone items, then clone order
+    const { error: itemDelErr } = await admin.schema("procurement")
+      .from("purchase_order_items")
+      .delete()
+      .eq("order_id", clone_order_id);
+    if (itemDelErr) throw itemDelErr;
+
+    const { error: delErr } = await admin.schema("procurement").from("purchase_orders").delete().eq("id", clone_order_id);
+    if (delErr) throw delErr;
+
+    // 5. Restore original order back to Issued
+    const { error: restoreErr } = await admin.schema("procurement")
+      .from("purchase_orders")
+      .update({ status: "Issued" })
+      .eq("id", originalOrderId);
+    if (restoreErr) throw restoreErr;
+
+    res.json({ success: true, original_order_id: originalOrderId });
+  } catch (err) {
+    console.error("POST /amendments/cancel failed:", err);
     res.status(500).json({ error: err.message });
   }
 });

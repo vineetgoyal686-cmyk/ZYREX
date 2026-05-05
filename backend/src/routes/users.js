@@ -1,7 +1,7 @@
 const express = require("express");
 const router  = express.Router();
 const { createClient } = require("@supabase/supabase-js");
-const { createSignedStorageUrl } = require("../helpers/storageHelper");
+const { createSignedStorageUrl, removeStorageFile } = require("../helpers/storageHelper");
 
 const getAdminClient = () => createClient(
   process.env.SUPABASE_URL,
@@ -61,10 +61,15 @@ router.get("/", requireAuth, async (req, res) => {
     .order("created_at", { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });
-  const users = await Promise.all((data || []).map(async user => ({
-    ...user,
-    avatar: await createSignedStorageUrl(admin, "avatars", user.avatar),
-  })));
+  const users = await Promise.all((data || []).map(async user => {
+    const pp = user.profile_permissions || {};
+    const sigFile = pp.ui?.signature || null;
+    const [signedAvatar, signedSignature] = await Promise.all([
+      createSignedStorageUrl(admin, "avatars", user.avatar),
+      sigFile ? createSignedStorageUrl(admin, "avatars", sigFile) : Promise.resolve(null),
+    ]);
+    return { ...user, avatar: signedAvatar, signature: signedSignature };
+  }));
   res.json({ users });
 });
 
@@ -111,6 +116,60 @@ router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
 
   if (profileError) return res.status(500).json({ error: profileError.message });
   res.json({ success: true, user: profile });
+});
+
+/* POST /api/users/:id/signature — admin uploads signature on behalf of user */
+router.post("/:id/signature", requireAuth, requireAdminOrAbove, async (req, res) => {
+  const { id } = req.params;
+  const { signature } = req.body;
+  if (!signature) return res.status(400).json({ error: "Signature required" });
+
+  const matches = signature.match(/^data:(.+);base64,(.+)$/);
+  if (!matches) return res.status(400).json({ error: "Invalid image format" });
+
+  const mimeType   = matches[1];
+  const base64Data = matches[2];
+  const buffer     = Buffer.from(base64Data, "base64");
+  const ext        = mimeType.split("/")[1] || "png";
+  const newFileName = `sig_${id}_${Date.now()}.${ext}`;
+
+  const admin = getAdminClient();
+
+  const { data: targetUser } = await admin.from("users").select("profile_permissions").eq("id", id).single();
+  if (!targetUser) return res.status(404).json({ error: "User not found" });
+
+  // Cleanup old signature files for this user
+  try {
+    const { data: existing } = await admin.storage.from("avatars").list();
+    if (existing?.length > 0) {
+      const toDelete = existing.filter(f => f.name.startsWith(`sig_${id}_`)).map(f => f.name);
+      if (toDelete.length > 0) await admin.storage.from("avatars").remove(toDelete);
+    }
+  } catch { /* ignore */ }
+
+  const { error: uploadError } = await admin.storage
+    .from("avatars")
+    .upload(newFileName, buffer, { contentType: mimeType, upsert: true });
+
+  if (uploadError) return res.status(500).json({ error: `Storage upload failed: ${uploadError.message}` });
+
+  const { data: signedData, error: signedError } = await admin.storage
+    .from("avatars")
+    .createSignedUrl(newFileName, 315360000);
+
+  if (signedError || !signedData?.signedUrl)
+    return res.status(500).json({ error: "Failed to generate signed URL" });
+
+  const currentPerms = targetUser.profile_permissions || {};
+  const ui = currentPerms.ui || {};
+  ui.signature = newFileName;
+
+  const { error: dbError } = await admin.from("users")
+    .update({ profile_permissions: { ...currentPerms, ui } }).eq("id", id);
+
+  if (dbError) return res.status(500).json({ error: `DB update failed: ${dbError.message}` });
+
+  res.json({ success: true, url: signedData.signedUrl });
 });
 
 /* PUT /api/users/:id */

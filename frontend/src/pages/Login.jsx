@@ -46,8 +46,7 @@ const Login = ({ onLogin }) => {
     setLoading(true);
     try {
       const { data } = await api.post("/api/auth/login", { email, password });
-      const prevUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
-      const userToStore = { ...data.user, avatar: data.user.avatar || prevUser.avatar || null };
+      const userToStore = { ...data.user };
       localStorage.setItem("bms_token", data.token);
       localStorage.setItem("bms_user", JSON.stringify(userToStore));
       onLogin(userToStore);

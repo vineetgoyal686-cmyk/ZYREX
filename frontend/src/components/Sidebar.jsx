@@ -98,7 +98,7 @@ const masterDataRows = [
 ];
 
 const setupRows = [
-  { id: "proc_setup__company_list", label: "Company", description: "Manage companies" },
+  { id: "proc_setup__company_list", label: "Entity", description: "Manage entities" },
   { id: "proc_setup__site_list", label: "Site", description: "Manage sites / locations" },
   { id: "proc_setup__vendor_list", label: "Vendor", description: "Manage vendors" },
   { id: "proc_setup__item_list", label: "Item", description: "Manage items" },
@@ -216,7 +216,7 @@ const Tip = ({ label, show, children }) => {
   );
 };
 
-export default function Sidebar({
+export default React.memo(function Sidebar({
   activeTab = "global_dashboard",
   setActiveTab,
   selectedProject,
@@ -231,9 +231,10 @@ export default function Sidebar({
   projects: projectsProp = null,
   userTabPermissions = null,
 }) {
-  const currentUser = currentUserProp || (() => {
+  const currentUser = useMemo(() => currentUserProp || (() => {
     try { return JSON.parse(localStorage.getItem("bms_user") || "{}"); } catch { return {}; }
-  })();
+  })(), [currentUserProp]);
+
   const [openSections, setOpenSections] = useState({
     setup: false,
     master_data: false,
@@ -259,15 +260,15 @@ export default function Sidebar({
       });
     }
   }, [isCollapsed]);
+
   const [projOpen, setProjOpen] = useState(false);
   const [approvalCount, setApprovalCount] = useState(0);
   const [avatarUrl, setAvatarUrl] = useState(currentUser.avatar || null);
-  const avatarRefreshed = useRef(false);
 
   useEffect(() => {
-    setAvatarUrl(currentUserProp?.avatar || null);
-    avatarRefreshed.current = false;
-  }, [currentUserProp?.avatar]);
+    setAvatarUrl(currentUser.avatar || null);
+  }, [currentUser.avatar]);
+
   const collapsed = isMobile ? false : isCollapsed;
   const isGlobalAdmin = currentUser.role === "global_admin";
   const projects = projectsProp || [];
@@ -283,7 +284,6 @@ export default function Sidebar({
   useEffect(() => {
     let alive = true;
 
-    // 1. Instant Render from Cache
     const cachedCount = localStorage.getItem("last_approval_count");
     if (cachedCount) setApprovalCount(parseInt(cachedCount, 10));
 
@@ -307,27 +307,22 @@ export default function Sidebar({
         const newTotal = orderCount + intakeCount + amendmentCount;
         if (alive) {
           setApprovalCount(newTotal);
-          // 2. Update Cache for next time
           localStorage.setItem("last_approval_count", newTotal.toString());
         }
       } catch (err) {
-        console.error("Sidebar fetch error:", err);
         if (alive) setApprovalCount(0);
       }
     };
 
     fetchCounts();
-    const interval = setInterval(fetchCounts, 3000); 
+    const interval = setInterval(fetchCounts, 10000); 
     return () => { alive = false; clearInterval(interval); };
   }, []);
 
   const isTabVisible = (tabId) => {
-    // Profile is always reachable (own account). Global Dashboard and Inbox now
-    // respect their permission entries so admins can lock them down per user.
     if (tabId === "profile") return true;
     if (isGlobalAdmin) return true;
     if (!userTabPermissions) return false;
-    if (!userTabPermissions.hasAny || !userTabPermissions.map) return false;
     const moduleKey = TAB_MODULE_KEY[tabId];
     if (!moduleKey) return true;
     const perm = userTabPermissions.map?.[moduleKey];
@@ -335,24 +330,25 @@ export default function Sidebar({
     return perm.can_view === true;
   };
 
-  const go = (id, isGlobal = false) => {
+  const go = (id) => {
     setActiveTab(id);
-    if (isGlobal) setSelectedProject(null);
+    if (id === "global_dashboard") setSelectedProject(null);
   };
 
   const toggleSection = (key) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const RowButton = ({ row, isGlobal = false, nested = false }) => {
+  const RowButton = ({ row, nested = false }) => {
     if (!isTabVisible(row.id)) return null;
     const Icon = row.icon || iconById[row.id];
-    const isActive = activeTab === row.id || (row.id === "approvals" && activeTab.startsWith("approvals__"));
+    const isActive = activeTab === row.id || 
+                    (row.id === "approvals" && ["approvals", "intake", "orders", "payments", "amendments"].some(t => activeTab === t || activeTab.startsWith(t + "__")));
     return (
       <Tip label={row.label} show={collapsed}>
         <button
           type="button"
-          onClick={() => go(row.id, isGlobal)}
+          onClick={() => go(row.id)}
           className={cx(
-            "group relative w-full rounded-md border text-left transition-all duration-150",
+            "group relative w-full rounded-md border text-left transition-colors duration-100",
             collapsed 
               ? "flex h-10 items-center justify-center px-0" 
               : nested 
@@ -398,13 +394,13 @@ export default function Sidebar({
           )}
           title={collapsed ? "" : label}
         >
-          <div className="flex items-center justify-center w-6">
-            <Icon size={17} strokeWidth={2} className={open ? "text-cyan-300" : "text-slate-300 group-hover:text-cyan-300"} />
-          </div>
+          <span className="flex w-6 shrink-0 items-center justify-center">
+            <Icon size={17} strokeWidth={2} className={cx("transition-colors", open ? "text-cyan-300" : "text-slate-400 group-hover:text-cyan-100")} />
+          </span>
           {!collapsed && (
             <>
-              <span className="flex-1 truncate text-[13px] font-medium">{label}</span>
-              <ChevronRight size={13} className={cx("text-slate-500 transition-transform duration-200", open ? "rotate-90 text-cyan-400" : "")} />
+              <span className="flex-1 truncate text-[13.5px] font-semibold">{label}</span>
+              <ChevronDown size={14} className={cx("transition-transform duration-200 text-slate-500 group-hover:text-cyan-300", open ? "rotate-180" : "")} />
             </>
           )}
         </button>
@@ -412,8 +408,6 @@ export default function Sidebar({
     );
   };
 
-  // True if at least one row in this list is visible to the current user.
-  // Used to hide section headers entirely when every child tab is denied.
   const anyRowVisible = (rows) => rows.some(r => isTabVisible(r.id));
 
   const NestedRows = ({ rows }) => (
@@ -444,29 +438,31 @@ export default function Sidebar({
       style={{ boxShadow: "inset -1px 0 0 rgba(34,211,238,0.08)" }}
     >
       <div className="flex h-full flex-col">
-        <div className={cx("relative shrink-0 border-b border-cyan-400/12", collapsed ? "px-2 py-2" : "px-4 py-2.5")}>
-          <button type="button" onClick={() => collapsed && setIsCollapsed(false)} className={cx("flex w-full items-center", collapsed ? "justify-center" : "justify-start pl-1")}>
-            <img src="/Z.png" alt="Zyrex ERP Solutions" className={cx("object-contain", collapsed ? "h-8 w-8" : "h-auto w-[65%]")} />
-          </button>
-        </div>
-
-        {/* 🚀 MODERN FLOATING COLLAPSE TOGGLE */}
-        {!isMobile && (
-          <button
-            onClick={() => setIsCollapsed(!collapsed)}
-            className={cx(
-              "absolute -right-3 top-7 z-50 flex h-6 w-6 items-center justify-center rounded-full border border-cyan-400/30 bg-[#071827] text-cyan-300 shadow-lg transition-all hover:scale-110 hover:border-cyan-300 hover:bg-cyan-400/10",
-              collapsed ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        <div className={cx("relative shrink-0 border-b border-cyan-400/12", collapsed ? "px-2 py-2" : "px-4 py-3")}>
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => collapsed && setIsCollapsed(false)}
+              className={cx("flex items-center transition-all", collapsed ? "w-full justify-center hover:scale-110" : "pl-1")}
+              title={collapsed ? "Expand Sidebar" : ""}
+            >
+              <img src="/Z.png" alt="Zyrex ERP Solutions" className={cx("object-contain", collapsed ? "h-9 w-9" : "h-7 w-auto")} />
+            </button>
+            {!collapsed && !isMobile && (
+              <button
+                onClick={() => setIsCollapsed(true)}
+                className="flex h-7 w-7 items-center justify-center rounded-md border border-cyan-400/15 bg-cyan-400/5 text-slate-400 hover:text-cyan-300 hover:border-cyan-400/30 transition-all"
+                title="Collapse"
+              >
+                <PanelLeftClose size={15} />
+              </button>
             )}
-            title={collapsed ? "Expand" : "Collapse"}
-          >
-            {collapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
-          </button>
-        )}
+          </div>
+        </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-3" style={{ scrollbarWidth: "none" }}>
           <Group title="Global">
-            {globalRows.map((row) => <RowButton key={row.id} row={row} isGlobal />)}
+            {globalRows.map((row) => <RowButton key={row.id} row={row} />)}
           </Group>
 
           {(() => {
@@ -479,7 +475,7 @@ export default function Sidebar({
               <Group title="Management">
                 {setupVisible && (
                   <>
-                    <SectionHeader icon={Settings2} label="Global Setup" sectionKey="setup" />
+                    <SectionHeader icon={Settings2} label="Setup" sectionKey="setup" />
                     <AnimatePresence initial={false}>
                       {openSections.setup && (
                         <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
@@ -503,7 +499,7 @@ export default function Sidebar({
                   </>
                 )}
 
-                {managementRows.map((row) => <RowButton key={row.id} row={row} isGlobal />)}
+                {managementRows.map((row) => <RowButton key={row.id} row={row} />)}
               </Group>
             );
           })()}
@@ -563,7 +559,6 @@ export default function Sidebar({
 
           <div className={cx(!collapsed && "space-y-1")}>
             {projectSections.map((section) => {
-              // Hide the whole section if every child tab is denied
               if (!anyRowVisible(section.rows)) return null;
               return (
                 <div key={section.key} className="mb-1 last:mb-0">
@@ -597,44 +592,45 @@ export default function Sidebar({
                       src={avatarUrl}
                       alt=""
                       className="h-full w-full object-cover"
-                      onError={async () => {
-                        if (avatarRefreshed.current) return;
-                        avatarRefreshed.current = true;
-                        try {
-                          const { data } = await api.get("/api/auth/refresh-avatar");
-                          setAvatarUrl(data.url || null);
-                          const stored = JSON.parse(localStorage.getItem("bms_user") || "{}");
-                          localStorage.setItem("bms_user", JSON.stringify({ ...stored, avatar: data.url || null }));
-                        } catch { setAvatarUrl(null); }
-                      }}
+                      onError={() => setAvatarUrl(null)}
                     />
                   ) : initials}
                 </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-white">{userDisplayName}</p>
-                  <p className="truncate text-[11px] text-slate-400">{userDisplayEmail}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-bold text-white">{userDisplayName}</p>
+                  <p className="truncate text-[10px] text-cyan-200/50">{userDisplayEmail}</p>
                 </div>
               </button>
-              <button type="button" onClick={onLogout} title="Logout" className="rounded-md border border-cyan-400/15 p-2 text-slate-300 transition-colors hover:border-red-400/30 hover:bg-red-500/10 hover:text-red-300">
+              <button
+                type="button"
+                onClick={onLogout}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-rose-500/10 hover:text-rose-400"
+                title="Sign out"
+              >
                 <LogOut size={16} />
               </button>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
               <Tip label="Profile" show={collapsed}>
-                <button type="button" onClick={() => setActiveTab("profile")} className="flex h-9 w-9 items-center justify-center rounded-full bg-cyan-500/20 text-xs font-bold text-cyan-100 ring-1 ring-cyan-300/30">
-                  {initials}
+                <button type="button" onClick={() => setActiveTab("profile")} className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-cyan-500/20 text-xs font-bold text-cyan-100 ring-1 ring-cyan-300/30">
+                  {avatarUrl ? (
+                    <img
+                      src={avatarUrl}
+                      alt=""
+                      className="h-full w-full object-cover"
+                      onError={() => setAvatarUrl(null)}
+                    />
+                  ) : initials}
                 </button>
               </Tip>
-              <Tip label="Logout" show={collapsed}>
-                <button type="button" onClick={onLogout} className="text-slate-400 hover:text-red-300">
-                  <LogOut size={15} />
-                </button>
-              </Tip>
+              <button type="button" onClick={onLogout} className="flex h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:text-rose-400">
+                <LogOut size={16} />
+              </button>
             </div>
           )}
         </div>
       </div>
     </motion.aside>
   );
-}
+});

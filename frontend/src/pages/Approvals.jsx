@@ -19,24 +19,31 @@ const statusCls = {
 const orderTitle = (order) => order.order_number || order.snapshot?.orderNumber || `Order ${order.id?.slice?.(0, 8) || ""}`;
 const intakeTitle = (intake) => intake.intake_number || `Intake ${intake.id?.slice?.(0, 8) || ""}`;
 const money = (value) => Number(value || 0).toLocaleString("en-IN", { maximumFractionDigits: 0 });
+const approvalTabs = new Set(["intake", "orders", "payments"]);
+
+const readApprovalTabFromHash = () => {
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  const tab = params.get("approvalTab") || params.get("tab");
+  return approvalTabs.has(tab) ? tab : "intake";
+};
 
 export default function Approvals() {
-  const [activeTab, setActiveTab] = useState(() => {
-    const hash = window.location.hash.replace("#tab=", "");
-    return ["intake", "orders", "payments"].includes(hash) ? hash : "intake";
-  });
+  const [activeTab, setActiveTab] = useState(readApprovalTabFromHash);
   const [orderSubTab, setOrderSubTab] = useState("issued");
   const [orders, setOrders] = useState([]);
   const [intakes, setIntakes] = useState([]);
   const [amendments, setAmendments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(null); // request_id being processed
+  const [actionLoading, setActionLoading] = useState(null);
+  const [commentModal, setCommentModal] = useState({ open: false, orderId: null, action: null });
+  const [commentText, setCommentText] = useState("");
   const [search, setSearch] = useState("");
   const [canManageAmend, setCanManageAmend] = useState(false);
   // Amendment-specific filters + PDF preview state
   const [amendSiteFilter, setAmendSiteFilter] = useState("");
   const [amendCompanyFilter, setAmendCompanyFilter] = useState("");
   const [pdfPreviewId, setPdfPreviewId] = useState(null);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
 
   const load = async (isInitial = false) => {
     if (isInitial) {
@@ -97,22 +104,69 @@ export default function Approvals() {
   };
 
   useEffect(() => {
-    window.location.hash = `tab=${activeTab}`;
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const mainTab = params.get("tab");
+    if (approvalTabs.has(mainTab)) {
+      params.set("tab", "approvals");
+    }
+    if (params.get("approvalTab") === activeTab && params.get("tab") === "approvals") return;
+    params.set("approvalTab", activeTab);
+    window.history.replaceState(null, "", `#${params.toString()}`);
   }, [activeTab]);
 
-  useEffect(() => { 
-    load(true); // Load with cache first
-    const interval = setInterval(() => load(), 10000); 
-    return () => clearInterval(interval);
+  useEffect(() => {
+    load(true);
+
+    // SSE for instant updates — backend pushes when order status changes
+    let es;
+    const connectSSE = () => {
+      es = new EventSource(`${API}/api/orders/events`);
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === "order_updated") load();
+        } catch {}
+      };
+      es.onerror = () => {
+        es.close();
+        setTimeout(connectSSE, 5000); // reconnect after 5s if disconnected
+      };
+    };
+    connectSSE();
+
+    // Fallback poll every 30s (catches missed SSE events)
+    const interval = setInterval(() => load(), 30000);
+    return () => {
+      clearInterval(interval);
+      if (es) es.close();
+    };
   }, []);
 
-  const handleOrderAction = async (orderId, action) => {
+  useEffect(() => {
+    if (!pdfPreviewId) {
+      setPdfBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+      return;
+    }
+    let cancelled = false;
+    fetch(`${API}/api/orders/${pdfPreviewId}/preview`)
+      .then(r => r.blob())
+      .then(blob => {
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        setPdfBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return url; });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [pdfPreviewId]);
+
+  const handleOrderAction = async (orderId, action, comments = "") => {
     setActionLoading(orderId);
     try {
+      const bmsUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
       const res = await fetch(`${API}/api/orders/${orderId}`, {
         method: "PUT",
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem("bms_token") || ""}` },
-        body: JSON.stringify({ data: JSON.stringify({ mainData: { status: action } }) })
+        body: JSON.stringify({ data: JSON.stringify({ mainData: { status: action, action_by: bmsUser.name || "", ...(comments ? { comments } : {}) } }) })
       });
       const data = await res.json();
       if (res.ok && !data.error) {
@@ -207,18 +261,13 @@ export default function Approvals() {
 
   const [amendView, setAmendView] = useState("tile"); // 'table' or 'tile'
   const [orderView, setOrderView] = useState("tile"); // 'table' or 'tile'
+  const hasApprovalData = orders.length > 0 || intakes.length > 0 || amendments.length > 0;
+  const showInitialLoading = loading && !hasApprovalData;
 
   return (
     <div className="min-h-screen bg-[#f8fafc] p-3 sm:p-4 lg:p-6 pb-20">
-      {/* Simple Loading Spinner */}
-      {loading && orders.length === 0 && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#f8fafc]">
-          <div className="smooth-loader w-10 h-10 text-cyan-600"></div>
-        </div>
-      )}
-
       {/* Syncing Circle */}
-      {loading && orders.length > 0 && (
+      {loading && hasApprovalData && (
         <div className="fixed top-4 right-4 z-[60]">
           <div className="smooth-loader w-4 h-4 text-cyan-500"></div>
         </div>
@@ -257,7 +306,11 @@ export default function Approvals() {
         </div>
       </div>
 
-      {activeTab === "orders" ? (
+      {showInitialLoading ? (
+        <div className={`${cardCls} flex min-h-[120px] items-center justify-center`}>
+          <div className="smooth-loader w-8 h-8 text-cyan-600"></div>
+        </div>
+      ) : activeTab === "orders" ? (
         <div className="flex flex-col gap-4">
           {/* Orders Sub-tabs */}
           {/* Orders Sub-tabs & View Toggle */}
@@ -333,9 +386,9 @@ export default function Approvals() {
                               <div className="flex items-center justify-center gap-1.5">
                                 <button disabled={actionLoading === o.id} onClick={() => handleOrderAction(o.id, "Issued")} title="Issue Order"
                                   className="h-8 w-8 rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 shadow-sm flex items-center justify-center transition-all"><CircleCheck size={18} /></button>
-                                <button disabled={actionLoading === o.id} onClick={() => handleOrderAction(o.id, "Rejected")} title="Reject Order"
+                                <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Rejected" }); setCommentText(""); }} title="Reject Order"
                                   className="h-8 w-8 rounded-md bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-40 shadow-sm flex items-center justify-center transition-all"><CircleX size={18} /></button>
-                                <button disabled={actionLoading === o.id} onClick={() => handleOrderAction(o.id, "Draft")} title="Revert to Draft"
+                                <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Reverted" }); setCommentText(""); }} title="Revert to Draft"
                                   className="h-8 w-8 rounded-md bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-40 shadow-sm flex items-center justify-center transition-all"><RotateCcw size={16} /></button>
                               </div>
                             </td>
@@ -371,9 +424,9 @@ export default function Approvals() {
                         </div>
                       </div>
                       <div className="flex gap-1.5 pt-3 border-t border-slate-100">
-                        <button disabled={actionLoading === o.id} onClick={() => handleOrderAction(o.id, "Draft")}
+                        <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Reverted" }); setCommentText(""); }}
                           className="flex-1 h-8 bg-white border border-amber-200 text-amber-600 font-bold text-[10px] hover:bg-amber-500 hover:text-white transition-all uppercase">REVERT</button>
-                        <button disabled={actionLoading === o.id} onClick={() => handleOrderAction(o.id, "Rejected")}
+                        <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Rejected" }); setCommentText(""); }}
                           className="flex-1 h-8 bg-rose-50 border border-rose-200 text-rose-600 font-bold text-[10px] hover:bg-rose-500 hover:text-white transition-all uppercase">REJECT</button>
                         <button disabled={actionLoading === o.id} onClick={() => handleOrderAction(o.id, "Issued")}
                           className="flex-1 h-8 bg-emerald-500 text-white font-bold text-[10px] hover:bg-emerald-600 shadow-sm transition-all uppercase flex items-center justify-center gap-1">
@@ -555,7 +608,57 @@ export default function Approvals() {
               <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Order Preview</p>
               <button onClick={() => setPdfPreviewId(null)} className="h-8 w-8 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors">✕</button>
             </div>
-            <iframe src={`${API}/api/orders/${pdfPreviewId}/preview`} className="flex-1 w-full" title="Order PDF Preview" />
+            <iframe src={pdfBlobUrl || "about:blank"} className="flex-1 w-full" title="Order PDF Preview" />
+          </div>
+        </div>
+      )}
+
+      {/* Comment modal for Revert / Reject from inbox */}
+      {commentModal.open && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  {commentModal.action === "Reverted" ? "Revert Order" : "Reject Order"}
+                </h3>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Mandatory Reason Required</p>
+              </div>
+              <button onClick={() => setCommentModal({ open: false, orderId: null, action: null })}
+                className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-[13px] text-slate-600 font-medium bg-amber-50 p-3 rounded-xl border border-amber-100">
+                {commentModal.action === "Reverted"
+                  ? "Order will return to Draft status for correction."
+                  : "Order will be permanently rejected."}
+              </p>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Comments / Remarks</label>
+                <textarea
+                  value={commentText}
+                  onChange={e => setCommentText(e.target.value)}
+                  rows={4}
+                  placeholder="Please explain the reason for this action..."
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 outline-none resize-none transition-all"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setCommentModal({ open: false, orderId: null, action: null })}
+                  className="flex-1 py-3 text-xs font-bold text-slate-500 rounded-xl hover:bg-slate-100 transition-all">Cancel</button>
+                <button
+                  disabled={!commentText.trim() || actionLoading === commentModal.orderId}
+                  onClick={async () => {
+                    const { orderId, action } = commentModal;
+                    setCommentModal({ open: false, orderId: null, action: null });
+                    await handleOrderAction(orderId, action, commentText.trim());
+                    setCommentText("");
+                  }}
+                  className={`flex-[2] py-3 text-xs font-bold text-white rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:grayscale ${commentModal.action === "Reverted" ? "bg-amber-500 hover:bg-amber-600" : "bg-rose-600 hover:bg-rose-700"}`}>
+                  {commentModal.action === "Reverted" ? "Confirm Revert" : "Confirm Reject"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

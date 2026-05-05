@@ -491,6 +491,37 @@ const resizeImage = (file) =>
     reader.readAsDataURL(file);
   });
 
+/* Resize signature image — preserves PNG transparency (white background for JPEG files) */
+const resizeSignature = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("File read failed"));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Image load failed"));
+      img.onload = () => {
+        try {
+          const maxSize = 1200;
+          const ratio = Math.min(maxSize / img.width, maxSize / img.height, 1);
+          const canvas = document.createElement("canvas");
+          canvas.width  = Math.round(img.width  * ratio) || 1;
+          canvas.height = Math.round(img.height * ratio) || 1;
+          const ctx = canvas.getContext("2d");
+          const isPng = file.type === "image/png";
+          if (!isPng) {
+            // Fill white background for non-PNG so transparency doesn't go black
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+          }
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL(isPng ? "image/png" : "image/jpeg", 0.95));
+        } catch (err) { reject(err); }
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
 const Toast = ({ msg, type }) => (
   <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-xl px-5 py-3 shadow-lg text-sm font-semibold
     ${type === "success" ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>
@@ -572,8 +603,16 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
   const [headerTheme, setHeaderTheme] = useState(uiSettings.header_theme || GRADIENTS[0].value);
   const [showThemePicker, setShowThemePicker] = useState(false);
 
+  /* Signature */
+  const [signature, setSignature]           = useState(currentUser.signature || uiSettings.signature || null);
+  const [signatureLoading, setSignatureLoading] = useState(false);
+
+  /* Avatar lightbox */
+  const [avatarLightbox, setAvatarLightbox] = useState(false);
+
   const fileRef                 = useRef();
   const coverFileRef            = useRef();
+  const signatureRef            = useRef();
 
   /* Edit profile */
   const [profile, setProfile]   = useState({
@@ -597,6 +636,9 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
   const [newUserProfilePerms, setNewUserProfilePerms] = useState(DEFAULT_PROFILE_PERMS);
   const [newUserModules, setNewUserModules]   = useState([]);
   const [modulesLoading, setModulesLoading]   = useState(false);
+  const [newUserSignature, setNewUserSignature] = useState(null);
+  const [newUserSigLoading, setNewUserSigLoading] = useState(false);
+  const newUserSigRef = useRef();
   const [allPermsSelected, setAllPermsSelected] = useState(false);
 
   /* Team / permissions */
@@ -1011,12 +1053,42 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
     try { await api.delete("/api/auth/cover"); } catch { /* silent */ }
     showToast("Cover removed");
   };
+  /* ── Signature upload ── */
+  const handleSignatureChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = "";
+    setSignatureLoading(true);
+    try {
+      const base64 = await resizeSignature(file);
+      setSignature(base64);
+      const { data } = await api.post("/api/auth/signature", { signature: base64 });
+      setSignature(data.url);
+      const updated = { ...currentUser, signature: data.url };
+      localStorage.setItem("bms_user", JSON.stringify(updated));
+      onProfileUpdate?.(updated);
+      showToast("Signature uploaded successfully");
+    } catch (err) {
+      showToast(err?.response?.data?.error || "Signature upload failed", "error");
+    } finally { setSignatureLoading(false); }
+  };
+
+  const deleteSignature = async () => {
+    setSignature(null);
+    const updated = { ...currentUser, signature: null };
+    localStorage.setItem("bms_user", JSON.stringify(updated));
+    onProfileUpdate?.(updated);
+    try { await api.delete("/api/auth/signature"); } catch { /* silent */ }
+    showToast("Signature removed");
+  };
+
   const saveProfile = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
       const { data } = await api.put("/api/auth/profile", profile);
-      const updated  = { ...currentUser, ...data.user, avatar: currentUser.avatar };
+      // Backend now returns signed URLs for avatar/cover, so we can use data.user directly
+      const updated = { ...currentUser, ...data.user };
       localStorage.setItem("bms_user", JSON.stringify(updated));
       onProfileUpdate?.(updated);
       showToast("Profile updated successfully");
@@ -1059,6 +1131,19 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
 
 
 
+  /* ── New user signature pick (local preview, upload after user is created) ── */
+  const handleNewUserSigChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = "";
+    setNewUserSigLoading(true);
+    try {
+      const base64 = await resizeSignature(file);
+      setNewUserSignature(base64);
+    } catch { showToast("Signature preview failed", "error"); }
+    finally { setNewUserSigLoading(false); }
+  };
+
   /* ── Add member ── */
   const addMember = async (e) => {
     e.preventDefault();
@@ -1070,8 +1155,13 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
       if (userId && newUserModules.some(m => MODULE_PERM_KEYS.some(k => m[k.key]))) {
         await api.put(`/api/users/${userId}/permissions`, { permissions: newUserModules });
       }
+      // Upload signature if provided
+      if (userId && newUserSignature) {
+        try { await api.post(`/api/users/${userId}/signature`, { signature: newUserSignature }); } catch { /* non-blocking */ }
+      }
       setNewUser({ name: "", email: "", contact_no: "", designation: "", designation_id: null, department: "", role: "user" });
       setNewUserProfilePerms(DEFAULT_PROFILE_PERMS);
+      setNewUserSignature(null);
       setAllPermsSelected(false);
       setNewUserModules(prev => prev.map(m => ({ ...m, can_view: false, can_add: false, can_edit: false, can_delete: false, can_bulk_upload: false, can_export: false, can_download_document: false })));
       setShowAddUser(false); // Modal close karo
@@ -1427,8 +1517,29 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
   return (
     <div className="min-h-screen bg-[#f0f2f5] p-4 md:p-6">
       {toast && <Toast msg={toast.msg} type={toast.type} />}
+
+      {/* Avatar Lightbox */}
+      {avatarLightbox && avatar && (
+        <div
+          className="fixed inset-0 z-[9999] bg-black/80 flex items-center justify-center p-6"
+          onClick={() => setAvatarLightbox(false)}
+        >
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <img src={avatar} alt="avatar" className="max-h-[80vh] max-w-[80vw] rounded-2xl shadow-2xl object-contain" />
+            <button
+              onClick={() => setAvatarLightbox(false)}
+              className="absolute -top-3 -right-3 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg hover:bg-slate-100 transition"
+            >
+              <X size={16} className="text-slate-700" />
+            </button>
+          </div>
+        </div>
+      )}
+
       <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
       <input ref={coverFileRef} type="file" accept="image/*" className="hidden" onChange={handleCoverChange} />
+      <input ref={signatureRef} type="file" accept="image/*" className="hidden" onChange={handleSignatureChange} />
+      <input ref={newUserSigRef} type="file" accept="image/*" className="hidden" onChange={handleNewUserSigChange} />
 
       <div className="space-y-4">
 
@@ -1537,6 +1648,12 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
               </div>
               <div className={`absolute inset-0 rounded-2xl bg-black/60 flex items-center justify-center gap-2 transition-opacity
                 ${avatarLoading ? "opacity-0 pointer-events-none" : "opacity-0 group-hover:opacity-100"}`}>
+                {avatar && (
+                  <button onClick={() => setAvatarLightbox(true)} className="flex flex-col items-center gap-0.5">
+                    <FolderOpen size={16} className="text-white" />
+                    <span className="text-[9px] text-white font-bold">View</span>
+                  </button>
+                )}
                 <button onClick={() => fileRef.current.click()} className="flex flex-col items-center gap-0.5">
                   <Camera size={16} className="text-white" />
                   <span className="text-[9px] text-white font-bold">Edit</span>
@@ -1547,9 +1664,6 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                     <span className="text-[9px] text-red-300 font-bold">Del</span>
                   </button>
                 )}
-              </div>
-              <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-indigo-500 border-2 border-white/20 flex items-center justify-center pointer-events-none">
-                <Camera size={11} className="text-white" />
               </div>
             </div>
 
@@ -1704,6 +1818,75 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                         <p className="text-xs text-slate-400">Email address cannot be changed</p>
                       </div>
                     </form>
+                  </div>
+                </div>
+
+                {/* Signature */}
+                <div className="lg:col-span-3">
+                  <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+                    <div className="flex items-center gap-3 mb-5">
+                      <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center shrink-0">
+                        <Pencil size={16} className="text-amber-600" />
+                      </div>
+                      <div>
+                        <h2 className="text-base font-black text-slate-800">Signature</h2>
+                        <p className="text-xs text-slate-500">Your signature is used on documents and purchase orders</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-start gap-6">
+                      {/* Preview */}
+                      <div className="w-full sm:w-64 h-32 rounded-xl border-2 border-dashed border-slate-200 bg-white flex items-center justify-center overflow-hidden shrink-0 relative group">
+                        {signatureLoading ? (
+                          <Loader2 size={24} className="text-amber-400 animate-spin" />
+                        ) : signature ? (
+                          <>
+                            <img src={signature} alt="Signature" className="max-h-full max-w-full object-contain p-2" />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center gap-3">
+                              <button type="button" onClick={() => signatureRef.current.click()}
+                                className="flex flex-col items-center gap-1 text-white">
+                                <Camera size={16} />
+                                <span className="text-[10px] font-bold">Change</span>
+                              </button>
+                              <button type="button" onClick={deleteSignature}
+                                className="flex flex-col items-center gap-1 text-red-400">
+                                <Trash2 size={16} />
+                                <span className="text-[10px] font-bold">Remove</span>
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-center">
+                            <Pencil size={24} className="text-slate-300 mx-auto mb-1" />
+                            <p className="text-[11px] text-slate-400 font-medium">No signature</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex-1 space-y-3">
+                        <p className="text-[12px] text-slate-500 leading-relaxed">
+                          Upload a clear image of your handwritten signature (PNG or JPG recommended).
+                          It will appear on purchase orders and official documents generated from this platform.
+                        </p>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <button type="button" onClick={() => signatureRef.current.click()}
+                            disabled={signatureLoading}
+                            className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold rounded-xl shadow-sm shadow-amber-200 transition-all active:scale-95 disabled:opacity-60">
+                            {signatureLoading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+                            {signature ? "Change Signature" : "Upload Signature"}
+                          </button>
+                          {signature && (
+                            <button type="button" onClick={deleteSignature}
+                              className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all">
+                              <Trash2 size={14} />
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-400">Accepted: PNG, JPG, JPEG · Max size: 5MB</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -2803,6 +2986,53 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                         <p className="text-[10px] text-slate-400 mt-1 ml-1">
                           Role controls who this user can manage. App permissions come from the Designation template below.
                         </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Signature */}
+                  <div>
+                    <div className="flex items-center gap-2 mb-5 border-l-4 border-amber-400 pl-4 py-1">
+                      <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Signature</p>
+                      <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Optional</span>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-start gap-5 p-4 bg-amber-50/60 rounded-2xl border border-amber-100">
+                      <div className="w-full sm:w-48 h-24 rounded-xl border-2 border-dashed border-amber-200 bg-white flex items-center justify-center overflow-hidden shrink-0 relative group" style={{backgroundImage: "linear-gradient(45deg, #f8f8f8 25%, transparent 25%), linear-gradient(-45deg, #f8f8f8 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f8f8f8 75%), linear-gradient(-45deg, transparent 75%, #f8f8f8 75%)", backgroundSize: "8px 8px", backgroundPosition: "0 0, 0 4px, 4px -4px, -4px 0px"}}>
+                        {newUserSigLoading ? (
+                          <Loader2 size={20} className="text-amber-400 animate-spin" />
+                        ) : newUserSignature ? (
+                          <>
+                            <img src={newUserSignature} alt="Signature" className="max-h-full max-w-full object-contain p-2" />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-xl flex items-center justify-center gap-3">
+                              <button type="button" onClick={() => newUserSigRef.current.click()} className="text-white flex flex-col items-center gap-0.5">
+                                <Camera size={14} /><span className="text-[9px] font-bold">Change</span>
+                              </button>
+                              <button type="button" onClick={() => setNewUserSignature(null)} className="text-red-400 flex flex-col items-center gap-0.5">
+                                <Trash2 size={14} /><span className="text-[9px] font-bold">Remove</span>
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-center">
+                            <Pencil size={20} className="text-amber-300 mx-auto mb-1" />
+                            <p className="text-[10px] text-amber-400 font-medium">No signature</p>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 space-y-2">
+                        <p className="text-[12px] text-slate-600 font-medium">Upload user's signature now, or they can do it later from their Profile page.</p>
+                        <button type="button" onClick={() => newUserSigRef.current.click()}
+                          disabled={newUserSigLoading}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg shadow-sm shadow-amber-200 transition-all active:scale-95 disabled:opacity-60">
+                          {newUserSigLoading ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
+                          {newUserSignature ? "Change Signature" : "Upload Signature"}
+                        </button>
+                        {newUserSignature && (
+                          <button type="button" onClick={() => setNewUserSignature(null)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-500 hover:bg-rose-50 rounded-lg transition-all">
+                            <Trash2 size={12} /> Remove
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

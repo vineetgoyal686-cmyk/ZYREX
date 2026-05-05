@@ -154,6 +154,25 @@ function App() {
     }
   };
 
+  const fetchUserProfile = async () => {
+    const token = localStorage.getItem("bms_token");
+    if (!token) return;
+    try {
+      const res = await fetch(`${API}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          setCurrentUser(data.user);
+          localStorage.setItem("bms_user", JSON.stringify(data.user));
+        }
+      } else if (res.status === 401) {
+        handleLogout();
+      }
+    } catch (err) { console.error("Profile refresh failed:", err); }
+  };
+
   const fetchUserPermissions = async () => {
     const token = localStorage.getItem("bms_token");
     if (!token) return;
@@ -174,10 +193,11 @@ function App() {
     } catch { /* silent — don't break the app */ }
   };
 
-  // Fetch projects + permissions whenever logged in
+  // Fetch projects + permissions + profile whenever logged in
   useEffect(() => {
     if (!isLoggedIn) return;
     fetchProjects();
+    fetchUserProfile();
     if (!userTabPermissions) fetchUserPermissions();
   }, [isLoggedIn, userTabPermissions]);
 
@@ -221,6 +241,10 @@ function App() {
   const handleTabChange = (tab) => {
     const proj = tab === "global_dashboard" ? null : selectedProject;
     if (tab === "global_dashboard") setSelectedProject(null);
+    if (tab === activeTab) {
+      if (isMobile) setMobileOpen(false);
+      return;
+    }
     setActiveTab(tab);
     pushUrl(tab, proj);
     if (isMobile) setMobileOpen(false);
@@ -262,7 +286,7 @@ function App() {
     if (activeTab === "profile") return <Profile onProfileUpdate={handleProfileUpdate} onProjectsUpdate={handleProjectsUpdate} />;
     
     // Approvals / Inbox is GLOBAL (no project needed)
-    if (activeTab === "approvals" || activeTab === "intake" || activeTab === "orders" || activeTab === "amendments") return <Approvals />;
+    if (activeTab === "approvals" || activeTab === "intake" || activeTab === "orders" || activeTab === "amendments" || activeTab === "payments") return <Approvals />;
 
     // Global Create tabs
     if (activeTab === "create__intake") return <IntakeList />;

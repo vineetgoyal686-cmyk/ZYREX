@@ -65,6 +65,10 @@ const uploadToStorage = async (bucket, path, buffer, mimetype) => {
   return uploadStorageFile(supabase, bucket, path, buffer, mimetype);
 };
 
+const removeFromStorage = async (bucket, path) => {
+  return removeStorageFile(supabase, bucket, path);
+};
+
 const signProcurementImageUrl = (value) => createSignedStorageUrl(supabase, "procurement-images", value);
 const signVendorDocUrl = (value) => createSignedStorageUrl(supabase, "vendor-docs", value);
 
@@ -964,19 +968,59 @@ router.post("/vendors/bulk", async (req, res) => {
    SITES
 ════════════════════════════════════ */
 
+const parseSiteJson = (val) => {
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") {
+    try { const p = JSON.parse(val); return Array.isArray(p) ? p : []; } catch {}
+  }
+  return [];
+};
+
+const missingSiteColumns = (err) => {
+  const msg = String(err?.message || "").toLowerCase();
+  return err?.code === "42703" || err?.code === "PGRST204" || msg.includes("could not find") || msg.includes("column");
+};
+
+const siteBasePayload = (b) => ({
+  site_name:       b.siteName    || "",
+  site_code:       b.siteCode    || "",
+  city:            b.district    || b.city || "",
+  state:           b.state       || "",
+  site_address:    b.siteAddress || "",
+  billing_address: "",
+  contacts:        Array.isArray(b.contacts) ? b.contacts : parseSiteJson(b.contacts),
+});
+
+const siteFullPayload = (b) => ({
+  ...siteBasePayload(b),
+  district:  b.district  || "",
+  pincode:   b.pincode   || "",
+  status:    b.status    || "active",
+  latitude:  b.latitude  || "",
+  longitude: b.longitude || "",
+  contacts:  Array.isArray(b.contacts) ? b.contacts : parseSiteJson(b.contacts),
+  slug:      b.slug      || "",
+});
+
 router.get("/sites", async (_req, res) => {
   try {
     const { data, error } = await supabase
       .schema("procurement").from("sites").select("*").order("site_name", { ascending: true });
     if (error) throw error;
     const sites = (data || []).map(r => ({
-      id:             r.id,
-      siteName:       r.site_name       || "",
-      siteCode:       r.site_code       || "",
-      city:           r.city            || "",
-      state:          r.state           || "",
-      billingAddress: r.billing_address || "",
-      siteAddress:    r.site_address    || "",
+      id:          r.id,
+      siteName:    r.site_name    || "",
+      siteCode:    r.site_code    || "",
+      district:    r.district     || r.city || "",
+      city:        r.city         || "",
+      state:       r.state        || "",
+      pincode:     r.pincode      || "",
+      status:      r.status       || "active",
+      latitude:    r.latitude     || "",
+      longitude:   r.longitude    || "",
+      siteAddress: r.site_address || "",
+      contacts:    parseSiteJson(r.contacts),
+      slug:        r.slug         || "",
     }));
     res.json({ sites });
   } catch (err) {
@@ -987,14 +1031,12 @@ router.get("/sites", async (_req, res) => {
 
 router.post("/sites", async (req, res) => {
   try {
-    const { siteName, siteCode, city, state, billingAddress, siteAddress, createdById, createdByName } = req.body;
-    const { data, error } = await supabase.schema("procurement").from("sites").insert({
-      site_name: siteName || "", site_code: siteCode || "",
-      city: city || "", state: state || "",
-      billing_address: billingAddress || "", site_address: siteAddress || "",
-      created_by_id: createdById || null,
-      created_by_name: createdByName || null,
-    }).select().single();
+    const base = { ...siteBasePayload(req.body), created_by_id: req.body.createdById || null, created_by_name: req.body.createdByName || null };
+    const full = { ...siteFullPayload(req.body), created_by_id: req.body.createdById || null, created_by_name: req.body.createdByName || null };
+    let { data, error } = await supabase.schema("procurement").from("sites").insert(full).select().single();
+    if (error && missingSiteColumns(error)) {
+      ({ data, error } = await supabase.schema("procurement").from("sites").insert(base).select().single());
+    }
     if (error) throw error;
     res.json({ success: true, id: data.id });
   } catch (err) {
@@ -1005,12 +1047,10 @@ router.post("/sites", async (req, res) => {
 
 router.put("/sites/:id", async (req, res) => {
   try {
-    const { siteName, siteCode, city, state, billingAddress, siteAddress } = req.body;
-    const { error } = await supabase.schema("procurement").from("sites").update({
-      site_name: siteName || "", site_code: siteCode || "",
-      city: city || "", state: state || "",
-      billing_address: billingAddress || "", site_address: siteAddress || "",
-    }).eq("id", req.params.id);
+    let { error } = await supabase.schema("procurement").from("sites").update(siteFullPayload(req.body)).eq("id", req.params.id);
+    if (error && missingSiteColumns(error)) {
+      ({ error } = await supabase.schema("procurement").from("sites").update(siteBasePayload(req.body)).eq("id", req.params.id));
+    }
     if (error) throw error;
     res.json({ success: true });
   } catch (err) {
@@ -1060,10 +1100,18 @@ router.post("/sites/bulk", async (req, res) => {
       seenInBatch.add(batchKey);
 
       inserts.push({
-        site_name: name, site_code: code,
-        city, state: r.state || "",
-        billing_address: r.billingAddress || "", site_address: r.siteAddress || "",
-        created_by_id: req.body.createdById || null,
+        site_name:    name,
+        site_code:    code,
+        city:         r.district || city,
+        state:        r.state    || "",
+        site_address: r.siteAddress || "",
+        billing_address: "",
+        district:  r.district || city,
+        pincode:   r.pincode  || "",
+        status:    r.status   || "active",
+        slug:      r.slug     || "",
+        contacts:  [],
+        created_by_id:   req.body.createdById   || null,
         created_by_name: req.body.createdByName || "Bulk Upload",
       });
     }
@@ -1326,6 +1374,38 @@ const uploadCompanyImg = async (files, key, folder) => {
   );
 };
 
+const parseCompanyJsonArray = (value) => {
+  if (Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const missingCompanyExtraColumns = (error) => {
+  const msg = String(error?.message || "").toLowerCase();
+  return error?.code === "42703" || error?.code === "PGRST204" || msg.includes("could not find") || msg.includes("column");
+};
+
+const companyExtraPayload = (b) => ({
+  status: b.status || "active",
+  billing_gstin: b.billingGstin || "",
+  billing_contact_name: b.billingContactName || "",
+  billing_contact_phone: b.billingContactPhone || "",
+  billing_state: b.billingState || "",
+  billing_address: b.billingAddress || "",
+  account_no: b.accountNo || "",
+  account_holder_name: b.accountHolderName || "",
+  ifsc_code: b.ifscCode || "",
+  bank_name: b.bankName || "",
+  bank_branch: b.bankBranch || "",
+  bank_city: b.bankCity || "",
+  bank_state: b.bankState || "",
+  state_billing_profiles: parseCompanyJsonArray(b.stateBillingProfiles),
+});
+
 router.get("/companies", async (_req, res) => {
   try {
     const { data, error } = await supabase
@@ -1352,6 +1432,23 @@ router.get("/companies", async (_req, res) => {
         state:        r.state         || "",
         district:     r.district      || "",
         address:      r.address       || "",
+        status:       r.status        || "active",
+        billingGstin:        r.billing_gstin         || "",
+        billingContactName:  r.billing_contact_name  || "",
+        billingContactPhone: r.billing_contact_phone || "",
+        billingState:        r.billing_state         || "",
+        billingAddress:      r.billing_address       || "",
+        accountNo:           r.account_no            || "",
+        accountHolderName:   r.account_holder_name   || "",
+        ifscCode:            r.ifsc_code             || "",
+        bankName:            r.bank_name             || "",
+        bankBranch:          r.bank_branch           || "",
+        bankCity:            r.bank_city             || "",
+        bankState:           r.bank_state            || "",
+        stateBillingProfiles: parseCompanyJsonArray(r.state_billing_profiles),
+        logoPath: normalizeStoragePath(r.logo_url, "procurement-images") || "",
+        stampPath: normalizeStoragePath(r.stamp_url, "procurement-images") || "",
+        signPath: normalizeStoragePath(r.sign_url, "procurement-images") || "",
         logoUrl,
         stampUrl,
         signUrl,
@@ -1376,7 +1473,7 @@ router.post("/companies", companyUpload, async (req, res) => {
       uploadCompanyImg(files, "sign",  folder),
     ]);
 
-    const { data, error } = await supabase.schema("procurement").from("companies").insert({
+    const basePayload = {
       company_name: b.companyName || "", company_code: b.companyCode || "",
       person_name: b.personName || "", designation: b.designation || "",
       phone: b.phone || "", email: b.email || "",
@@ -1388,7 +1485,13 @@ router.post("/companies", companyUpload, async (req, res) => {
       sign_url:  signUrl  || "",
       created_by_id: b.createdById || null,
       created_by_name: b.createdByName || null,
-    }).select().single();
+    };
+    const fullPayload = { ...basePayload, ...companyExtraPayload(b) };
+    let { data, error } = await supabase.schema("procurement").from("companies").insert(fullPayload).select().single();
+    if (error && missingCompanyExtraColumns(error)) {
+      console.warn("Company extra columns missing; saving base entity fields only. Apply company entity migration.");
+      ({ data, error } = await supabase.schema("procurement").from("companies").insert(basePayload).select().single());
+    }
     if (error) throw error;
     res.json({ success: true, id: data.id });
   } catch (err) {
@@ -1410,7 +1513,7 @@ router.put("/companies/:id", companyUpload, async (req, res) => {
       uploadCompanyImg(files, "sign",  folder),
     ]);
 
-    const { error } = await supabase.schema("procurement").from("companies").update({
+    const basePayload = {
       company_name: b.companyName || "", company_code: b.companyCode || "",
       person_name: b.personName || "", designation: b.designation || "",
       phone: b.phone || "", email: b.email || "",
@@ -1420,7 +1523,13 @@ router.put("/companies/:id", companyUpload, async (req, res) => {
       logo_url:  newLogo  || normalizeStoragePath(b.logoUrl, "procurement-images")  || "",
       stamp_url: newStamp || normalizeStoragePath(b.stampUrl, "procurement-images") || "",
       sign_url:  newSign  || normalizeStoragePath(b.signUrl, "procurement-images")  || "",
-    }).eq("id", id);
+    };
+    const fullPayload = { ...basePayload, ...companyExtraPayload(b) };
+    let { error } = await supabase.schema("procurement").from("companies").update(fullPayload).eq("id", id);
+    if (error && missingCompanyExtraColumns(error)) {
+      console.warn("Company extra columns missing; updating base entity fields only. Apply company entity migration.");
+      ({ error } = await supabase.schema("procurement").from("companies").update(basePayload).eq("id", id));
+    }
     if (error) throw error;
     res.json({ success: true });
   } catch (err) {
@@ -1453,18 +1562,41 @@ const getNextContactCode = async () => {
   return `CON-${String(next).padStart(3, "0")}`;
 };
 
+const missingContactColumn = (err) => {
+  const msg = String(err?.message || "").toLowerCase();
+  return err?.code === "42703" || err?.code === "PGRST204" || msg.includes("could not find") || msg.includes("column");
+};
+
 router.get("/contacts", async (_req, res) => {
   try {
     const { data, error } = await supabase
       .schema("procurement").from("contacts").select("*").order("contact_code", { ascending: true });
     if (error) throw error;
     const contacts = (data || []).map(r => ({
-      id:            r.id,
-      contactCode:   r.contact_code   || "",
-      personName:    r.person_name    || "",
-      contactNumber: r.contact_number || "",
-      designation:   r.designation    || "",
-      company:       r.company        || "",
+      id:             r.id,
+      contactCode:    r.contact_code    || "",
+      personName:     r.person_name     || "",
+      contactNumber:  r.contact_number  || "",
+      designation:    r.designation     || "",
+      company:        r.company         || "",
+      email:          r.email           || "",
+      department:     r.department      || "",
+      reportingTo:    r.reporting_to    || "",
+      status:         r.status          || "active",
+      workLocation:   r.work_location   || "",
+      role:           r.role            || "",
+      team:           r.team            || "",
+      bio:            r.bio             || "",
+      tags:           r.tags            || "",
+      employeeId:     r.employee_id     || "",
+      profileImage:   r.profile_image   || "",
+      dateOfBirth:    r.date_of_birth   ? String(r.date_of_birth).slice(0, 10) : "",
+      gender:         r.gender          || "",
+      maritalStatus:  r.marital_status  || "",
+      nationality:    r.nationality     || "",
+      alternatePhone: r.alternate_phone || "",
+      address:        r.address         || "",
+      joiningDate:    r.joining_date    ? String(r.joining_date).slice(0, 10) : "",
     }));
     res.json({ contacts });
   } catch (err) {
@@ -1475,17 +1607,71 @@ router.get("/contacts", async (_req, res) => {
 
 router.post("/contacts", async (req, res) => {
   try {
-    const { personName, contactNumber, designation, company, createdById, createdByName } = req.body;
+    const { personName, contactNumber, designation, company, email, department, reportingTo, status,
+            workLocation, role, team, bio, tags, employeeId,
+            dateOfBirth, gender, maritalStatus, nationality,
+            alternatePhone, address, joiningDate,
+            createdById, createdByName } = req.body;
+    // Duplicate check: same name + phone already exists → skip
+    if (personName && contactNumber) {
+      const { data: existing } = await supabase.schema("procurement").from("contacts")
+        .select("id")
+        .ilike("person_name", personName.trim())
+        .eq("contact_number", contactNumber.trim())
+        .maybeSingle();
+      if (existing) return res.status(409).json({ duplicate: true, message: "Contact already exists" });
+    }
+
     const contactCode = await getNextContactCode();
-    const { data, error } = await supabase.schema("procurement").from("contacts").insert({
-      contact_code:   contactCode,
-      person_name:    personName    || "",
-      contact_number: contactNumber || "",
-      designation:    designation   || "",
-      company:        company       || "",
-      created_by_id:  createdById   || null,
-      created_by_name: createdByName || null,
-    }).select().single();
+    const fullPayload = {
+      contact_code:    contactCode,
+      person_name:     personName     || "",
+      contact_number:  contactNumber  || "",
+      designation:     designation    || "",
+      company:         company        || "",
+      email:           email          || "",
+      department:      department     || "",
+      reporting_to:    reportingTo    || "",
+      status:          status         || "active",
+      work_location:   workLocation   || "",
+      role:            role           || "",
+      team:            team           || "",
+      bio:             bio            || "",
+      tags:            tags           || "",
+      employee_id:     employeeId     || "",
+      date_of_birth:   dateOfBirth    || null,
+      gender:          gender         || "",
+      marital_status:  maritalStatus  || "",
+      nationality:     nationality    || "",
+      alternate_phone: alternatePhone || "",
+      address:         address        || "",
+      joining_date:    joiningDate    || null,
+      created_by_id:   createdById    || null,
+      created_by_name: createdByName  || null,
+    };
+    const basePayload = { ...fullPayload };
+    delete basePayload.email;
+    delete basePayload.department;
+    delete basePayload.reporting_to;
+    delete basePayload.status;
+    delete basePayload.work_location;
+    delete basePayload.role;
+    delete basePayload.team;
+    delete basePayload.bio;
+    delete basePayload.tags;
+    delete basePayload.employee_id;
+    delete basePayload.date_of_birth;
+    delete basePayload.gender;
+    delete basePayload.marital_status;
+    delete basePayload.nationality;
+    delete basePayload.alternate_phone;
+    delete basePayload.address;
+    delete basePayload.joining_date;
+
+    let { data, error } = await supabase.schema("procurement").from("contacts").insert(fullPayload).select().single();
+    if (error && missingContactColumn(error)) {
+      ({ data, error } = await supabase.schema("procurement").from("contacts").insert(basePayload).select().single());
+    }
     if (error) throw error;
     res.json({ success: true, id: data.id });
   } catch (err) {
@@ -1496,14 +1682,83 @@ router.post("/contacts", async (req, res) => {
 
 router.put("/contacts/:id", async (req, res) => {
   try {
-    const { personName, contactNumber, designation, company } = req.body;
-    const { error } = await supabase.schema("procurement").from("contacts")
-      .update({ person_name: personName || "", contact_number: contactNumber || "", designation: designation || "", company: company || "" })
-      .eq("id", req.params.id);
+    const { personName, contactNumber, designation, company, email, department, reportingTo, status,
+            workLocation, role, team, bio, tags, employeeId,
+            dateOfBirth, gender, maritalStatus, nationality,
+            alternatePhone, address, joiningDate } = req.body;
+    const fullUpdate = {
+      person_name:     personName     || "",
+      contact_number:  contactNumber  || "",
+      designation:     designation    || "",
+      company:         company        || "",
+      email:           email          || "",
+      department:      department     || "",
+      reporting_to:    reportingTo    || "",
+      status:          status         || "active",
+      work_location:   workLocation   || "",
+      role:            role           || "",
+      team:            team           || "",
+      bio:             bio            || "",
+      tags:            tags           || "",
+      employee_id:     employeeId     || "",
+      date_of_birth:   dateOfBirth    || null,
+      gender:          gender         || "",
+      marital_status:  maritalStatus  || "",
+      nationality:     nationality    || "",
+      alternate_phone: alternatePhone || "",
+      address:         address        || "",
+      joining_date:    joiningDate    || null,
+    };
+    const baseUpdate = { person_name: fullUpdate.person_name, contact_number: fullUpdate.contact_number, designation: fullUpdate.designation, company: fullUpdate.company };
+
+    let { error } = await supabase.schema("procurement").from("contacts").update(fullUpdate).eq("id", req.params.id);
+    if (error && missingContactColumn(error)) {
+      ({ error } = await supabase.schema("procurement").from("contacts").update(baseUpdate).eq("id", req.params.id));
+    }
     if (error) throw error;
     res.json({ success: true });
   } catch (err) {
     console.error("Contact update error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/contacts/:id/profile-image", upload.single("image"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) return res.status(400).json({ error: "No image provided" });
+
+    const ext = (req.file.originalname.split(".").pop() || "jpg").toLowerCase();
+    const storagePath = `contact-profiles/${id}.${ext}`;
+
+    await uploadToStorage("procurement-images", storagePath, req.file.buffer, req.file.mimetype);
+
+    let { error } = await supabase.schema("procurement").from("contacts")
+      .update({ profile_image: storagePath }).eq("id", id);
+    if (error && missingContactColumn(error)) {
+      return res.json({ success: true, path: storagePath });
+    }
+    if (error) throw error;
+    res.json({ success: true, path: storagePath });
+  } catch (err) {
+    console.error("Contact image upload error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/contacts/:id/profile-image", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: contact, error: fetchError } = await supabase.schema("procurement").from("contacts").select("profile_image").eq("id", id).single();
+    if (fetchError) throw fetchError;
+    if (contact?.profile_image) {
+      await removeFromStorage("procurement-images", contact.profile_image);
+    }
+    const { error } = await supabase.schema("procurement").from("contacts").update({ profile_image: null }).eq("id", id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Contact image delete error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

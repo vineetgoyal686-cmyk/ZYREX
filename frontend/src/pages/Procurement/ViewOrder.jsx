@@ -87,6 +87,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   const [actionComment, setActionComment] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
   const [toast, setToast] = useState(null);
 
   // Amendment Request state
@@ -98,6 +99,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   // Inline approve/reject (when this order IS the pending clone)
   const [pendingAmend, setPendingAmend] = useState(null);     // amendment row for this clone
   const [canManageAmend, setCanManageAmend] = useState(false);
+  const [cancelAmendLoading, setCancelAmendLoading] = useState(false);
 
   // Amendment Info Modal (for history tab)
   const [infoModal, setInfoModal] = useState({ open: false, data: null });
@@ -232,6 +234,21 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     };
   }, [orderId, initialOrder]);
 
+  useEffect(() => {
+    const id = data?.order?.id;
+    if (!id) return;
+    let cancelled = false;
+    fetch(`${API}/api/orders/${id}/preview`)
+      .then(r => r.blob())
+      .then(blob => {
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        setPdfBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return url; });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [data?.order?.id]);
+
   const fetchApprovalData = async () => {
     try {
       const wRes = await fetch(`${API}/api/approvals/requests/${orderId}`, {
@@ -300,6 +317,24 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     }
   };
 
+  const handleCancelAmend = async () => {
+    setCancelAmendLoading(true);
+    try {
+      const res = await fetch(`${API}/api/amendments/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("bms_token") || ""}` },
+        body: JSON.stringify({ clone_order_id: orderId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Cancel failed");
+      showToast("Amendment cancelled — original order restored to Issued.");
+      setTimeout(() => { if (onBack) onBack(); }, 1500);
+    } catch (err) {
+      showToast(err.message, "error");
+      setCancelAmendLoading(false);
+    }
+  };
+
   const fetchOrderDetails = async () => {
     const cached = getCachedOrderDetails(orderId);
     if (cached?.order) {
@@ -341,16 +376,18 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
         setActionModal({ open: false, type: "" });
         setActionComment("");
         fetchOrderDetails();
+        fetchApprovalData();
+        fetchAmendHistory();
       } else {
-        alert(data.error);
+        showToast(data.error || "Action failed", "error");
       }
     } catch (e) {
-      console.error("Action error", e);
+      showToast(e.message || "Network error", "error");
     }
     setActionLoading(false);
   };
 
-  const updateStatus = async (newStatus, initApproval = false) => {
+  const updateStatus = async (newStatus, initApproval = false, comments = "") => {
     // ── Document validation before submitting to Review ──
     if (newStatus === 'Review') {
       const preDocs = Array.isArray(order.pre_documents) ? order.pre_documents : [];
@@ -388,10 +425,17 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
         }
       }
 
+      const bmsUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
+      const issuedBy = newStatus === 'Issued' ? {
+        id: bmsUser.id,
+        name: bmsUser.name || "",
+        designation: bmsUser.designation || "",
+        signatureFile: bmsUser.profile_permissions?.ui?.signature || null,
+      } : undefined;
       const res = await fetch(`${API}/api/orders/${orderId}`, {
         method: "PUT",
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: JSON.stringify({ mainData: { status: newStatus } }) })
+        body: JSON.stringify({ data: JSON.stringify({ mainData: { status: newStatus, action_by: bmsUser.name || "", ...(comments ? { comments } : {}), ...(issuedBy ? { issuedBy } : {}) } }) })
       });
       if (!res.ok) throw new Error("Status update failed");
 
@@ -441,6 +485,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       let attachment_url = "";
       const formData = new FormData();
       formData.append("file", amendFile);
+      formData.append("order_number", order.order_number || "");
       const upRes = await fetch(`${API}/api/orders/upload`, {
         method: "POST",
         body: formData,
@@ -470,6 +515,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       setAmendReason("");
       setAmendFile(null);
       fetchOrderDetails();
+      fetchAmendHistory();
     } catch (err) {
       showToast(err.message, "error");
     } finally {
@@ -480,6 +526,14 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
 
   const { order, items } = data;
   if (!order) return null; // Silent while initial data is missing or syncing
+
+  const isDraftNum    = /^(PO|WO)-\d+$/.test(order.order_number || '');
+  const isOldPending  = order.order_number?.startsWith("PENDING-");
+  const isPending     = isDraftNum || isOldPending;
+  const canCancelDraftAmendment =
+    order.status === "Draft" &&
+    !!order.amended_from_id &&
+    (isGlobalAdmin || String(order.created_by_id) === String(thisUser.id));
 
   const getVal = (v) => Array.isArray(v) ? v[0] : v;
   const normalizeRichTextHtml = (html) =>
@@ -532,6 +586,30 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     ? (snap.contacts || (liveContact ? [liveContact] : []))
     : (snap.contacts || (liveContact ? [liveContact] : []));
   const totals = order.totals || {};
+
+  // Resolve billing: state profile → entity billing fallback
+  const resolvedBillingProfile = (() => {
+    // Prefer pre-computed profile saved in snapshot
+    if (snap.billingProfile) return snap.billingProfile;
+
+    const siteState = site.state;
+    const blocks = comp.stateBillingProfiles || [];
+
+    // 1. Try state-specific profile
+    if (siteState && blocks.length) {
+      const block = blocks.find(b => b.stateName?.toLowerCase() === siteState.toLowerCase());
+      const profile = block?.profiles?.find(p => p.isDefault) || block?.profiles?.[0];
+      if (profile) return { ...profile, source: "state" };
+    }
+
+    // 2. Fallback: entity-level billing address + gstin
+    const fallbackAddr = comp.billingAddress || comp.billing_address || comp.address || "";
+    const fallbackGstin = comp.billingGstin || comp.billing_gstin || comp.gstin || "";
+    if (fallbackAddr || fallbackGstin) {
+      return { address: fallbackAddr, gstin: fallbackGstin, source: "entity" };
+    }
+    return null;
+  })();
   const isSupply = order.order_type === "Supply";
   const showModel = (totals.showModel === true || (totals.showModel !== false && groupedItems.some(it => it.model_number)));
   const showBrand = (totals.showBrand === true || (totals.showBrand !== false && groupedItems.some(it => it.make || it.brand)));
@@ -546,7 +624,63 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   const vendorDisplayName = vend.vendorName || vend.vendor_name || "Vendor";
   const vendorSignatoryName = vend.contactPerson || vend.contact_person || vendorDisplayName || FALLBACK;
   const poDate = formatSignatureDate(order.purchase_order_date || order.created_at);
-  const TABS = ["Order Details", "Approvals", "Amendment History", "Order Documents", "PDF View", "Goods receipts", "Vendor Invoices", "Payments"];
+  const TABS = ["Order Details", "Approvals", "Log", "Order Documents", "PDF View", "Goods receipts", "Vendor Invoices", "Payments"];
+
+  // ── Approval Action Logic (Global) ──
+  const timeline = approvalData.timeline || [];
+  const currentStep = timeline.find(s => s.status === 'In Progress');
+  const isCurrentApprover = currentStep && String(currentStep.approver_id) === String(thisUser.id);
+  const isPendingIssue = order.status === 'Pending Issue';
+  const isIssued = order.status === 'Issued';
+
+  const stepPerms = currentStep?.permissions || {};
+  const preIssueActions = [
+    { key: "Approved", label: "Approve", color: "indigo",  permKey: "approve", needsComment: false },
+    { key: "Issued",   label: "Issue",   color: "emerald", permKey: "issue",   needsComment: false },
+    { key: "Reverted", label: "Revert",  color: "amber",   permKey: "revert",  needsComment: true  },
+    { key: "Rejected", label: "Reject",  color: "rose",    permKey: "reject",  needsComment: true  },
+  ].filter(a => isGlobalAdmin || stepPerms[a.permKey]);
+
+  const userCanRecall = isGlobalAdmin || timeline.some(s =>
+    String(s.approver_id) === String(thisUser.id) && s.permissions?.recall_after_issue
+  );
+  const userCanCancel = isGlobalAdmin || timeline.some(s =>
+    String(s.approver_id) === String(thisUser.id) && s.permissions?.cancel_after_issue
+  );
+  const postIssueActions = [];
+  if (isIssued && userCanRecall) postIssueActions.push({ key: "Recalled",  label: "Recall",  color: "purple", needsComment: true });
+  if (isIssued && userCanCancel) postIssueActions.push({ key: "Cancelled", label: "Cancel",  color: "slate",  needsComment: true });
+
+  const canActPreIssue  = isPendingIssue && approvalData.request && (isGlobalAdmin || isCurrentApprover) && preIssueActions.length > 0;
+  const canActPostIssue = isIssued && postIssueActions.length > 0;
+  const fallbackAdmin   = isPendingIssue && !approvalData.request && isGlobalAdmin;
+
+  const colorClass = (color) => ({
+    indigo:  "bg-indigo-600 hover:bg-indigo-700",
+    emerald: "bg-emerald-600 hover:bg-emerald-700",
+    amber:   "bg-amber-500 hover:bg-amber-600",
+    rose:    "bg-rose-600 hover:bg-rose-700",
+    purple:  "bg-purple-600 hover:bg-purple-700",
+    slate:   "bg-slate-700 hover:bg-slate-800",
+  }[color] || "bg-slate-600 hover:bg-slate-700");
+
+  const runApprovalAction = (actionType, needsComment) => {
+    const forceComment = ["Reverted", "Rejected", "Recalled", "Cancelled", "Amendment Request"].includes(actionType);
+    if (needsComment || forceComment) { 
+      setActionModal({ open: true, type: actionType }); 
+      return; 
+    }
+    if (approvalData.request) {
+      setActionComment("");
+      handleApprovalAction(actionType);
+    } else if (isGlobalAdmin) {
+      const nextStatus = actionType === 'Issued' ? 'Issued' : actionType === 'Reverted' ? 'Reverted' : 'Rejected';
+      updateStatus(nextStatus);
+    }
+  };
+
+  const allActions = canActPreIssue ? preIssueActions : canActPostIssue ? postIssueActions : [];
+  const showGlobalActionBar = canActPreIssue || canActPostIssue || fallbackAdmin;
 
   return (
     <div className="bg-slate-50 min-h-screen text-sm w-full mx-auto pb-20 relative">
@@ -655,6 +789,14 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
             <div className="flex items-center gap-3">
               {order.status === 'Draft' && (
                 <>
+                  {canCancelDraftAmendment && (
+                    <button
+                      disabled={cancelAmendLoading}
+                      onClick={handleCancelAmend}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg shadow-sm text-xs transition-all disabled:opacity-60">
+                      {cancelAmendLoading ? "Cancelling..." : "Cancel Amendment"}
+                    </button>
+                  )}
                   <button disabled={actionLoading} onClick={() => updateStatus('Review')}
                     className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-lg shadow-sm text-xs transition-all">
                     Submit to Review
@@ -683,81 +825,38 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                 </>
               )}
 
-               {order.status === 'Issued' && (() => {
-                const tl = approvalData.timeline || [];
-                const canRecall = isGlobalAdmin || tl.some(s =>
-                  String(s.approver_id) === String(thisUser.id) && s.permissions?.recall_after_issue
-                );
-                const canCancel = isGlobalAdmin || tl.some(s =>
-                  String(s.approver_id) === String(thisUser.id) && s.permissions?.cancel_after_issue
-                );
-                return (
-                  <>
-                    {canRequestAmend && (
-                      <button onClick={() => setAmendModal(true)}
-                        className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-sm text-xs transition-all">
-                        Amend Request
-                      </button>
-                    )}
-                    {canRecall && (
-                      <button disabled={actionLoading}
-                        onClick={() => { setActionComment(""); setActionModal({ open: true, type: 'Recalled' }); setActiveTab('Approvals'); }}
-                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-sm text-xs transition-all disabled:opacity-60">
-                        Recall
-                      </button>
-                    )}
-                    {canCancel && (
-                      <button disabled={actionLoading}
-                        onClick={() => { setActionComment(""); setActionModal({ open: true, type: 'Cancelled' }); setActiveTab('Approvals'); }}
-                        className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-lg shadow-sm text-xs transition-all disabled:opacity-60">
-                        Cancel Order
-                      </button>
-                    )}
-                  </>
-                );
-              })()}
-
-              {/* Amended order (was previously Issued) — show Recall/Cancel if permitted */}
-              {order.status === 'Amended' && (() => {
-                const tl = approvalData.timeline || [];
-                const canRecall = isGlobalAdmin || tl.some(s =>
-                  String(s.approver_id) === String(thisUser.id) && s.permissions?.recall_after_issue
-                );
-                const canCancel = isGlobalAdmin || tl.some(s =>
-                  String(s.approver_id) === String(thisUser.id) && s.permissions?.cancel_after_issue
-                );
-                if (!canRecall && !canCancel) return null;
-                return (
-                  <>
-                    {canRecall && (
-                      <button disabled={actionLoading}
-                        onClick={() => { setActionComment(""); setActionModal({ open: true, type: 'Recalled' }); setActiveTab('Approvals'); }}
-                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg shadow-sm text-xs transition-all disabled:opacity-60">
-                        Recall
-                      </button>
-                    )}
-                    {canCancel && (
-                      <button disabled={actionLoading}
-                        onClick={() => { setActionComment(""); setActionModal({ open: true, type: 'Cancelled' }); setActiveTab('Approvals'); }}
-                        className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-lg shadow-sm text-xs transition-all disabled:opacity-60">
-                        Cancel Order
-                      </button>
-                    )}
-                  </>
-                );
-              })()}
+              {(order.status === 'Issued' || order.status === 'Amended' || order.status === 'Pending Issue') && (
+                <>
+                  {order.status === 'Issued' && canRequestAmend && (
+                    <button onClick={() => setAmendModal(true)}
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-sm text-xs transition-all">
+                      Amend Request
+                    </button>
+                  )}
+                  {showGlobalActionBar && (allActions.length > 0 ? allActions : (fallbackAdmin ? [
+                    { key: "Issued",   label: "Issue",  color: "emerald", needsComment: false },
+                    { key: "Reverted", label: "Revert", color: "amber",   needsComment: true  },
+                    { key: "Rejected", label: "Reject", color: "rose",    needsComment: true  },
+                  ] : [])).map(a => (
+                    <button key={a.key} disabled={actionLoading}
+                      onClick={() => runApprovalAction(a.key, a.needsComment)}
+                      className={`px-4 py-2 ${colorClass(a.color)} text-white font-bold rounded-lg shadow-sm text-xs transition-all disabled:opacity-60`}>
+                      {a.label}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           </div>
         </div>
 
         <div className="px-14 pb-4">
           {(() => {
-            const isPending = order.order_number?.startsWith("PENDING-");
             const statusRaw = order.status ? order.status.toString().trim() : "Draft";
             const statusLabel = statusRaw.toUpperCase();
-            
-            const displayNo = isPending
-              ? (statusLabel === "DRAFT" ? "DRAFT" : (statusLabel === "REVIEW" ? "IN REVIEW" : statusLabel))
+
+            const displayNo = isOldPending
+              ? `${order.order_type === 'Supply' ? 'PO' : 'WO'}-DRAFT`
               : order.order_number;
 
             // Status Badge Colors (Matching Table View)
@@ -876,8 +975,8 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
               </div>
               <div>
                 <p className="text-xs text-slate-400 mb-1">{order.order_type === 'Supply' ? 'Purchase' : 'Work'} Order No.</p>
-                <p className={`font-semibold ${order.order_number?.startsWith("PENDING-") ? "text-amber-600 italic" : "text-slate-800"}`}>
-                  {order.order_number?.startsWith("PENDING-") ? "Assigned on Issue" : order.order_number}
+                <p className={`font-semibold ${isPending ? "text-amber-600 italic" : "text-slate-800"}`}>
+                  {isOldPending ? "Assigned on Issue" : order.order_number}
                 </p>
               </div>
               <div>
@@ -941,10 +1040,24 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
               <div className="space-y-3 text-xs">
                 <div><p className="text-slate-400 mb-0.5">Site Address</p><p className="text-slate-700 leading-relaxed">{site.siteAddress || site.site_address || 'N/A'}</p></div>
                 <div>
-                  <p className="text-slate-400 mb-0.5 mt-2">Billing Address</p>
-                  <p className="text-slate-700 leading-relaxed">{site.billingAddress || site.billing_address || comp.address || 'N/A'}</p>
+                  <p className="text-slate-400 mb-0.5 mt-2 flex items-center gap-1.5">
+                    Billing Address
+                    {(snap.billingState || site.state) && (
+                      <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100 uppercase tracking-wide">
+                        {snap.billingState || site.state}
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-slate-700 leading-relaxed">
+                    {resolvedBillingProfile?.address || 'N/A'}
+                  </p>
                 </div>
-                <div><p className="text-slate-400 mb-0.5 mt-2">GSTIN</p><p className="text-slate-700 uppercase">{comp.gstin || 'N/A'}</p></div>
+                <div>
+                  <p className="text-slate-400 mb-0.5 mt-2">GSTIN</p>
+                  <p className="text-slate-700 uppercase font-mono tracking-wider">
+                    {resolvedBillingProfile?.gstin || 'N/A'}
+                  </p>
+                </div>
                 {contacts.length > 0 && (
                   <div className="pt-2">
                     <p className="text-slate-400 mb-2 font-bold uppercase tracking-widest text-[9px] border-b border-slate-50 pb-1 text-[10px]">Contact Persons</p>
@@ -1279,281 +1392,349 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
         </div>
       )}
 
-      {activeTab === "Approvals" && (() => {
-        const user = JSON.parse(localStorage.getItem("bms_user") || "{}");
-        const isGlobalAdmin = user.role === "global_admin";
-        const timeline = approvalData.timeline || [];
-        const currentStep = timeline.find(s => s.status === 'In Progress');
-        const isCurrentApprover = currentStep && String(currentStep.approver_id) === String(user.id);
-        const isPendingIssue = order.status === 'Pending Issue';
-        const isIssued = order.status === 'Issued';
+      {activeTab === "Approvals" && (
+        <div className="px-14 py-3 max-w-[1400px]">
+          <h2 className="text-xl font-bold text-slate-800 mb-6">Approval Workflow</h2>
 
-        // Pre-issue: actions allowed by current step's permissions
-        const stepPerms = currentStep?.permissions || {};
-        const preIssueActions = [
-          { key: "Approved", label: "Approve", color: "indigo",  permKey: "approve", needsComment: false },
-          { key: "Issued",   label: "Issue",   color: "emerald", permKey: "issue",   needsComment: false },
-          { key: "Reverted", label: "Revert",  color: "amber",   permKey: "revert",  needsComment: true  },
-          { key: "Rejected", label: "Reject",  color: "rose",    permKey: "reject",  needsComment: true  },
-        ].filter(a => isGlobalAdmin || stepPerms[a.permKey]);
+          <div className="space-y-6">
+              {/* Combine timeline steps with actual history logs for a full audit view */}
+              {(() => {
+                const logs = approvalData.request?.logs || [];
+                const steps = approvalData.timeline || [];
+                
+                // If we have logs, show them as the primary history
+                if (logs.length > 0) {
+                  return (
+                    <div className="relative space-y-8 before:absolute before:inset-0 before:ml-4 before:-translate-x-px before:h-full before:w-0.5 before:bg-slate-200">
+                      {logs.sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).map((log, lIdx) => {
+                        const statusColors = {
+                          'Approved': 'bg-emerald-500',
+                          'Rejected': 'bg-rose-500',
+                          'Reverted': 'bg-amber-500',
+                          'Recalled': 'bg-purple-500',
+                          'Cancelled': 'bg-slate-700',
+                          'Pending': 'bg-indigo-500'
+                        };
+                        const color = statusColors[log.action] || 'bg-slate-400';
+                        
+                        return (
+                          <div key={lIdx} className="relative flex items-start gap-6 group">
+                            <div className={`absolute left-0 mt-1.5 w-8 h-8 rounded-full border-4 border-white ${color} shadow-sm z-10 flex items-center justify-center text-white`}>
+                              {log.action === 'Approved' ? <CheckCircle2 size={14} /> : log.action === 'Rejected' ? <X size={14} /> : <FileText size={14} />}
+                            </div>
+                            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex-1 ml-10 hover:border-indigo-200 transition-all">
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                                  {log.action_by_name || 'Approver'} 
+                                  <span className={`text-[10px] px-2 py-0.5 rounded-full text-white font-black uppercase tracking-widest ${color}`}>
+                                    {log.action}
+                                  </span>
+                                </h4>
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                  {new Date(log.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                                </span>
+                              </div>
+                              {log.comments && (
+                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 mt-3 italic text-[13px] text-slate-600 font-medium leading-relaxed">
+                                  <span className="text-slate-400 mr-2 opacity-50">"</span>
+                                  {log.comments}
+                                  <span className="text-slate-400 ml-2 opacity-50">"</span>
+                                </div>
+                              )}
+                              {log.step_number && (
+                                <div className="mt-3 text-[10px] font-bold text-slate-400 uppercase tracking-tighter">
+                                  Level {log.step_number} Approval Stage
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+                
+                // Fallback to basic steps if no logs yet
+                return steps.map((step, idx) => (
+                  <div key={idx} className="relative flex items-start gap-6">
+                    <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center shrink-0 z-10 font-bold text-xs">{idx + 1}</div>
+                    <div className="bg-white p-5 rounded-2xl border border-slate-200 flex-1 shadow-sm">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="font-bold text-slate-800 text-sm">{step.approver_name}</h3>
+                          <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{step.approver_designation}</p>
+                        </div>
+                        <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-slate-100 text-slate-500 border border-slate-200">
+                          {step.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
 
-        // Post-issue: any step where user has recall_after_issue / cancel_after_issue
-        const userCanRecall = isGlobalAdmin || timeline.some(s =>
-          String(s.approver_id) === String(user.id) && s.permissions?.recall_after_issue
-        );
-        const userCanCancel = isGlobalAdmin || timeline.some(s =>
-          String(s.approver_id) === String(user.id) && s.permissions?.cancel_after_issue
-        );
-        const postIssueActions = [];
-        if (isIssued && userCanRecall) postIssueActions.push({ key: "Recalled",  label: "Recall",  color: "purple", needsComment: true });
-        if (isIssued && userCanCancel) postIssueActions.push({ key: "Cancelled", label: "Cancel",  color: "slate",  needsComment: true });
 
-        const canActPreIssue  = isPendingIssue && approvalData.request && (isGlobalAdmin || isCurrentApprover) && preIssueActions.length > 0;
-        const canActPostIssue = isIssued && postIssueActions.length > 0;
-        const fallbackAdmin   = isPendingIssue && !approvalData.request && isGlobalAdmin;
+          </div>
+      )}
 
-        const colorClass = (color) => ({
-          indigo:  "bg-indigo-600 hover:bg-indigo-700",
-          emerald: "bg-emerald-600 hover:bg-emerald-700",
-          amber:   "bg-amber-500 hover:bg-amber-600",
-          rose:    "bg-rose-600 hover:bg-rose-700",
-          purple:  "bg-purple-600 hover:bg-purple-700",
-          slate:   "bg-slate-600 hover:bg-slate-700",
-        }[color] || "bg-slate-600 hover:bg-slate-700");
+      {activeTab === "Log" && (() => {
+        const fmtTs = (iso) => new Date(iso).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+        const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString("en-IN") : <span className="text-slate-300">—</span>;
 
-        const runApprovalAction = (actionType, needsComment) => {
-          if (needsComment) { setActionModal({ open: true, type: actionType }); return; }
-          if (approvalData.request) {
-            setActionComment("");
-            handleApprovalAction(actionType);
-          } else if (isGlobalAdmin) {
-            const nextStatus = actionType === 'Issued' ? 'Issued' : actionType === 'Reverted' ? 'Reverted' : 'Rejected';
-            updateStatus(nextStatus);
+        // Build unified event list
+        const events = [];
+
+        // 1. Order Created
+        if (order.created_at) {
+          events.push({ ts: order.created_at, type: 'created', user: order.made_by || 'Unknown', label: 'Order Created', sub: `${order.order_number} • Draft` });
+        }
+
+        // 2. Status transitions (Review, Pending Issue, Reverted, Recalled, Issued etc.) from activity_log
+        const activityLog = Array.isArray(order.snapshot?.activity_log) ? order.snapshot.activity_log : [];
+        const statusLabels = {
+          Review: 'Submitted for Review',
+          'Pending Issue': 'Submitted for Approval',
+          Issued: 'Issued',
+          Draft: 'Returned to Draft',
+          Reverted: 'Reverted',
+          Recalled: 'Recalled',
+          Cancelled: 'Cancelled',
+          Rejected: 'Rejected',
+        };
+        activityLog.forEach(entry => {
+          events.push({
+            ts: entry.action_at,
+            type: 'status',
+            user: entry.action_by || 'System',
+            label: statusLabels[entry.action] || entry.action,
+            rawStatus: entry.action,
+            comment: entry.comments || null,
+          });
+        });
+
+        // 3. Approval logs (approver decisions — Approved/Rejected/Reverted by approver)
+        const approvalLogs = approvalData.request?.logs || [];
+        // Dedupe: skip if activity_log already has this exact status at near same time
+        const activityTs = new Set(activityLog.map(e => e.action_at?.slice(0, 16)));
+        approvalLogs.forEach(log => {
+          const logMin = log.created_at?.slice(0, 16);
+          const isDupe = activityTs.has(logMin) && ['Issued', 'Reverted', 'Recalled', 'Cancelled', 'Rejected'].includes(log.action);
+          if (!isDupe) {
+            events.push({ ts: log.created_at, type: 'approval', user: log.action_by_name || 'Approver', label: log.action, comment: log.comments, step: log.step_number });
+          }
+        });
+
+        // 4. Amendment requests — separate event per action stage
+        amendHistory.forEach(a => {
+          // Stage 1: Requested
+          events.push({ ts: a.created_at, type: 'amend', user: a.requestor?.name || a.made_by || 'User', label: 'Amendment Requested', amendStatus: 'Pending', reason: a.reason, attachment_url: a.attachment_url });
+          // Stage 2: Approved (only if it was approved, even if later cancelled)
+          if (a.approved_at) {
+            events.push({ ts: a.approved_at, type: 'amend', user: a.approver?.name || 'Admin', label: 'Amendment Approved', amendStatus: 'Approved' });
+          }
+          // Stage 3: Final action (Cancelled/Rejected) — skip if just Approved with no further action
+          if (a.status === 'Cancelled' || a.status === 'Rejected') {
+            events.push({ ts: a.actioned_at, type: 'amend', user: a.actioner?.name || 'Admin', label: `Amendment ${a.status}`, amendStatus: a.status });
+          }
+        });
+
+        // Sort ascending (oldest first)
+        events.sort((a, b) => new Date(a.ts) - new Date(b.ts));
+
+        const eventStyle = {
+          created:  { dot: 'bg-indigo-500',  icon: <FileText size={13} />,    badge: 'bg-indigo-100 text-indigo-700' },
+          status: {
+            Review:          { dot: 'bg-sky-500',     icon: <FileText size={13} />,     badge: 'bg-sky-100 text-sky-700' },
+            'Pending Issue': { dot: 'bg-violet-500',  icon: <FileText size={13} />,     badge: 'bg-violet-100 text-violet-700' },
+            Issued:          { dot: 'bg-emerald-600', icon: <CheckCircle2 size={13} />, badge: 'bg-emerald-100 text-emerald-800' },
+            Reverted:        { dot: 'bg-amber-500',   icon: <FileText size={13} />,     badge: 'bg-amber-100 text-amber-700' },
+            Recalled:        { dot: 'bg-purple-500',  icon: <FileText size={13} />,     badge: 'bg-purple-100 text-purple-700' },
+            Cancelled:       { dot: 'bg-slate-600',   icon: <X size={13} />,            badge: 'bg-slate-100 text-slate-600' },
+            Rejected:        { dot: 'bg-rose-500',    icon: <X size={13} />,            badge: 'bg-rose-100 text-rose-700' },
+            Draft:           { dot: 'bg-blue-400',    icon: <FileText size={13} />,     badge: 'bg-blue-100 text-blue-700' },
+          },
+          approval: {
+            Approved: { dot: 'bg-emerald-500', icon: <CheckCircle2 size={13} />, badge: 'bg-emerald-100 text-emerald-700' },
+            Rejected: { dot: 'bg-rose-500',    icon: <X size={13} />,           badge: 'bg-rose-100 text-rose-700' },
+            Reverted: { dot: 'bg-amber-500',   icon: <FileText size={13} />,    badge: 'bg-amber-100 text-amber-700' },
+            Recalled: { dot: 'bg-purple-500',  icon: <FileText size={13} />,    badge: 'bg-purple-100 text-purple-700' },
+            Cancelled:{ dot: 'bg-slate-600',   icon: <X size={13} />,           badge: 'bg-slate-100 text-slate-600' },
+            Issued:   { dot: 'bg-emerald-600', icon: <CheckCircle2 size={13} />,badge: 'bg-emerald-100 text-emerald-800' },
+            Pending:  { dot: 'bg-blue-400',    icon: <FileText size={13} />,    badge: 'bg-blue-100 text-blue-700' },
+          },
+          amend: {
+            Approved:  { dot: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-700' },
+            Rejected:  { dot: 'bg-rose-500',    badge: 'bg-rose-100 text-rose-700' },
+            Cancelled: { dot: 'bg-slate-500',   badge: 'bg-slate-100 text-slate-600' },
+            Pending:   { dot: 'bg-amber-500',   badge: 'bg-amber-100 text-amber-700' },
           }
         };
 
-        const allActions = canActPreIssue ? preIssueActions : canActPostIssue ? postIssueActions : [];
-        const showActionBar = canActPreIssue || canActPostIssue || fallbackAdmin;
+        const getStyle = (ev) => {
+          if (ev.type === 'created') return eventStyle.created;
+          if (ev.type === 'status')  return eventStyle.status[ev.rawStatus] || { dot: 'bg-slate-400', icon: <FileText size={13} />, badge: 'bg-slate-100 text-slate-600' };
+          if (ev.type === 'approval') return eventStyle.approval[ev.label] || { dot: 'bg-slate-400', icon: <FileText size={13} />, badge: 'bg-slate-100 text-slate-600' };
+          if (ev.type === 'amend')   return { ...(eventStyle.amend[ev.amendStatus] || eventStyle.amend.Pending), icon: <GitMerge size={13} /> };
+          return { dot: 'bg-slate-300', icon: <FileText size={13} />, badge: 'bg-slate-100 text-slate-500' };
+        };
 
         return (
-          <div className="px-14 py-3 max-w-[1400px]">
-            <h2 className="text-xl font-bold text-slate-800 mb-6">Approval Workflow</h2>
+          <div className="px-14 py-3 max-w-[1400px] print:hidden space-y-6">
 
-            {showActionBar && (
-              <div className="bg-white border border-slate-200 rounded-xl p-5 mb-6 flex items-center justify-between shadow-sm">
+            {/* ── Timeline ── */}
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <div className="flex items-center gap-3 mb-5">
+                <FileText size={18} className="text-indigo-500" />
                 <div>
-                  <h3 className="font-bold text-slate-800 text-sm">Take Action</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {canActPreIssue && `Stage ${currentStep?.step_number} — ${currentStep?.approver_name}. Allowed: ${preIssueActions.map(a => a.label).join(', ')}.`}
-                    {canActPostIssue && `Issued order — post-issue actions available.`}
-                    {fallbackAdmin && "No approval workflow found — global admin override."}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {(allActions.length > 0 ? allActions : (fallbackAdmin ? [
-                    { key: "Issued",   label: "Issue",  color: "emerald", needsComment: false },
-                    { key: "Reverted", label: "Revert", color: "amber",   needsComment: true  },
-                    { key: "Rejected", label: "Reject", color: "rose",    needsComment: true  },
-                  ] : [])).map(a => (
-                    <button key={a.key} disabled={actionLoading}
-                      onClick={() => runApprovalAction(a.key, a.needsComment)}
-                      className={`px-4 py-2 ${colorClass(a.color)} text-white font-bold rounded-lg shadow-sm text-xs transition-all disabled:opacity-60`}>
-                      {a.label}
-                    </button>
-                  ))}
+                  <h2 className="text-base font-bold text-slate-800">Activity Log</h2>
+                  <p className="text-xs text-slate-400">Complete chronological history of this order</p>
                 </div>
               </div>
-            )}
 
-            <div className="space-y-8">
-              {approvalData.timeline.length === 0 ? (
-                null
+              {events.length === 0 ? (
+                <p className="py-8 text-center text-sm text-slate-400">No activity recorded yet.</p>
               ) : (
-                approvalData.timeline.map((step, idx) => (
-                  <div key={idx} className="relative flex gap-4">
-                    <div className="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0 z-10">{idx + 1}</div>
-                    <div className="bg-white p-4 rounded-xl border border-slate-200 flex-1">
-                      <h3 className="font-bold text-slate-800">{step.approver_name}</h3>
-                      <p className="text-xs text-slate-500">{step.approver_designation}</p>
-                      <div className="mt-2 text-sm">{step.status}</div>
-                    </div>
-                  </div>
-                ))
+                <div className="relative space-y-0">
+                  {events.map((ev, idx) => {
+                    const s = getStyle(ev);
+                    const isLast = idx === events.length - 1;
+                    return (
+                      <div key={idx} className="relative flex gap-4">
+                        {/* Timeline line + dot */}
+                        <div className="flex flex-col items-center">
+                          <div className={`w-8 h-8 rounded-full border-4 border-white ${s.dot} shadow-sm z-10 flex items-center justify-center text-white shrink-0`}>
+                            {s.icon}
+                          </div>
+                          {!isLast && <div className="w-0.5 flex-1 bg-slate-200 my-1" />}
+                        </div>
+
+                        {/* Card */}
+                        <div className={`flex-1 bg-slate-50 border border-slate-100 rounded-xl p-4 mb-3 hover:border-slate-200 transition-all`}>
+                          <div className="flex items-start justify-between gap-4 flex-wrap">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-bold text-slate-800">{ev.user}</span>
+                              <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${s.badge}`}>
+                                {ev.label}
+                              </span>
+                              {ev.step && (
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Level {ev.step}</span>
+                              )}
+                            </div>
+                            <span className="text-[11px] font-semibold text-slate-400 whitespace-nowrap">{fmtTs(ev.ts)}</span>
+                          </div>
+
+                          {ev.sub && <p className="text-[12px] text-slate-500 font-medium mt-1">{ev.sub}</p>}
+
+                          {ev.comment && (
+                            <div className="mt-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-600 italic leading-relaxed">
+                              "{ev.comment}"
+                            </div>
+                          )}
+
+                          {ev.type === 'amend' && ev.reason && (
+                            <div className="mt-2 space-y-1.5">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Reason</p>
+                              <p className="text-[12px] text-slate-600 font-medium leading-relaxed">{ev.reason}</p>
+                              {ev.attachment_url && (
+                                <a href={ev.attachment_url} target="_blank" rel="noreferrer"
+                                  className="inline-flex items-center gap-1.5 mt-1 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-indigo-600 hover:bg-indigo-50 transition-all">
+                                  <FileText size={11} /> View Attachment
+                                </a>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </div>
 
-            {/* Amendment Requests History */}
-            {amendHistory.length > 0 && (
-              <div className="mt-10 pt-10 border-t border-slate-100">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="h-8 w-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600">
-                    <Package size={18} />
+            {/* ── Version Chain ── */}
+            {amendChain.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-200 p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <GitMerge size={18} className="text-indigo-500" />
+                  <div>
+                    <h2 className="text-base font-bold text-slate-800">Version History</h2>
+                    <p className="text-xs text-slate-400">All versions of this purchase order</p>
                   </div>
-                  <h2 className="text-base font-bold text-slate-800 uppercase tracking-tight">Amendment History</h2>
                 </div>
-                <div className="space-y-4">
-                  {amendHistory.map((a, idx) => (
-                    <div key={a.id} className="bg-slate-50 rounded-xl p-5 border border-slate-100 relative">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-widest ${a.status === 'Approved' ? 'bg-emerald-100 text-emerald-700' : a.status === 'Rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
-                          {a.status}
-                        </span>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{new Date(a.created_at).toLocaleString()}</span>
-                      </div>
-                      <div className="space-y-3">
-                        <div>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Reason for Amendment</p>
-                          <p className="text-sm text-slate-700 font-medium leading-relaxed">{a.reason}</p>
-                        </div>
-                        {a.attachment_url && (
-                          <a href={a.attachment_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-indigo-600 hover:bg-slate-50 transition-all">
-                            <FileText size={12} /> VIEW ATTACHMENT
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                <div className="overflow-hidden rounded-xl border border-slate-200 shadow-sm">
+                  <table className="w-full text-sm border-collapse">
+                    <thead className="bg-slate-100/80 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                      <tr>
+                        <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Ver.</th>
+                        <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Order No.</th>
+                        <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Status</th>
+                        <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Vendor</th>
+                        <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Issued</th>
+                        <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Amend Req.</th>
+                        <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Amended</th>
+                        <th className="px-4 py-3.5 text-center border-r border-slate-200/60">Audit</th>
+                        <th className="px-4 py-3.5 text-center">Open</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {amendChain.map((row, idx) => {
+                        const isCurrent = row.id === orderId;
+                        const isLatest = idx === amendChain.length - 1;
+                        const statusColor =
+                          row.status === "Issued"   ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                          row.status === "Amended"  ? "bg-slate-100 text-slate-600 border-slate-200" :
+                          row.status === "Draft"    ? "bg-blue-50 text-blue-700 border-blue-200" :
+                          row.status === "Amendment Request" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                                                       "bg-slate-50 text-slate-500 border-slate-200";
+                        return (
+                          <tr key={row.id} className={`${isCurrent ? "bg-indigo-50/40" : "hover:bg-slate-50/50"} transition-colors`}>
+                            <td className="px-4 py-3.5 font-bold text-slate-800 border-r border-slate-100">v{idx + 1}</td>
+                            <td className="px-4 py-3.5 font-mono text-[11px] font-bold text-indigo-900 whitespace-nowrap border-r border-slate-100">{row.order_number}</td>
+                            <td className="px-4 py-3.5 border-r border-slate-100">
+                              <div className="flex flex-wrap gap-1.5 items-center">
+                                <span className={`inline-flex items-center text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${statusColor}`}>{row.status}</span>
+                                {isLatest && row.status === "Issued" && (
+                                  <span className="inline-flex items-center text-[9px] font-black text-white uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-600 shadow-sm shadow-emerald-100">Active</span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3.5 text-[13px] font-medium text-slate-600 border-r border-slate-100">{row.vendor_name || "—"}</td>
+                            <td className="px-4 py-3.5 text-[12px] font-medium text-slate-500 whitespace-nowrap border-r border-slate-100">{fmtDate(row.issued_at)}</td>
+                            <td className="px-4 py-3.5 text-[12px] font-medium text-slate-500 whitespace-nowrap border-r border-slate-100">{fmtDate(row.amend_request_at)}</td>
+                            <td className="px-4 py-3.5 text-[12px] font-medium text-slate-500 whitespace-nowrap border-r border-slate-100">{fmtDate(row.amended_at)}</td>
+                            <td className="px-4 py-3.5 text-center border-r border-slate-100">
+                              {row.amend_details ? (
+                                <button onClick={() => setInfoModal({ open: true, data: row.amend_details })}
+                                  className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-all border border-indigo-100" title="View Audit">
+                                  <ShieldQuestion size={14} />
+                                </button>
+                              ) : <span className="text-slate-300 font-bold text-[10px]">—</span>}
+                            </td>
+                            <td className="px-4 py-3.5 text-center">
+                              {isCurrent ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">Here</span>
+                                </div>
+                              ) : (
+                                <button onClick={() => onBack && onBack(row.id)}
+                                  className="group/btn flex items-center gap-1.5 mx-auto px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 hover:border-indigo-200 hover:shadow-sm transition-all">
+                                  <Eye size={14} className="group-hover/btn:scale-110 transition-transform" />
+                                  <span className="text-[10px] font-bold uppercase tracking-tight">View</span>
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
-
-            {actionModal.open && (() => {
-              const labelMap = {
-                Reverted:  { title: "Revert Order",  btn: "Revert",  cls: "bg-amber-500 hover:bg-amber-600" },
-                Rejected:  { title: "Reject Order",  btn: "Reject",  cls: "bg-rose-600 hover:bg-rose-700" },
-                Recalled:  { title: "Recall Order",  btn: "Recall",  cls: "bg-purple-600 hover:bg-purple-700" },
-                Cancelled: { title: "Cancel Order",  btn: "Cancel Order", cls: "bg-slate-700 hover:bg-slate-800" },
-              };
-              const meta = labelMap[actionModal.type] || labelMap.Rejected;
-              return (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-                  <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-                    <h3 className="font-bold text-slate-800 text-base mb-1">{meta.title}</h3>
-                    <p className="text-xs text-slate-500 mb-4">Please provide a reason. This is required.</p>
-                    <textarea value={actionComment} onChange={(e) => setActionComment(e.target.value)}
-                      rows={4} placeholder="Enter reason..."
-                      className="w-full border border-slate-200 rounded-lg p-3 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-50" />
-                    <div className="flex items-center justify-end gap-2 mt-4">
-                      <button onClick={() => { setActionModal({ open: false, type: '' }); setActionComment(''); }}
-                        className="px-4 py-2 text-xs font-bold text-slate-600 rounded-lg hover:bg-slate-100">
-                        Close
-                      </button>
-                      <button disabled={actionLoading}
-                        onClick={() => {
-                          if (!actionComment.trim()) { alert("Comment is required."); return; }
-                          if (approvalData.request) {
-                            handleApprovalAction(actionModal.type);
-                          } else if (isGlobalAdmin) {
-                            const nextStatus = actionModal.type === 'Reverted' ? 'Reverted' : actionModal.type === 'Rejected' ? 'Rejected' : actionModal.type === 'Cancelled' ? 'Cancelled' : 'Draft';
-                            updateStatus(nextStatus);
-                          }
-                          setActionModal({ open: false, type: '' });
-                          setActionComment('');
-                        }}
-                        className={`px-4 py-2 text-xs font-bold text-white rounded-lg shadow-sm disabled:opacity-60 ${meta.cls}`}>
-                        Confirm {meta.btn}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
           </div>
         );
       })()}
-
-      {activeTab === "Amendment History" && (
-        <div className="px-14 py-3 max-w-[1400px] print:hidden">
-          <div className="bg-white rounded-xl border border-slate-200 p-6">
-            <div className="flex items-center gap-3 mb-1">
-              <GitMerge size={18} className="text-indigo-500" />
-              <h2 className="text-base font-bold text-slate-800">Amendment History</h2>
-            </div>
-            <p className="text-xs text-slate-500 mb-5">All versions of this purchase order — original, every amended copy, and the active one.</p>
-
-            {amendChain.length === 0 ? (
-              <p className="py-8 text-center text-sm text-slate-400">No version history yet.</p>
-            ) : (
-              <div className="overflow-hidden rounded-xl border border-slate-200 shadow-sm">
-                <table className="w-full text-sm border-collapse">
-                  <thead className="bg-slate-100/80 text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                    <tr>
-                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Version</th>
-                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Order Number</th>
-                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Status</th>
-                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Vendor</th>
-                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Issued Date</th>
-                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Amend Req.</th>
-                      <th className="px-4 py-3.5 text-left border-r border-slate-200/60">Amend Date</th>
-                      <th className="px-4 py-3.5 text-center border-r border-slate-200/60">Audit</th>
-                      <th className="px-4 py-3.5 text-center">Open</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {amendChain.map((row, idx) => {
-                      const isCurrent = row.id === orderId;
-                      const isLatest = idx === amendChain.length - 1;
-                      const statusColor =
-                        row.status === "Issued"   ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                        row.status === "Amended"  ? "bg-slate-100 text-slate-600 border-slate-200" :
-                        row.status === "Draft"    ? "bg-blue-50 text-blue-700 border-blue-200" :
-                        row.status === "Amendment Request" ? "bg-amber-50 text-amber-700 border-amber-200" :
-                                                     "bg-slate-50 text-slate-500 border-slate-200";
-                      const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString("en-IN") : <span className="text-slate-300">—</span>;
-                      return (
-                        <tr key={row.id} className={`${isCurrent ? "bg-indigo-50/40" : "hover:bg-slate-50/50"} transition-colors`}>
-                          <td className="px-4 py-4 font-bold text-slate-800 border-r border-slate-100">v{idx + 1}</td>
-                          <td className="px-4 py-4 font-mono text-[11px] font-bold text-indigo-900 whitespace-nowrap border-r border-slate-100">{row.order_number}</td>
-                          <td className="px-4 py-4 border-r border-slate-100">
-                            <div className="flex flex-wrap gap-1.5 items-center">
-                              <span className={`inline-flex items-center text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border ${statusColor}`}>
-                                {row.status}
-                              </span>
-                              {isLatest && row.status === "Issued" && (
-                                <span className="inline-flex items-center text-[9px] font-black text-white uppercase tracking-widest px-2 py-0.5 rounded-full bg-emerald-600 shadow-sm shadow-emerald-100">Active</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-4 text-[13px] font-medium text-slate-600 border-r border-slate-100">{row.vendor_name || "—"}</td>
-                          <td className="px-4 py-4 text-[12px] font-medium text-slate-500 whitespace-nowrap border-r border-slate-100">{fmtDate(row.issued_at)}</td>
-                          <td className="px-4 py-4 text-[12px] font-medium text-slate-500 whitespace-nowrap border-r border-slate-100">{fmtDate(row.amend_request_at)}</td>
-                          <td className="px-4 py-4 text-[12px] font-medium text-slate-500 whitespace-nowrap border-r border-slate-100">{fmtDate(row.amended_at)}</td>
-                          <td className="px-4 py-4 text-center border-r border-slate-100">
-                            {row.amend_details ? (
-                              <button onClick={() => setInfoModal({ open: true, data: row.amend_details })}
-                                className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-all border border-indigo-100"
-                                title="View Request Details">
-                                <ShieldQuestion size={14} />
-                              </button>
-                            ) : (
-                              <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">—</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-4 text-center">
-                            {isCurrent ? (
-                              <div className="flex flex-col items-center">
-                                <span className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">You are</span>
-                                <span className="text-[9px] font-black text-indigo-600 uppercase tracking-widest">here</span>
-                              </div>
-                            ) : (
-                              <button onClick={() => onBack && onBack(row.id)}
-                                className="group/btn flex items-center gap-1.5 mx-auto px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-indigo-600 hover:border-indigo-200 hover:shadow-sm transition-all shadow-sm shadow-slate-100"
-                                title="Open this version">
-                                <Eye size={14} className="group-hover/btn:scale-110 transition-transform" />
-                                <span className="text-[10px] font-bold uppercase tracking-tight">View</span>
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Amendment Info Modal */}
       {infoModal.open && (
@@ -1643,7 +1824,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
             <div className="flex justify-center px-4 pb-8 bg-slate-300">
               <iframe
                 title="Order PDF"
-                src={`${API}/api/orders/${data.order.id}/preview`}
+                src={pdfBlobUrl || "about:blank"}
                 className="bg-white shadow-xl"
                 style={{ border: 0, width: "210mm", maxWidth: "100%", height: "297mm" }}
               />
@@ -1716,6 +1897,76 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
           </div>
         </div>
       )}
+
+      {/* Action confirmation modal — top-level so it shows on ANY tab */}
+      {actionModal.open && (() => {
+        const labelMap = {
+          Reverted:  { title: "Revert Order",  btn: "Confirm Revert",  cls: "bg-amber-500 hover:bg-amber-600", desc: "Order will return to Draft status for correction." },
+          Rejected:  { title: "Reject Order",  btn: "Confirm Reject",  cls: "bg-rose-600 hover:bg-rose-700",   desc: "Order will be permanently rejected." },
+          Recalled:  { title: "Recall Order",  btn: "Confirm Recall",  cls: "bg-purple-600 hover:bg-purple-700", desc: "This issued order will be pulled back to Draft." },
+          Cancelled: { title: "Cancel Order",  btn: "Confirm Cancellation", cls: "bg-slate-700 hover:bg-slate-800", desc: "Order will be marked as Cancelled." },
+          'Amendment Request': { title: "Approve Amendment", btn: "Confirm Approval", cls: "bg-emerald-600 hover:bg-emerald-700", desc: "Original will be Amended, and a new Draft clone will be created." }
+        };
+        const meta = labelMap[actionModal.type] || { title: "Action Confirmation", btn: "Confirm", cls: "bg-indigo-600", desc: "Please provide a reason." };
+        return (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
+              <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`h-9 w-9 rounded-xl flex items-center justify-center text-white shadow-sm ${meta.cls.split(' ')[0]}`}>
+                    <ShieldQuestion size={18} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">{meta.title}</h3>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Mandatory Reason Required</p>
+                  </div>
+                </div>
+                <button onClick={() => { setActionModal({ open: false, type: '' }); setActionComment(''); }} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <p className="text-[13px] text-slate-600 font-medium leading-relaxed bg-amber-50 p-3 rounded-xl border border-amber-100/50">
+                  {meta.desc}
+                </p>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Comments / Remarks</label>
+                  <textarea
+                    value={actionComment}
+                    onChange={(e) => setActionComment(e.target.value)}
+                    rows={4}
+                    placeholder="Please explain the reason for this action..."
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 transition-all outline-none resize-none"
+                  />
+                </div>
+                <div className="flex items-center gap-3 pt-2">
+                  <button onClick={() => { setActionModal({ open: false, type: '' }); setActionComment(''); }}
+                    className="flex-1 py-3 text-xs font-bold text-slate-500 rounded-xl hover:bg-slate-100 transition-all">
+                    Cancel
+                  </button>
+                  <button disabled={actionLoading || !actionComment.trim()}
+                    onClick={() => {
+                      if (!actionComment.trim()) return;
+                      if (actionModal.type === 'Amendment Request') {
+                        handleAmendDecision('Approved');
+                      } else if (approvalData.request) {
+                        handleApprovalAction(actionModal.type);
+                      } else if (isGlobalAdmin) {
+                        const nextStatus = actionModal.type === 'Reverted' ? 'Reverted' : actionModal.type === 'Rejected' ? 'Rejected' : actionModal.type === 'Cancelled' ? 'Cancelled' : 'Draft';
+                        updateStatus(nextStatus, false, actionComment);
+                      }
+                      setActionModal({ open: false, type: '' });
+                      setActionComment('');
+                    }}
+                    className={`flex-[2] py-3 text-xs font-bold text-white rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:grayscale ${meta.cls}`}>
+                    {meta.btn}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

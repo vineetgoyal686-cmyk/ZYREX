@@ -44,7 +44,16 @@
       "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\\" | Select-Object Name | Where-Object {$_.Name -match \"post|pg|sql\"}; Get-ChildItem \"C:\\\\Program Files \\(x86\\)\\\\\" | Select-Object Name | Where-Object {$_.Name -match \"post|pg|sql\"})",
       "PowerShell(Get-ChildItem \"C:\\\\Users\\\\jiten\\\\AppData\\\\Local\\\\\" | Where-Object {$_.Name -match \"post|pg\"} | Select-Object Name)",
       "PowerShell(Get-ChildItem \"C:\\\\\", \"D:\\\\\", \"C:\\\\Program Files\\\\\", \"C:\\\\Program Files \\(x86\\)\\\\\" -Filter \"pg_dump.exe\" -Recurse -ErrorAction SilentlyContinue 2>&1 | Where-Object {$_ -notmatch \"denied\"} | Select-Object -First 5 FullName)",
-      "PowerShell(Get-ChildItem \"d:\\\\BMS l\\\\database\\\\prod\\\\\", \"d:\\\\BMS l\\\\database\\\\dev\\\\\" | Select-Object Name, @{N=\"Size\";E={\"{0:N2} KB\" -f \\($_.Length/1KB\\)}}, LastWriteTime)"
+      "PowerShell(Get-ChildItem \"d:\\\\BMS l\\\\database\\\\prod\\\\\", \"d:\\\\BMS l\\\\database\\\\dev\\\\\" | Select-Object Name, @{N=\"Size\";E={\"{0:N2} KB\" -f \\($_.Length/1KB\\)}}, LastWriteTime)",
+      "Bash(grep -n \"router\\\\\\\\.get\\\\|router\\\\\\\\.post\\\\|router\\\\\\\\.put\" \"d:/Zyrex/backend/src/routes/purchaseOrders.js\")",
+      "Bash(xargs grep *)",
+      "PowerShell(New-Item -ItemType Directory -Path \"d:\\\\Zyrex\\\\database backup\" -Force)",
+      "PowerShell($env:Path += \";C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\"; $d=Get-Date -Format yyyyMMdd; pg_dump \"postgresql://postgres.flaxuaaytkvecoexbxej:Hobbs%40%23%212027@aws-1-ap-south-1.pooler.supabase.com:5432/postgres\" -f \"d:\\\\Zyrex\\\\database backup\\\\prod_backup_$d.sql\"; if \\($LASTEXITCODE -eq 0\\) { \"PROD DONE\" } else { \"PROD FAILED\" })",
+      "PowerShell($env:Path += \";C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\"; $d=Get-Date -Format yyyyMMdd; pg_dump \"postgresql://postgres.lhxgohcxcslbtnuubrsg:Bootes%40%23%242029@aws-1-ap-south-1.pooler.supabase.com:5432/postgres\" -f \"d:\\\\Zyrex\\\\database backup\\\\dev_backup_$d.sql\"; if \\($LASTEXITCODE -eq 0\\) { \"DEV DONE\" } else { \"DEV FAILED\" })",
+      "PowerShell(Get-ChildItem \"d:\\\\Zyrex\\\\database backup\" | Select-Object Name, @{N='Size';E={\"{0:N2} MB\" -f \\($_.Length/1MB\\)}}, LastWriteTime)",
+      "Bash(powershell -Command ' *)",
+      "PowerShell($env:Path += \";C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\"; $d=Get-Date -Format yyyyMMdd_HHmm; pg_dump \"postgresql://postgres.flaxuaaytkvecoexbxej:Hobbs%40%23%212027@aws-1-ap-south-1.pooler.supabase.com:5432/postgres\" -f \"d:\\\\Zyrex\\\\database backup\\\\prod_backup_$d.sql\"; if \\($LASTEXITCODE -eq 0\\) { \"PROD DONE\" } else { \"PROD FAILED\" })",
+      "PowerShell($env:Path += \";C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\"; $d=Get-Date -Format yyyyMMdd_HHmm; pg_dump \"postgresql://postgres.lhxgohcxcslbtnuubrsg:Bootes%40%23%242029@aws-1-ap-south-1.pooler.supabase.com:5432/postgres\" -f \"d:\\\\Zyrex\\\\database backup\\\\dev_backup_$d.sql\"; if \\($LASTEXITCODE -eq 0\\) { \"DEV DONE\" } else { \"DEV FAILED\" })"
     ]
   }
 }

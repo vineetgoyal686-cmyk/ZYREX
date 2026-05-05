@@ -762,6 +762,29 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     setHeader(h => ({ ...h, companyId: id }));
     setCompanyDetails(companies.find(c => c.id === id) || null);
   };
+
+  // State-matched billing profile: site.state → company.stateBillingProfiles
+  // Returns { address, gstin, contactName, contactPhone, source: "state"|"entity"|null }
+  const billingProfile = useMemo(() => {
+    if (!companyDetails) return null;
+    const st = siteDetails?.state;
+    const blocks = companyDetails.stateBillingProfiles || [];
+
+    // 1. Try state-specific profile
+    if (st && blocks.length) {
+      const block = blocks.find(b => b.stateName?.toLowerCase() === st.toLowerCase());
+      const profile = block?.profiles?.find(p => p.isDefault) || block?.profiles?.[0];
+      if (profile) return { ...profile, source: "state" };
+    }
+
+    // 2. Fallback: entity-level billing address + gstin
+    const fallbackAddr = companyDetails.billingAddress || companyDetails.address || "";
+    const fallbackGstin = companyDetails.billingGstin || companyDetails.gstin || "";
+    if (fallbackAddr || fallbackGstin) {
+      return { address: fallbackAddr, gstin: fallbackGstin, source: "entity" };
+    }
+    return null;
+  }, [siteDetails, companyDetails]);
   const handleVendorChange = (e) => {
     const id = e.target.value;
     setHeader(h => ({ ...h, vendorId: id }));
@@ -1040,11 +1063,26 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     const currentSite = siteDetails || sites.find(s => s.id === header.siteId);
     const currentCompany = companyDetails || companies.find(c => c.id === header.companyId);
 
+    // Resolve billing profile at save time so ViewOrder always has it
+    const saveSiteState = currentSite?.state;
+    const saveBlocks = currentCompany?.stateBillingProfiles || [];
+    const saveBlock = saveBlocks.find(b => b.stateName?.toLowerCase() === saveSiteState?.toLowerCase());
+    const stateProfile = saveBlock
+      ? (saveBlock.profiles?.find(p => p.isDefault) || saveBlock.profiles?.[0] || null)
+      : null;
+    const saveBillingProfile = stateProfile
+      ? { ...stateProfile, source: "state" }
+      : (currentCompany?.billingAddress || currentCompany?.billingGstin)
+        ? { address: currentCompany.billingAddress || currentCompany.address || "", gstin: currentCompany.billingGstin || currentCompany.gstin || "", source: "entity" }
+        : null;
+
     const snapshot = {
       site: currentSite,
       company: currentCompany,
       vendor: vendorDetails || vendors.find(v => v.id === header.vendorId),
-      contacts: contacts.filter(c => header.contactPersonIds.includes(c.id))
+      contacts: contacts.filter(c => header.contactPersonIds.includes(c.id)),
+      billingProfile: saveBillingProfile,
+      billingState: saveSiteState || null,
     };
 
     // Final consolidation with consolidated map
@@ -1317,8 +1355,52 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
             </div>
           </div>
 
+          {/* ── Billing Detail & GST (auto from site state + entity profiles) ── */}
+          <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+              <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2 mb-4">
+                <div className="w-5 h-5 bg-emerald-50 rounded-md flex items-center justify-center"><Landmark size={12} className="text-emerald-600" /></div>
+                Billing Detail &amp; GST
+                {siteDetails?.state && (
+                  <span className="ml-auto text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                    State: {siteDetails.state}
+                  </span>
+                )}
+              </h2>
+              {billingProfile ? (
+                <div className="space-y-3">
+                  {billingProfile.source === "entity" && siteDetails?.state && (
+                    <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5">
+                      No state-specific profile for <span className="font-bold">{siteDetails.state}</span> — using entity billing details
+                    </p>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Billing Address</p>
+                      <p className="text-sm text-slate-700 leading-relaxed">{billingProfile.address || "—"}</p>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">GSTIN</p>
+                      <p className="text-sm font-mono font-bold text-slate-800 tracking-wider">{billingProfile.gstin || "—"}</p>
+                      {billingProfile.contactName && (
+                        <p className="text-xs text-slate-500 mt-2">Contact: {billingProfile.contactName}{billingProfile.contactPhone ? ` · ${billingProfile.contactPhone}` : ""}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-5 text-slate-400">
+                  {!siteDetails && !companyDetails
+                    ? <p className="text-xs">Select site and company to see billing details</p>
+                    : !siteDetails
+                    ? <p className="text-xs">Select a site to determine billing state</p>
+                    : <p className="text-xs">Select a company to load billing profile</p>
+                  }
+                </div>
+              )}
+          </div>
+
           <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-6">
-            <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
+            <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2 mb-4">
               <div className="w-5 h-5 bg-indigo-50 rounded-md flex items-center justify-center"><FileText size={12} className="text-indigo-600" /></div>
               Order Meta
             </h2>
@@ -2103,6 +2185,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const [pdfPreviewId, setPdfPreviewId] = useState(null);
   const [pdfPreviewNonce, setPdfPreviewNonce] = useState(0);
   const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
 
   // Bulk import / export
   const [showBulk, setShowBulk] = useState(false);
@@ -2440,6 +2523,23 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     setPdfPreviewId(orderId);
   };
 
+  useEffect(() => {
+    if (!pdfPreviewId) {
+      setPdfBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return null; });
+      return;
+    }
+    let cancelled = false;
+    fetch(`${API}/api/orders/${pdfPreviewId}/pdf?t=${pdfPreviewNonce || Date.now()}`)
+      .then(r => r.blob())
+      .then(blob => {
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        setPdfBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return url; });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [pdfPreviewId, pdfPreviewNonce]);
+
   const handlePDFDownload = async () => {
     if (!pdfPreviewId || pdfDownloading) return;
     setPdfDownloading(true);
@@ -2469,7 +2569,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       return {
         "Company Code": snap.company?.companyCode || o.companies?.company_code || "",
         "Site Code": snap.site?.siteCode || o.sites?.site_code || "",
-        "Order No": o.order_number?.startsWith("PENDING-") ? "DRAFT" : o.order_number,
+        "Order No": o.order_number || "DRAFT",
         "Order Type": o.order_type || "",
         "Vendor Name": snap.vendor?.vendorName || o.vendors?.vendor_name || "",
         "Subject": o.subject || "",
@@ -2816,7 +2916,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
             <div className="flex-1 bg-slate-300">
               <iframe
                 title="Order PDF"
-                src={`${API}/api/orders/${pdfPreviewId}/pdf?t=${pdfPreviewNonce}#toolbar=0&navpanes=0&statusbar=0&messages=0&view=FitH`}
+                src={pdfBlobUrl || "about:blank"}
                 className="w-full h-full border-0 bg-white"
               />
             </div>
@@ -3178,7 +3278,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
 
                   const typeCode = o.order_type === "Supply" ? "PO" : "WO";
                   const prefix = `${cCode}/${sCode}/${typeCode}/`;
-                  const displayNo = o.order_number?.startsWith("PENDING-") ? prefix : o.order_number;
+                  const displayNo = o.order_number?.startsWith("PENDING-")
+                    ? `${typeCode}-DRAFT`
+                    : o.order_number;
 
                   return (
                     <tr key={o.id} className="hover:bg-slate-50 transition-colors group bg-white">

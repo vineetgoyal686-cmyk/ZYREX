@@ -7,10 +7,5 @@ build
 # Claude settings (may contain sensitive data)
 .claude/settings.local.json
 
-# Database - backups and tools
-database/*.sql
-database/dev/*.sql
-database/prod/*.sql
-database/supabase.exe
-database/LICENSE
-database/README.md
+# Database backups
+database backup/
