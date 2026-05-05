@@ -1612,12 +1612,11 @@ router.post("/contacts", async (req, res) => {
             dateOfBirth, gender, maritalStatus, nationality,
             alternatePhone, address, joiningDate,
             createdById, createdByName } = req.body;
-    // Duplicate check: same name + phone already exists → skip
-    if (personName && contactNumber) {
+    // Duplicate check: same employee_id already exists → skip
+    if (employeeId && employeeId.trim()) {
       const { data: existing } = await supabase.schema("procurement").from("contacts")
         .select("id")
-        .ilike("person_name", personName.trim())
-        .eq("contact_number", contactNumber.trim())
+        .eq("employee_id", employeeId.trim())
         .maybeSingle();
       if (existing) return res.status(409).json({ duplicate: true, message: "Contact already exists" });
     }

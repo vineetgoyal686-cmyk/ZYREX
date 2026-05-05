@@ -733,10 +733,11 @@ export default function ContactList() {
         return;
       }
 
-      // Dedup within the file itself (same name + phone)
+      // Dedup within the file itself (by employee_id if present)
       const seenKeys = new Set();
       const rows = allRows.filter(r => {
-        const key = `${r.personName.trim().toLowerCase()}|${r.contactNumber.trim()}`;
+        const key = r.employeeId?.trim() || null;
+        if (!key) return true; // no employee_id → always allow
         if (seenKeys.has(key)) return false;
         seenKeys.add(key);
         return true;
