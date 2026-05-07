@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag } from "lucide-react";
+import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag, Activity, Calendar } from "lucide-react";
 import * as XLSX from "xlsx";
 import { FullSiteModal, FullCompanyModal, FullVendorModal, FullViewSiteModal, FullViewCompanyModal, FullViewVendorModal, FullContactModal, FullViewContactModal, FullClauseModal } from "./FullMasterModals";
 import ReactQuill from "react-quill-new";
@@ -35,21 +35,103 @@ const normalizeRichTextHtml = (value) =>
 const normalizeRichTextArray = (value) =>
   Array.isArray(value) ? value.map(normalizeRichTextHtml) : [];
 
-/* Strip Quill v2 internal markers (.ql-ui spans, data-list attrs) so HTML
-   renders as a standard <ol>/<ul> list that native CSS can number/bullet */
+
+/* Strip Quill v2 internal markers and convert flat ql-indent lists to nested lists. */
 const cleanQuillHTML = (html) => {
   if (!html) return "";
-  return html
-    .replace(/<span class="ql-ui"><\/span>/gi, "")
-    .replace(/<span class="ql-ui"\/>/gi, "")
-    .replace(/\s*data-list="[^"]*"/gi, "");
+
+  if (typeof document === "undefined") {
+    return html
+      .replace(/<span class="ql-ui"[^>]*><\/span>/gi, "")
+      .replace(/<span class="ql-ui"[^>]*\/>/gi, "")
+      .replace(/\s*data-list="[^"]*"/gi, "")
+      .replace(/\s*class="ql-indent-\d+"/gi, "");
+  }
+
+  const container = document.createElement("div");
+  container.innerHTML = html;
+
+  const stripQuillListAttrs = (root) => {
+    root.querySelectorAll(".ql-ui").forEach(el => el.remove());
+    root.querySelectorAll("li").forEach(li => {
+      li.removeAttribute("data-list");
+      const classes = (li.getAttribute("class") || "")
+        .split(/\s+/)
+        .filter(cls => cls && !/^ql-indent-\d+$/.test(cls));
+      if (classes.length) li.setAttribute("class", classes.join(" "));
+      else li.removeAttribute("class");
+    });
+  };
+  const directListItems = (list) =>
+    Array.from(list.children).filter(child => child.tagName === "LI");
+  const getIndent = (li) => {
+    const match = (li.getAttribute("class") || "").match(/\bql-indent-(\d+)\b/);
+    return match ? Number(match[1]) || 0 : 0;
+  };
+  const getListTag = (li, fallbackTag) =>
+    li.getAttribute("data-list") === "bullet" ? "ul" : fallbackTag;
+  const itemHtml = (li) => {
+    const clone = li.cloneNode(true);
+    Array.from(clone.children)
+      .filter(child => child.tagName === "OL" || child.tagName === "UL")
+      .forEach(child => child.remove());
+    stripQuillListAttrs(clone);
+    return clone.innerHTML;
+  };
+  const buildNestedList = (items, fallbackTag) => {
+    const root = document.createElement(items[0]?.tag || fallbackTag);
+    const listsAtLevel = [root];
+    const lastLiAtLevel = [];
+    items.forEach(item => {
+      let level = item.indent;
+      while (level > 0 && !lastLiAtLevel[level - 1]) level -= 1;
+      if (level > 0 && !listsAtLevel[level]) {
+        const childList = document.createElement(item.tag);
+        lastLiAtLevel[level - 1].appendChild(childList);
+        listsAtLevel[level] = childList;
+      }
+      if (level > 0 && listsAtLevel[level].tagName.toLowerCase() !== item.tag) {
+        const childList = document.createElement(item.tag);
+        lastLiAtLevel[level - 1].appendChild(childList);
+        listsAtLevel[level] = childList;
+      }
+      const li = document.createElement("li");
+      li.innerHTML = item.html;
+      listsAtLevel[level].appendChild(li);
+      lastLiAtLevel[level] = li;
+      listsAtLevel.length = level + 1;
+      lastLiAtLevel.length = level + 1;
+    });
+    return root;
+  };
+
+  Array.from(container.querySelectorAll("ol, ul")).forEach(list => {
+    if (!container.contains(list)) return;
+    const listItems = directListItems(list);
+    const hasQuillFlatItems = listItems.some(li =>
+      li.hasAttribute("data-list") || /\bql-indent-\d+\b/.test(li.getAttribute("class") || "")
+    );
+    if (!hasQuillFlatItems) return;
+    const fallbackTag = list.tagName.toLowerCase();
+    const items = listItems.map(li => ({
+      indent: getIndent(li),
+      tag: getListTag(li, fallbackTag),
+      html: itemHtml(li),
+    }));
+    list.replaceWith(buildNestedList(items, fallbackTag));
+  });
+
+  stripQuillListAttrs(container);
+  return container.innerHTML;
 };
 
 /* Get single clean HTML string from a points array (Quill v2 or legacy format) */
 const getCleanHTML = (points) => {
-  if (!points || !points.length) return "";
-  if (points.length === 1 && points[0].includes('<')) return cleanQuillHTML(normalizeRichTextHtml(points[0]));
-  return `<ol>${points.map(p => `<li>${normalizeRichTextHtml(p)}</li>`).join('')}</ol>`;
+  // Strip legacy __sp: style prefix if present
+  const pts = points?.[0]?.startsWith?.("__sp:") ? points.slice(1) : points;
+  if (!pts || !pts.length) return "";
+  if (pts.length === 1 && pts[0].includes('<')) return cleanQuillHTML(normalizeRichTextHtml(pts[0]));
+  return `<ol>${pts.map(p => `<li>${normalizeRichTextHtml(p)}</li>`).join('')}</ol>`;
 };
 
 const stripHtml = (html) => {
@@ -499,6 +581,15 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const [siteDetails, setSiteDetails] = useState(null);
   const [companyDetails, setCompanyDetails] = useState(null);
   const [vendorDetails, setVendorDetails] = useState(null);
+
+  // Sync siteDetails/companyDetails when IDs change (covers edit-load and manual selection)
+  useEffect(() => {
+    if (header.siteId && sites.length) setSiteDetails(sites.find(s => s.id === header.siteId) || null);
+  }, [header.siteId, sites]);
+
+  useEffect(() => {
+    if (header.companyId && companies.length) setCompanyDetails(companies.find(c => c.id === header.companyId) || null);
+  }, [header.companyId, companies]);
 
   // Form State - Items Table (grouped: each group = one item, multiple spec sub-rows)
   const [items, setItems] = useState([makeGroup()]);
@@ -1117,6 +1208,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       notes: normalizeRichTextHtml(header.notes || ""),
       created_by_id: user.id,
       status: submitStatus,
+      action_by: user.name || "",
       snapshot: { ...snapshot, proof_type: files.proof.type, notes: normalizeRichTextHtml(header.notes || "") }
     };
 
@@ -1254,6 +1346,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
             <style>{`
               .quill-content p { margin: 0; }
               .quill-content ul, .quill-content ol { padding-left: 1rem; margin: 0; }
+              .quill-content ol ol { list-style-type: lower-alpha; }
+              .quill-content ol ol ol { list-style-type: lower-roman; }
               .quill-content li { margin-bottom: 0.125rem; }
               .quill-content * { max-width: 100%; word-break: break-word; }
               .quill-compact p { margin-bottom: 0px !important; text-align: justify !important; }
@@ -2158,19 +2252,38 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
 // ============== ORDER LIST COMPONENT ==============
 function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
-  const currentUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
+  const [currentUser, setCurrentUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("bms_user") || "{}"); }
+    catch { return {}; }
+  });
   const isGlobalAdmin = currentUser.role === "global_admin";
-  const myPerms = currentUser.app_permissions?.find(p => p.module_key === "create_order") || {};
-  const canEdit = isGlobalAdmin || !!myPerms.can_edit;
+  const orderPermissionKeys = project ? ["order", "create_order"] : ["master_data_orders", "order", "create_order"];
+  const myPerms = currentUser.app_permissions?.find(p => orderPermissionKeys.includes(p.module_key)) || {};
+  const canEdit = isGlobalAdmin || !!myPerms.can_edit || !!myPerms.can_add;
   const canDelete = isGlobalAdmin || !!myPerms.can_delete;
 
-  // Per-order edit check: global_admin can always edit; otherwise only creator can edit editable orders
+  useEffect(() => {
+    const token = localStorage.getItem("bms_token");
+    if (!token) return;
+    fetch(`${API}/api/auth/my-permissions`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!data) return;
+        const stored = JSON.parse(localStorage.getItem("bms_user") || "{}");
+        const updated = { ...stored, app_permissions: data.permissions || [] };
+        localStorage.setItem("bms_user", JSON.stringify(updated));
+        setCurrentUser(updated);
+        window.dispatchEvent(new CustomEvent("bms_permissions_updated"));
+      })
+      .catch(() => {});
+  }, []);
+
+  // Users with create/edit order access can edit any Draft/Review order.
   const canEditOrder = (o) => {
     if (o._history || ["Rejected", "Cancelled", "Reverted", "Recalled", "Issued"].includes(o.status)) return false;
     const isEditableStatus = ['Draft', 'Review'].includes(o.status);
-    const isCreator = o.created_by_id === currentUser.id;
     if (isGlobalAdmin) return isEditableStatus;
-    return canEdit && isEditableStatus && isCreator;
+    return canEdit && isEditableStatus;
   };
 
   const canDeleteOrder = (o) => {
@@ -2197,6 +2310,105 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const bulkRef = React.useRef();
 
   const [copiedOrderId, setCopiedOrderId] = useState("");
+  const [logPanel, setLogPanel] = useState(null); // { orderId, orderNumber }
+  const [logLoading, setLogLoading] = useState(false);
+  const [logEvents, setLogEvents] = useState([]);
+
+  useEffect(() => {
+    if (!logPanel) { setLogEvents([]); return; }
+    setLogLoading(true);
+    const token = localStorage.getItem("bms_token") || "";
+    const headers = { Authorization: `Bearer ${token}` };
+    Promise.all([
+      fetch(`${API}/api/orders/${logPanel.orderId}`).then(r => r.json()),
+      fetch(`${API}/api/amendments/requests?order_id=${logPanel.orderId}`, { headers }).then(r => r.json()).catch(() => ({ requests: [] })),
+      fetch(`${API}/api/approvals/requests/${logPanel.orderId}`, { headers }).then(r => r.json()).catch(() => ({ request: null })),
+    ]).then(([orderData, amendData, approvalData]) => {
+      const order = orderData.order || {};
+      const events = [];
+
+      const statusLabels = {
+        Review: 'Submitted for Review', 'Pending Issue': 'Submitted for Approval',
+        Issued: 'Issued', Draft: 'Returned to Draft', Reverted: 'Reverted',
+        Recalled: 'Recalled', Cancelled: 'Cancelled', Rejected: 'Rejected',
+        'Recall Requested': 'Recall Requested', 'Cancel Requested': 'Cancel Requested',
+        'Recall Rejected': 'Recall Rejected', 'Cancel Rejected': 'Cancel Rejected',
+        'Recall Request Cancelled': 'Recall Request Cancelled',
+        'Cancel Request Cancelled': 'Cancel Request Cancelled',
+      };
+
+      // 1. Synthetic created event
+      if (order.created_at) {
+        events.push({ action_at: order.created_at, action_by: order.made_by || 'Unknown', action: 'Order Created', _sub: `${order.order_number || ''} • Draft` });
+      }
+
+      // 2. activity_log entries
+      const actLog = Array.isArray(order.snapshot?.activity_log) ? order.snapshot.activity_log : [];
+      actLog.forEach(e => {
+        events.push({ ...e, action: statusLabels[e.action] || e.action });
+      });
+
+      // 3. Approval logs — intermediate approver decisions (dedupe against activity_log)
+      const activityTs = new Set(actLog.map(e => e.action_at?.slice(0, 16)));
+      const approvalLogs = approvalData.request?.logs || [];
+      approvalLogs.forEach(log => {
+        const logMin = log.created_at?.slice(0, 16);
+        const isDupe = activityTs.has(logMin) && ['Issued', 'Reverted', 'Recalled', 'Cancelled', 'Rejected'].includes(log.action);
+        if (!isDupe) {
+          events.push({
+            action_at: log.created_at,
+            action_by: log.action_by_name || 'Approver',
+            action: log.action,
+            comments: log.comments,
+            _step: log.step_number,
+          });
+        }
+      });
+
+      // 4. Amendment events
+      (amendData.requests || []).forEach(a => {
+        events.push({ action_at: a.created_at, action_by: a.requestor?.name || 'User', action: 'Amendment Requested', comments: a.reason, _attach: a.attachment_url });
+        if (a.status === 'Approved' && a.actioned_at)
+          events.push({ action_at: a.actioned_at, action_by: a.actioner?.name || 'Admin', action: 'Amendment Approved' });
+        else if (a.approved_at)
+          events.push({ action_at: a.approved_at, action_by: a.approver?.name || 'Admin', action: 'Amendment Approved' });
+        if ((a.status === 'Cancelled' || a.status === 'Rejected') && a.actioned_at)
+          events.push({ action_at: a.actioned_at, action_by: a.actioner?.name || 'Admin', action: `Amendment ${a.status}` });
+      });
+
+      events.sort((a, b) => new Date(a.action_at) - new Date(b.action_at));
+      setLogEvents(events);
+    })
+    .catch(() => setLogEvents([]))
+    .finally(() => setLogLoading(false));
+  }, [logPanel]);
+
+  const getLogStyle = (action = "") => {
+    const a = action.toLowerCase();
+    if (a.includes("created"))                        return { dot: "bg-indigo-500",  badge: "bg-indigo-100 text-indigo-700",   icon: <FileText size={12} /> };
+    if (a === "issued")                               return { dot: "bg-emerald-600", badge: "bg-emerald-100 text-emerald-800", icon: <CheckCircle2 size={12} /> };
+    if (a.includes("edit"))                           return { dot: "bg-cyan-500",    badge: "bg-cyan-100 text-cyan-700",       icon: <Pencil size={12} /> };
+    if (a.includes("recall") && a.includes("cancel")) return { dot: "bg-slate-400",   badge: "bg-slate-100 text-slate-500",     icon: <X size={12} /> };
+    if (a.includes("recall") && a.includes("reject")) return { dot: "bg-rose-500",    badge: "bg-rose-100 text-rose-700",       icon: <X size={12} /> };
+    if (a.includes("recall"))                         return { dot: "bg-purple-500",  badge: "bg-purple-100 text-purple-700",   icon: <FileText size={12} /> };
+    if (a.includes("cancel") && a.includes("reject")) return { dot: "bg-rose-500",    badge: "bg-rose-100 text-rose-700",       icon: <X size={12} /> };
+    if (a === "cancelled")                            return { dot: "bg-slate-600",   badge: "bg-slate-100 text-slate-600",     icon: <X size={12} /> };
+    if (a.includes("cancel"))                         return { dot: "bg-rose-400",    badge: "bg-rose-50 text-rose-600",        icon: <FileText size={12} /> };
+    if (a.includes("reject"))                         return { dot: "bg-rose-500",    badge: "bg-rose-100 text-rose-700",       icon: <X size={12} /> };
+    if (a.includes("amend") && a.includes("approv"))  return { dot: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700", icon: <CheckCircle2 size={12} /> };
+    if (a.includes("amend"))                          return { dot: "bg-amber-500",   badge: "bg-amber-100 text-amber-700",     icon: <FileText size={12} /> };
+    if (a.includes("review"))                         return { dot: "bg-sky-500",     badge: "bg-sky-100 text-sky-700",         icon: <FileText size={12} /> };
+    if (a.includes("approv"))                         return { dot: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700", icon: <CheckCircle2 size={12} /> };
+    if (a === "draft")                                return { dot: "bg-blue-400",    badge: "bg-blue-100 text-blue-700",       icon: <FileText size={12} /> };
+    return { dot: "bg-slate-400", badge: "bg-slate-100 text-slate-600", icon: <FileText size={12} /> };
+  };
+
+  const fmtLogTs = (ts) => {
+    if (!ts) return "";
+    const d = new Date(ts);
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) + ", " +
+      d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  };
 
   const copyOrderNumber = (text, id, e) => {
     e.stopPropagation();
@@ -2597,10 +2809,10 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     // Common columns — only IDs/codes, system fetches details from masters
     const commonStart = [
       "S.No",
-      "Site Code", "Company Code", "Vendor ID", "Contact IDs",
+      "Site Code", "Company Code", "Vendor Code", "Vendor PAN", "Contact IDs",
       orderNoCol, "Order Type", "Reference Number",
       "Created By", "Created On", "Requisition By", "Subject",
-      "Status", "Issued At",
+      "Status", "Issued At", "Issued By (Email)", "Amended From (Order No)",
     ];
     const itemCols = isPO
       ? ["Item Name", "Specification", "Model No", "Brand Name", "Unit", "Quantity", "Unit Price (₹)", "Tax (%)", "Discount (%)", "Amount"]
@@ -2618,7 +2830,8 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     const orderHead = {
       "Site Code": "B47",
       "Company Code": "BITL",
-      "Vendor ID": "VEN-001",
+      "Vendor Code": "VEN-001",
+      "Vendor PAN": "",
       "Contact IDs": "CON-001; CON-002",
       [orderNoCol]: poNumber,
       "Order Type": defaultType,
@@ -2629,6 +2842,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       "Subject": isPO ? "Cement & Steel supply" : "Water Proofing Work",
       "Status": "Issued",
       "Issued At": "2025-04-05",
+      "Issued By (Email)": "admin@company.com",
     };
 
     const totalsBlock = {
@@ -2665,7 +2879,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         },
         {
           "S.No": 2,
-          "Site Code": "", "Company Code": "", "Vendor ID": "", "Contact IDs": "",
+          "Site Code": "", "Company Code": "", "Vendor Code": "", "Vendor PAN": "", "Contact IDs": "",
           [orderNoCol]: poNumber, // same PO → same order
           "Order Type": "", "Reference Number": "", "Created By": "", "Created On": "",
           "Requisition By": "", "Subject": "",
@@ -2882,6 +3096,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   }, [filtered]);
 
   return (
+    <>
     <div className="p-0 sm:p-2 lg:p-3 w-full pb-10">
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-lg
@@ -3232,6 +3447,8 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                   <th className="sticky left-0 z-20 px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 bg-slate-100 whitespace-nowrap" style={{ width: '240px', minWidth: '240px' }}>Order No</th>
                   <th className="sticky z-20 px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 bg-slate-100 whitespace-nowrap text-center" style={{ left: '240px', width: '130px', minWidth: '130px' }}>Status</th>
                   <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Order Type</th>
+                  <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Site</th>
+                  <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Entity</th>
                   <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Created By</th>
                   <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Created On</th>
                   <th className="px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Subject</th>
@@ -3327,6 +3544,12 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                         {o.order_type === "Supply" ? "Purchase Order" : o.order_type === "SITC" || o.order_type === "ITC" ? "Work Order" : (o.order_type || "-")}
                       </td>
                       <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
+                        {sCode}
+                      </td>
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
+                        {cCode}
+                      </td>
+                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
                         {o.made_by || "System"}
                       </td>
                       <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
@@ -3383,14 +3606,6 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                       </td>
                       <td className="sticky right-0 z-40 px-5 py-1 border-b border-l border-slate-200 bg-white group-hover:bg-slate-50 transition-colors whitespace-nowrap [box-shadow:-1px_0_0_0_#e2e8f0]" style={{ width: '190px', minWidth: '190px', maxWidth: '190px' }}>
                         <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onMouseEnter={() => preloadOrderDetails(o.id).catch(() => { })}
-                            onFocus={() => preloadOrderDetails(o.id).catch(() => { })}
-                            onClick={() => onViewClick(o)}
-                            className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition-all shadow-sm"
-                            title="Quick View">
-                            <Eye size={14} />
-                          </button>
                           {canEditOrder(o) && (
                             <button onClick={() => onEditClick(o.id)}
                               className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-sky-600 hover:border-sky-200 hover:bg-sky-50 transition-all shadow-sm"
@@ -3411,6 +3626,12 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                             title="Export PDF">
                             <FileDown size={14} />
                           </button>
+                          <button
+                            onClick={() => setLogPanel({ orderId: o.id, orderNumber: o.order_number || "Draft" })}
+                            className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-violet-600 hover:border-violet-200 hover:bg-violet-50 transition-all shadow-sm"
+                            title="Activity Log">
+                            <Activity size={14} />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -3421,6 +3642,79 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
           </div>
         </div>
       </div>
+
+      {logPanel && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/20" onClick={() => setLogPanel(null)} />
+          <div className="relative w-[440px] h-full bg-white shadow-2xl border-l border-slate-200 flex flex-col" style={{ animation: "slideInRight 0.2s ease-out" }}>
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-violet-50 border border-violet-100 flex items-center justify-center">
+                  <Activity size={15} className="text-violet-600" />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Activity Log</p>
+                  <p className="text-sm font-bold text-slate-800">{logPanel.orderNumber}</p>
+                </div>
+              </div>
+              <button onClick={() => setLogPanel(null)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-all">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              {logLoading ? (
+                <div className="flex items-center justify-center py-16">
+                  <div className="smooth-loader w-7 h-7 text-violet-500" />
+                </div>
+              ) : logEvents.length === 0 ? (
+                <p className="text-center text-sm text-slate-400 py-12">No activity recorded yet.</p>
+              ) : (
+                <div className="relative pl-10">
+                  <div className="absolute left-[27px] top-3 bottom-3 w-[2px] bg-slate-200" />
+                  {logEvents.map((ev, idx) => {
+                    const s = getLogStyle(ev.action);
+                    const isLast = idx === logEvents.length - 1;
+                    return (
+                      <div key={idx} className={`relative flex gap-4 ${isLast ? "" : "pb-4"}`}>
+                        <div className={`absolute -left-[27px] top-1 w-8 h-8 rounded-full ${s.dot} flex items-center justify-center text-white shrink-0 z-10 border-2 border-white shadow-sm`}>{s.icon}</div>
+                        <div className="flex-1 min-w-0 bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all p-3">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[13px] font-bold text-slate-800">{ev.action_by || "System"}</span>
+                              <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${s.badge}`}>{ev.action}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Calendar size={10} className="text-slate-400 shrink-0" />
+                              <span className="text-[10px] text-slate-400 font-semibold whitespace-nowrap">{fmtLogTs(ev.action_at)}</span>
+                            </div>
+                          </div>
+                          {ev._sub && <p className="text-[10px] text-slate-500 mt-1">{ev._sub}</p>}
+                          {ev._step && <p className="text-[9px] font-black text-slate-400 uppercase mt-0.5">Level {ev._step}</p>}
+                          {ev.comments && <p className="text-[10px] text-slate-500 italic mt-1">"{ev.comments}"</p>}
+                          {ev._attach && <a href={ev._attach} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:underline mt-1"><FileText size={10} /> Attachment</a>}
+                          {ev.changes?.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                              {ev.changes.map((c, ci) => (
+                                <span key={ci} className="text-[9px] bg-cyan-50 border border-cyan-100 px-2 py-0.5">
+                                  <span className="font-black text-cyan-600">{c.field}: </span>
+                                  <span className="text-slate-400 line-through">{c.from}</span>
+                                  <span className="text-slate-700 font-semibold"> → {c.to}</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      <style>{`@keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }`}</style>
+    </>
     );
 }
 

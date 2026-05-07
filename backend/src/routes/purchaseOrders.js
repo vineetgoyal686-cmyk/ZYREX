@@ -642,6 +642,13 @@ router.post("/", upload.fields([
       mainData.order_number = await getNextDraftNumber(mainData.order_type || 'Supply');
     }
 
+    // These are not purchase_orders DB columns. They are only used by
+    // status/timeline flows and must not be sent to Supabase on create.
+    delete mainData.action_by;
+    delete mainData.comments;
+    delete mainData.reason;
+    delete mainData.issuedBy;
+
     // 2. Insert main order
     const { data: order, error: orderErr } = await supabase.schema("procurement")
       .from("purchase_orders")
@@ -724,20 +731,22 @@ router.post("/bulk-import", async (req, res) => {
     }
 
     // Preload masters
-    const [{ data: companies }, { data: sites }, { data: vendors }, { data: clauses }, { data: clauseVersions }, { data: contacts }] = await Promise.all([
+    const [{ data: companies }, { data: sites }, { data: vendors }, { data: clauses }, { data: clauseVersions }, { data: contacts }, { data: users }] = await Promise.all([
       supabase.schema("procurement").from("companies").select("*"),
       supabase.schema("procurement").from("sites").select("*"),
       supabase.schema("procurement").from("vendors").select("*"),
       supabase.schema("procurement").from("clauses").select("*"),
       supabase.schema("procurement").from("clause_versions").select("*"),
       supabase.schema("procurement").from("contacts").select("*"),
+      supabase.from("users").select("id, name, email, designation, profile_permissions"),
     ]);
     const companyByCode = new Map((companies || []).map(c => [String(c.company_code || "").toUpperCase().trim(), c]));
     const siteByCode    = new Map((sites || []).map(s => [String(s.site_code || "").toUpperCase().trim(), s]));
     const vendorByCode  = new Map((vendors || []).map(v => [String(v.vendor_code || "").toUpperCase().trim(), v]));
-    const vendorByName  = new Map((vendors || []).map(v => [String(v.vendor_name || "").toLowerCase().trim(), v]));
+    const vendorByPan   = new Map((vendors || []).filter(v => v.pan).map(v => [String(v.pan).toUpperCase().trim(), v]));
     const clauseByCode  = new Map((clauses  || []).map(c => [String(c.code || "").toUpperCase().trim(), c]));
     const contactByCode = new Map((contacts || []).map(c => [String(c.contact_code || "").toUpperCase().trim(), c]));
+    const userByEmail   = new Map((users || []).map(u => [String(u.email || "").toLowerCase().trim(), u]));
     // versionMap: clause_id -> { version: pointsArray }
     const versionMap = new Map();
     (clauseVersions || []).forEach(v => {
@@ -840,17 +849,17 @@ router.post("/bulk-import", async (req, res) => {
       try {
         const compCode = String(pick(h, ["Company Code"])).toUpperCase().trim();
         const siteCode = String(pick(h, ["Site Code"])).toUpperCase().trim();
-        const vendCode = String(pick(h, ["Vendor ID", "Vendor Code"])).toUpperCase().trim();
-        const vendName = String(pick(h, ["Vendor Name"])).trim();
+        const vendCode = String(pick(h, ["Vendor Code"])).toUpperCase().trim();
+        const vendPan  = String(pick(h, ["Vendor PAN"])).toUpperCase().trim();
 
         const company = companyByCode.get(compCode);
         const site = siteByCode.get(siteCode);
         const vendorMaster = (vendCode && vendorByCode.get(vendCode))
-                          || (vendName && vendorByName.get(vendName.toLowerCase()));
+                          || (vendPan  && vendorByPan.get(vendPan));
 
         if (!site) throw new Error(`Site code "${siteCode}" not found in master`);
         if (!company) throw new Error(`Company code "${compCode}" not found in master`);
-        if (!vendorMaster) throw new Error(`Vendor ID "${vendCode || vendName}" not found in master`);
+        if (!vendorMaster) throw new Error(`Vendor not found — provide a valid Vendor Code (${vendCode || "blank"}) or Vendor PAN (${vendPan || "blank"})`);
 
         // Determine order type
         const excelOrderType = String(pick(h, ["Order Type"])).trim();
@@ -932,6 +941,17 @@ router.post("/bulk-import", async (req, res) => {
           billingAddress: site.billing_address || "",
         };
 
+        // Resolve state-matched billing profile (same logic as frontend save)
+        const siteState = site.state || "";
+        const stateBlocks = company.state_billing_profiles || [];
+        const stateBlock = siteState ? stateBlocks.find(b => b.stateName?.toLowerCase() === siteState.toLowerCase()) : null;
+        const stateProfile = stateBlock ? (stateBlock.profiles?.find(p => p.isDefault) || stateBlock.profiles?.[0] || null) : null;
+        const billingProfile = stateProfile
+          ? { ...stateProfile, source: "state" }
+          : (company.billing_gstin || company.address)
+            ? { address: company.address || "", gstin: company.billing_gstin || company.gstin || "", source: "entity" }
+            : null;
+
         // Parse description: multi-line cell (Alt+Enter) or ||| separator → array of points
         const descToPoints = (v) => {
           if (!v) return [];
@@ -1012,6 +1032,19 @@ router.post("/bulk-import", async (req, res) => {
 
         const issuedAt = parseDate(pick(h, ["Issued At", "Issued Date"])) || (status === "Issued" ? new Date().toISOString() : null);
 
+        // Resolve issuer by email
+        const issuerEmail = String(pick(h, ["Issued By (Email)", "Issued By Email", "Issuer Email"]) || "").toLowerCase().trim();
+        const requiresIssuer = ["Issued", "Amended"].includes(status);
+        if (requiresIssuer && !issuerEmail) throw new Error(`"Issued By (Email)" is required when Status is "${status}"`);
+        const issuerUser = issuerEmail ? userByEmail.get(issuerEmail) : null;
+        if (requiresIssuer && issuerEmail && !issuerUser) throw new Error(`Issued By email "${issuerEmail}" not found in system`);
+        const issuedBy = issuerUser ? {
+          id:            issuerUser.id,
+          name:          issuerUser.name || "",
+          designation:   issuerUser.designation || "",
+          signatureFile: issuerUser.profile_permissions?.ui?.signature || null,
+        } : null;
+
         const totals = {
           subtotal,
           totalDiscountAmt: discAmt,
@@ -1023,6 +1056,7 @@ router.post("/bulk-import", async (req, res) => {
           showBrand: itemRows.some(it => it.make),
           showRemarks: itemRows.some(it => it.remarks),
           issuedAt,
+          ...(issuedBy && { issuedBy }),
           bulkImported: true,
         };
 
@@ -1071,6 +1105,8 @@ router.post("/bulk-import", async (req, res) => {
             site: siteSnap,
             vendor: vendorSnap,
             contacts: resolveContactsCell(pick(h, ["Contact IDs", "Contact ID", "Contacts"])),
+            billingProfile,
+            billingState: siteState || null,
             clauses: [
               ...tcSelection.refs,
               ...paySelection.refs,
@@ -1099,10 +1135,32 @@ router.post("/bulk-import", async (req, res) => {
             .eq("id", serialObj.id);
         }
 
+        const amendedFromNo = String(pick(h, ["Amended From (Order No)", "Amended From", "Amendment Of"]) || "").trim();
         results.inserted++;
-        results.orders.push({ id: inserted.id, order_number: orderNumber, status });
+        results.orders.push({ id: inserted.id, order_number: orderNumber, status, amendedFromNo });
       } catch (grpErr) {
         results.failed.push({ row: headRowNo, orderKey: group.key, reason: grpErr.message });
+      }
+    }
+
+    // Second pass: link amended_from_id for orders that reference a parent
+    const toLink = results.orders.filter(o => o.amendedFromNo);
+    if (toLink.length > 0) {
+      const insertedByNo = new Map(results.orders.map(o => [o.order_number, o.id]));
+      for (const o of toLink) {
+        try {
+          // Look in current batch first, then DB
+          let parentId = insertedByNo.get(o.amendedFromNo);
+          if (!parentId) {
+            const { data: parent } = await supabase.schema("procurement")
+              .from("purchase_orders").select("id").eq("order_number", o.amendedFromNo).single();
+            parentId = parent?.id || null;
+          }
+          if (parentId) {
+            await supabase.schema("procurement")
+              .from("purchase_orders").update({ amended_from_id: parentId }).eq("id", o.id);
+          }
+        } catch { /* non-fatal — order already inserted */ }
       }
     }
 
@@ -1130,8 +1188,18 @@ router.put("/:id", upload.fields([
 
     // Fetch existing urls/status before any mutation so locked orders remain read-only.
     const { data: existing } = await supabase.schema("procurement")
-      .from("purchase_orders").select("quotation_url, comparative_sheet_url, status")
+      .from("purchase_orders").select("quotation_url, comparative_sheet_url, status, snapshot, subject, ref_number, delivery_date, priority, totals")
       .eq("id", req.params.id).single();
+
+    // Capture incoming values for edit tracking before status handlers may mutate mainData.snapshot
+    const _editBy       = mainData.action_by || mainData.made_by || "";
+    const _newSubject   = mainData.subject || "";
+    const _newRef       = mainData.ref_number || "";
+    const _newDelivery  = (mainData.delivery_date || "").split("T")[0];
+    const _newPriority  = mainData.priority || "";
+    const _newVendor    = mainData.snapshot?.vendor?.vendorName || "";
+    const _newSite      = mainData.snapshot?.site?.siteCode || "";
+    const _newTotal     = Math.round(Number(mainData.totals?.grandTotal) || 0);
 
     const lockedStatuses = ["Rejected", "Cancelled", "Reverted", "Recalled"];
     if (lockedStatuses.includes(existing?.status)) {
@@ -1158,6 +1226,34 @@ router.put("/:id", upload.fields([
       const actLog = Array.isArray(curSnap.activity_log) ? [...curSnap.activity_log] : [];
       actLog.push({ action: mainData.status, action_by: mainData.action_by || "", action_at: new Date().toISOString(), ...(mainData.comments ? { comments: mainData.comments } : {}) });
       mainData.snapshot = { ...curSnap, ...(mainData.snapshot || {}), activity_log: actLog };
+    }
+
+    // Edit field tracking — only on full form saves (items array provided) for existing orders
+    if (itemsProvided && existing && req.params.id) {
+      const oldSubject  = existing.subject || "";
+      const oldRef      = existing.ref_number || "";
+      const oldDelivery = (existing.delivery_date || "").split("T")[0];
+      const oldPriority = existing.priority || "";
+      const oldVendor   = existing.snapshot?.vendor?.vendorName || "";
+      const oldSite     = existing.snapshot?.site?.siteCode || "";
+      const oldTotal    = Math.round(Number(existing.totals?.grandTotal) || 0);
+
+      const changes = [];
+      const chk = (field, from, to) => { if ((from || "") !== (to || "")) changes.push({ field, from: from || "—", to: to || "—" }); };
+      chk("Subject",        oldSubject,  _newSubject);
+      chk("Reference No.",  oldRef,      _newRef);
+      chk("Delivery Date",  oldDelivery, _newDelivery);
+      chk("Priority",       oldPriority, _newPriority);
+      chk("Vendor",         oldVendor,   _newVendor);
+      chk("Site",           oldSite,     _newSite);
+      if (oldTotal !== _newTotal) changes.push({ field: "Total Value", from: `Rs ${oldTotal.toLocaleString("en-IN")}`, to: `Rs ${_newTotal.toLocaleString("en-IN")}` });
+
+      if (changes.length > 0) {
+        const curSnap = mainData.snapshot || existing.snapshot || {};
+        const actLog  = Array.isArray(curSnap.activity_log) ? [...curSnap.activity_log] : [];
+        actLog.push({ action: "Edited", action_by: _editBy, action_at: new Date().toISOString(), changes });
+        mainData.snapshot = { ...curSnap, activity_log: actLog };
+      }
     }
 
     // These are not DB columns — used only for activity_log above

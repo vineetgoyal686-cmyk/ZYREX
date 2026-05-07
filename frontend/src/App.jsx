@@ -7,7 +7,7 @@ import Sidebar from "./components/Sidebar";
 const parseHash = () => {
   const params = new URLSearchParams(window.location.hash.slice(1));
   return {
-    tab:     params.get("tab")     || "about",
+    tab:     params.get("tab")     || "global_dashboard",
     project: params.get("project") || null,
     isReset:  params.get("type") === "recovery" || params.get("type") === "invite",
     isInvite: params.get("type") === "invite",

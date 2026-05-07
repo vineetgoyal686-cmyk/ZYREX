@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Search, Building2, User, Landmark, MapPin, Receipt, ShieldQuestion, FileText, CheckCircle2, Phone, FileDown, Download, Eye, X, Upload, Trash2, FileCheck, Lock, ShoppingCart, Package, GitMerge } from "lucide-react";
+import { ArrowLeft, Search, Building2, User, Landmark, MapPin, Receipt, ShieldQuestion, FileText, CheckCircle2, Phone, FileDown, Download, Eye, X, Upload, Trash2, FileCheck, Lock, ShoppingCart, Package, GitMerge, Calendar } from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const orderDetailsCache = new Map();
@@ -101,9 +101,20 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   const [canManageAmend, setCanManageAmend] = useState(false);
   const [cancelAmendLoading, setCancelAmendLoading] = useState(false);
 
+  // Action Requests (recall / cancel requests)
+  const [pendingActionRequest, setPendingActionRequest] = useState(null);
+  const [requestDropdownOpen, setRequestDropdownOpen] = useState(false);
+  const [requestModal, setRequestModal] = useState({ open: false, type: "" }); // type: 'recall'|'cancel'
+  const [requestReason, setRequestReason] = useState("");
+  const [requestLoading, setRequestLoading] = useState(false);
+
   // Amendment Info Modal (for history tab)
   const [infoModal, setInfoModal] = useState({ open: false, data: null });
   const [amendActionLoading, setAmendActionLoading] = useState(false);
+  const [arActionLoading, setArActionLoading] = useState(false);
+  const [arRejectModal, setArRejectModal] = useState(false);
+  const [arRejectComment, setArRejectComment] = useState("");
+  const [logView, setLogView] = useState("flow"); // "flow" | "list"
   // Amendment History tab data
   const [amendChain, setAmendChain] = useState([]);
 
@@ -222,6 +233,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     fetchAmendHistory(); // Call this FIRST for fastest box appearance
     fetchOrderDetails();
     fetchApprovalData();
+    fetchActionRequest();
 
     const scheduleIdle = window.requestIdleCallback || ((cb) => window.setTimeout(cb, 1500));
     const cancelIdle = window.cancelIdleCallback || window.clearTimeout;
@@ -281,6 +293,76 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     }).catch(err => {
       console.error("Amend fetch failed", err);
     });
+  };
+
+  const fetchActionRequest = async () => {
+    const token = localStorage.getItem("bms_token") || "";
+    try {
+      const res = await fetch(`${API}/api/action-requests/for-order/${orderId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const d = await res.json();
+      setPendingActionRequest(d.request || null);
+    } catch {}
+  };
+
+  const submitActionRequest = async () => {
+    if (!requestReason.trim()) return;
+    setRequestLoading(true);
+    const token = localStorage.getItem("bms_token") || "";
+    try {
+      const res = await fetch(`${API}/api/action-requests`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ order_id: orderId, request_type: requestModal.type, reason: requestReason }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        setRequestModal({ open: false, type: "" });
+        setRequestReason("");
+        showToast(`${requestModal.type === "recall" ? "Recall" : "Cancel"} request submitted`);
+        fetchActionRequest();
+      } else {
+        showToast(d.error || "Failed to submit request", "error");
+      }
+    } catch { showToast("Network error", "error"); }
+    setRequestLoading(false);
+  };
+
+  const cancelActionRequest = async () => {
+    if (!pendingActionRequest) return;
+    setRequestLoading(true);
+    const token = localStorage.getItem("bms_token") || "";
+    try {
+      const res = await fetch(`${API}/api/action-requests/${pendingActionRequest.id}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: "Cancelled" }),
+      });
+      const d = await res.json();
+      if (d.success) { showToast("Request cancelled"); fetchActionRequest(); }
+      else showToast(d.error || "Failed", "error");
+    } catch { showToast("Network error", "error"); }
+    setRequestLoading(false);
+  };
+
+  const handleActionRequestDecision = async (action, comment = "") => {
+    if (!pendingActionRequest) return;
+    setArActionLoading(true);
+    const token = localStorage.getItem("bms_token") || "";
+    try {
+      const res = await fetch(`${API}/api/action-requests/${pendingActionRequest.id}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action, comment }),
+      });
+      const d = await res.json();
+      if (d.success) {
+        showToast(action === "Approved" ? "Request approved!" : "Request rejected");
+        fetchActionRequest();
+        fetchOrderDetails();
+        fetchAmendHistory();
+      } else showToast(d.error || "Failed", "error");
+    } catch { showToast("Network error", "error"); }
+    setArActionLoading(false);
   };
 
   const handleAmendDecision = async (action) => {
@@ -498,19 +580,22 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       attachment_url = upJson.url;
       if (!attachment_url) throw new Error("Upload returned no URL");
 
-      const res = await fetch(`${API}/api/amendments/request`, {
+      // Power users (recall/cancel permission) amend directly → order to Draft
+      // Regular users submit a pending request that needs admin approval
+      const isDirect = userCanRecall || userCanCancel;
+      const endpoint = isDirect
+        ? `${API}/api/action-requests/direct-amend`
+        : `${API}/api/amendments/request`;
+
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem("bms_token") || ""}` },
-        body: JSON.stringify({
-          order_id: orderId,
-          reason: amendReason,
-          attachment_url
-        })
+        body: JSON.stringify({ order_id: orderId, reason: amendReason, attachment_url })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to submit amendment request");
-      
-      showToast("Amendment request submitted successfully!");
+      if (!res.ok) throw new Error(data.error || "Failed");
+
+      showToast(isDirect ? "Order moved to Draft for editing!" : "Amendment request submitted successfully!");
       setAmendModal(false);
       setAmendReason("");
       setAmendFile(null);
@@ -530,9 +615,12 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   const isDraftNum    = /^(PO|WO)-\d+$/.test(order.order_number || '');
   const isOldPending  = order.order_number?.startsWith("PENDING-");
   const isPending     = isDraftNum || isOldPending;
+  const wasRecalledToDraft = order.status === "Draft" &&
+    Array.isArray(order.snapshot?.activity_log) &&
+    order.snapshot.activity_log.some(e => e.action === "Recalled");
   const canCancelDraftAmendment =
     order.status === "Draft" &&
-    !!order.amended_from_id &&
+    (!!order.amended_from_id || wasRecalledToDraft) &&
     (isGlobalAdmin || String(order.created_by_id) === String(thisUser.id));
 
   const getVal = (v) => Array.isArray(v) ? v[0] : v;
@@ -542,10 +630,88 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       : html;
   const cleanQuillHtml = (html) => {
     if (!html) return "";
-    return html
-      .replace(/<span class="ql-ui"><\/span>/gi, "")
-      .replace(/<span class="ql-ui"\/>/gi, "")
-      .replace(/\s*data-list="[^"]*"/gi, "");
+    if (typeof document === "undefined") {
+      return html
+        .replace(/<span class="ql-ui"[^>]*><\/span>/gi, "")
+        .replace(/<span class="ql-ui"[^>]*\/>/gi, "")
+        .replace(/\s*data-list="[^"]*"/gi, "")
+        .replace(/\s*class="ql-indent-\d+"/gi, "");
+    }
+
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    const stripQuillListAttrs = (root) => {
+      root.querySelectorAll(".ql-ui").forEach(el => el.remove());
+      root.querySelectorAll("li").forEach(li => {
+        li.removeAttribute("data-list");
+        const classes = (li.getAttribute("class") || "")
+          .split(/\s+/)
+          .filter(cls => cls && !/^ql-indent-\d+$/.test(cls));
+        if (classes.length) li.setAttribute("class", classes.join(" "));
+        else li.removeAttribute("class");
+      });
+    };
+    const directListItems = (list) =>
+      Array.from(list.children).filter(child => child.tagName === "LI");
+    const getIndent = (li) => {
+      const match = (li.getAttribute("class") || "").match(/\bql-indent-(\d+)\b/);
+      return match ? Number(match[1]) || 0 : 0;
+    };
+    const getListTag = (li, fallbackTag) =>
+      li.getAttribute("data-list") === "bullet" ? "ul" : fallbackTag;
+    const itemHtml = (li) => {
+      const clone = li.cloneNode(true);
+      Array.from(clone.children)
+        .filter(child => child.tagName === "OL" || child.tagName === "UL")
+        .forEach(child => child.remove());
+      stripQuillListAttrs(clone);
+      return clone.innerHTML;
+    };
+    const buildNestedList = (items, fallbackTag) => {
+      const root = document.createElement(items[0]?.tag || fallbackTag);
+      const listsAtLevel = [root];
+      const lastLiAtLevel = [];
+      items.forEach(item => {
+        let level = item.indent;
+        while (level > 0 && !lastLiAtLevel[level - 1]) level -= 1;
+        if (level > 0 && !listsAtLevel[level]) {
+          const childList = document.createElement(item.tag);
+          lastLiAtLevel[level - 1].appendChild(childList);
+          listsAtLevel[level] = childList;
+        }
+        if (level > 0 && listsAtLevel[level].tagName.toLowerCase() !== item.tag) {
+          const childList = document.createElement(item.tag);
+          lastLiAtLevel[level - 1].appendChild(childList);
+          listsAtLevel[level] = childList;
+        }
+        const li = document.createElement("li");
+        li.innerHTML = item.html;
+        listsAtLevel[level].appendChild(li);
+        lastLiAtLevel[level] = li;
+        listsAtLevel.length = level + 1;
+        lastLiAtLevel.length = level + 1;
+      });
+      return root;
+    };
+
+    Array.from(container.querySelectorAll("ol, ul")).forEach(list => {
+      if (!container.contains(list)) return;
+      const listItems = directListItems(list);
+      const hasQuillFlatItems = listItems.some(li =>
+        li.hasAttribute("data-list") || /\bql-indent-\d+\b/.test(li.getAttribute("class") || "")
+      );
+      if (!hasQuillFlatItems) return;
+      const fallbackTag = list.tagName.toLowerCase();
+      const items = listItems.map(li => ({
+        indent: getIndent(li),
+        tag: getListTag(li, fallbackTag),
+        html: itemHtml(li),
+      }));
+      list.replaceWith(buildNestedList(items, fallbackTag));
+    });
+
+    stripQuillListAttrs(container);
+    return container.innerHTML;
   };
   const renderRichHtml = (html) => cleanQuillHtml(normalizeRichTextHtml(html));
   const formatSignatureDate = (value) => {
@@ -702,6 +868,8 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
 
         .quill-content ul { list-style-type: disc !important; padding-left: 1.5rem !important; margin: 4px 0 !important; }
         .quill-content ol { list-style-type: decimal !important; padding-left: 1.5rem !important; margin: 4px 0 !important; }
+        .quill-content ol ol { list-style-type: lower-alpha !important; }
+        .quill-content ol ol ol { list-style-type: lower-roman !important; }
         .quill-content li { display: list-item !important; text-align: justify !important; margin-bottom: 0.2rem !important; }
         .quill-content p { margin-bottom: 2px !important; text-align: justify !important; }
         .quill-content strong { font-weight: 700 !important; }
@@ -801,7 +969,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                     className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-lg shadow-sm text-xs transition-all">
                     Submit to Review
                   </button>
-                  {(isGlobalAdmin || order.created_by_id === thisUser.id) && (
+                  {(isGlobalAdmin || !!myOrderPerms.can_add) && (
                     <button onClick={() => onEdit && onEdit(orderId)}
                       className="px-4 py-2 bg-white border border-slate-200 text-slate-700 font-bold rounded-lg shadow-sm text-xs hover:bg-slate-50 transition-all">
                       Edit Order
@@ -816,7 +984,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                     className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm text-xs transition-all">
                     Submit for Approval
                   </button>
-                  {(isGlobalAdmin || order.created_by_id === thisUser.id) && (
+                  {(isGlobalAdmin || !!myOrderPerms.can_add) && (
                     <button onClick={() => onEdit && onEdit(orderId)}
                       className="px-4 py-2 bg-white border border-slate-200 text-slate-700 font-bold rounded-lg shadow-sm text-xs hover:bg-slate-50 transition-all">
                       Edit Order
@@ -827,11 +995,48 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
 
               {(order.status === 'Issued' || order.status === 'Amended' || order.status === 'Pending Issue') && (
                 <>
-                  {order.status === 'Issued' && canRequestAmend && (
-                    <button onClick={() => setAmendModal(true)}
-                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-sm text-xs transition-all">
-                      Amend Request
-                    </button>
+                  {order.status === 'Issued' && (
+                    <>
+                      {/* Power users: Amend button always visible (pending request doesn't block them) */}
+                      {(userCanRecall || userCanCancel) && canRequestAmend && (
+                        <button onClick={() => setAmendModal(true)}
+                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm text-xs transition-all">
+                          Amend
+                        </button>
+                      )}
+                      {/* Cancel request button — only visible to the user who submitted the request */}
+                      {pendingActionRequest && String(pendingActionRequest.requestor_id) === String(thisUser.id) && (
+                        <button onClick={cancelActionRequest} disabled={requestLoading}
+                          className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg shadow-sm text-xs transition-all disabled:opacity-60">
+                          Cancel {pendingActionRequest.request_type === "recall" ? "Recall" : "Cancel"} Request
+                        </button>
+                      )}
+                      {/* Regular users: Request dropdown — hide if they already have a pending request */}
+                      {!userCanRecall && !userCanCancel && !pendingActionRequest && (
+                        <div className="relative">
+                          <button onClick={() => setRequestDropdownOpen(v => !v)}
+                            className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-lg shadow-sm text-xs transition-all flex items-center gap-1.5">
+                            Request ▾
+                          </button>
+                          {requestDropdownOpen && (
+                            <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                              <button onClick={() => { setRequestDropdownOpen(false); setAmendModal(true); }}
+                                className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all">
+                                Amend Request
+                              </button>
+                              <button onClick={() => { setRequestDropdownOpen(false); setRequestModal({ open: true, type: "recall" }); }}
+                                className="w-full text-left px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-all">
+                                Recall Order
+                              </button>
+                              <button onClick={() => { setRequestDropdownOpen(false); setRequestModal({ open: true, type: "cancel" }); }}
+                                className="w-full text-left px-4 py-2.5 text-xs font-semibent text-slate-700 hover:bg-slate-50 transition-all">
+                                Cancel Order
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                   {showGlobalActionBar && (allActions.length > 0 ? allActions : (fallbackAdmin ? [
                     { key: "Issued",   label: "Issue",  color: "emerald", needsComment: false },
@@ -955,6 +1160,46 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                   ) : (
                     <p className="text-[10px] text-amber-700 italic">Approval permissions required.</p>
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── INLINE RECALL / CANCEL REQUEST BANNER ── */}
+          {pendingActionRequest && order.status === "Issued" && (
+            <div className="mb-6 print:hidden">
+              <div className={`border rounded-2xl px-6 py-4 flex items-start justify-between shadow-sm ${pendingActionRequest.request_type === "recall" ? "bg-purple-50 border-purple-200" : "bg-rose-50 border-rose-200"}`}>
+                <div className="flex-1">
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className={`text-white text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${pendingActionRequest.request_type === "recall" ? "bg-purple-600" : "bg-rose-600"}`}>
+                      {pendingActionRequest.request_type === "recall" ? "Recall Request" : "Cancel Request"}
+                    </span>
+                    <span className="text-xs font-medium text-slate-500">
+                      Requested by: <span className="text-slate-900 font-bold">{pendingActionRequest.requestor?.name || "User"}</span>
+                    </span>
+                  </div>
+                  {pendingActionRequest.reason && (
+                    <div className="flex items-start gap-2">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 shrink-0">Reason:</span>
+                      <p className="text-sm text-slate-700 font-medium leading-relaxed">{pendingActionRequest.reason}</p>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 shrink-0 pt-1 ml-10">
+                  {(userCanRecall || userCanCancel) ? (
+                    <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+                      <button disabled={arActionLoading} onClick={() => handleActionRequestDecision("Approved")}
+                        className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-all shadow-sm">
+                        {arActionLoading ? "..." : pendingActionRequest.request_type === "recall" ? "Approve Recall" : "Approve Cancel"}
+                      </button>
+                      <button disabled={arActionLoading} onClick={() => { setArRejectComment(""); setArRejectModal(true); }}
+                        className="px-6 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs transition-all shadow-sm">
+                        Reject
+                      </button>
+                    </div>
+                  ) : String(pendingActionRequest.requestor_id) === String(thisUser.id) ? (
+                    <p className="text-[11px] font-semibold text-slate-500 italic border-l border-slate-200 pl-3">Pending approval...</p>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -1501,16 +1746,32 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
           Recalled: 'Recalled',
           Cancelled: 'Cancelled',
           Rejected: 'Rejected',
+          'Recall Requested': 'Recall Requested',
+          'Cancel Requested': 'Cancel Requested',
+          'Recall Rejected': 'Recall Rejected',
+          'Cancel Rejected': 'Cancel Rejected',
+          'Recall Request Cancelled': 'Recall Request Cancelled',
+          'Cancel Request Cancelled': 'Cancel Request Cancelled',
         };
         activityLog.forEach(entry => {
-          events.push({
-            ts: entry.action_at,
-            type: 'status',
-            user: entry.action_by || 'System',
-            label: statusLabels[entry.action] || entry.action,
-            rawStatus: entry.action,
-            comment: entry.comments || null,
-          });
+          if (entry.action === "Edited") {
+            events.push({
+              ts: entry.action_at,
+              type: 'edited',
+              user: entry.action_by || 'System',
+              label: 'Order Edited',
+              changes: entry.changes || [],
+            });
+          } else {
+            events.push({
+              ts: entry.action_at,
+              type: 'status',
+              user: entry.action_by || 'System',
+              label: statusLabels[entry.action] || entry.action,
+              rawStatus: entry.action,
+              comment: entry.comments || null,
+            });
+          }
         });
 
         // 3. Approval logs (approver decisions — Approved/Rejected/Reverted by approver)
@@ -1529,12 +1790,16 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
         amendHistory.forEach(a => {
           // Stage 1: Requested
           events.push({ ts: a.created_at, type: 'amend', user: a.requestor?.name || a.made_by || 'User', label: 'Amendment Requested', amendStatus: 'Pending', reason: a.reason, attachment_url: a.attachment_url });
-          // Stage 2: Approved (only if it was approved, even if later cancelled)
-          if (a.approved_at) {
+          // Stage 2: Approved
+          if (a.status === 'Approved' && a.actioned_at) {
+            // Directly approved — actioned_at = approval time
+            events.push({ ts: a.actioned_at, type: 'amend', user: a.actioner?.name || 'Admin', label: 'Amendment Approved', amendStatus: 'Approved' });
+          } else if (a.approved_at) {
+            // Approved then cancelled — approved_at preserved separately
             events.push({ ts: a.approved_at, type: 'amend', user: a.approver?.name || 'Admin', label: 'Amendment Approved', amendStatus: 'Approved' });
           }
-          // Stage 3: Final action (Cancelled/Rejected) — skip if just Approved with no further action
-          if (a.status === 'Cancelled' || a.status === 'Rejected') {
+          // Stage 3: Cancelled or Rejected
+          if ((a.status === 'Cancelled' || a.status === 'Rejected') && a.actioned_at) {
             events.push({ ts: a.actioned_at, type: 'amend', user: a.actioner?.name || 'Admin', label: `Amendment ${a.status}`, amendStatus: a.status });
           }
         });
@@ -1543,25 +1808,32 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
         events.sort((a, b) => new Date(a.ts) - new Date(b.ts));
 
         const eventStyle = {
-          created:  { dot: 'bg-indigo-500',  icon: <FileText size={13} />,    badge: 'bg-indigo-100 text-indigo-700' },
+          created:  { dot: 'bg-indigo-500',  icon: <FileText size={10} />,    badge: 'bg-indigo-100 text-indigo-700' },
+          edited:   { dot: 'bg-cyan-500',    icon: <FileText size={10} />,    badge: 'bg-cyan-100 text-cyan-700' },
           status: {
-            Review:          { dot: 'bg-sky-500',     icon: <FileText size={13} />,     badge: 'bg-sky-100 text-sky-700' },
-            'Pending Issue': { dot: 'bg-violet-500',  icon: <FileText size={13} />,     badge: 'bg-violet-100 text-violet-700' },
-            Issued:          { dot: 'bg-emerald-600', icon: <CheckCircle2 size={13} />, badge: 'bg-emerald-100 text-emerald-800' },
-            Reverted:        { dot: 'bg-amber-500',   icon: <FileText size={13} />,     badge: 'bg-amber-100 text-amber-700' },
-            Recalled:        { dot: 'bg-purple-500',  icon: <FileText size={13} />,     badge: 'bg-purple-100 text-purple-700' },
-            Cancelled:       { dot: 'bg-slate-600',   icon: <X size={13} />,            badge: 'bg-slate-100 text-slate-600' },
-            Rejected:        { dot: 'bg-rose-500',    icon: <X size={13} />,            badge: 'bg-rose-100 text-rose-700' },
-            Draft:           { dot: 'bg-blue-400',    icon: <FileText size={13} />,     badge: 'bg-blue-100 text-blue-700' },
+            Review:          { dot: 'bg-sky-500',     icon: <FileText size={10} />,     badge: 'bg-sky-100 text-sky-700' },
+            'Pending Issue': { dot: 'bg-violet-500',  icon: <FileText size={10} />,     badge: 'bg-violet-100 text-violet-700' },
+            Issued:          { dot: 'bg-emerald-600', icon: <CheckCircle2 size={10} />, badge: 'bg-emerald-100 text-emerald-800' },
+            Reverted:        { dot: 'bg-amber-500',   icon: <FileText size={10} />,     badge: 'bg-amber-100 text-amber-700' },
+            Recalled:        { dot: 'bg-purple-500',  icon: <FileText size={10} />,     badge: 'bg-purple-100 text-purple-700' },
+            Cancelled:       { dot: 'bg-slate-600',   icon: <X size={10} />,            badge: 'bg-slate-100 text-slate-600' },
+            Rejected:        { dot: 'bg-rose-500',    icon: <X size={10} />,            badge: 'bg-rose-100 text-rose-700' },
+            Draft:           { dot: 'bg-blue-400',    icon: <FileText size={10} />,     badge: 'bg-blue-100 text-blue-700' },
+            'Recall Requested':         { dot: 'bg-purple-400', icon: <FileText size={10} />, badge: 'bg-purple-50 text-purple-600' },
+            'Cancel Requested':         { dot: 'bg-rose-400',   icon: <FileText size={10} />, badge: 'bg-rose-50 text-rose-600' },
+            'Recall Rejected':          { dot: 'bg-rose-500',   icon: <X size={10} />,        badge: 'bg-rose-100 text-rose-700' },
+            'Cancel Rejected':          { dot: 'bg-rose-500',   icon: <X size={10} />,        badge: 'bg-rose-100 text-rose-700' },
+            'Recall Request Cancelled': { dot: 'bg-slate-400',  icon: <X size={10} />,        badge: 'bg-slate-100 text-slate-500' },
+            'Cancel Request Cancelled': { dot: 'bg-slate-400',  icon: <X size={10} />,        badge: 'bg-slate-100 text-slate-500' },
           },
           approval: {
-            Approved: { dot: 'bg-emerald-500', icon: <CheckCircle2 size={13} />, badge: 'bg-emerald-100 text-emerald-700' },
-            Rejected: { dot: 'bg-rose-500',    icon: <X size={13} />,           badge: 'bg-rose-100 text-rose-700' },
-            Reverted: { dot: 'bg-amber-500',   icon: <FileText size={13} />,    badge: 'bg-amber-100 text-amber-700' },
-            Recalled: { dot: 'bg-purple-500',  icon: <FileText size={13} />,    badge: 'bg-purple-100 text-purple-700' },
-            Cancelled:{ dot: 'bg-slate-600',   icon: <X size={13} />,           badge: 'bg-slate-100 text-slate-600' },
-            Issued:   { dot: 'bg-emerald-600', icon: <CheckCircle2 size={13} />,badge: 'bg-emerald-100 text-emerald-800' },
-            Pending:  { dot: 'bg-blue-400',    icon: <FileText size={13} />,    badge: 'bg-blue-100 text-blue-700' },
+            Approved: { dot: 'bg-emerald-500', icon: <CheckCircle2 size={10} />, badge: 'bg-emerald-100 text-emerald-700' },
+            Rejected: { dot: 'bg-rose-500',    icon: <X size={10} />,           badge: 'bg-rose-100 text-rose-700' },
+            Reverted: { dot: 'bg-amber-500',   icon: <FileText size={10} />,    badge: 'bg-amber-100 text-amber-700' },
+            Recalled: { dot: 'bg-purple-500',  icon: <FileText size={10} />,    badge: 'bg-purple-100 text-purple-700' },
+            Cancelled:{ dot: 'bg-slate-600',   icon: <X size={10} />,           badge: 'bg-slate-100 text-slate-600' },
+            Issued:   { dot: 'bg-emerald-600', icon: <CheckCircle2 size={10} />,badge: 'bg-emerald-100 text-emerald-800' },
+            Pending:  { dot: 'bg-blue-400',    icon: <FileText size={10} />,    badge: 'bg-blue-100 text-blue-700' },
           },
           amend: {
             Approved:  { dot: 'bg-emerald-500', badge: 'bg-emerald-100 text-emerald-700' },
@@ -1573,83 +1845,170 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
 
         const getStyle = (ev) => {
           if (ev.type === 'created') return eventStyle.created;
-          if (ev.type === 'status')  return eventStyle.status[ev.rawStatus] || { dot: 'bg-slate-400', icon: <FileText size={13} />, badge: 'bg-slate-100 text-slate-600' };
-          if (ev.type === 'approval') return eventStyle.approval[ev.label] || { dot: 'bg-slate-400', icon: <FileText size={13} />, badge: 'bg-slate-100 text-slate-600' };
-          if (ev.type === 'amend')   return { ...(eventStyle.amend[ev.amendStatus] || eventStyle.amend.Pending), icon: <GitMerge size={13} /> };
-          return { dot: 'bg-slate-300', icon: <FileText size={13} />, badge: 'bg-slate-100 text-slate-500' };
+          if (ev.type === 'edited')  return eventStyle.edited;
+          if (ev.type === 'status')  return eventStyle.status[ev.rawStatus] || { dot: 'bg-slate-400', icon: <FileText size={10} />, badge: 'bg-slate-100 text-slate-600' };
+          if (ev.type === 'approval') return eventStyle.approval[ev.label] || { dot: 'bg-slate-400', icon: <FileText size={10} />, badge: 'bg-slate-100 text-slate-600' };
+          if (ev.type === 'amend')   return { ...(eventStyle.amend[ev.amendStatus] || eventStyle.amend.Pending), icon: <GitMerge size={10} /> };
+          return { dot: 'bg-slate-300', icon: <FileText size={10} />, badge: 'bg-slate-100 text-slate-500' };
         };
 
         return (
-          <div className="px-14 py-3 max-w-[1400px] print:hidden space-y-6">
+          <div className="px-6 py-4 max-w-[1400px] print:hidden space-y-6">
 
-            {/* ── Timeline ── */}
-            <div className="bg-white rounded-xl border border-slate-200 p-6">
-              <div className="flex items-center gap-3 mb-5">
-                <FileText size={18} className="text-indigo-500" />
-                <div>
-                  <h2 className="text-base font-bold text-slate-800">Activity Log</h2>
-                  <p className="text-xs text-slate-400">Complete chronological history of this order</p>
+            {/* ── Activity Log ── */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <div className="flex items-center justify-between gap-3 mb-5">
+                <div className="flex items-center gap-3">
+                  <FileText size={16} className="text-indigo-500" />
+                  <div>
+                    <h2 className="text-sm font-bold text-slate-800">Activity Log</h2>
+                    <p className="text-[11px] text-slate-400">Complete chronological history of this order</p>
+                  </div>
+                </div>
+                <div className="flex items-center bg-slate-100 p-0.5 rounded border border-slate-200 shrink-0">
+                  <button onClick={() => setLogView("flow")} className={`px-3 py-1 text-[10px] font-black rounded transition-all ${logView === 'flow' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>FLOW</button>
+                  <button onClick={() => setLogView("list")} className={`px-3 py-1 text-[10px] font-black rounded transition-all ${logView === 'list' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>LIST</button>
                 </div>
               </div>
 
               {events.length === 0 ? (
                 <p className="py-8 text-center text-sm text-slate-400">No activity recorded yet.</p>
-              ) : (
-                <div className="relative space-y-0">
+              ) : logView === 'list' ? (
+                /* ── LIST VIEW (connected timeline) ── */
+                <div className="relative pl-10">
+                  {/* continuous vertical line */}
+                  <div className="absolute left-[27px] top-3 bottom-3 w-[2px] bg-slate-200" />
                   {events.map((ev, idx) => {
                     const s = getStyle(ev);
                     const isLast = idx === events.length - 1;
                     return (
-                      <div key={idx} className="relative flex gap-4">
-                        {/* Timeline line + dot */}
-                        <div className="flex flex-col items-center">
-                          <div className={`w-8 h-8 rounded-full border-4 border-white ${s.dot} shadow-sm z-10 flex items-center justify-center text-white shrink-0`}>
-                            {s.icon}
-                          </div>
-                          {!isLast && <div className="w-0.5 flex-1 bg-slate-200 my-1" />}
-                        </div>
-
-                        {/* Card */}
-                        <div className={`flex-1 bg-slate-50 border border-slate-100 rounded-xl p-4 mb-3 hover:border-slate-200 transition-all`}>
-                          <div className="flex items-start justify-between gap-4 flex-wrap">
+                      <div key={idx} className={`relative flex gap-4 ${isLast ? '' : 'pb-4'}`}>
+                        {/* dot on the line */}
+                        <div className={`absolute -left-[27px] top-1 w-8 h-8 rounded-full ${s.dot} flex items-center justify-center text-white shrink-0 z-10 border-2 border-white shadow-sm`}>{s.icon}</div>
+                        {/* card */}
+                        <div className="flex-1 min-w-0 bg-slate-50 border border-slate-100 hover:border-slate-200 transition-all p-3">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-sm font-bold text-slate-800">{ev.user}</span>
-                              <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${s.badge}`}>
-                                {ev.label}
-                              </span>
-                              {ev.step && (
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Level {ev.step}</span>
-                              )}
+                              <span className="text-[13px] font-bold text-slate-800">{ev.user}</span>
+                              <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${s.badge}`}>{ev.label}</span>
+                              {ev.step && <span className="text-[9px] text-slate-400 font-bold uppercase">Level {ev.step}</span>}
                             </div>
-                            <span className="text-[11px] font-semibold text-slate-400 whitespace-nowrap">{fmtTs(ev.ts)}</span>
+                            <span className="text-[10px] text-slate-400 font-semibold whitespace-nowrap">{fmtTs(ev.ts)}</span>
                           </div>
-
-                          {ev.sub && <p className="text-[12px] text-slate-500 font-medium mt-1">{ev.sub}</p>}
-
-                          {ev.comment && (
-                            <div className="mt-2 px-3 py-2 bg-white border border-slate-200 rounded-lg text-[12px] text-slate-600 italic leading-relaxed">
-                              "{ev.comment}"
+                          {ev.sub && <p className="text-[10px] text-slate-500 mt-1">{ev.sub}</p>}
+                          {ev.comment && <p className="text-[10px] text-slate-500 italic mt-1">"{ev.comment}"</p>}
+                          {ev.type === 'edited' && ev.changes?.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                              {ev.changes.map((c, ci) => (
+                                <span key={ci} className="text-[9px] bg-cyan-50 border border-cyan-100 px-2 py-0.5">
+                                  <span className="font-black text-cyan-600">{c.field}: </span>
+                                  <span className="text-slate-400 line-through">{c.from}</span>
+                                  <span className="text-slate-700 font-semibold"> → {c.to}</span>
+                                </span>
+                              ))}
                             </div>
                           )}
-
-                          {ev.type === 'amend' && ev.reason && (
-                            <div className="mt-2 space-y-1.5">
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Reason</p>
-                              <p className="text-[12px] text-slate-600 font-medium leading-relaxed">{ev.reason}</p>
-                              {ev.attachment_url && (
-                                <a href={ev.attachment_url} target="_blank" rel="noreferrer"
-                                  className="inline-flex items-center gap-1.5 mt-1 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-[10px] font-bold text-indigo-600 hover:bg-indigo-50 transition-all">
-                                  <FileText size={11} /> View Attachment
-                                </a>
-                              )}
-                            </div>
+                          {ev.type === 'amend' && ev.reason && <p className="text-[10px] text-slate-500 mt-1">{ev.reason}</p>}
+                          {ev.type === 'amend' && ev.attachment_url && (
+                            <a href={ev.attachment_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:underline mt-1">
+                              <FileText size={10} /> Attachment
+                            </a>
                           )}
                         </div>
                       </div>
                     );
                   })}
                 </div>
-              )}
+              ) : (() => {
+                /* ── FLOW VIEW (snake) ── */
+                const COLS = 4;
+                const chunks = [];
+                for (let i = 0; i < events.length; i += COLS) chunks.push(events.slice(i, i + COLS));
+                return (
+                  <div>
+                    {chunks.map((chunk, rowIdx) => {
+                      const goRight = rowIdx % 2 === 0;
+                      const isLastRow = rowIdx === chunks.length - 1;
+                      return (
+                        <div key={rowIdx}>
+                          <div className={`flex ${goRight ? '' : 'flex-row-reverse'} items-stretch`}>
+                            {chunk.map((ev, ci) => {
+                              const s = getStyle(ev);
+                              const isLastInChunk = ci === chunk.length - 1;
+                              const lblColor = (s.badge || '').split(' ').find(c => c.startsWith('text-')) || 'text-slate-600';
+                              return (
+                                <React.Fragment key={ci}>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="mx-2 bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-all">
+                                      <div className={`h-1 ${s.dot}`} />
+                                      <div className="p-4 space-y-2">
+                                        <div className="flex items-center gap-3">
+                                          <div className={`w-10 h-10 rounded-full ${s.dot} flex items-center justify-center text-white shrink-0`}>
+                                            {React.cloneElement(s.icon, { size: 16 })}
+                                          </div>
+                                          <span className={`text-[10px] font-black uppercase tracking-widest leading-tight ${lblColor}`}>{ev.label}</span>
+                                        </div>
+                                        <p className="text-[14px] font-bold text-slate-800">{ev.user}</p>
+                                        <div className="flex items-center gap-1.5">
+                                          <Calendar size={11} className="text-slate-400 shrink-0" />
+                                          <span className="text-[11px] text-slate-400 font-medium">{fmtTs(ev.ts)}</span>
+                                        </div>
+                                        {ev.sub && <p className="text-[11px] text-slate-500 border-t border-slate-100 pt-2">{ev.sub}</p>}
+                                        {ev.step && <p className="text-[9px] font-black text-slate-400 uppercase">Level {ev.step}</p>}
+                                        {ev.comment && <p className="text-[11px] text-slate-500 italic border-t border-slate-100 pt-2 leading-relaxed">"{ev.comment}"</p>}
+                                        {ev.type === 'edited' && ev.changes?.length > 0 && (
+                                          <div className="space-y-1 border-t border-slate-100 pt-2">
+                                            {ev.changes.map((c, ci2) => (
+                                              <div key={ci2} className="text-[9px]">
+                                                <span className="font-black text-cyan-600">{c.field}: </span>
+                                                <span className="text-slate-400 line-through">{c.from}</span>
+                                                <span className="text-slate-700 font-semibold"> → {c.to}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                        {ev.type === 'amend' && ev.reason && <p className="text-[11px] text-slate-500 border-t border-slate-100 pt-2 leading-relaxed">{ev.reason}</p>}
+                                        {ev.type === 'amend' && ev.attachment_url && (
+                                          <a href={ev.attachment_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 hover:underline mt-0.5">
+                                            <FileText size={10} /> Attachment
+                                          </a>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {!isLastInChunk && (
+                                    <div className="flex items-center self-center shrink-0 w-7">
+                                      {goRight ? (
+                                        <div className="flex items-center w-full">
+                                          <div className="flex-1 h-[1.5px] bg-slate-300" />
+                                          <svg className="fill-slate-400 shrink-0" width="7" height="11" viewBox="0 0 7 11"><polygon points="0,0 7,5.5 0,11" /></svg>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center w-full">
+                                          <svg className="fill-slate-400 shrink-0" width="7" height="11" viewBox="0 0 7 11"><polygon points="7,0 0,5.5 7,11" /></svg>
+                                          <div className="flex-1 h-[1.5px] bg-slate-300" />
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                          </div>
+                          {!isLastRow && (
+                            <div className={`flex ${goRight ? 'justify-end pr-3' : 'justify-start pl-3'}`}>
+                              <div className="flex flex-col items-center w-7">
+                                <div className="w-[1.5px] h-8 bg-slate-300" />
+                                <svg className="fill-slate-400 shrink-0" width="11" height="6" viewBox="0 0 11 6"><polygon points="0,0 11,0 5.5,6" /></svg>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
 
             {/* ── Version Chain ── */}
@@ -1833,20 +2192,24 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
         </div>
       )}
       {/* Amendment Modal */}
-      {amendModal && (
+      {amendModal && (() => {
+        const isDirect = userCanRecall || userCanCancel;
+        return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="px-6 py-4 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
+            <div className={`px-6 py-4 border-b flex items-center justify-between ${isDirect ? "bg-indigo-50 border-indigo-100" : "bg-amber-50 border-amber-100"}`}>
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 bg-amber-100 rounded-full flex items-center justify-center text-amber-600">
+                <div className={`h-10 w-10 rounded-full flex items-center justify-center ${isDirect ? "bg-indigo-100 text-indigo-600" : "bg-amber-100 text-amber-600"}`}>
                   <Package size={20} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">Amendment Request</h3>
-                  <p className="text-[11px] text-amber-700 font-medium italic">Order: {order.order_number}</p>
+                  <h3 className="text-sm font-bold text-slate-900">{isDirect ? "Amend Order" : "Amendment Request"}</h3>
+                  <p className={`text-[11px] font-medium italic ${isDirect ? "text-indigo-700" : "text-amber-700"}`}>
+                    {isDirect ? "Order will move to Draft immediately" : "Request sent for admin approval"} · {order.order_number}
+                  </p>
                 </div>
               </div>
-              <button onClick={() => setAmendModal(false)} className="p-2 hover:bg-amber-100 rounded-full transition-colors text-amber-600">
+              <button onClick={() => setAmendModal(false)} className={`p-2 rounded-full transition-colors ${isDirect ? "hover:bg-indigo-100 text-indigo-600" : "hover:bg-amber-100 text-amber-600"}`}>
                 <X size={18} />
               </button>
             </div>
@@ -1887,12 +2250,84 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                 <button
                   onClick={handleAmendRequest}
                   disabled={amendLoading}
-                  className="flex-[2] px-4 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-xs shadow-lg shadow-amber-200 transition-all flex items-center justify-center gap-2"
+                  className={`flex-[2] px-4 py-3 text-white font-bold rounded-xl text-xs shadow-lg transition-all flex items-center justify-center gap-2 ${isDirect ? "bg-indigo-600 hover:bg-indigo-700 shadow-indigo-200" : "bg-amber-500 hover:bg-amber-600 shadow-amber-200"}`}
                 >
                   {amendLoading ? <div className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Package size={14} />}
-                  Submit Request
+                  {isDirect ? "Amend Now" : "Submit Request"}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* Reject comment modal for inline recall/cancel banner */}
+      {arRejectModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Reject Request</h3>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Reason Required</p>
+              </div>
+              <button onClick={() => setArRejectModal(false)} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <textarea
+                value={arRejectComment}
+                onChange={e => setArRejectComment(e.target.value)}
+                rows={3}
+                placeholder="Reason for rejection..."
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-rose-400/20 focus:border-rose-400 outline-none resize-none transition-all"
+              />
+              <div className="flex gap-3">
+                <button onClick={() => setArRejectModal(false)}
+                  className="flex-1 py-3 text-xs font-bold text-slate-500 rounded-xl hover:bg-slate-100 transition-all">Cancel</button>
+                <button
+                  disabled={!arRejectComment.trim() || arActionLoading}
+                  onClick={async () => {
+                    setArRejectModal(false);
+                    await handleActionRequestDecision("Rejected", arRejectComment.trim());
+                    setArRejectComment("");
+                  }}
+                  className="flex-[2] py-3 text-xs font-bold text-white rounded-xl bg-rose-600 hover:bg-rose-700 shadow-lg transition-all disabled:opacity-50">
+                  Confirm Reject
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Request modal (Recall / Cancel request) */}
+      {requestModal.open && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <h3 className="text-base font-black text-slate-800 mb-1">
+              {requestModal.type === "recall" ? "Recall Order Request" : "Cancel Order Request"}
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              {requestModal.type === "recall"
+                ? "Request to pull this order back to Draft. An admin will review and action your request."
+                : "Request to cancel this order. An admin will review and action your request."}
+            </p>
+            <textarea
+              value={requestReason}
+              onChange={e => setRequestReason(e.target.value)}
+              placeholder="Reason (required)..."
+              rows={3}
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-300 mb-4"
+            />
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => { setRequestModal({ open: false, type: "" }); setRequestReason(""); }}
+                className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
+                Cancel
+              </button>
+              <button onClick={submitActionRequest} disabled={requestLoading || !requestReason.trim()}
+                className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-all disabled:opacity-60">
+                {requestLoading ? "Submitting..." : "Submit Request"}
+              </button>
             </div>
           </div>
         </div>

@@ -974,6 +974,11 @@ table tbody td[rowspan] {
 
         .quill-content ul { list-style-type: disc !important; padding-left: 12px !important; margin: 4px 0 !important; }
         .quill-content ol { list-style-type: decimal !important; padding-left: 12px !important; margin: 4px 0 !important; }
+        .quill-content ol ol, .supplementary-rich ol ol { list-style-type: lower-alpha !important; }
+        .quill-content ol ol ol, .supplementary-rich ol ol ol { list-style-type: lower-roman !important; }
+        .quill-content .sp-decimal li::before {
+          content: none;
+        }
         .quill-content p { margin-bottom: 2px !important; }
         .quill-content strong { font-weight: 700 !important; }
         .quill-content em { font-style: italic !important; }
@@ -1005,6 +1010,10 @@ table tbody td[rowspan] {
         .supplementary-rich li {
           display: block;
           text-align: justify !important;
+        }
+        .supplementary-rich ol li,
+        .supplementary-rich ul li {
+          display: list-item;
         }
 
         .pdf-fit-text {

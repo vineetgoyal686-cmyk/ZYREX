@@ -28,6 +28,12 @@ const readApprovalTabFromHash = () => {
 };
 
 export default function Approvals() {
+  const currentUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
+  const isGlobalAdmin = currentUser.role === "global_admin";
+
+  const [toast, setToast] = useState(null);
+  const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); };
+
   const [activeTab, setActiveTab] = useState(readApprovalTabFromHash);
   const [orderSubTab, setOrderSubTab] = useState("issued");
   const [orders, setOrders] = useState([]);
@@ -39,6 +45,11 @@ export default function Approvals() {
   const [commentText, setCommentText] = useState("");
   const [search, setSearch] = useState("");
   const [canManageAmend, setCanManageAmend] = useState(false);
+  const [canManageActionRequests, setCanManageActionRequests] = useState(false);
+  const [actionRequests, setActionRequests] = useState([]);
+  const [arActionLoading, setArActionLoading] = useState(null);
+  const [arCommentModal, setArCommentModal] = useState({ open: false, requestId: null, action: null });
+  const [arCommentText, setArCommentText] = useState("");
   // Amendment-specific filters + PDF preview state
   const [amendSiteFilter, setAmendSiteFilter] = useState("");
   const [amendCompanyFilter, setAmendCompanyFilter] = useState("");
@@ -66,32 +77,35 @@ export default function Approvals() {
 
     try {
       const token = localStorage.getItem("bms_token") || "";
-      const [ordersRes, intakesRes, amendRes, capRes] = await Promise.all([
+      const [ordersRes, intakesRes, amendRes, capRes, arRes, arCapRes] = await Promise.all([
         fetch(`${API}/api/orders`),
         fetch(`${API}/api/intakes`),
-        fetch(`${API}/api/amendments/requests`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }),
-        fetch(`${API}/api/amendments/can-manage`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        }),
+        fetch(`${API}/api/amendments/requests`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API}/api/amendments/can-manage`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API}/api/action-requests/pending`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API}/api/action-requests/can-manage`, { headers: { 'Authorization': `Bearer ${token}` } }),
       ]);
-      const [ordersData, intakesData, amendData, capData] = await Promise.all([
+      const [ordersData, intakesData, amendData, capData, arData, arCapData] = await Promise.all([
         ordersRes.json().catch(() => ({})),
         intakesRes.json().catch(() => ({})),
         amendRes.json().catch(() => ({})),
         capRes.json().catch(() => ({})),
+        arRes.json().catch(() => ({})),
+        arCapRes.json().catch(() => ({})),
       ]);
-      
+
       const ords = ordersData.orders || [];
       const ints = intakesData.intakes || [];
       const amds = amendData.requests || [];
       const caps = !!capData.canManage;
+      const ars  = arData.requests || [];
 
       setOrders(ords);
       setIntakes(ints);
       setAmendments(amds);
       setCanManageAmend(caps);
+      setActionRequests(ars);
+      setCanManageActionRequests(!!arCapData.canManage);
       
       // 2. Update Cache for next time
       localStorage.setItem("last_approvals_data", JSON.stringify({
@@ -172,13 +186,29 @@ export default function Approvals() {
       if (res.ok && !data.error) {
         load();
       } else {
-        alert(data.error || "Action failed");
+        showToast(data.error || "Action failed", "error");
       }
     } catch (err) {
       console.error(err);
-      alert("Network error. Check console.");
+      showToast("Network error", "error");
     }
     setActionLoading(null);
+  };
+
+  const handleActionRequest = async (requestId, action, comment = "") => {
+    setArActionLoading(requestId);
+    try {
+      const token = localStorage.getItem("bms_token") || "";
+      const res = await fetch(`${API}/api/action-requests/${requestId}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action, comment }),
+      });
+      const d = await res.json();
+      if (d.success) load();
+      else showToast(d.error || "Action failed", "error");
+    } catch { showToast("Network error", "error"); }
+    setArActionLoading(null);
   };
 
   const handleIntakeAction = async (intakeId, action) => {
@@ -198,11 +228,11 @@ export default function Approvals() {
       if (res.ok && !data.error) {
         load();
       } else {
-        alert(data.error || "Action failed");
+        showToast(data.error || "Action failed", "error");
       }
     } catch (err) {
       console.error(err);
-      alert("Network error. Check console.");
+      showToast("Network error", "error");
     }
     setActionLoading(null);
   };
@@ -219,7 +249,7 @@ export default function Approvals() {
       if (data.success) {
         load(); // Refresh list
       } else {
-        alert(data.error);
+        showToast(data.error, "error");
       }
     } catch (err) {
       console.error(err);
@@ -237,7 +267,7 @@ export default function Approvals() {
 
   const tabs = [
     { key: "intake", label: "Intake", icon: FileText, count: pendingIntakes.length },
-    { key: "orders", label: "Orders", icon: ClipboardList, count: pendingOrders.length + amendments.length },
+    { key: "orders", label: "Orders", icon: ClipboardList, count: pendingOrders.length + amendments.length + actionRequests.length },
     { key: "payments", label: "Payments", icon: IndianRupee, count: 0 },
   ];
 
@@ -266,6 +296,11 @@ export default function Approvals() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] p-3 sm:p-4 lg:p-6 pb-20">
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-[300] px-5 py-3 rounded-xl shadow-lg text-sm font-bold text-white transition-all ${toast.type === "error" ? "bg-rose-600" : "bg-emerald-600"}`}>
+          {toast.msg}
+        </div>
+      )}
       {/* Syncing Circle */}
       {loading && hasApprovalData && (
         <div className="fixed top-4 right-4 z-[60]">
@@ -327,6 +362,18 @@ export default function Approvals() {
                 className={`px-4 py-2 text-sm font-bold transition-all border-b-2 ${orderSubTab === "amendment" ? "border-cyan-600 text-cyan-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
               >
                 Amendment ({amendments.length})
+              </button>
+              <button
+                onClick={() => setOrderSubTab("recall")}
+                className={`px-4 py-2 text-sm font-bold transition-all border-b-2 ${orderSubTab === "recall" ? "border-purple-600 text-purple-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+              >
+                Recall {(() => { const n = actionRequests.filter(r => r.request_type === "recall").length; return n > 0 ? <span className="ml-1 bg-purple-100 text-purple-700 text-[10px] font-black px-1.5 py-0.5 rounded-full">{n}</span> : null; })()}
+              </button>
+              <button
+                onClick={() => setOrderSubTab("cancel")}
+                className={`px-4 py-2 text-sm font-bold transition-all border-b-2 ${orderSubTab === "cancel" ? "border-rose-600 text-rose-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+              >
+                Cancel {(() => { const n = actionRequests.filter(r => r.request_type === "cancel").length; return n > 0 ? <span className="ml-1 bg-rose-100 text-rose-700 text-[10px] font-black px-1.5 py-0.5 rounded-full">{n}</span> : null; })()}
               </button>
             </div>
             
@@ -438,7 +485,83 @@ export default function Approvals() {
                 </div>
               )}
             </>
-          ) : (
+          ) : (orderSubTab === "recall" || orderSubTab === "cancel") ? (() => {
+            const isRecallTab = orderSubTab === "recall";
+            const filtered = actionRequests.filter(r => r.request_type === (isRecallTab ? "recall" : "cancel"));
+            return (
+            <div className="space-y-3">
+              {loading && (
+                <div className="flex items-center gap-2 px-1">
+                  <span className={`text-[10px] font-bold animate-pulse uppercase tracking-widest px-2 py-1 rounded ${isRecallTab ? "text-purple-600 bg-purple-50" : "text-rose-600 bg-rose-50"}`}>Syncing...</span>
+                </div>
+              )}
+              {filtered.length === 0 ? (
+                <div className={`${cardCls} p-8 text-center text-sm font-semibold text-slate-400`}>
+                  No pending {isRecallTab ? "recall" : "cancel"} requests.
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {filtered.map(ar => {
+                    const ord = ar.order || {};
+                    const accentTop = isRecallTab ? "border-t-purple-500" : "border-t-rose-500";
+                    const accentText = isRecallTab ? "text-purple-600" : "text-rose-600";
+                    const accentHover = isRecallTab ? "hover:text-purple-800" : "hover:text-rose-800";
+                    const accentBadge = isRecallTab ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-rose-50 text-rose-700 border-rose-200";
+                    return (
+                      <div key={ar.id} className={`${cardCls} flex flex-col rounded-none shadow-sm border border-slate-200 overflow-hidden bg-white border-t-2 ${accentTop}`}>
+                        <div className="p-3.5 border-b border-slate-50 flex items-start justify-between">
+                          <div className="min-w-0">
+                            <button onClick={() => setPdfPreviewId(ord.id)} className={`text-[12.5px] font-bold ${accentText} uppercase tracking-tight truncate block leading-none mb-1 hover:underline`}>{ord.order_number || "—"}</button>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase truncate tracking-wider">{ar.requestor?.name || "—"}</p>
+                          </div>
+                          <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border shrink-0 ${accentBadge}`}>
+                            {isRecallTab ? "Recall" : "Cancel"}
+                          </span>
+                        </div>
+                        <div className="p-4 flex-1 flex flex-col gap-4">
+                          <div className="bg-white p-2 border border-slate-100 relative">
+                            <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest">Order</span>
+                            <p className="text-[12px] font-bold text-slate-800 truncate">{ord.subject || ord.snapshot?.subject || "No Subject"}</p>
+                          </div>
+                          <div className="bg-white p-2 border border-slate-100 relative">
+                            <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest">Vendor</span>
+                            <p className="text-[12px] font-bold text-slate-800 truncate">{ord.snapshot?.vendor?.vendorName || ord.vendors?.vendor_name || "—"}</p>
+                          </div>
+                          {ar.reason && (
+                            <div className="flex-1">
+                              <div className="bg-slate-50 p-3 border border-slate-200 relative">
+                                <span className="absolute -top-2 left-2 px-1 bg-white text-[9px] font-bold text-slate-400 uppercase tracking-widest">Reason</span>
+                                <p className="text-[12px] text-slate-600 leading-snug font-medium break-words">{ar.reason}</p>
+                              </div>
+                            </div>
+                          )}
+                          <div className="flex gap-2 pt-2 border-t border-slate-50">
+                            {canManageActionRequests ? (
+                              <>
+                                <button disabled={arActionLoading === ar.id}
+                                  onClick={() => setArCommentModal({ open: true, requestId: ar.id, action: "Rejected" })}
+                                  className="flex-1 h-9 bg-white border border-rose-200 text-rose-600 font-bold text-[11px] hover:bg-rose-50 transition-all uppercase">
+                                  REJECT
+                                </button>
+                                <button disabled={arActionLoading === ar.id}
+                                  onClick={() => handleActionRequest(ar.id, "Approved", "")}
+                                  className="flex-1 h-9 bg-emerald-500 text-white font-bold text-[11px] hover:bg-emerald-600 shadow-sm transition-all uppercase">
+                                  {arActionLoading === ar.id ? "..." : isRecallTab ? "APPROVE RECALL" : "APPROVE CANCEL"}
+                                </button>
+                              </>
+                            ) : (
+                              <p className="text-[11px] text-slate-400 italic py-1">Awaiting approval</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            );
+          })() : (
             <>
               <div className="flex flex-wrap items-center gap-2 px-1">
                 <select value={amendSiteFilter} onChange={e => setAmendSiteFilter(e.target.value)}
@@ -656,6 +779,45 @@ export default function Approvals() {
                   }}
                   className={`flex-[2] py-3 text-xs font-bold text-white rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:grayscale ${commentModal.action === "Reverted" ? "bg-amber-500 hover:bg-amber-600" : "bg-rose-600 hover:bg-rose-700"}`}>
                   {commentModal.action === "Reverted" ? "Confirm Revert" : "Confirm Reject"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Action Request comment modal (approve/reject recall/cancel) */}
+      {arCommentModal.open && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900">
+                {arCommentModal.action === "Approved" ? "Approve Request" : "Reject Request"}
+              </h3>
+              <button onClick={() => setArCommentModal({ open: false, requestId: null, action: null })}
+                className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <textarea
+                value={arCommentText}
+                onChange={e => setArCommentText(e.target.value)}
+                rows={3}
+                placeholder={arCommentModal.action === "Rejected" ? "Reason for rejection (required)..." : "Comment (optional)..."}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 outline-none resize-none transition-all"
+              />
+              <div className="flex gap-3">
+                <button onClick={() => { setArCommentModal({ open: false, requestId: null, action: null }); setArCommentText(""); }}
+                  className="flex-1 py-3 text-xs font-bold text-slate-500 rounded-xl hover:bg-slate-100 transition-all">Cancel</button>
+                <button
+                  disabled={arCommentModal.action === "Rejected" && !arCommentText.trim()}
+                  onClick={async () => {
+                    const { requestId, action } = arCommentModal;
+                    setArCommentModal({ open: false, requestId: null, action: null });
+                    await handleActionRequest(requestId, action, arCommentText.trim());
+                    setArCommentText("");
+                  }}
+                  className={`flex-[2] py-3 text-xs font-bold text-white rounded-xl shadow-lg transition-all disabled:opacity-50 ${arCommentModal.action === "Approved" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"}`}>
+                  {arCommentModal.action === "Approved" ? "Confirm Approve" : "Confirm Reject"}
                 </button>
               </div>
             </div>

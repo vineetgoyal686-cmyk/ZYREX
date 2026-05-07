@@ -523,9 +523,18 @@ router.post("/clauses/bulk", async (req, res) => {
     if (!rows?.length) return res.status(400).json({ error: "No rows provided" });
     const prefix = getClausePrefix(type);
 
+    // Normalize code: uppercase + strip leading zeros from number part
+    // TC-04, TC-004, tc-04 → all become TC-4 for comparison
+    const normalizeCode = (code) => {
+      const upper = (code || "").toUpperCase().trim();
+      const m = upper.match(/^([A-Z]+-?)(\d+)$/);
+      return m ? `${m[1]}${parseInt(m[2])}` : upper;
+    };
+
     const { data: existing } = await supabase.schema("procurement").from("clauses")
-      .select("title, type").eq("type", type);
-    const existingKeys = new Set((existing || []).map(r => normalizeNbsp(r.title || "").trim().toLowerCase()));
+      .select("title, code, type").eq("type", type);
+    const existingTitles = new Set((existing || []).map(r => normalizeNbsp(r.title || "").trim().toLowerCase()));
+    const existingNormCodes = new Set((existing || []).map(r => normalizeCode(r.code)));
 
     const { data: allCodes } = await supabase.schema("procurement").from("clauses")
       .select("code").eq("type", type);
@@ -533,19 +542,38 @@ router.post("/clauses/bulk", async (req, res) => {
     let nextNum = nums.length ? Math.max(...nums) + 1 : 1;
 
     const cleanRows = sanitizeRichTextDeep(rows || []);
-    const newRows = cleanRows.filter(r => r.title?.trim() && !existingKeys.has(r.title.trim().toLowerCase()));
+    const newRows = cleanRows.filter(r => r.title?.trim() && !existingTitles.has(r.title.trim().toLowerCase()));
     const skipped = rows.length - newRows.length;
     if (!newRows.length) return res.json({ success: true, inserted: 0, skipped });
 
-    const inserts = newRows.map(r => ({
-      code:     `${prefix}-${String(nextNum++).padStart(3, "0")}`,
-      type,
-      category: r.category || "",
-      title:    r.title    || "",
-      points:   Array.isArray(r.points) ? r.points : [],
-      created_by_id: req.body.createdById || null,
-      created_by_name: req.body.createdByName || "Bulk Upload",
-    }));
+    // Validate codes before inserting — error on conflict
+    const batchNormCodes = new Set();
+    for (const r of newRows) {
+      if (!r.code) continue;
+      const norm = normalizeCode(r.code);
+      if (existingNormCodes.has(norm)) {
+        return res.status(400).json({ error: `Code "${r.code.toUpperCase().trim()}" already exists in system. Use a different code or leave it blank for auto-generation.` });
+      }
+      if (batchNormCodes.has(norm)) {
+        return res.status(400).json({ error: `Duplicate code "${r.code.toUpperCase().trim()}" found in uploaded file.` });
+      }
+      batchNormCodes.add(norm);
+    }
+
+    const inserts = newRows.map(r => {
+      const code = r.code
+        ? r.code.toUpperCase().trim()
+        : `${prefix}-${nextNum++}`;
+      return {
+        code,
+        type,
+        category: r.category || "",
+        title:    r.title    || "",
+        points:   Array.isArray(r.points) ? r.points : [],
+        created_by_id: req.body.createdById || null,
+        created_by_name: req.body.createdByName || "Bulk Upload",
+      };
+    });
 
     const { data: insertedRows, error } = await supabase.schema("procurement").from("clauses").insert(inserts).select();
     if (error) throw error;

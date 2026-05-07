@@ -316,7 +316,7 @@ router.get("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
 /* PUT /api/users/:id/permissions */
 router.put("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res) => {
   const { id } = req.params;
-  const { permissions, profile_permissions } = req.body;
+  const { permissions, profile_permissions, designation, designation_id } = req.body;
 
   if (permissions && !Array.isArray(permissions))
     return res.status(400).json({ error: "permissions must be an array" });
@@ -345,8 +345,13 @@ router.put("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
     if (permError) return res.status(500).json({ error: permError.message });
   }
 
-  if (profile_permissions) {
-    const { error: profError } = await admin.from("users").update({ profile_permissions }).eq("id", id);
+  const userUpdates = {};
+  if (profile_permissions) userUpdates.profile_permissions = profile_permissions;
+  if (designation !== undefined) userUpdates.designation = designation || "";
+  if (designation_id !== undefined) userUpdates.designation_id = designation_id || null;
+
+  if (Object.keys(userUpdates).length > 0) {
+    const { error: profError } = await admin.from("users").update(userUpdates).eq("id", id);
     if (profError) return res.status(500).json({ error: profError.message });
   }
 

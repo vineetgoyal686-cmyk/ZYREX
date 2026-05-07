@@ -289,22 +289,24 @@ export default React.memo(function Sidebar({
 
     const fetchCounts = async () => {
       try {
-        const [ordersRes, intakesRes, amendRes] = await Promise.all([
+        const token = localStorage.getItem("bms_token") || "";
+        const [ordersRes, intakesRes, amendRes, arRes] = await Promise.all([
           fetch(`${API}/api/orders`),
           fetch(`${API}/api/intakes`),
-          fetch(`${API}/api/amendments/requests`, {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem("bms_token") || ""}` }
-          })
+          fetch(`${API}/api/amendments/requests`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`${API}/api/action-requests/pending`, { headers: { 'Authorization': `Bearer ${token}` } }),
         ]);
         const ordersData = ordersRes.ok ? await ordersRes.json().catch(() => ({})) : {};
         const intakesData = intakesRes.ok ? await intakesRes.json().catch(() => ({})) : {};
         const amendData = amendRes.ok ? await amendRes.json().catch(() => ({})) : {};
+        const arData = arRes.ok ? await arRes.json().catch(() => ({})) : {};
 
         const orderCount = (ordersData.orders || []).filter((o) => ["Pending Issue", "To Issue"].includes(o?.status)).length;
         const intakeCount = (intakesData.intakes || []).filter((i) => ["submitted", "in_review"].includes(i?.status)).length;
         const amendmentCount = (amendData.requests || []).length;
-        
-        const newTotal = orderCount + intakeCount + amendmentCount;
+        const actionRequestCount = (arData.requests || []).length;
+
+        const newTotal = orderCount + intakeCount + amendmentCount + actionRequestCount;
         if (alive) {
           setApprovalCount(newTotal);
           localStorage.setItem("last_approval_count", newTotal.toString());
@@ -315,8 +317,23 @@ export default React.memo(function Sidebar({
     };
 
     fetchCounts();
-    const interval = setInterval(fetchCounts, 10000); 
-    return () => { alive = false; clearInterval(interval); };
+    const interval = setInterval(fetchCounts, 30000);
+
+    // SSE — instant refresh when orders or action requests change
+    let es;
+    const connectSSE = () => {
+      es = new EventSource(`${API}/api/orders/events`);
+      es.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.type === "order_updated" || d.type === "action_request_updated") fetchCounts();
+        } catch {}
+      };
+      es.onerror = () => { es.close(); setTimeout(connectSSE, 5000); };
+    };
+    connectSSE();
+
+    return () => { alive = false; clearInterval(interval); if (es) es.close(); };
   }, []);
 
   const isTabVisible = (tabId) => {

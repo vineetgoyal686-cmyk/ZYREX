@@ -59,7 +59,7 @@ const DocUpload = ({ label, fieldKey, form, setForm }) => {
 };
 
 const COLS = [
-  { label: "Vendor ID",              key: "vendorCode",     w: "w-[9%] min-w-[100px]", mono: true },
+  { label: "Vendor Code",            key: "vendorCode",     w: "w-[9%] min-w-[100px]", mono: true },
   { label: "Vendor Firm Name",       key: "vendorName",     w: "w-[22%] min-w-[180px]" },
   { label: "Company Codes",          key: "companyCodes",   w: "w-[10%] min-w-[110px]" },
   { label: "Site Codes",             key: "siteCodes",      w: "w-[8%] min-w-[80px]" },

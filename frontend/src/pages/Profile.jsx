@@ -1243,6 +1243,12 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
     finally { setPermLoading(false); }
   };
 
+  const closePermsPanel = () => {
+    if (pickedTemplate && !window.confirm("Template changes are not saved yet. Go back anyway?")) return;
+    setPickedTemplate(null);
+    setPermUser(null);
+  };
+
   const updatePerm = (moduleId, key, value) =>
     setPermissions((prev) => prev.map((p) => {
       if (p.module_id !== moduleId) return p;
@@ -1262,9 +1268,15 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
       const validIds = new Set(permissions.map(p => p.module_id).filter(Boolean));
       const cleanPerms = permissions.filter(p => p.module_id && validIds.has(p.module_id));
 
+      const designationPatch = pickedTemplate ? {
+        designation:    pickedTemplate.name,
+        designation_id: pickedTemplate.id,
+      } : {};
+
       await api.put(`/api/users/${permUser.id}/permissions`, {
         permissions: cleanPerms,
         profile_permissions: editingProfilePerms,
+        ...designationPatch,
       });
 
       // If saving permissions for the currently logged-in user,
@@ -1280,17 +1292,15 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
       }
 
       if (pickedTemplate) {
-        await api.put(`/api/users/${permUser.id}`, {
-          designation:    pickedTemplate.name,
-          designation_id: pickedTemplate.id,
-        });
         setMembers(prev => prev.map(m =>
           m.id === permUser.id
-            ? { ...m, designation: pickedTemplate.name, designation_id: pickedTemplate.id }
+            ? { ...m, ...designationPatch }
             : m
         ));
+        setPermUser(prev => prev ? { ...prev, ...designationPatch } : prev);
         if (permUser.id === currentUser.id) {
-          const updatedSelf = { ...currentUser, designation: pickedTemplate.name, designation_id: pickedTemplate.id };
+          const storedSelf = JSON.parse(localStorage.getItem("bms_user") || "{}");
+          const updatedSelf = { ...storedSelf, ...designationPatch };
           localStorage.setItem("bms_user", JSON.stringify(updatedSelf));
           onProfileUpdate?.(updatedSelf);
         }
@@ -2029,7 +2039,7 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                         <h2 className="text-lg font-black text-slate-800">Permissions</h2>
                         <p className="text-sm text-slate-500">{permUser.name} — {permUser.email}</p>
                       </div>
-                      <button onClick={() => setPermUser(null)}
+                      <button onClick={closePermsPanel}
                         className="text-sm font-semibold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-lg hover:bg-slate-100 transition-colors">
                         ← Back
                       </button>
@@ -2043,7 +2053,6 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                         <SearchableTemplateSelect
                           designations={designations}
                           onPick={(tpl) => {
-                            if (!confirm(`Apply "${tpl.name}" template? This will overwrite current permissions (you can still customize before saving).`)) return;
                             const traw = tpl.profile_permissions || {};
                             if (traw.add_project && !traw.manage_project) traw.manage_project = { view: !!traw.add_project.view, add: !!traw.add_project.edit, edit: !!traw.add_project.edit, delete: false };
                             if (traw.manage_user && traw.manage_user.edit !== undefined && traw.manage_user.add === undefined) { const e = !!traw.manage_user.edit; traw.manage_user = { view: !!traw.manage_user.view, add: e, edit: e, delete: e, manage_permissions: e }; }
@@ -2063,7 +2072,7 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                             }));
                             // Remember the template so savePerms can update designation + designation_id
                             setPickedTemplate({ id: tpl.id, name: tpl.name });
-                            showToast(`Applied "${tpl.name}" template — review & save`);
+                            showToast(`Selected "${tpl.name}" template - save to apply`);
                           }}
                         />
                       </div>
@@ -2153,7 +2162,7 @@ export default function Profile({ onProfileUpdate, onProjectsUpdate }) {
                         <div className="mt-2">
                           <button onClick={savePerms} disabled={permLoading} className={btnPrimary}>
                             {permLoading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                            Save Permissions
+                            {pickedTemplate ? "Save Permissions & Designation" : "Save Permissions"}
                           </button>
                         </div>
                       </>

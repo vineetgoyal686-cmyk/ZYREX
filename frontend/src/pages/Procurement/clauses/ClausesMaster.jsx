@@ -80,16 +80,13 @@ const TYPE_CONFIG = {
 
 const emptyForm = { title: "", category: "", content: "" };
 
-/* ── Compatibility logic between old array of strings and new HTML string ── */
 const getHTML = (points) => {
-  if (!points || !points.length) return "";
-  
-  // Normalize non-breaking spaces from rich text editor to standard spaces so the browser wraps text naturally
+  // Strip legacy __sp: style prefix if present in old data
+  const pts = points?.[0]?.startsWith?.("__sp:") ? points.slice(1) : points;
+  if (!pts || !pts.length) return "";
   const normalize = (html) => normalizeRichTextHtml(html);
-
-  if (points.length === 1 && (points[0].includes('<') || points[0] === "")) return normalize(points[0]);
-  // backwards compatible formatting
-  return `<ol>${points.map(p => `<li>${normalize(p)}</li>`).join('')}</ol>`;
+  if (pts.length === 1 && (pts[0].includes('<') || pts[0] === "")) return normalize(pts[0]);
+  return `<ol>${pts.map(p => `<li>${normalize(p)}</li>`).join('')}</ol>`;
 };
 
 const stripHTMLToText = (html) => {
@@ -105,21 +102,164 @@ const stripHTMLToText = (html) => {
 
 const joinPoints = (pts) => stripHTMLToText(getHTML(pts)); // for plain-text exports
 
-/* ── Convert Quill v2 HTML to clean renderable HTML ──
-   Quill v2 uses <li data-list="ordered|bullet"><span class="ql-ui"></span>text</li>
-   We strip .ql-ui spans so native <ol>/<ul> CSS renders numbers/bullets correctly */
-const cleanQuillHTML = (html) => {
+/* ── Convert Quill v2 HTML to proper nested HTML ──
+   Quill stores indented items as flat <li class="ql-indent-N"> in one <ol>.
+   We convert to proper nested <ol><li><ol><li>...</li></ol></li></ol>
+   so numbering is continuous and sub-points render correctly everywhere. */
+const _cleanQuillHTML = (html) => {
   if (!html) return "";
-  // Remove .ql-ui spans (Quill's internal marker hosts)
-  let clean = html.replace(/<span class="ql-ui"><\/span>/gi, "")
-                  .replace(/<span class="ql-ui"\/>/gi, "");
-  // Convert data-list="ordered" li → plain li (inside existing <ol>)
-  // Convert data-list="bullet" li → plain li (inside existing <ul>)
-  clean = clean.replace(/<li data-list="ordered"([^>]*)>/gi, '<li$1>')
-               .replace(/<li data-list="bullet"([^>]*)>/gi, '<li$1>');
-  // Remove any remaining data-list attributes
-  clean = clean.replace(/\s*data-list="[^"]*"/gi, "");
-  return clean;
+
+  // Step 1: strip ql-ui spans and normalize data-list attrs
+  let clean = html
+    .replace(/<span class="ql-ui"><\/span>/gi, "")
+    .replace(/<span class="ql-ui"\/>/gi, "");
+
+  // Step 2: extract list type + indent from each li
+  const liRegex = /<li([^>]*)>([\s\S]*?)<\/li>/gi;
+  const items = [];
+  let m;
+  while ((m = liRegex.exec(clean)) !== null) {
+    const attrs = m[1];
+    const content = m[2];
+    const isBullet = /data-list="bullet"/.test(attrs);
+    const indentMatch = attrs.match(/ql-indent-(\d+)/);
+    const indent = indentMatch ? parseInt(indentMatch[1]) : 0;
+    items.push({ indent, content, tag: isBullet ? "ul" : "ol" });
+  }
+
+  if (!items.length) {
+    // No list items — clean up and return as-is
+    return clean
+      .replace(/\s*data-list="[^"]*"/gi, "")
+      .replace(/\s*class="ql-indent-\d+"/gi, "");
+  }
+
+  // Step 3: build proper nested structure
+  const buildNested = (items, start, level) => {
+    let result = "";
+    let i = start;
+    while (i < items.length) {
+      if (items[i].indent < level) break;
+      if (items[i].indent === level) {
+        let content = items[i].content;
+        i++;
+        // Check for children at deeper level
+        if (i < items.length && items[i].indent > level) {
+          const childTag = items[i].tag;
+          const child = buildNested(items, i, level + 1);
+          content += `<${childTag}>${child.html}</${childTag}>`;
+          i = child.nextIdx;
+        }
+        result += `<li>${content}</li>`;
+      } else {
+        i++;
+      }
+    }
+    return { html: result, nextIdx: i };
+  };
+
+  const rootTag = items[0].tag;
+  const { html: nested } = buildNested(items, 0, 0);
+  return `<${rootTag}>${nested}</${rootTag}>`;
+};
+
+const normalizeQuillListHTML = (html) => {
+  if (!html) return "";
+
+  if (typeof document === "undefined") {
+    return html
+      .replace(/<span class="ql-ui"[^>]*><\/span>/gi, "")
+      .replace(/<span class="ql-ui"[^>]*\/>/gi, "")
+      .replace(/\s*data-list="[^"]*"/gi, "")
+      .replace(/\s*class="ql-indent-\d+"/gi, "");
+  }
+
+  const container = document.createElement("div");
+  container.innerHTML = html;
+
+  const stripQuillListAttrs = (root) => {
+    root.querySelectorAll(".ql-ui").forEach(el => el.remove());
+    root.querySelectorAll("li").forEach(li => {
+      li.removeAttribute("data-list");
+      const classes = (li.getAttribute("class") || "")
+        .split(/\s+/)
+        .filter(cls => cls && !/^ql-indent-\d+$/.test(cls));
+      if (classes.length) li.setAttribute("class", classes.join(" "));
+      else li.removeAttribute("class");
+    });
+  };
+
+  const directListItems = (list) =>
+    Array.from(list.children).filter(child => child.tagName === "LI");
+
+  const getIndent = (li) => {
+    const match = (li.getAttribute("class") || "").match(/\bql-indent-(\d+)\b/);
+    return match ? Number(match[1]) || 0 : 0;
+  };
+
+  const getListTag = (li, fallbackTag) =>
+    li.getAttribute("data-list") === "bullet" ? "ul" : fallbackTag;
+
+  const itemHtml = (li) => {
+    const clone = li.cloneNode(true);
+    Array.from(clone.children)
+      .filter(child => child.tagName === "OL" || child.tagName === "UL")
+      .forEach(child => child.remove());
+    stripQuillListAttrs(clone);
+    return clone.innerHTML;
+  };
+
+  const buildNestedList = (items, fallbackTag) => {
+    const root = document.createElement(items[0]?.tag || fallbackTag);
+    const listsAtLevel = [root];
+    const lastLiAtLevel = [];
+
+    items.forEach(item => {
+      let level = item.indent;
+      while (level > 0 && !lastLiAtLevel[level - 1]) level -= 1;
+
+      if (level > 0 && !listsAtLevel[level]) {
+        const childList = document.createElement(item.tag);
+        lastLiAtLevel[level - 1].appendChild(childList);
+        listsAtLevel[level] = childList;
+      }
+
+      if (level > 0 && listsAtLevel[level].tagName.toLowerCase() !== item.tag) {
+        const childList = document.createElement(item.tag);
+        lastLiAtLevel[level - 1].appendChild(childList);
+        listsAtLevel[level] = childList;
+      }
+
+      const li = document.createElement("li");
+      li.innerHTML = item.html;
+      listsAtLevel[level].appendChild(li);
+      lastLiAtLevel[level] = li;
+      listsAtLevel.length = level + 1;
+      lastLiAtLevel.length = level + 1;
+    });
+
+    return root;
+  };
+
+  Array.from(container.querySelectorAll("ol, ul")).forEach(list => {
+    if (!container.contains(list)) return;
+    const listItems = directListItems(list);
+    const hasQuillFlatItems = listItems.some(li =>
+      li.hasAttribute("data-list") || /\bql-indent-\d+\b/.test(li.getAttribute("class") || "")
+    );
+    if (!hasQuillFlatItems) return;
+
+    const fallbackTag = list.tagName.toLowerCase();
+    const items = listItems.map(li => ({
+      indent: getIndent(li),
+      tag: getListTag(li, fallbackTag),
+      html: itemHtml(li),
+    }));
+    list.replaceWith(buildNestedList(items, fallbackTag));
+  });
+
+  stripQuillListAttrs(container);
+  return container.innerHTML;
 };
 
 const QUILL_MODULES = {
@@ -193,14 +333,15 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
   /* ── View clause state ── */
   const [viewClause, setViewClause] = useState(null);
 
-  const bulkRef   = useRef();
-  const exportRef = useRef();
-  const textareaRef = useRef();
+  const bulkRef        = useRef();
+  const exportRef      = useRef();
+  const textareaRef    = useRef();
 
   const mkey = type === "TC" ? "term_condition" : type === "PAY" ? "payment_terms" : type === "GOV" ? "government_laws" : "annexure";
   const { isGlobalAdmin, canAdd, canEdit, canDelete, canExport, canBulk } = useModulePermissions(mkey);
 
   useEffect(() => { fetchAll(); }, [type]);
+
 
   const fetchAll = async () => {
     setLoading(true); setPage(1);
@@ -256,12 +397,13 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
       const editorName = userObj.name || userObj.email || userObj.username || "Unknown";
       const url    = editId ? `${API}/api/procurement/clauses/${editId}` : `${API}/api/procurement/clauses`;
       const method = editId ? "PUT" : "POST";
+      const normalizedContent = normalizeQuillListHTML(normalizeRichTextHtml(form.content));
       const res    = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({
           type, category: form.category, title: form.title.trim(),
-          points: [normalizeRichTextHtml(form.content)], editedBy: editorName,
+          points: [normalizedContent], editedBy: editorName,
           createdById: userObj.id || "",
           createdByName: userObj.name || "",
         }),
@@ -315,8 +457,16 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
 
   /* ── Bulk ── */
   const downloadTemplate = () => {
-    const hdr = { Category: "Civil", Title: "Standard Terms", Content: "Line 1 of content\nLine 2 of content\nLine 3 of content" };
-    const ws = XLSX.utils.json_to_sheet([hdr]);
+    const example = [
+      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "1",   "Content": "First main point" },
+      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "1.1", "Content": "Sub-point of first point" },
+      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "1.2", "Content": "Another sub-point" },
+      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "2",   "Content": "Second main point" },
+      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "3",   "Content": "Third main point" },
+      { "Code": `${prefix}-2`, "Category": "Civil", "Title": "Another Clause", "Point No": "1",   "Content": "First point of another clause" },
+      { "Code": `${prefix}-2`, "Category": "Civil", "Title": "Another Clause", "Point No": "2",   "Content": "Second point of another clause" },
+    ];
+    const ws = XLSX.utils.json_to_sheet(example);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, type);
     XLSX.writeFile(wb, `${prefix}_template.xlsx`);
@@ -330,12 +480,42 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
     reader.onload = (ev) => {
       const wb   = XLSX.read(ev.target.result, { type: "array" });
       const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-      const rows = data.map(r => {
-        const str = (r["Content"] || "").toString();
-        const htmlPts = str.split("\n").map(l => l.trim()).filter(Boolean).map(l => `<li>${l}</li>`).join("");
-        const pointsArray = htmlPts ? [`<ol>${htmlPts}</ol>`] : [];
-        return { category: r["Category"] || "", title: r["Title"] || "", points: pointsArray };
-      }).filter(r => r.title.trim());
+
+      // Group rows by Code (fallback: Title) — each group = one clause
+      const groupMap = new Map();
+      data.forEach(r => {
+        const code     = String(r["Code"] || "").trim().toUpperCase();
+        const title    = String(r["Title"] || "").trim();
+        const category = String(r["Category"] || "").trim();
+        const content  = String(r["Content"] || "").trim();
+        const pointNo  = String(r["Point No"] || "").trim();
+        if (!title && !content) return;
+        const key = code || title;
+        if (!groupMap.has(key)) groupMap.set(key, { code, category, title, items: [] });
+        if (content) groupMap.get(key).items.push({ pointNo, content });
+      });
+
+      // Build HTML from items — dot notation (1.1, 1.2) → sub-points with ql-indent-1
+      const buildHTML = (items) => {
+        if (!items.length) return "";
+        let html = "<ol>";
+        items.forEach(({ pointNo, content }) => {
+          const dots = (pointNo.match(/\./g) || []).length; // 0=main, 1=sub, 2=sub-sub
+          const indentClass = dots > 0 ? ` class="ql-indent-${dots}"` : "";
+          html += `<li${indentClass}>${content}</li>`;
+        });
+        html += "</ol>";
+        return html;
+      };
+
+      const rows = Array.from(groupMap.values())
+        .filter(g => g.title)
+        .map(g => ({
+          code:     g.code,
+          category: g.category,
+          title:    g.title,
+          points:   g.items.length ? [normalizeQuillListHTML(buildHTML(g.items))] : [],
+        }));
       setBulkRows(rows);
     };
     reader.readAsArrayBuffer(file);
@@ -442,6 +622,12 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
           color: #94a3b8;
           font-style: normal;
         }
+        /* Sub-point numbering — default (alpha) */
+        .quill-content ol { padding-left: 1.5em; list-style-type: decimal; }
+        .quill-content ol ol { list-style-type: lower-alpha; }
+        .quill-content ol ol ol { list-style-type: lower-roman; }
+        .quill-content ul { padding-left: 1.5em; list-style-type: disc; }
+        .quill-content li { margin-bottom: 2px; }
       `}</style>
 
 
@@ -580,7 +766,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                                 Category: <span className="font-semibold text-slate-600">{v.category}</span>
                               </p>
                             )}
-                            <div className="quill-content text-sm text-slate-700 leading-relaxed mt-3" dangerouslySetInnerHTML={{ __html: cleanQuillHTML(getHTML(v.points)) }} />
+                            <div className="quill-content text-sm text-slate-700 leading-relaxed mt-3" dangerouslySetInnerHTML={{ __html: normalizeQuillListHTML(getHTML(v.points)) }} />
                           </div>
                         )}
                       </div>
@@ -772,7 +958,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                   {c.points.length === 0 ? (
                     <p className="text-xs text-slate-300 italic">No content</p>
                   ) : (
-                    <div className="quill-content text-sm text-slate-700 leading-relaxed max-w-none" dangerouslySetInnerHTML={{ __html: cleanQuillHTML(getHTML(c.points)) }} />
+                    <div className="quill-content text-sm text-slate-700 leading-relaxed max-w-none" dangerouslySetInnerHTML={{ __html: normalizeQuillListHTML(getHTML(c.points)) }} />
                   )}
                 </div>
 
@@ -860,7 +1046,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
 
             {/* Content — scrollable */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-6">
-              <div className="quill-content text-sm text-slate-700 leading-relaxed max-w-none" dangerouslySetInnerHTML={{ __html: cleanQuillHTML(getHTML(viewClause.points)) }} />
+              <div className="quill-content text-sm text-slate-700 leading-relaxed max-w-none" dangerouslySetInnerHTML={{ __html: normalizeQuillListHTML(getHTML(viewClause.points)) }} />
             </div>
 
             {/* Footer */}
@@ -933,19 +1119,17 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                    Content <span className="text-red-400">*</span>
-                  </label>
-                </div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                  Content <span className="text-red-400">*</span>
+                </label>
                 <div className="mb-2 px-3 py-2 bg-slate-50 border border-slate-100 rounded-xl flex items-start gap-2">
                   <span className="text-base">💡</span>
                   <p className="text-xs text-slate-500 leading-relaxed">
-                    Use the toolbar to bold text, add colors, or create standard and nested lists.
+                    Use the toolbar to bold text, add colors, or create standard and nested lists. Nested list items appear as a, b, c…
                   </p>
                 </div>
-                <div className="bg-white rounded-xl border border-slate-200">
-                  <ReactQuill 
+                <div className="bg-white rounded-xl border border-slate-200 quill-content">
+                  <ReactQuill
                     theme="snow"
                     value={form.content}
                     onChange={(val) => setForm(f => ({ ...f, content: val }))}

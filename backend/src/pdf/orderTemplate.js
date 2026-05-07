@@ -30,6 +30,8 @@ const css = `
   .annexure-content { font-size: 11.5px; line-height: 1.55; text-align: justify; }
   .annexure-content p { margin: 0 0 6px 0; }
   .annexure-content ol { margin: 0 0 6px 0; padding-left: 26px; list-style: decimal; }
+  .annexure-content ol ol { list-style-type: lower-alpha; }
+  .annexure-content ol ol ol { list-style-type: lower-roman; }
   .annexure-content ul { margin: 0 0 6px 0; padding-left: 26px; list-style: disc; }
   .annexure-content li { margin-bottom: 3px; }
   .annexure-content img { max-width: 100%; height: auto; }
@@ -149,8 +151,10 @@ const css = `
     display: inline-block; margin-bottom: 6px; page-break-inside: avoid;
   }
   .section .content { font-size: 11.5px; line-height: 1.45; text-align: justify; }
-  .section .content ol { margin: 0; padding-left: 40px; list-style: decimal; }
-  .section .content ul { margin: 0; padding-left: 40px; list-style: disc; }
+  .section .content ol { margin: 0; padding-left: 28px; list-style: decimal; }
+  .section .content ol ol { list-style-type: lower-alpha; }
+  .section .content ol ol ol { list-style-type: lower-roman; }
+  .section .content ul { margin: 0; padding-left: 28px; list-style: disc; }
   .section .content li { margin-bottom: 2px; }
   .section .content p { margin: 0 0 3px 0; }
 

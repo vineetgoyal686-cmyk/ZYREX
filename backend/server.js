@@ -15,7 +15,8 @@ const intakesRoutes       = require("./src/routes/intakes");
 const purchaseOrderRoutes = require("./src/routes/purchaseOrders");
 const approvalsRoutes     = require("./src/routes/approvals");
 const amendmentsRoutes    = require("./src/routes/amendments");
-const designationsRoutes  = require("./src/routes/designations");
+const designationsRoutes   = require("./src/routes/designations");
+const actionRequestRoutes  = require("./src/routes/actionRequests");
 
 const app = express();
 
@@ -41,7 +42,8 @@ app.use("/api/intakes",     intakesRoutes);
 app.use("/api/orders",      purchaseOrderRoutes);
 app.use("/api/approvals",   approvalsRoutes);
 app.use("/api/amendments",  amendmentsRoutes);
-app.use("/api/designations", designationsRoutes);
+app.use("/api/designations",    designationsRoutes);
+app.use("/api/action-requests", actionRequestRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {

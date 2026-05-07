@@ -576,7 +576,7 @@ export default function MasterData({ view = "vendor" }) {
 
             <div className="space-y-5 p-5">
               <div className="grid grid-cols-2 gap-3">
-                <InfoBox label="Vendor ID" value={viewVendor.vendorCode || "-"} />
+                <InfoBox label="Vendor Code" value={viewVendor.vendorCode || "-"} />
                 <InfoBox label="Total Work Value" value={formatINR(viewVendor.totalValue)} strong />
                 <InfoBox label="Company Code" value={(viewVendor.companyCodes || []).join(", ") || "-"} wide />
                 <InfoBox label="State" value={viewVendor.state || "-"} />

@@ -24,9 +24,9 @@ const getBrowser = async () => {
     const browser = await browserPromise;
     if (!browser.isConnected()) throw new Error("browser disconnected");
     return browser;
-  } catch {
-    browserPromise = launchBrowser();
-    return browserPromise;
+  } catch (err) {
+    browserPromise = null;
+    throw err;
   }
 };
 
@@ -82,7 +82,5 @@ const closeBrowser = async () => {
 
 process.on("SIGTERM", closeBrowser);
 process.on("SIGINT", closeBrowser);
-
-getBrowser().catch((err) => console.error("Puppeteer warmup failed:", err.message));
 
 module.exports = { renderPdf, closeBrowser };
