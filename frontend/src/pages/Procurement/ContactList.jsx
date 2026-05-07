@@ -539,6 +539,7 @@ export default function ContactList() {
 
   const handleSave = async () => {
     if (!form.personName.trim()) return showToast("Person Name required", "error");
+    if (!form.employeeId.trim()) return showToast("Employee ID required", "error");
     setSaving(true);
     try {
       const url    = editId ? `${API}/api/procurement/contacts/${editId}` : `${API}/api/procurement/contacts`;
@@ -1063,11 +1064,11 @@ export default function ContactList() {
                       <div className="md:col-span-2">
                         <Field label="Full Name *" value={form.personName}
                           onChange={e => setForm(f => ({ ...f, personName: e.target.value }))}
-                          placeholder="e.g. Mohammad Kashif Mansoorie" />
+                          placeholder="e.g. John Smith" />
                       </div>
-                      <Field label="Employee ID" value={form.employeeId}
+                      <Field label="Employee ID *" value={form.employeeId}
                         onChange={e => setForm(f => ({ ...f, employeeId: e.target.value }))}
-                        placeholder="e.g. BITL-095" />
+                        placeholder="e.g. EMP-001" />
                       <SelectField label="Current Status" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
                         <option value="active">Active</option>
                         <option value="inactive">Inactive</option>
@@ -1090,16 +1091,16 @@ export default function ContactList() {
                       </div>
                       <Field label="Department" value={form.department}
                         onChange={e => setForm(f => ({ ...f, department: e.target.value }))}
-                        placeholder="e.g. Monitoring" />
+                        placeholder="e.g. Accounts" />
                       <Field label="Designation" value={form.designation}
                         onChange={e => setForm(f => ({ ...f, designation: e.target.value }))}
                         placeholder="e.g. Team Lead" />
                       <Field label="Role / Specialization" value={form.role}
                         onChange={e => setForm(f => ({ ...f, role: e.target.value }))}
-                        placeholder="e.g. Energy Analyst" />
+                        placeholder="e.g. Site Engineer" />
                       <Field label="Team" value={form.team}
                         onChange={e => setForm(f => ({ ...f, team: e.target.value }))}
-                        placeholder="e.g. Monitoring Team" />
+                        placeholder="e.g. Civil Team" />
                     </div>
                   </div>
                 </div>
@@ -1124,10 +1125,10 @@ export default function ContactList() {
                     </div>
                     <Field label="Reporting Manager" value={form.reportingTo}
                       onChange={e => setForm(f => ({ ...f, reportingTo: e.target.value }))}
-                      placeholder="e.g. Gaurav Yadav" />
+                      placeholder="e.g. Reporting Manager Name" />
                     <Field label="Work Location" value={form.workLocation}
                       onChange={e => setForm(f => ({ ...f, workLocation: e.target.value }))}
-                      placeholder="e.g. Noida Office" />
+                      placeholder="e.g. Delhi Office" />
                   </div>
                 </div>
 
@@ -1143,14 +1144,14 @@ export default function ContactList() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Field label="Primary Phone" value={form.contactNumber} type="tel"
                       onChange={e => setForm(f => ({ ...f, contactNumber: e.target.value }))}
-                      placeholder="e.g. 8506076844" />
+                      placeholder="e.g. 9876543210" />
                     <Field label="Alternate Phone" value={form.alternatePhone} type="tel"
                       onChange={e => setForm(f => ({ ...f, alternatePhone: e.target.value }))}
                       placeholder="Optional" />
                     <div className="md:col-span-2">
                       <Field label="Work Email Address" value={form.email} type="email"
                         onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                        placeholder="e.g. kashif.mansoorie@bootes.in" />
+                        placeholder="e.g. name@company.com" />
                     </div>
                   </div>
                 </div>

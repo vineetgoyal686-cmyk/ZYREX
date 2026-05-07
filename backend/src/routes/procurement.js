@@ -1640,13 +1640,25 @@ router.post("/contacts", async (req, res) => {
             dateOfBirth, gender, maritalStatus, nationality,
             alternatePhone, address, joiningDate,
             createdById, createdByName } = req.body;
-    // Duplicate check: same employee_id already exists → skip
+    // Employee ID is required
+    if (!employeeId || !employeeId.trim()) {
+      return res.status(400).json({ error: "Employee ID is required" });
+    }
+    // Duplicate check 1: same employee_id already exists → skip
     if (employeeId && employeeId.trim()) {
       const { data: existing } = await supabase.schema("procurement").from("contacts")
         .select("id")
         .eq("employee_id", employeeId.trim())
         .maybeSingle();
-      if (existing) return res.status(409).json({ duplicate: true, message: "Contact already exists" });
+      if (existing) return res.status(409).json({ duplicate: true, message: "Contact with this Employee ID already exists" });
+    }
+    // Duplicate check 2: same person_name (case-insensitive) → skip
+    if (personName && personName.trim()) {
+      const { data: existingByName } = await supabase.schema("procurement").from("contacts")
+        .select("id")
+        .ilike("person_name", personName.trim())
+        .maybeSingle();
+      if (existingByName) return res.status(409).json({ duplicate: true, message: `"${personName.trim()}" naam ka contact already exists` });
     }
 
     const contactCode = await getNextContactCode();
