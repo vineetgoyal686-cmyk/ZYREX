@@ -1581,12 +1581,12 @@ router.delete("/companies/:id", async (req, res) => {
    CONTACTS
 ══════════════════════════════════════════ */
 /* helper: next contact_code (CON-001, CON-002...) */
-const getNextContactCode = async () => {
+const getNextContactCode = async (offset = 0) => {
   const { data } = await supabase.schema("procurement")
     .from("contacts").select("contact_code");
   const nums = (data || [])
     .map(r => parseInt((r.contact_code || "").replace("CON-", "")) || 0);
-  const next = nums.length ? Math.max(...nums) + 1 : 1;
+  const next = (nums.length ? Math.max(...nums) : 0) + 1 + offset;
   return `CON-${String(next).padStart(3, "0")}`;
 };
 
@@ -1698,6 +1698,16 @@ router.post("/contacts", async (req, res) => {
     let { data, error } = await supabase.schema("procurement").from("contacts").insert(fullPayload).select().single();
     if (error && missingContactColumn(error)) {
       ({ data, error } = await supabase.schema("procurement").from("contacts").insert(basePayload).select().single());
+    }
+    // Retry up to 5 times if contact_code unique collision (concurrent inserts)
+    for (let retry = 1; retry <= 5 && error?.code === "23505" && error?.message?.includes("contact_code"); retry++) {
+      const retryCode = await getNextContactCode(retry);
+      const retryPayload = { ...fullPayload, contact_code: retryCode };
+      ({ data, error } = await supabase.schema("procurement").from("contacts").insert(retryPayload).select().single());
+      if (error && missingContactColumn(error)) {
+        const retryBase = { ...basePayload, contact_code: retryCode };
+        ({ data, error } = await supabase.schema("procurement").from("contacts").insert(retryBase).select().single());
+      }
     }
     if (error) throw error;
     res.json({ success: true, id: data.id });

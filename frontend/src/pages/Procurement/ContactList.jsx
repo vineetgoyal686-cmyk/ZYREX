@@ -505,9 +505,9 @@ export default function ContactList() {
     setLoading(false);
   };
 
-  const showToast = (msg, type = "success") => {
+  const showToast = (msg, type = "success", duration = 6000) => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), duration);
   };
 
   const openAdd = () => {
@@ -783,6 +783,17 @@ export default function ContactList() {
 
   return (
     <div className="flex h-[calc(100vh-56px)] -mt-4 -mx-6 -mb-4 overflow-hidden">
+
+      {/* Import overlay — prevents accidental refresh/navigation */}
+      {importingContacts && (
+        <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center">
+          <div className="bg-white rounded-2xl px-10 py-8 shadow-2xl flex flex-col items-center gap-4">
+            <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-slate-700 font-semibold text-sm">Importing contacts…</p>
+            <p className="text-slate-400 text-xs">Please do not refresh or close this page</p>
+          </div>
+        </div>
+      )}
 
       {/* Toast */}
       {toast && (
