@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
-import { Plus, Upload, Search, Pencil, Trash2, X, Package, Image as ImageIcon, Eye, ChevronDown, Download, FileSpreadsheet, FileText } from "lucide-react";
+import { Plus, Upload, Search, Pencil, Trash2, X, Package, Image as ImageIcon, Eye, ChevronDown, Download, FileSpreadsheet, FileText, History } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
+import { logAudit } from "../../utils/auditLog";
+import LogPanel from "../../components/LogPanel";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const PER_PAGE = 10;
@@ -109,6 +111,7 @@ export default function ItemList() {
   const [saving, setSaving]       = useState(false);
   const [toast, setToast]         = useState(null);
   const [page, setPage]           = useState(1);
+  const [logTarget, setLogTarget] = useState(null);
   const [showExport, setShowExport] = useState(false);
   const [showBulk, setShowBulk]   = useState(false);
   const [bulkRows, setBulkRows]   = useState([]);
@@ -186,6 +189,7 @@ export default function ItemList() {
       const method = editId ? "PUT" : "POST";
       const res = await fetch(url, { method, body: fd });
       const result = await res.json();
+      logAudit("item", editId || result.id, form.materialName, editId ? "updated" : "created");
       showToast(editId ? "Item updated" : "Item added");
       setShowModal(false);
       if (editId) {
@@ -210,7 +214,9 @@ export default function ItemList() {
   const handleDelete = async (id) => {
     if (!confirm("Delete this item?")) return;
     try {
+      const itemName = items.find(i => i.id === id)?.materialName || "";
       await fetch(`${API}/api/procurement/items/${id}`, { method: "DELETE" });
+      logAudit("item", id, itemName, "deleted");
       showToast("Item deleted");
       fetchAll();
     } catch { showToast("Failed to delete", "error"); }
@@ -678,6 +684,9 @@ export default function ItemList() {
                           <Trash2 size={14} />
                         </button>
                       )}
+                      <button onClick={() => setLogTarget({ entityType: "item", entityId: item.id, entityName: item.materialName })} className="p-1.5 rounded-lg text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-all" title="Activity Log">
+                        <History size={14} />
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -952,6 +961,9 @@ export default function ItemList() {
             </div>
           </div>
         </div>
+      )}
+      {logTarget && (
+        <LogPanel entityType={logTarget.entityType} entityId={logTarget.entityId} entityName={logTarget.entityName} onClose={() => setLogTarget(null)} />
       )}
     </div>
   );

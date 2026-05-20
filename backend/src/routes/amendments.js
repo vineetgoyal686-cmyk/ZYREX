@@ -77,18 +77,12 @@ const nextAmendNumber = async (admin, currentNumber) => {
 };
 
 // True if the user can approve/reject amendment requests.
-// Global admin always passes; everyone else needs can_manage_amend on the `order` module.
+// Global admin always passes; everyone else must be listed as an amend request handler.
 const canManageAmend = async (admin, userId, role) => {
   if (role === "global_admin") return true;
-  const { data: orderMod } = await admin.from("modules").select("id").eq("module_key", "order").single();
-  if (!orderMod) return false;
-  const { data: perm } = await admin
-    .from("permissions")
-    .select("can_manage_amend")
-    .eq("module_id", orderMod.id)
-    .eq("user_id", userId)
-    .maybeSingle();
-  return !!perm?.can_manage_amend;
+  const { data } = await admin.from("request_handlers")
+    .select("users").eq("module_key", "order").eq("action_key", "amend").maybeSingle();
+  return (data?.users || []).some(u => String(u.id) === String(userId));
 };
 
 // True if the user is allowed to REQUEST an amendment.
@@ -377,14 +371,26 @@ router.post("/action", requireAuth, async (req, res) => {
       await admin.schema("procurement").from("purchase_order_items").insert(newItems);
     }
 
+    const origSnap = order.snapshot || {};
+    const origActLog = Array.isArray(origSnap.activity_log) ? [...origSnap.activity_log] : [];
+    const approvedAt = new Date().toISOString();
+    origActLog.push({
+      action: "Amended",
+      action_by: req.user.name || "",
+      action_at: approvedAt,
+      comments: `Amendment draft ${newNumber} created`,
+      ...(request.attachment_url ? { attachment_url: request.attachment_url } : {}),
+    });
+
     await admin.schema("procurement").from("purchase_orders")
-      .update({ status: "Amended" }).eq("id", request.original_order_id);
+      .update({ status: "Amended", snapshot: { ...origSnap, activity_log: origActLog } })
+      .eq("id", request.original_order_id);
 
     await admin.from("order_amendments").update({
       status:         "Approved",
       new_order_id:   clone.id,
       actioned_by_id: req.user.id,
-      actioned_at:    new Date().toISOString(),
+      actioned_at:    approvedAt,
     }).eq("id", request_id);
 
     res.json({ success: true, new_order_id: clone.id });
@@ -587,10 +593,62 @@ router.get("/by-clone/:cloneId", requireAuth, async (req, res) => {
 ───────────────────────────────────────── */
 router.post("/cancel", requireAuth, async (req, res) => {
   const admin = getAdminClient();
-  const { clone_order_id } = req.body;
-  if (!clone_order_id) return res.status(400).json({ error: "clone_order_id is required" });
+  const { clone_order_id, order_id, comment } = req.body;
+  if (!clone_order_id && !order_id) {
+    return res.status(400).json({ error: "clone_order_id or order_id is required" });
+  }
 
   try {
+    const isGlobalAdmin = req.user?.role === "global_admin";
+    const now = new Date().toISOString();
+
+    // A) Cancel a pending amendment request (before approval)
+    if (order_id && !clone_order_id) {
+      const { data: pendingRow, error: pendingErr } = await admin
+        .from("order_amendments")
+        .select("id, original_order_id, requestor_id, status")
+        .eq("original_order_id", order_id)
+        .eq("status", "Pending")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (pendingErr) throw pendingErr;
+      if (!pendingRow) return res.status(404).json({ error: "Pending amendment request not found." });
+
+      if (!isGlobalAdmin && String(pendingRow.requestor_id) !== String(req.user.id)) {
+        return res.status(403).json({ error: "Only the requester or a global admin can cancel this amendment request." });
+      }
+
+      const { error: amendErr } = await admin
+        .from("order_amendments")
+        .update({
+          status: "Cancelled",
+          actioned_by_id: req.user.id,
+          actioned_at: now,
+        })
+        .eq("id", pendingRow.id);
+      if (amendErr) throw amendErr;
+
+      const { error: restoreErr } = await admin.schema("procurement")
+        .from("purchase_orders")
+        .update({ status: "Issued" })
+        .eq("id", pendingRow.original_order_id);
+      if (restoreErr) throw restoreErr;
+
+      // Log to original order's activity_log
+      try {
+        const { data: origOrd } = await admin.schema("procurement")
+          .from("purchase_orders").select("snapshot").eq("id", pendingRow.original_order_id).single();
+        const snap = origOrd?.snapshot || {};
+        const actLog = Array.isArray(snap.activity_log) ? [...snap.activity_log] : [];
+        actLog.push({ action: "Amendment Request Cancelled", action_by: req.user.name || "", action_at: now, ...(comment ? { comments: comment } : {}) });
+        await admin.schema("procurement").from("purchase_orders")
+          .update({ snapshot: { ...snap, activity_log: actLog } }).eq("id", pendingRow.original_order_id);
+      } catch (logErr) { console.error("Amendment Request Cancelled log failed:", logErr); }
+
+      return res.json({ success: true, original_order_id: pendingRow.original_order_id });
+    }
+
     // 1. Fetch and validate the clone order itself
     const { data: clone, error: cErr } = await admin.schema("procurement")
       .from("purchase_orders")
@@ -607,12 +665,9 @@ router.post("/cancel", requireAuth, async (req, res) => {
     }
 
     // 2. Permission: created_by or global admin
-    const isGlobalAdmin = req.user?.role === "global_admin";
     if (!isGlobalAdmin && String(clone.created_by_id) !== String(req.userId)) {
       return res.status(403).json({ error: "Only the amendment creator or a global admin can cancel this amendment." });
     }
-
-    const now = new Date().toISOString();
 
     // 3. Best-effort audit lookup. The clone order is the source of truth here:
     // old failed attempts may already have nulled new_order_id or marked the row Cancelled.
@@ -671,10 +726,16 @@ router.post("/cancel", requireAuth, async (req, res) => {
     const { error: delErr } = await admin.schema("procurement").from("purchase_orders").delete().eq("id", clone_order_id);
     if (delErr) throw delErr;
 
-    // 5. Restore original order back to Issued
+    // 5. Restore original order back to Issued and record log entry
+    const { data: origOrd } = await admin.schema("procurement")
+      .from("purchase_orders").select("snapshot").eq("id", originalOrderId).single();
+    const origSnap = origOrd?.snapshot || {};
+    const origActLog = Array.isArray(origSnap.activity_log) ? [...origSnap.activity_log] : [];
+    origActLog.push({ action: "Amendment Cancelled", action_by: req.user.name || "", action_at: now, ...(comment ? { comments: comment } : {}) });
+
     const { error: restoreErr } = await admin.schema("procurement")
       .from("purchase_orders")
-      .update({ status: "Issued" })
+      .update({ status: "Issued", snapshot: { ...origSnap, activity_log: origActLog } })
       .eq("id", originalOrderId);
     if (restoreErr) throw restoreErr;
 

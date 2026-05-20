@@ -89,6 +89,43 @@ const getHTML = (points) => {
   return `<ol>${pts.map(p => `<li>${normalize(p)}</li>`).join('')}</ol>`;
 };
 
+// Converts stored <ol><li> HTML to Quill-native flat format.
+// Quill manages its own <ol> wrapper, so we strip it and pass only <li data-list> items.
+const prepareForQuillEditor = (html) => {
+  if (!html || typeof document === "undefined") return html;
+  // Already Quill-native format (has data-list) — use as-is
+  if (html.includes('data-list')) return html;
+
+  const div = document.createElement("div");
+  div.innerHTML = html;
+  let result = "";
+
+  const processList = (list, depth) => {
+    const listType = list.tagName === "OL" ? "ordered" : "bullet";
+    Array.from(list.children).forEach(li => {
+      if (li.tagName !== "LI") return;
+      const liClone = li.cloneNode(true);
+      // Remove nested list elements from clone (process them separately below)
+      Array.from(liClone.children).forEach(child => {
+        if (child.tagName === "OL" || child.tagName === "UL") liClone.removeChild(child);
+      });
+      const indentAttr = depth > 0 ? ` class="ql-indent-${depth}"` : "";
+      result += `<li data-list="${listType}"${indentAttr}>${liClone.innerHTML}</li>`;
+      // Recurse into nested lists
+      Array.from(li.children).forEach(child => {
+        if (child.tagName === "OL" || child.tagName === "UL") processList(child, depth + 1);
+      });
+    });
+  };
+
+  Array.from(div.children).forEach(child => {
+    if (child.tagName === "OL" || child.tagName === "UL") processList(child, 0);
+    else result += child.outerHTML;
+  });
+
+  return result || html;
+};
+
 const stripHTMLToText = (html) => {
   if (!html) return "";
   const tmp = document.createElement("DIV");
@@ -268,6 +305,7 @@ const QUILL_MODULES = {
     [{ 'color': [] }, { 'background': [] }],
     [{ 'list': 'ordered'}, { 'list': 'bullet' }],
     [{ 'indent': '-1'}, { 'indent': '+1' }],
+    [{ 'align': [] }],
     ['clean']
   ]
 };
@@ -308,8 +346,13 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
   const [clauses,    setClauses]    = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading,    setLoading]    = useState(true);
-  const [search,     setSearch]     = useState("");
-  const [filterCat,  setFilterCat]  = useState("");
+  const [search,       setSearch]       = useState("");
+  const [filterCats,   setFilterCats]   = useState([]); // multi-select
+  const [filterTitles, setFilterTitles] = useState([]); // multi-select
+  const [catDropOpen,  setCatDropOpen]  = useState(false);
+  const [titleDropOpen,setTitleDropOpen]= useState(false);
+  const [catSearch,    setCatSearch]    = useState("");
+  const [titleSearch,  setTitleSearch]  = useState("");
   const [page,       setPage]       = useState(1);
 
   const [showModal, setShowModal] = useState(false);
@@ -317,6 +360,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
   const [editId,    setEditId]    = useState(null);
   const [saving,    setSaving]    = useState(false);
   const [toast,     setToast]     = useState(null);
+  const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
 
   const [showExport, setShowExport] = useState(false);
   const [showBulk,   setShowBulk]   = useState(false);
@@ -329,6 +373,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
   const [versions,        setVersions]        = useState([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [expandedVersion, setExpandedVersion] = useState(null);
+  const [activeVersionId, setActiveVersionId] = useState(null); // action-only "Active" selection
 
   /* ── View clause state ── */
   const [viewClause, setViewClause] = useState(null);
@@ -339,6 +384,11 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
 
   const mkey = type === "TC" ? "term_condition" : type === "PAY" ? "payment_terms" : type === "GOV" ? "government_laws" : "annexure";
   const { isGlobalAdmin, canAdd, canEdit, canDelete, canExport, canBulk } = useModulePermissions(mkey);
+  const actionOverlayZ = isActionOnly ? "z-[1200]" : "z-40";
+  const actionDrawerZ = isActionOnly ? "z-[1201]" : "z-50";
+  const actionModalZ = isActionOnly ? "z-[1210]" : "z-50";
+  const actionConfirmZ = isActionOnly ? "z-[1220]" : "z-[80]";
+  const actionToastZ = isActionOnly ? "z-[1230]" : "z-[70]";
 
   useEffect(() => { fetchAll(); }, [type]);
 
@@ -373,15 +423,30 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
     setTimeout(() => setToast(null), 3000);
   };
 
+  const closeViewDrawer = () => {
+    setViewClause(null);
+    if (isActionOnly && onCloseModal) onCloseModal();
+  };
+
+  const closeHistoryDrawer = () => {
+    setHistoryClause(null);
+    if (isActionOnly && onCloseModal) onCloseModal();
+  };
+
+  const closeEditorModal = () => {
+    setShowModal(false);
+    if (isActionOnly && onCloseModal) onCloseModal();
+  };
+
   /* ── Modal open ── */
   const openAdd  = () => { setForm(emptyForm); setEditId(null); setShowModal(true); };
   const openEdit = (c) => {
-    setForm({ title: c.title, category: c.category || "", content: getHTML(c.points) });
+    setForm({ title: c.title, category: c.category || "", content: prepareForQuillEditor(getHTML(c.points)) });
     setEditId(c.id);
     setShowModal(true);
   };
   const openHistoryEdit = (c, v) => {
-    setForm({ title: v.title || c.title, category: v.category || c.category || "", content: getHTML(v.points) });
+    setForm({ title: v.title || c.title, category: v.category || c.category || "", content: prepareForQuillEditor(getHTML(v.points)) });
     setEditId(c.id);
     setShowModal(true);
   };
@@ -413,17 +478,18 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
       setShowModal(false);
       fetchAll();
       if (historyClause) openHistory(historyClause);
-      if (isActionOnly && !historyClause && onCloseModal) onCloseModal();
+      if (isActionOnly && !historyClause && onCloseModal) onCloseModal([normalizedContent]);
     } catch (err) { showToast(err.message, "error"); }
     setSaving(false);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("Delete this clause?")) return;
-    try {
-      await fetch(`${API}/api/procurement/clauses/${id}`, { method: "DELETE" });
-      showToast("Deleted"); fetchAll();
-    } catch { showToast("Delete failed", "error"); }
+  const handleDelete = (id) => {
+    setConfirmModal({ message: "Delete this clause? This cannot be undone.", onConfirm: async () => {
+      try {
+        await fetch(`${API}/api/procurement/clauses/${id}`, { method: "DELETE" });
+        showToast("Deleted"); fetchAll();
+      } catch { showToast("Delete failed", "error"); }
+    }});
   };
 
   /* ── Version history ── */
@@ -431,6 +497,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
     setHistoryClause(c);
     setVersions([]);
     setExpandedVersion(null);
+    setActiveVersionId(null);
     setVersionsLoading(true);
     try {
       const res = await fetch(`${API}/api/procurement/clauses/${c.id}/versions`);
@@ -438,33 +505,36 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
       setVersions(data.versions || []);
       // Auto-expand latest (last) version
       if (data.versions?.length) setExpandedVersion(data.versions[data.versions.length - 1].version);
+      // Auto-select latest as active (for action-only apply)
+      if (data.versions?.length) setActiveVersionId(data.versions[data.versions.length - 1].id);
     } catch { setVersions([]); }
     setVersionsLoading(false);
   };
 
-  const handleDeleteVersion = async (versionId, e) => {
+  const handleDeleteVersion = (versionId, e) => {
     e.stopPropagation();
-    if (!confirm("Delete this version?")) return;
-    try {
-      const res = await fetch(`${API}/api/procurement/clauses/versions/${versionId}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Delete failed");
-      showToast("Version deleted");
-      openHistory(historyClause);
-    } catch {
-      showToast("Delete version failed", "error");
-    }
+    setConfirmModal({ message: "Delete this version? This cannot be undone.", onConfirm: async () => {
+      try {
+        const res = await fetch(`${API}/api/procurement/clauses/versions/${versionId}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Delete failed");
+        showToast("Version deleted");
+        openHistory(historyClause);
+      } catch {
+        showToast("Delete version failed", "error");
+      }
+    }});
   };
 
   /* ── Bulk ── */
   const downloadTemplate = () => {
     const example = [
-      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "1",   "Content": "First main point" },
-      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "1.1", "Content": "Sub-point of first point" },
-      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "1.2", "Content": "Another sub-point" },
-      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "2",   "Content": "Second main point" },
-      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "3",   "Content": "Third main point" },
-      { "Code": `${prefix}-2`, "Category": "Civil", "Title": "Another Clause", "Point No": "1",   "Content": "First point of another clause" },
-      { "Code": `${prefix}-2`, "Category": "Civil", "Title": "Another Clause", "Point No": "2",   "Content": "Second point of another clause" },
+      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "1", "Content": "First main point" },
+      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "A", "Content": "Sub-point A of first point" },
+      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "B", "Content": "Sub-point B of first point" },
+      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "2", "Content": "Second main point" },
+      { "Code": `${prefix}-1`, "Category": "Civil", "Title": "Standard Terms", "Point No": "3", "Content": "Third main point" },
+      { "Code": `${prefix}-2`, "Category": "Civil", "Title": "Another Clause", "Point No": "1", "Content": "First point of another clause" },
+      { "Code": `${prefix}-2`, "Category": "Civil", "Title": "Another Clause", "Point No": "2", "Content": "Second point of another clause" },
     ];
     const ws = XLSX.utils.json_to_sheet(example);
     const wb = XLSX.utils.book_new();
@@ -495,13 +565,16 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
         if (content) groupMap.get(key).items.push({ pointNo, content });
       });
 
-      // Build HTML from items — dot notation (1.1, 1.2) → sub-points with ql-indent-1
+      // Build HTML from items — "A"/"B"/"C" or "1.1"/"1.2" → sub-points with ql-indent-1
       const buildHTML = (items) => {
         if (!items.length) return "";
         let html = "<ol>";
         items.forEach(({ pointNo, content }) => {
-          const dots = (pointNo.match(/\./g) || []).length; // 0=main, 1=sub, 2=sub-sub
-          const indentClass = dots > 0 ? ` class="ql-indent-${dots}"` : "";
+          const isLetter = /^[A-Za-z]+$/.test(pointNo);          // A, B, C → sub-point
+          const dots = (pointNo.match(/\./g) || []).length;       // 1.1, 1.2 → legacy
+          const hasLetterSuffix = /^\d+[A-Za-z]+$/.test(pointNo); // 1A, 1B → legacy
+          const level = isLetter || hasLetterSuffix ? 1 : dots;
+          const indentClass = level > 0 ? ` class="ql-indent-${level}"` : "";
           html += `<li${indentClass}>${content}</li>`;
         });
         html += "</ol>";
@@ -578,11 +651,13 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
   };
 
   /* ── Filter + Paginate ── */
-  const uniqueCats = [...new Set(clauses.map(c => c.category).filter(Boolean))].sort();
-  const filtered   = clauses.filter(c => {
-    const ms = !search    || c.title.toLowerCase().includes(search.toLowerCase()) || c.code.toLowerCase().includes(search.toLowerCase());
-    const mc = !filterCat || c.category === filterCat;
-    return ms && mc;
+  const uniqueCats   = [...new Set(clauses.map(c => c.category).filter(Boolean))].sort();
+  const uniqueTitles = [...new Set(clauses.map(c => c.title).filter(Boolean))].sort();
+  const filtered = clauses.filter(c => {
+    const ms = !search        || c.title.toLowerCase().includes(search.toLowerCase()) || c.code.toLowerCase().includes(search.toLowerCase());
+    const mc = !filterCats.length   || filterCats.includes(c.category);
+    const mt = !filterTitles.length || filterTitles.includes(c.title);
+    return ms && mc && mt;
   });
   const totalPages = Math.ceil(filtered.length / PER_PAGE) || 1;
   const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -617,23 +692,53 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
           font-size: 0.875rem;
           color: #334155;
           line-height: 1.6;
+          text-align: justify;
         }
         .ql-editor.ql-blank::before {
           color: #94a3b8;
           font-style: normal;
+          text-align: left;
         }
-        /* Sub-point numbering — default (alpha) */
-        .quill-content ol { padding-left: 1.5em; list-style-type: decimal; }
-        .quill-content ol ol { list-style-type: lower-alpha; }
-        .quill-content ol ol ol { list-style-type: lower-roman; }
-        .quill-content ul { padding-left: 1.5em; list-style-type: disc; }
-        .quill-content li { margin-bottom: 2px; }
+        .ql-editor ol { padding-left: 1.2em; }
+        .ql-editor ol li:not(.ql-direction-rtl) { padding-left: 1.5em; }
+        .ql-editor ul li:not(.ql-direction-rtl) { padding-left: 1.5em; }
+        .ql-editor li::before { margin-left: -1.5em; width: 1.2em; }
+        /* View content */
+        .quill-content { text-align: justify; }
+        .quill-content p { text-align: justify; margin-bottom: 4px; }
+        /* Sub-point numbering — flush with surrounding text */
+        .quill-content ol { padding-left: 1.2em; margin-left: 0; }
+        .quill-content ol > li { list-style-type: decimal; margin-bottom: 2px; padding-left: 0.3em; }
+        .quill-content ol ol { padding-left: 1.2em; }
+        .quill-content ol ol > li { list-style-type: lower-alpha; }
+        .quill-content ol ol ol > li { list-style-type: lower-roman; }
+        .quill-content ul { padding-left: 1.2em; margin-left: 0; }
+        .quill-content ul > li { list-style-type: disc; margin-bottom: 2px; }
       `}</style>
 
 
+      {/* Confirm Modal */}
+      {confirmModal && (
+        <div className={`fixed inset-0 ${actionConfirmZ} flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm`}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-4">
+            <p className="text-sm font-semibold text-slate-700 leading-relaxed">{confirmModal.message}</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">
+                Cancel
+              </button>
+              <button onClick={() => { confirmModal.onConfirm(); setConfirmModal(null); }}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors">
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toast */}
       {toast && (
-        <div className={`fixed top-5 right-5 z-[70] px-4 py-3 rounded-xl text-sm font-medium shadow-lg
+        <div className={`fixed top-5 right-5 ${actionToastZ} px-4 py-3 rounded-xl text-sm font-medium shadow-lg
           ${toast.kind === "error" ? "bg-red-50 text-red-700 border border-red-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
           {toast.msg}
         </div>
@@ -644,8 +749,8 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
       ══════════════════════════════════ */}
       {historyClause && (
         <>
-          <div className="fixed inset-0 bg-black/30 z-40 backdrop-blur-sm" onClick={() => setHistoryClause(null)} />
-          <div className="fixed top-0 right-0 h-full w-full max-w-[560px] bg-white z-50 shadow-2xl flex flex-col">
+          <div className={`fixed inset-0 bg-black/30 ${actionOverlayZ} backdrop-blur-sm`} onClick={closeHistoryDrawer} />
+          <div className={`fixed top-0 right-0 h-full w-full max-w-[720px] bg-white ${actionDrawerZ} shadow-2xl flex flex-col`}>
 
             {/* Drawer Header */}
             <div className={`px-6 py-5 border-b border-slate-100 shrink-0 bg-gradient-to-r ${headerBg}`}>
@@ -656,7 +761,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs text-slate-500 mb-0.5">Version History</p>
-                    <h2 className="text-base font-bold text-slate-800 truncate">{historyClause.title}</h2>
+                    <h2 className="text-base font-bold text-slate-800 leading-snug break-words">{historyClause.title}</h2>
                     <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${badgeCls}`}>{historyClause.code}</span>
                       {historyClause.category && (
@@ -668,7 +773,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                     </div>
                   </div>
                 </div>
-                <button type="button" onClick={() => { setHistoryClause(null); if (isActionOnly && onCloseModal) onCloseModal(); }}
+                <button type="button" onClick={closeHistoryDrawer}
                   className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 shrink-0 transition-all">
                   <X size={20} />
                 </button>
@@ -686,6 +791,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                   {versions.map((v, idx) => {
                     const isLatest   = idx === versions.length - 1; // last = newest
                     const isExpanded = expandedVersion === v.version;
+                    const isActiveSelected = activeVersionId ? activeVersionId === v.id : isLatest;
                     return (
                       <div key={v.id}
                         className={`rounded-2xl border transition-all overflow-hidden
@@ -694,7 +800,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                         {/* Version Header */}
                         <div
                           onClick={() => setExpandedVersion(isExpanded ? null : v.version)}
-                          className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-slate-50 transition-colors text-left cursor-pointer">
+                          className="w-full flex items-start justify-between px-4 py-3.5 hover:bg-slate-50 transition-colors text-left cursor-pointer">
                           <div className="flex items-center gap-3 min-w-0 flex-1">
                             {/* Version badge */}
                             <div className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm
@@ -708,40 +814,43 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                                     <CheckCircle size={11} /> Current
                                   </span>
                                 )}
+                                {isActiveSelected && !isLatest && (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">
+                                    Active
+                                  </span>
+                                )}
                                 {v.version === 1 && !isLatest && (
                                   <span className="text-xs text-slate-400 font-medium">Original</span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                                <span className="flex items-center gap-1 text-xs text-slate-600">
+                              <div className="mt-1 space-y-1">
+                                <div className="flex min-w-0 items-center gap-1 text-xs text-slate-600">
                                   <User size={10} className="text-slate-400" />
-                                  <span className="font-semibold">{v.editedBy}</span>
-                                </span>
-                                <span className="flex items-center gap-1 text-xs text-slate-400">
+                                  <span className="font-semibold truncate">{v.editedBy}</span>
+                                </div>
+                                <div className="flex min-w-0 items-center gap-1 text-xs text-slate-400">
                                   <Clock size={10} />
-                                  {fmtDate(v.editedAt)}
-                                </span>
+                                  <span className="truncate">{fmtDate(v.editedAt)}</span>
+                                </div>
                               </div>
                               {/* Title if different */}
-                              <p className="text-xs text-slate-500 truncate mt-0.5">{v.title}</p>
+                              <p className="text-xs text-slate-500 mt-1 break-words">{v.title}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-2 shrink-0 ml-2">
-                            {isActionOnly && (
-                              <button 
-                                onClick={(e) => { 
-                                  e.stopPropagation(); 
-                                  console.log("Applying points:", v.points);
-                                  onCloseModal(v.points); 
-                                }} 
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-bold text-[10px] uppercase tracking-wider transition-all
-                                  ${isLatest 
-                                    ? "bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100" 
-                                    : "bg-indigo-50 border-indigo-200 text-indigo-600 hover:bg-indigo-100"}`}
-                                title="Apply this specific version to the order">
-                                <CheckCircle size={12} /> Apply
-                              </button>
-                            )}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveVersionId(v.id);
+                            }}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-bold text-[10px] uppercase tracking-wider transition-all
+                              ${isActiveSelected
+                                ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                                : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"}`}
+                            title="Set this version as Active"
+                          >
+                            {isActiveSelected ? "Active" : "Set Active"}
+                          </button>
                             {canEdit && (
                               <button onClick={(e) => { e.stopPropagation(); openHistoryEdit(historyClause, v); }}
                                 className="p-1 px-2 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all border border-transparent hover:border-indigo-100"
@@ -781,10 +890,26 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
               <p className="text-xs text-slate-400">
                 {versions.length > 0 ? `Last edited by ${versions[versions.length - 1]?.editedBy}` : "No edits yet"}
               </p>
-              <button type="button" onClick={() => { setHistoryClause(null); if (isActionOnly && onCloseModal) onCloseModal(); }}
-                className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-100 transition-all">
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                {isActionOnly && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const selected = versions.find((x, i) => (activeVersionId ? x.id === activeVersionId : i === versions.length - 1));
+                      if (selected) onCloseModal(selected.points);
+                      else onCloseModal();
+                    }}
+                    className="px-4 py-2 rounded-xl bg-slate-950 text-white text-sm font-bold hover:bg-slate-800 transition-all"
+                    title="Apply the active version to the order"
+                  >
+                    Apply Active
+                  </button>
+                )}
+                <button type="button" onClick={closeHistoryDrawer}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-100 transition-all">
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </>
@@ -882,28 +1007,103 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
       )}
 
       {/* ── SEARCH + FILTER ── */}
-      <div className="flex items-center gap-2 mb-5 flex-wrap">
-        <div className="relative flex-1 min-w-48">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+      <div className="flex items-center justify-between mb-5" onClick={() => { setCatDropOpen(false); setTitleDropOpen(false); }}>
+        {/* Search — pill style */}
+        <div className="relative">
+          <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
             placeholder="Search by code or title…"
-            className="w-full pl-9 pr-4 h-10 rounded-xl border border-slate-200 text-sm outline-none focus:border-slate-400 bg-white text-slate-700" />
+            className="pl-9 pr-4 h-11 w-80 rounded-lg border border-slate-200 shadow-sm text-sm outline-none focus:border-slate-400 focus:shadow-md bg-white text-slate-600 placeholder-slate-400 transition-all" />
         </div>
-        <div className="relative">
-          <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setPage(1); }}
-            className="h-10 pl-3 pr-8 rounded-xl border border-slate-200 text-sm outline-none focus:border-slate-400 bg-white text-slate-600 min-w-44 appearance-none cursor-pointer">
-            <option value="">All Categories</option>
-            {uniqueCats.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
-        {filterCat && (
-          <button onClick={() => { setFilterCat(""); setPage(1); }}
-            className="h-10 flex items-center gap-1.5 px-3 rounded-xl border border-slate-200 text-sm text-slate-500 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all bg-white">
-            <X size={13} /> Clear
-          </button>
-        )}
-        <span className="text-xs text-slate-400 ml-auto">{filtered.length} clause{filtered.length !== 1 ? "s" : ""}</span>
+
+        {/* Right side — filters + count */}
+        <div className="flex items-center gap-3">
+
+          {/* Category multi-select */}
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <button onClick={() => { setCatDropOpen(o => !o); setTitleDropOpen(false); }}
+              className={`h-11 pl-4 pr-8 rounded-2xl border text-sm font-medium flex items-center w-44 shadow-sm transition-all relative ${filterCats.length ? 'border-indigo-300 text-indigo-700 bg-indigo-50' : 'border-slate-200 text-slate-600 bg-white hover:border-slate-300'}`}>
+              {filterCats.length ? `Category (${filterCats.length})` : 'Category'}
+              <ChevronDown size={11} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            </button>
+            {catDropOpen && (
+              <div className="absolute top-full mt-2 right-0 z-50 bg-white border border-slate-200 shadow-xl rounded-xl w-52 overflow-hidden">
+                <div className="p-2 border-b border-slate-100">
+                  <input autoFocus value={catSearch} onChange={e => setCatSearch(e.target.value)}
+                    placeholder="Search…" className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 outline-none focus:border-slate-400 bg-slate-50" />
+                </div>
+                <div className="max-h-48 overflow-y-auto">
+                  {uniqueCats.filter(c => c.toLowerCase().includes(catSearch.toLowerCase())).map(c => (
+                    <label key={c} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                      <input type="checkbox" checked={filterCats.includes(c)}
+                        onChange={() => { setFilterCats(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]); setPage(1); }} />
+                      <span className="text-xs text-slate-700">{c}</span>
+                    </label>
+                  ))}
+                  {uniqueCats.filter(c => c.toLowerCase().includes(catSearch.toLowerCase())).length === 0 && (
+                    <p className="px-3 py-3 text-xs text-slate-400">No categories</p>
+                  )}
+                </div>
+                {filterCats.length > 0 && (
+                  <div className="p-2 border-t border-slate-100">
+                    <button onClick={() => { setFilterCats([]); setPage(1); }} className="text-xs text-red-500 hover:text-red-700 font-medium">Clear</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Title multi-select */}
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <button onClick={() => { setTitleDropOpen(o => !o); setCatDropOpen(false); }}
+              className={`h-11 pl-4 pr-8 rounded-2xl border text-sm font-medium flex items-center w-44 shadow-sm transition-all relative ${filterTitles.length ? 'border-indigo-300 text-indigo-700 bg-indigo-50' : 'border-slate-200 text-slate-600 bg-white hover:border-slate-300'}`}>
+              {filterTitles.length ? `Title (${filterTitles.length})` : 'Title'}
+              <ChevronDown size={11} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            </button>
+            {titleDropOpen && (
+              <div className="absolute top-full mt-2 right-0 z-50 bg-white border border-slate-200 shadow-xl rounded-xl w-64 overflow-hidden">
+                <div className="p-2 border-b border-slate-100">
+                  <input autoFocus value={titleSearch} onChange={e => setTitleSearch(e.target.value)}
+                    placeholder="Search…" className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 outline-none focus:border-slate-400 bg-slate-50" />
+                </div>
+                <div className="max-h-48 overflow-y-auto">
+                  {uniqueTitles.filter(t => t.toLowerCase().includes(titleSearch.toLowerCase())).map(t => (
+                    <label key={t} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                      <input type="checkbox" checked={filterTitles.includes(t)}
+                        onChange={() => { setFilterTitles(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]); setPage(1); }} />
+                      <span className="text-xs text-slate-700 truncate">{t}</span>
+                    </label>
+                  ))}
+                  {uniqueTitles.filter(t => t.toLowerCase().includes(titleSearch.toLowerCase())).length === 0 && (
+                    <p className="px-3 py-3 text-xs text-slate-400">No titles</p>
+                  )}
+                </div>
+                {filterTitles.length > 0 && (
+                  <div className="p-2 border-t border-slate-100">
+                    <button onClick={() => { setFilterTitles([]); setPage(1); }} className="text-xs text-red-500 hover:text-red-700 font-medium">Clear</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Clear all */}
+          {(filterCats.length > 0 || filterTitles.length > 0) && (
+            <button onClick={() => { setFilterCats([]); setFilterTitles([]); setPage(1); }}
+              className="h-11 px-4 rounded-2xl border border-red-200 text-sm text-red-500 hover:bg-red-50 transition-all bg-white shadow-sm flex items-center gap-1.5 font-medium">
+              <X size={11} /> Clear
+            </button>
+          )}
+
+          {/* Count box */}
+          <div className="h-11 flex items-center gap-2 px-4 rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <span className={`text-xs font-bold ${badgeCls}`}>{prefix}</span>
+            <div className="w-px h-4 bg-slate-200" />
+            <span className="text-xs font-semibold text-slate-700">{filtered.length}</span>
+            <span className="text-xs text-slate-400">clause{filtered.length !== 1 ? "s" : ""}</span>
+          </div>
+
+        </div>{/* end right group */}
       </div>
 
       {/* ── CARDS GRID ── */}
@@ -1015,8 +1215,8 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
       ══════════════════════════════ */}
       {viewClause && (
         <>
-          <div className="fixed inset-0 bg-black/30 z-40 backdrop-blur-sm" onClick={() => setViewClause(null)} />
-          <div className="fixed top-0 right-0 h-full w-full max-w-[560px] bg-white z-50 shadow-2xl flex flex-col">
+          <div className={`fixed inset-0 bg-black/30 ${actionOverlayZ} backdrop-blur-sm`} onClick={closeViewDrawer} />
+          <div className={`fixed top-0 right-0 h-full w-full max-w-[560px] bg-white ${actionDrawerZ} shadow-2xl flex flex-col`}>
             {/* Header */}
             <div className={`px-6 py-5 border-b border-slate-100 shrink-0 bg-gradient-to-r ${headerBg}`}>
               <div className="flex items-start justify-between gap-3">
@@ -1037,7 +1237,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                     </p>
                   </div>
                 </div>
-                <button type="button" onClick={() => { setViewClause(null); if (isActionOnly && onCloseModal) onCloseModal(); }}
+                <button type="button" onClick={closeViewDrawer}
                   className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 shrink-0">
                   <X size={20} />
                 </button>
@@ -1061,7 +1261,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                 className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-100 transition-all">
                 <History size={13} /> History
               </button>
-              <button type="button" onClick={() => { setViewClause(null); if (isActionOnly && onCloseModal) onCloseModal(); }}
+              <button type="button" onClick={closeViewDrawer}
                 className="ml-auto px-4 py-2 rounded-xl border border-slate-200 text-slate-500 text-sm font-medium hover:bg-slate-100 transition-all">
                 Close
               </button>
@@ -1074,7 +1274,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
           ADD / EDIT MODAL
       ══════════════════════════════ */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+        <div className={`fixed inset-0 ${actionModalZ} flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm`}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
               <div className="flex items-center gap-2">
@@ -1090,7 +1290,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                   </p>
                 </div>
               </div>
-              <button type="button" onClick={() => { setShowModal(false); if (isActionOnly && onCloseModal) onCloseModal(); }} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100">
+              <button type="button" onClick={closeEditorModal} className="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100">
                 <X size={18} />
               </button>
             </div>
@@ -1128,7 +1328,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                     Use the toolbar to bold text, add colors, or create standard and nested lists. Nested list items appear as a, b, c…
                   </p>
                 </div>
-                <div className="bg-white rounded-xl border border-slate-200 quill-content">
+                <div className="bg-white rounded-xl border border-slate-200">
                   <ReactQuill
                     theme="snow"
                     value={form.content}
@@ -1144,7 +1344,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
                 <User size={11} /> Saving as: <span className="font-semibold text-slate-600 ml-1">{getCurrentUser()}</span>
               </p>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => { setShowModal(false); if (isActionOnly && onCloseModal) onCloseModal(); }}
+                <button type="button" onClick={closeEditorModal}
                   className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-200 transition-all">
                   Cancel
                 </button>

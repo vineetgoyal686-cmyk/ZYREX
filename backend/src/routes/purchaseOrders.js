@@ -58,6 +58,14 @@ const shortDbError = (error) => error?.message || error?.details || String(error
 const HISTORY_ID_PREFIX = "history:";
 const isHistoryId = (id = "") => String(id).startsWith(HISTORY_ID_PREFIX);
 const getHistoryRows = (order = {}) => Array.isArray(order.snapshot?.status_history) ? order.snapshot.status_history : [];
+const hasRecallHistory = (order = {}) => {
+  const snapshot = order.snapshot || {};
+  const matchesRecall = (entry) => String(entry?.action || entry?._history_action || "").toLowerCase() === "recalled";
+  return order.status === "Recalled" ||
+    matchesRecall(order) ||
+    (Array.isArray(snapshot.activity_log) && snapshot.activity_log.some(matchesRecall)) ||
+    (Array.isArray(snapshot.status_history) && snapshot.status_history.some(matchesRecall));
+};
 const makeHistoryListOrder = (order, history) => {
   const frozen = history.order || {};
   return sanitizeRichTextDeep({
@@ -169,6 +177,7 @@ const uploadToStorage = async (bucket, path, buffer, mimetype) => {
 const signOrderDocUrl = (value) => createSignedStorageUrl(supabase, "procurement-docs", value);
 const signProcImageUrl = (value) => createSignedStorageUrl(supabase, "procurement-images", value);
 const signVendorDocUrl = (value) => createSignedStorageUrl(supabase, "vendor-docs", value);
+const signAvatarUrl = (value) => createSignedStorageUrl(supabase, "avatars", value);
 
 const signDocArray = async (docs = []) => Promise.all((Array.isArray(docs) ? docs : []).map(async doc => {
   const storagePath = normalizeStoragePath(doc.storage_path || doc.url, "procurement-docs");
@@ -245,6 +254,29 @@ const signVendorDocs = async (vendor = {}) => {
 
 const signOrderStorageUrls = async (order = {}) => {
   const snapshot = { ...(order.snapshot || {}) };
+  const totals = { ...(order.totals || {}) };
+  let issuedBy = totals.issuedBy ? { ...totals.issuedBy } : null;
+
+  // Enrich issuedBy with current user profile data if id is present.
+  // This guarantees designation/name/signature show up even for older orders
+  // where these fields were not captured at issue time.
+  if (issuedBy?.id) {
+    try {
+      const { data: profile } = await supabase
+        .from("users")
+        .select("name, designation, profile_permissions")
+        .eq("id", issuedBy.id)
+        .maybeSingle();
+      if (profile) {
+        if (!issuedBy.name && profile.name) issuedBy.name = profile.name;
+        if (!issuedBy.designation && profile.designation) issuedBy.designation = profile.designation;
+        if (!issuedBy.signatureFile && profile.profile_permissions?.ui?.signature) {
+          issuedBy.signatureFile = profile.profile_permissions.ui.signature;
+        }
+      }
+    } catch { /* silent — fallback to whatever was stored */ }
+  }
+
   const [
     quotationUrl,
     comparativeSheetUrl,
@@ -254,6 +286,7 @@ const signOrderStorageUrls = async (order = {}) => {
     vendors,
     snapshotCompany,
     snapshotVendor,
+    issuerSignatureUrl,
   ] = await Promise.all([
     signOrderDocUrl(order.quotation_url),
     signOrderDocUrl(order.comparative_sheet_url),
@@ -263,10 +296,25 @@ const signOrderStorageUrls = async (order = {}) => {
     order.vendors ? signVendorDocs(order.vendors) : Promise.resolve(order.vendors),
     snapshot.company ? signCompanyImages(snapshot.company) : Promise.resolve(snapshot.company),
     snapshot.vendor ? signVendorDocs(snapshot.vendor) : Promise.resolve(snapshot.vendor),
+    issuedBy?.signatureFile ? signAvatarUrl(issuedBy.signatureFile) : Promise.resolve(null),
   ]);
 
   if (snapshot.company) snapshot.company = snapshotCompany;
   if (snapshot.vendor) snapshot.vendor = snapshotVendor;
+  if (issuedBy) {
+    if (issuerSignatureUrl) issuedBy.signatureUrl = issuerSignatureUrl;
+    totals.issuedBy = issuedBy;
+  }
+
+  // Sign attachment_url in activity_log entries (amendment proofs, etc.)
+  if (Array.isArray(snapshot.activity_log)) {
+    snapshot.activity_log = await Promise.all(
+      snapshot.activity_log.map(async entry => {
+        if (!entry.attachment_url) return entry;
+        return { ...entry, attachment_url: await signOrderDocUrl(entry.attachment_url) };
+      })
+    );
+  }
 
   return {
     ...order,
@@ -277,6 +325,7 @@ const signOrderStorageUrls = async (order = {}) => {
     companies,
     vendors,
     snapshot,
+    totals,
   };
 };
 
@@ -425,18 +474,70 @@ router.delete("/serialization/:id", async (req, res) => {
    PURCHASE ORDERS CRUD
    ════════════════════════════════════ */
 
+// Lightweight count for Sidebar badge — avoids fetching full orders list
+router.get("/pending-count", async (req, res) => {
+  try {
+    const { userId, isGlobalAdmin } = req.query;
+
+    const { data: handlerRow } = await supabase
+      .from("request_handlers")
+      .select("users")
+      .eq("module_key", "order")
+      .eq("action_key", "issue")
+      .maybeSingle();
+
+    const issueUsers = handlerRow?.users || [];
+    const isIssueHandler = isGlobalAdmin === "true" || issueUsers.some(u => String(u.id) === String(userId));
+
+    if (!isIssueHandler) return res.json({ count: 0 });
+
+    const { count, error } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("id", { count: "exact", head: true })
+      .in("status", ["Pending Issue", "To Issue"]);
+
+    if (error) throw error;
+    res.json({ count: count || 0 });
+  } catch (err) {
+    res.json({ count: 0 });
+  }
+});
+
 router.get("/", async (req, res) => {
   try {
     const { data, error } = await supabase.schema("procurement")
       .from("purchase_orders")
       .select("*, companies(*), sites(*), vendors(*)")
+      .neq("status", "Deleted")
       .order("created_at", { ascending: false });
     
     if (error) {
       console.warn("Supabase Error fetching orders:", shortDbError(error));
       throw error;
+    };
+
+    const pendingApprovalOrderIds = (data || [])
+      .filter(o => o.status === "Pending Approval")
+      .map(o => o.id)
+      .filter(Boolean);
+    const withdrawableRequestByOrder = {};
+
+    if (pendingApprovalOrderIds.length > 0) {
+      const { data: pendingRequests, error: pendingReqErr } = await supabase
+        .from("approval_requests")
+        .select("id, document_id, requested_by, status, current_level")
+        .in("document_id", pendingApprovalOrderIds)
+        .eq("module", "order")
+        .eq("status", "pending");
+
+      if (pendingReqErr) {
+        console.warn("Approval request lookup failed:", shortDbError(pendingReqErr));
+      } else {
+        (pendingRequests || []).forEach(req => {
+          withdrawableRequestByOrder[req.document_id] = req;
+        });
+      }
     }
-    console.log(`Fetched ${data?.length || 0} orders from DB`);
     
     // Convert UUID made_by to user names (Optimized N+1)
     const userIds = [...new Set((data || [])
@@ -454,7 +555,7 @@ router.get("/", async (req, res) => {
       if (displayName && displayName.length === 36 && displayName.includes('-')) {
         displayName = userMap[displayName] || displayName;
       }
-      return { ...order, made_by: displayName };
+      return { ...order, made_by: displayName, pending_approval_request: withdrawableRequestByOrder[order.id] || null };
     });
 
     // For orders with missing totals (e.g. amended clones), compute from items
@@ -524,22 +625,35 @@ router.get("/master/vendor-data", async (_req, res) => {
 
     const { data: orderItems, error: itemErr } = await supabase.schema("procurement")
       .from("purchase_order_items")
-      .select("order_id, item_id, description, items(material_name, item_code)");
+      .select("order_id, item_id, description, qty, unit_rate, amount, items(material_name, item_code)");
     if (itemErr) throw itemErr;
 
-    const itemsByOrder = new Map();
+    const itemsByOrder = new Map();     // order_id → [name, ...]
+    const subtotalByOrder = new Map();  // order_id → computed subtotal from line items
     (orderItems || []).forEach(row => {
       const name = row.items?.material_name || row.description || "";
-      if (!name) return;
-      const list = itemsByOrder.get(row.order_id) || [];
-      list.push(name);
-      itemsByOrder.set(row.order_id, list);
+      if (name) {
+        const list = itemsByOrder.get(row.order_id) || [];
+        list.push(name);
+        itemsByOrder.set(row.order_id, list);
+      }
+      const lineAmt = (Number(row.qty) * Number(row.unit_rate)) || Number(row.amount) || 0;
+      subtotalByOrder.set(row.order_id, (subtotalByOrder.get(row.order_id) || 0) + lineAmt);
     });
 
-    const getTaxableOrderValue = (totals = {}) => {
-      const subtotal = Number(totals.subtotal) || 0;
+    const getTaxableOrderValue = (order) => {
+      const totals = order.totals || {};
+      let subtotal = Number(totals.subtotal) || 0;
       const discount = Number(totals.totalDiscountAmt) || 0;
       const freight = Number(totals.frightCharges ?? totals.fright) || 0;
+      // Fallback: compute subtotal from line items or snapshot when totals.subtotal is missing
+      if (subtotal === 0) {
+        subtotal = subtotalByOrder.get(order.id) || 0;
+        if (subtotal === 0) {
+          const snapItems = order.snapshot?.items || [];
+          subtotal = snapItems.reduce((s, it) => s + ((Number(it.qty) * Number(it.unit_rate)) || Number(it.amount) || 0), 0);
+        }
+      }
       return Math.max(subtotal - discount + freight, 0);
     };
 
@@ -563,7 +677,7 @@ router.get("/master/vendor-data", async (_req, res) => {
         orderType: order.order_type || "",
         orderNo: order.order_number || "",
         item: uniqueItems.join(", "),
-        orderValue: getTaxableOrderValue(order.totals || {}),
+        orderValue: getTaxableOrderValue(order),
         vendorEmail: vendor.email || "",
         vendorContactNo: vendor.mobile || vendor.contactNo || vendor.contact_person_number || "",
         createdAt: order.date_of_creation || order.created_at || "",
@@ -603,6 +717,94 @@ router.get("/master/vendor-data", async (_req, res) => {
     res.json({ rows: sanitizeRichTextDeep(rows) });
   } catch (err) {
     console.error("Vendor master data error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ── TRASH: fetch soft-deleted orders ── */
+router.get("/trash", async (req, res) => {
+  try {
+    const { data, error } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("*, companies(*), sites(*), vendors(*)")
+      .eq("status", "Deleted")
+      .order("updated_at", { ascending: false });
+    if (error) throw error;
+
+    const userIds = [...new Set((data || []).map(o => o.made_by).filter(id => id && id.length === 36 && id.includes('-')))];
+    let userMap = {};
+    if (userIds.length > 0) {
+      const { data: users } = await supabase.from("users").select("id, name").in("id", userIds);
+      userMap = (users || []).reduce((acc, u) => { acc[u.id] = u.name; return acc; }, {});
+    }
+    const orders = (data || []).map(order => {
+      let displayName = order.made_by || "System";
+      if (displayName && displayName.length === 36 && displayName.includes('-')) displayName = userMap[displayName] || displayName;
+      return { ...order, made_by: displayName };
+    });
+    res.json({ orders: sanitizeRichTextDeep(orders) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ── RESTORE: move order back from Trash ── */
+router.post("/:id/restore", async (req, res) => {
+  try {
+    const { data: order, error: fetchErr } = await supabase.schema("procurement")
+      .from("purchase_orders").select("status, snapshot").eq("id", req.params.id).single();
+    if (fetchErr) throw fetchErr;
+    if (order.status !== "Deleted") {
+      return res.status(400).json({ error: "Only trashed orders can be restored." });
+    }
+
+    const originalStatus = order.snapshot?._deleted?.original_status || "Draft";
+    const restoredBy = req.query.restored_by || req.body?.restored_by || "Unknown";
+    const restoredAt = new Date().toISOString();
+    const newSnapshot = { ...(order.snapshot || {}) };
+    delete newSnapshot._deleted;
+    const actLog = Array.isArray(newSnapshot.activity_log) ? [...newSnapshot.activity_log] : [];
+    actLog.push({
+      action: "Restored",
+      action_by: restoredBy,
+      action_at: restoredAt,
+      comments: `Restored to ${originalStatus}`,
+    });
+    newSnapshot.activity_log = actLog;
+
+    const { error } = await supabase.schema("procurement").from("purchase_orders")
+      .update({ status: originalStatus, snapshot: newSnapshot, updated_at: restoredAt }).eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true, restored_status: originalStatus });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ── PERMANENT DELETE: hard-delete a trashed order ── */
+router.delete("/:id/permanent", async (req, res) => {
+  try {
+    const { data: order, error: orderErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("status, quotation_url, comparative_sheet_url, pre_documents, post_documents")
+      .eq("id", req.params.id).single();
+    if (orderErr) throw orderErr;
+    if (order.status !== "Deleted") {
+      return res.status(400).json({ error: "Only trashed orders can be permanently deleted." });
+    }
+    try {
+      const filesToDelete = [
+        order.quotation_url, order.comparative_sheet_url,
+        ...((Array.isArray(order.pre_documents)  ? order.pre_documents  : []).map(d => d?.url).filter(Boolean)),
+        ...((Array.isArray(order.post_documents) ? order.post_documents : []).map(d => d?.url).filter(Boolean)),
+      ].filter(Boolean);
+      await Promise.allSettled(filesToDelete.map(url => removeStorageFile(supabase, "procurement-docs", url)));
+    } catch { /* silent */ }
+    await supabase.schema("procurement").from("purchase_order_items").delete().eq("order_id", req.params.id);
+    const { error } = await supabase.schema("procurement").from("purchase_orders").delete().eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -1188,8 +1390,25 @@ router.put("/:id", upload.fields([
 
     // Fetch existing urls/status before any mutation so locked orders remain read-only.
     const { data: existing } = await supabase.schema("procurement")
-      .from("purchase_orders").select("quotation_url, comparative_sheet_url, status, snapshot, subject, ref_number, delivery_date, priority, totals")
+      .from("purchase_orders").select("quotation_url, comparative_sheet_url, status, snapshot, subject, ref_number, delivery_date, priority, totals, site_id, company_id, date_of_creation")
       .eq("id", req.params.id).single();
+
+    const wasRecalled = hasRecallHistory(existing);
+    if (wasRecalled) {
+      mainData = {
+        ...mainData,
+        site_id: existing.site_id,
+        company_id: existing.company_id,
+        date_of_creation: existing.date_of_creation ?? mainData.date_of_creation,
+        snapshot: {
+          ...(mainData.snapshot || {}),
+          site: existing.snapshot?.site || mainData.snapshot?.site,
+          company: existing.snapshot?.company || mainData.snapshot?.company,
+          billingProfile: existing.snapshot?.billingProfile || mainData.snapshot?.billingProfile,
+          billingState: existing.snapshot?.billingState || mainData.snapshot?.billingState,
+        },
+      };
+    }
 
     // Capture incoming values for edit tracking before status handlers may mutate mainData.snapshot
     const _editBy       = mainData.action_by || mainData.made_by || "";
@@ -1649,7 +1868,8 @@ router.get("/:id/pdf", async (req, res) => {
     }
 
     const disposition = req.query.download === "1" ? "attachment" : "inline";
-    const filename = `${cleanOrder.order_number || "order"}.pdf`.replace(/[\/\\]/g, "_");
+    const filenameBase = String(cleanOrder.order_number || "order").trim().replace(/\.pdf$/i, "") || "order";
+    const filename = `${filenameBase}.pdf`.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_");
 
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, private");
     res.setHeader("Pragma", "no-cache");
@@ -1671,33 +1891,32 @@ router.delete("/:id", async (req, res) => {
     }
     const { data: order, error: orderErr } = await supabase.schema("procurement")
       .from("purchase_orders")
-      .select("status, quotation_url, comparative_sheet_url, pre_documents, post_documents")
+      .select("status, snapshot")
       .eq("id", req.params.id)
       .single();
     if (orderErr) throw orderErr;
-    if (["Issued", "Rejected", "Cancelled", "Reverted", "Recalled", "Amendment Request", "Amended"].includes(order?.status)) {
-      return res.status(400).json({ error: `${order.status} orders cannot be deleted` });
+    if (order?.status === "Deleted") {
+      return res.status(400).json({ error: "Order is already in Trash." });
     }
-    // Block delete if any amendment record references this order (extra safety)
-    const { data: linkedAmend } = await supabase
-      .from("order_amendments").select("id").eq("original_order_id", req.params.id).limit(1).maybeSingle();
-    if (linkedAmend) {
-      return res.status(400).json({ error: "This order has amendment history and cannot be deleted." });
+    if (!["Draft", "Review"].includes(order?.status)) {
+      return res.status(400).json({ error: `${order.status} orders cannot be moved to Trash` });
     }
-
-    // Delete storage files (non-blocking — don't fail delete if storage cleanup fails)
-    try {
-      const filesToDelete = [
-        order.quotation_url,
-        order.comparative_sheet_url,
-        ...((Array.isArray(order.pre_documents)  ? order.pre_documents  : []).map(d => d?.url).filter(Boolean)),
-        ...((Array.isArray(order.post_documents) ? order.post_documents : []).map(d => d?.url).filter(Boolean)),
-      ].filter(Boolean);
-      await Promise.allSettled(filesToDelete.map(url => removeStorageFile(supabase, "procurement-docs", url)));
-    } catch { /* silent */ }
-
-    await supabase.schema("procurement").from("purchase_order_items").delete().eq("order_id", req.params.id);
-    const { error } = await supabase.schema("procurement").from("purchase_orders").delete().eq("id", req.params.id);
+    const deleted_by = req.query.deleted_by || req.body?.deleted_by || "Unknown";
+    const deleted_at = new Date().toISOString();
+    const actLog = Array.isArray(order.snapshot?.activity_log) ? [...order.snapshot.activity_log] : [];
+    actLog.push({
+      action: "Deleted",
+      action_by: deleted_by,
+      action_at: deleted_at,
+      comments: `Moved to Trash from ${order.status || "Unknown"}`,
+    });
+    const newSnapshot = {
+      ...(order.snapshot || {}),
+      activity_log: actLog,
+      _deleted: { original_status: order.status, deleted_by, deleted_at }
+    };
+    const { error } = await supabase.schema("procurement").from("purchase_orders")
+      .update({ status: "Deleted", snapshot: newSnapshot, updated_at: deleted_at }).eq("id", req.params.id);
     if (error) throw error;
     res.json({ success: true });
   } catch (err) {
@@ -1811,6 +2030,115 @@ router.delete("/:id/post-documents/:docId", async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error("Post-doc delete error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ─────────────────────────────────────────
+   POST /api/orders/:id/issue-action
+   Issue handler acts on a "Pending Issue" order: issue | revert | reject
+───────────────────────────────────────── */
+router.post("/:id/issue-action", async (req, res) => {
+  const { action, comment } = req.body; // action: "issue" | "revert" | "reject"
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Login required" });
+
+  let userId;
+  try {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
+    userId = payload.sub;
+  } catch { return res.status(401).json({ error: "Invalid token" }); }
+
+  if (!["issue", "revert", "reject"].includes(action)) {
+    return res.status(400).json({ error: "Invalid action" });
+  }
+
+  try {
+    const { data: user } = await supabase.from("users")
+      .select("name, role, designation, profile_permissions").eq("id", userId).single();
+    const isGlobalAdmin = user?.role === "global_admin";
+
+    if (!isGlobalAdmin) {
+      const { data: handler } = await supabase.from("request_handlers")
+        .select("users").eq("module_key", "order").eq("action_key", "issue").maybeSingle();
+      const isHandler = (handler?.users || []).some(u => String(u.id) === String(userId));
+      if (!isHandler) return res.status(403).json({ error: "You are not the designated issue handler" });
+    }
+
+    const { data: order } = await supabase.schema("procurement").from("purchase_orders")
+      .select("status, snapshot, totals, order_number, order_type, site_id, sites(site_code), companies(company_code)")
+      .eq("id", req.params.id).single();
+    if (!order || !["Pending Issue", "To Issue"].includes(order.status)) {
+      return res.status(400).json({ error: "Order is not in Pending Issue state" });
+    }
+
+    const now = new Date().toISOString();
+    const snap = order.snapshot || {};
+    const actLog = Array.isArray(snap.activity_log) ? [...snap.activity_log] : [];
+
+    const newStatus = action === "issue" ? "Issued" : action === "revert" ? "Review" : "Rejected";
+    const actionLabel = action === "issue" ? "Issued" : action === "revert" ? "Reverted" : "Rejected";
+    actLog.push({
+      action: actionLabel,
+      action_by: user?.name || "",
+      action_at: now,
+      ...(comment ? { comments: comment } : {}),
+    });
+
+    const updatePayload = { status: newStatus, snapshot: { ...snap, activity_log: actLog }, updated_at: now };
+
+    if (action === "issue") {
+      const issuedBy = {
+        id:            userId,
+        name:          user?.name || "",
+        designation:   user?.designation || "",
+        signatureFile: user?.profile_permissions?.ui?.signature || null,
+      };
+      updatePayload.totals = { ...(order.totals || {}), issuedBy, issuedAt: now };
+
+      // Assign final order number if still a draft number
+      if (isDraftNumber(order.order_number) && order.site_id) {
+        try {
+          const fy = getFinancialYear();
+          const kindForSerial = order.order_type === "Supply" ? "Supply" : "SITC";
+          let { data: serialObj } = await supabase.schema("procurement")
+            .from("serialization_settings")
+            .select("*")
+            .eq("site_id", order.site_id)
+            .eq("financial_year", fy)
+            .eq("order_kind", kindForSerial)
+            .maybeSingle();
+
+          if (!serialObj) {
+            const { data: created } = await supabase.schema("procurement")
+              .from("serialization_settings")
+              .insert({ site_id: order.site_id, financial_year: fy, current_number: 0, order_kind: kindForSerial })
+              .select().single();
+            serialObj = created;
+          }
+
+          if (serialObj) {
+            const nextSerial = (serialObj.current_number || 0) + 1;
+            const typeCode  = order.order_type === "Supply" ? "PO" : "WO";
+            const compCode  = order.companies?.company_code || "CO";
+            const siteCode  = order.sites?.site_code || "SITE";
+            updatePayload.order_number = `${compCode}/${siteCode}/${typeCode}/${fy}/${nextSerial}`;
+            await supabase.schema("procurement").from("serialization_settings")
+              .update({ current_number: nextSerial }).eq("id", serialObj.id);
+          }
+        } catch (numErr) {
+          console.error("Order number assignment failed:", numErr.message);
+        }
+      }
+    }
+
+    await supabase.schema("procurement").from("purchase_orders")
+      .update(updatePayload).eq("id", req.params.id);
+
+    broadcast({ type: "order_updated" });
+    res.json({ success: true, newStatus, order_number: updatePayload.order_number });
+  } catch (err) {
+    console.error("POST /orders/:id/issue-action failed:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
-import { Plus, Search, Pencil, Trash2, X, Ruler, Upload, Download, FileSpreadsheet, FileText, ChevronDown, Eye } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, X, Ruler, Upload, Download, FileSpreadsheet, FileText, ChevronDown, Eye, History } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { logAudit } from "../../utils/auditLog";
+import LogPanel from "../../components/LogPanel";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -29,6 +31,7 @@ export default function UOMList() {
   const [saving, setSaving]       = useState(false);
   const [toast, setToast]         = useState(null);
   const [page, setPage]           = useState(1);
+  const [logTarget, setLogTarget] = useState(null);
   const [viewUOM, setViewUOM]     = useState(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showBulkMenu, setShowBulkMenu]     = useState(false);
@@ -75,7 +78,9 @@ export default function UOMList() {
       const method = editId ? "PUT" : "POST";
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
       const payload = { ...form, createdById: u.id || "", createdByName: u.name || "" };
-      await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const res     = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const resData = await res.json();
+      logAudit("uom", editId || resData.id || "", form.uomName, editId ? "updated" : "created");
       showToast(editId ? "UOM updated" : "UOM added");
       setShowModal(false);
       if (editId) {
@@ -90,7 +95,9 @@ export default function UOMList() {
   const handleDelete = async (id) => {
     if (!confirm("Delete this UOM?")) return;
     try {
+      const uomName = uoms.find(u => u.id === id)?.uomName || "";
       await fetch(`${API}/api/procurement/uom/${id}`, { method: "DELETE" });
+      logAudit("uom", id, uomName, "deleted");
       showToast("UOM deleted");
       fetchUoms();
     } catch { showToast("Failed to delete", "error"); }
@@ -313,6 +320,7 @@ export default function UOMList() {
                       <button onClick={() => setViewUOM(u)} className="p-1.5 rounded-lg text-slate-300 hover:text-blue-600 hover:bg-blue-50 transition-all"><Eye size={14} /></button>
                       {canEdit && <button onClick={() => openEdit(u)} className="p-1.5 rounded-lg text-slate-300 hover:text-slate-600 hover:bg-slate-100 transition-all"><Pencil size={14} /></button>}
                       {canDelete && <button onClick={() => handleDelete(u.id)} className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"><Trash2 size={14} /></button>}
+                      <button onClick={() => setLogTarget({ entityType: "uom", entityId: u.id, entityName: u.uomName })} className="p-1.5 rounded-lg text-slate-300 hover:text-violet-600 hover:bg-violet-50 transition-all" title="Activity Log"><History size={14} /></button>
                     </div>
                   </td>
                 </tr>
@@ -403,6 +411,9 @@ export default function UOMList() {
             </div>
           </div>
         </div>
+      )}
+      {logTarget && (
+        <LogPanel entityType={logTarget.entityType} entityId={logTarget.entityId} entityName={logTarget.entityName} onClose={() => setLogTarget(null)} />
       )}
     </div>
   );

@@ -6,6 +6,10 @@
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
+html {
+  overscroll-behavior-y: contain;
+}
+
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -26,14 +30,41 @@ body {
 .thin-scrollbar-light::-webkit-scrollbar-thumb { background: rgba(100,116,139,0.30); border-radius: 9999px; }
 .thin-scrollbar-light::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,0.55); }
 
+/* Extra-slim rail — WebKit 1px vertical / 2px horizontal; Firefox `thin` (minimum) */
+.thin-scrollbar-xs {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.35) transparent;
+}
+.thin-scrollbar-xs::-webkit-scrollbar {
+  width: 1px;
+  height: 2px;
+}
+.thin-scrollbar-xs::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scrollbar-xs::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.28);
+  border-radius: 9999px;
+}
+.thin-scrollbar-xs::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.55);
+}
+
 /* Quill rich-text display (cards, history, view modal) */
-.quill-content ol { list-style: decimal !important; padding-left: 1.5rem !important; margin-bottom: 0.25rem; }
-.quill-content ul { list-style: disc    !important; padding-left: 1.5rem !important; margin-bottom: 0.25rem; }
-.quill-content li { display: list-item  !important; margin-bottom: 0.15rem; }
-.quill-content p  { margin-bottom: 0.25rem; }
+.quill-content { text-align: justify; text-justify: inter-word; hyphens: auto; }
+.quill-content ol { list-style: decimal !important; padding-left: 1.5rem !important; margin-bottom: 0.25rem; text-align: justify; }
+.quill-content ul { list-style: disc    !important; padding-left: 1.5rem !important; margin-bottom: 0.25rem; text-align: justify; }
+.quill-content li { display: list-item  !important; margin-bottom: 0.15rem; text-align: justify; }
+.quill-content p  { margin-bottom: 0.25rem; text-align: justify; }
+.quill-content div { text-align: justify; }
 .quill-content strong { font-weight: bold; }
 .quill-content em     { font-style: italic; }
 .quill-content u      { text-decoration: underline; }
+/* Honor explicit Quill alignment classes when set by user */
+.quill-content .ql-align-left   { text-align: left !important; }
+.quill-content .ql-align-center { text-align: center !important; }
+.quill-content .ql-align-right  { text-align: right !important; }
+.quill-content .ql-align-justify { text-align: justify !important; }
  
 /* Custom Smooth Loader */
 .smooth-loader {
@@ -48,4 +79,24 @@ body {
 @keyframes smooth-spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+/* Ultra-thin premium scrollbar */
+.premium-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(203, 213, 225, 0.5) transparent;
+}
+.premium-scroll::-webkit-scrollbar {
+  height: 5px;
+  width: 5px;
+}
+.premium-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.premium-scroll::-webkit-scrollbar-thumb {
+  background: rgba(203, 213, 225, 0.6);
+  border-radius: 10px;
+}
+.premium-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.8);
 }

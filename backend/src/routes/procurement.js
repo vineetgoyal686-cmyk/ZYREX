@@ -901,6 +901,20 @@ router.post("/vendors/:id/restore", async (req, res) => {
 
 router.delete("/vendors/:id/permanent", async (req, res) => {
   try {
+    // Block delete if vendor has non-issued (draft/active) orders — issued orders have frozen snapshot so vendor_id can be nulled
+    const { data: linkedOrders } = await supabase.schema("procurement").from("purchase_orders")
+      .select("id, status").eq("vendor_id", req.params.id);
+    const draftOrders = (linkedOrders || []).filter(o => o.status !== "Issued" && o.status !== "Cancelled");
+    if (draftOrders.length > 0) {
+      return res.status(409).json({ error: `This vendor has ${draftOrders.length} active/draft order(s) linked. Cannot permanently delete.` });
+    }
+    // Null out vendor_id on issued orders (data is frozen in snapshot)
+    const issuedIds = (linkedOrders || []).filter(o => o.status === "Issued" || o.status === "Cancelled").map(o => o.id);
+    if (issuedIds.length > 0) {
+      await supabase.schema("procurement").from("purchase_orders")
+        .update({ vendor_id: null }).in("id", issuedIds);
+    }
+
     const { data: vendor } = await supabase.schema("procurement").from("vendors").select("*").eq("id", req.params.id).single();
     if (vendor) {
       const urls = [
@@ -909,7 +923,6 @@ router.delete("/vendors/:id/permanent", async (req, res) => {
         vendor.doc_other_url, vendor.doc_other2_url
       ];
       const paths = urls.map(url => normalizeStoragePath(url, "vendor-docs")).filter(Boolean);
-      
       if (paths.length > 0) {
         await supabase.storage.from("vendor-docs").remove(paths).catch(err => console.warn("Storage cleanup failed:", err.message));
       }
@@ -1819,6 +1832,191 @@ router.delete("/contacts/:id", async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error("Contact delete error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ════════════════════════════════════
+   VENDOR POOL
+════════════════════════════════════ */
+
+const getNextPoolCode = async () => {
+  const { data } = await supabase.schema("procurement")
+    .from("vendor_pool").select("pool_code");
+  const nums = (data || [])
+    .map(r => parseInt((r.pool_code || "").replace("VP-", "")) || 0);
+  const next = nums.length ? Math.max(...nums) + 1 : 1;
+  return `VP-${String(next).padStart(3, "0")}`;
+};
+
+const vendorPoolUpload = upload.fields([
+  { name: "logo",            maxCount: 1 },
+  { name: "attachment",      maxCount: 1 },
+  { name: "otherAttachment", maxCount: 1 },
+]);
+
+router.get("/vendor-pool", async (req, res) => {
+  try {
+    const { data, error } = await supabase.schema("procurement")
+      .from("vendor_pool").select("*").is("deleted_at", null).order("created_at", { ascending: false });
+    if (error) throw error;
+    res.json({ pools: data || [] });
+  } catch (err) {
+    console.error("Vendor pool fetch error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/vendor-pool/trash", async (req, res) => {
+  try {
+    const { data, error } = await supabase.schema("procurement")
+      .from("vendor_pool").select("*").not("deleted_at", "is", null).order("deleted_at", { ascending: false });
+    if (error) throw error;
+    res.json({ pools: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/vendor-pool/:id/restore", async (req, res) => {
+  try {
+    const { error } = await supabase.schema("procurement")
+      .from("vendor_pool").update({ deleted_at: null }).eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/vendor-pool/:id/permanent", async (req, res) => {
+  try {
+    const { error } = await supabase.schema("procurement")
+      .from("vendor_pool").delete().eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/vendor-pool", vendorPoolUpload, async (req, res) => {
+  try {
+    const b = req.body;
+    const files = req.files || {};
+    const folder = `vendor-pool/${(b.vendorName || "unknown").replace(/\s+/g, "_")}`;
+    const [logoUrl, attachmentUrl, otherAttachmentUrl, poolCode] = await Promise.all([
+      uploadVendorFile(files, "logo",            folder),
+      uploadVendorFile(files, "attachment",      folder),
+      uploadVendorFile(files, "otherAttachment", folder),
+      getNextPoolCode(),
+    ]);
+    const poolRow = {
+      pool_code:      poolCode,
+      vendor_name:    b.vendorName    || "",
+      firm_name:      b.firmName      || null,
+      email:          b.email         || null,
+      contact_number: b.contactNumber || null,
+      state:          b.state         || null,
+      city:           b.city          || null,
+      address:        b.address       || null,
+      logo_url:       logoUrl         || null,
+      attachment_url: attachmentUrl   || null,
+      gst_no:         b.gstNo         || null,
+      category:       b.category      || null,
+      date_of_visit:  b.dateOfVisit   || new Date().toISOString().split("T")[0],
+      notes:          b.notes         || null,
+      status:         b.status        || "Pool",
+    };
+    if (otherAttachmentUrl) poolRow.other_attachment_url = otherAttachmentUrl;
+    const { data, error } = await supabase.schema("procurement").from("vendor_pool")
+      .insert(poolRow)
+      .select().single();
+    if (error) throw error;
+    res.json({ success: true, id: data.id });
+  } catch (err) {
+    console.error("Vendor pool create error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/vendor-pool/:id/promote", async (req, res) => {
+  try {
+    const { data: pool, error: fetchErr } = await supabase.schema("procurement")
+      .from("vendor_pool").select("*").eq("id", req.params.id).single();
+    if (fetchErr) throw fetchErr;
+    const vendorCode = await getNextVendorCode();
+    const { data: vendor, error: vendorErr } = await supabase.schema("procurement")
+      .from("vendors")
+      .insert({
+        vendor_code:     vendorCode,
+        vendor_name:     pool.vendor_name    || "",
+        email:           pool.email          || "",
+        mobile:          pool.contact_number || "",
+        gstin:           pool.gst_no         || "",
+        address:         pool.address        || "",
+        logo_url:        pool.logo_url       || "",
+        created_by_name: req.body.promotedByName || null,
+        created_by_id:   req.body.promotedById   || null,
+      })
+      .select().single();
+    if (vendorErr) throw vendorErr;
+    await supabase.schema("procurement").from("vendor_pool")
+      .update({ status: "Promoted", promoted_to_vendor_id: vendor.id, updated_at: new Date().toISOString() })
+      .eq("id", req.params.id);
+    res.json({ success: true, vendorId: vendor.id, vendorCode });
+  } catch (err) {
+    console.error("Vendor pool promote error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put("/vendor-pool/:id", vendorPoolUpload, async (req, res) => {
+  try {
+    const b = req.body;
+    const files = req.files || {};
+    const folder = `vendor-pool/${(b.vendorName || "unknown").replace(/\s+/g, "_")}`;
+    const [logoUrl, attachmentUrl, otherAttachUrl] = await Promise.all([
+      uploadVendorFile(files, "logo",            folder),
+      uploadVendorFile(files, "attachment",      folder),
+      uploadVendorFile(files, "otherAttachment", folder),
+    ]);
+    const upd = {
+      vendor_name:    b.vendorName    || "",
+      firm_name:      b.firmName      || null,
+      email:          b.email         || null,
+      contact_number: b.contactNumber || null,
+      state:          b.state         || null,
+      city:           b.city          || null,
+      address:        b.address       || null,
+      gst_no:         b.gstNo         || null,
+      category:       b.category      || null,
+      date_of_visit:  b.dateOfVisit   || null,
+      notes:          b.notes         || null,
+      status:         b.status        || "Pool",
+      updated_at:     new Date().toISOString(),
+    };
+    if (logoUrl)       upd.logo_url       = logoUrl;
+    if (attachmentUrl) upd.attachment_url = attachmentUrl;
+    if (otherAttachUrl) upd.other_attachment_url = otherAttachUrl;
+    const { error } = await supabase.schema("procurement")
+      .from("vendor_pool").update(upd).eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Vendor pool update error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/vendor-pool/:id", async (req, res) => {
+  try {
+    const { error } = await supabase.schema("procurement")
+      .from("vendor_pool").update({ deleted_at: new Date().toISOString() }).eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Vendor pool delete error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

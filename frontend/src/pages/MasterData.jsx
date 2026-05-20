@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Database, Download, Eye, FileText, IndianRupee, Loader2, Package, Plus, Search, Upload, X } from "lucide-react";
 import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import ViewOrder from "./Procurement/ViewOrder";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
@@ -17,7 +19,9 @@ const taxableValue = (totals = {}) => {
   const subtotal = Number(totals.subtotal) || 0;
   const discount = Number(totals.totalDiscountAmt) || 0;
   const freight = Number(totals.frightCharges ?? totals.fright) || 0;
-  return Math.max(subtotal - discount + freight, 0);
+  const computed = subtotal - discount + freight;
+  if (computed > 0) return computed;
+  return Number(totals.taxableAmount) || 0;
 };
 
 const columns = [
@@ -66,6 +70,14 @@ export default function MasterData({ view = "vendor" }) {
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const [viewVendor, setViewVendor] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef(null);
+  useEffect(() => {
+    if (!exportOpen) return;
+    const handler = (e) => { if (exportRef.current && !exportRef.current.contains(e.target)) setExportOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [exportOpen]);
   const [form, setForm] = useState(emptyForm);
   const bulkRef = useRef(null);
 
@@ -335,6 +347,44 @@ export default function MasterData({ view = "vendor" }) {
     XLSX.writeFile(wb, "vendor_master_data.xlsx");
   };
 
+  const exportVendorMasterPDF = () => {
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    doc.setFontSize(13);
+    doc.setFont("helvetica", "bold");
+    doc.text("Vendor Master Data", 14, 15);
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(150);
+    doc.text(`Generated: ${new Date().toLocaleDateString("en-IN")}`, 14, 21);
+    doc.setTextColor(0);
+
+    const rows = vendorGroups.flatMap(group =>
+      group.orders.map((order, index) => [
+        index === 0 ? group.vendorCode : "",
+        index === 0 ? group.vendorName : "",
+        index === 0 ? (group.companyCodes || []).filter(Boolean).join(", ") : "",
+        order.siteCode || "",
+        order.orderType || "",
+        order.orderNo || "",
+        order.item || "",
+        order.isPlaceholder || order.orderValue == null ? "NA" : formatINR(order.orderValue),
+        index === 0 ? (group.totalValue > 0 ? formatINR(group.totalValue) : "NA") : "",
+      ])
+    );
+
+    autoTable(doc, {
+      startY: 26,
+      head: [["ID", "Vendor Name", "Company Code", "Site Code", "Order Type", "Order No", "Item", "Order Value", "Total Work Value"]],
+      body: rows,
+      styles: { fontSize: 7, cellPadding: 2 },
+      headStyles: { fillColor: [243, 243, 245], textColor: [80, 80, 100], fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [250, 250, 252] },
+      columnStyles: { 7: { halign: "right" }, 8: { halign: "right", textColor: [5, 150, 105] } },
+    });
+
+    doc.save("vendor_master_data.pdf");
+  };
+
   const handleBulkUpload = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -368,7 +418,7 @@ export default function MasterData({ view = "vendor" }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 p-3 sm:p-5 lg:p-6 pb-24">
+    <div className="text-slate-800 pb-16">
       <style>{`
         .master-data-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
         .master-data-scroll::-webkit-scrollbar { height: 6px; width: 6px; }
@@ -391,80 +441,99 @@ export default function MasterData({ view = "vendor" }) {
           box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.18);
         }
       `}</style>
-      <div className="max-w-[1600px] mx-auto space-y-4">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">Vendor Master Data</h1>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1">Vendor wise order history, values, and master references</p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+      <div className="space-y-3">
+        {/* ── Header ── */}
+        <div className="bg-white border border-slate-300 rounded-md shadow-sm px-5 py-3">
+          {/* Row 1: Title + Export */}
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-lg font-black tracking-tight text-slate-900">Vendor Master Data</h1>
+            </div>
             {activeView === "vendor" && (
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => setShowAdd(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-bold text-white shadow-sm hover:bg-slate-800">
-                  <Plus size={15} /> Add Vendor
+              <div className="relative shrink-0" ref={exportRef}>
+                <button
+                  onClick={() => setExportOpen(o => !o)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                >
+                  <Download size={13} /> Export <ChevronDown size={11} className={`transition-transform ${exportOpen ? "rotate-180" : ""}`} />
                 </button>
-                <button onClick={exportVendorMaster} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50">
-                  <Download size={15} /> Export
-                </button>
-                <button onClick={() => bulkRef.current?.click()} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50">
-                  <Upload size={15} /> Bulk Upload
-                </button>
-                <input ref={bulkRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleBulkUpload} />
+                {exportOpen && (
+                  <div className="absolute right-0 mt-1 z-50 w-40 rounded-md border border-slate-200 bg-white shadow-lg overflow-hidden">
+                    <button
+                      onClick={() => { exportVendorMaster(); setExportOpen(false); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                    >
+                      <FileText size={13} className="text-emerald-600" /> Excel (.xlsx)
+                    </button>
+                    <button
+                      onClick={() => { exportVendorMasterPDF(); setExportOpen(false); }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 border-t border-slate-100"
+                    >
+                      <FileText size={13} className="text-red-500" /> PDF
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
+
+          {/* Row 2: Stats bar */}
+          {activeView === "vendor" && (
+            <div className="mt-3 pt-3 border-t border-slate-100 flex items-center gap-6">
+              {/* Vendors */}
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Vendors</p>
+                <p className="text-xl font-black text-slate-900 leading-tight">{displayedGroups.length}</p>
+              </div>
+
+              <div className="w-px h-8 bg-slate-200 shrink-0" />
+
+              {/* Orders table */}
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                  Total Order <span className="text-slate-800 font-black text-sm ml-1">{orderCount}</span>
+                </p>
+                <div className="border border-slate-200 rounded overflow-hidden">
+                  <table className="text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200" style={{background: "rgb(243,243,245)"}}>
+                        <th className="text-[8px] font-bold uppercase text-slate-500 text-left px-3 py-1 border-r border-slate-200">Type</th>
+                        <th className="text-[8px] font-bold uppercase text-slate-500 text-center px-3 py-1 border-r border-slate-200">Count</th>
+                        <th className="text-[8px] font-bold uppercase text-slate-500 text-right px-3 py-1">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-slate-100 bg-white">
+                        <td className="font-black text-slate-700 px-3 py-1 border-r border-slate-100">PO</td>
+                        <td className="font-black text-slate-800 text-center px-3 py-1 border-r border-slate-100">{orderStats.poCount}</td>
+                        <td className="font-semibold text-slate-600 text-right whitespace-nowrap px-3 py-1">{formatINR(orderStats.poValue)}</td>
+                      </tr>
+                      <tr className="bg-white">
+                        <td className="font-black text-slate-700 px-3 py-1 border-r border-slate-100">WO</td>
+                        <td className="font-black text-slate-800 text-center px-3 py-1 border-r border-slate-100">{orderStats.woCount}</td>
+                        <td className="font-semibold text-slate-600 text-right whitespace-nowrap px-3 py-1">{formatINR(orderStats.woValue)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="w-px h-8 bg-slate-200 shrink-0" />
+
+              {/* Work Value Done */}
+              <div>
+                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Work Value Done</p>
+                <p className="text-xl font-black text-emerald-600 leading-tight whitespace-nowrap">{formatINR(totalWorkValue)}</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {activeView === "vendor" ? (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-stretch">
-              <div className="md:col-span-3 rounded-lg border border-slate-200 bg-white px-4 py-2.5 shadow-sm flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Vendor</p>
-                  <p className="mt-0.5 truncate text-lg font-black text-slate-900">{displayedGroups.length}</p>
-                </div>
-                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700">
-                  <Database size={16} />
-                </div>
-              </div>
-
-              <div className="md:col-span-5 rounded-lg border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Order</p>
-                  <span className="text-sm font-black text-slate-900">{orderCount}</span>
-                </div>
-                <div className="mt-1.5 grid grid-cols-2 gap-2">
-                  <div className="rounded-md bg-slate-50 px-2.5 py-1.5 flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total PO</p>
-                      <p className="text-[11px] font-bold text-slate-600 truncate">Value: <span className="text-slate-900">{formatINR(orderStats.poValue)}</span></p>
-                    </div>
-                    <span className="text-sm font-black text-slate-900 shrink-0">{orderStats.poCount}</span>
-                  </div>
-                  <div className="rounded-md bg-slate-50 px-2.5 py-1.5 flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total WO</p>
-                      <p className="text-[11px] font-bold text-slate-600 truncate">Value: <span className="text-slate-900">{formatINR(orderStats.woValue)}</span></p>
-                    </div>
-                    <span className="text-sm font-black text-slate-900 shrink-0">{orderStats.woCount}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="md:col-span-4 rounded-lg border border-slate-200 bg-white px-4 py-2.5 shadow-sm flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total work value done</p>
-                  <p className="mt-0.5 truncate text-lg font-black text-emerald-700">{formatINR(totalWorkValue)}</p>
-                </div>
-                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-700">
-                  <IndianRupee size={16} />
-                </div>
-              </div>
-            </div>
 
             <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 shadow-sm lg:max-w-md flex-1">
+              <div className="flex items-center gap-2 rounded-md border border-slate-200 bg-white px-3 shadow-sm lg:max-w-md flex-1">
                 <Search size={16} className="text-slate-400 shrink-0" />
                 <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vendor, site, order..." className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-slate-400" />
               </div>
@@ -476,7 +545,7 @@ export default function MasterData({ view = "vendor" }) {
                 <MultiFilter label="Item" options={filterOptions.items} selected={itemFilter} onChange={setItemFilter} />
                 <ValueFilter value={valueFilter} onChange={setValueFilter} />
                 {(vendorFilter.length || siteFilter.length || entityFilter.length || orderTypeFilter.length || itemFilter.length || valueFilter) ? (
-                  <button onClick={() => { setVendorFilter([]); setSiteFilter([]); setEntityFilter([]); setOrderTypeFilter([]); setItemFilter([]); setValueFilter(null); }} className="inline-flex h-10 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-500 hover:bg-slate-50">
+                  <button onClick={() => { setVendorFilter([]); setSiteFilter([]); setEntityFilter([]); setOrderTypeFilter([]); setItemFilter([]); setValueFilter(null); }} className="inline-flex h-10 items-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-500 hover:bg-slate-50">
                     <X size={13} /> Clear
                   </button>
                 ) : null}
@@ -486,7 +555,7 @@ export default function MasterData({ view = "vendor" }) {
             <VendorTable loading={loading} vendorGroups={displayedGroups} setSelectedOrderId={setSelectedOrderId} setViewVendor={setViewVendor} />
           </>
         ) : (
-          <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-sm font-bold text-slate-400">
+          <div className="rounded-md border border-dashed border-slate-300 bg-white p-10 text-center text-sm font-bold text-slate-400">
             Item Master data will be added next.
           </div>
         )}
@@ -494,13 +563,13 @@ export default function MasterData({ view = "vendor" }) {
 
       {showAdd && (
         <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-slate-950/40 p-4">
-          <div className="w-full max-w-4xl rounded-lg bg-white shadow-2xl">
+          <div className="w-full max-w-4xl rounded-md bg-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div>
                 <h2 className="text-base font-black text-slate-900">Add Vendor Master Data</h2>
                 <p className="text-xs text-slate-500">Select vendor and order, then choose or type items.</p>
               </div>
-              <button onClick={() => setShowAdd(false)} className="grid h-9 w-9 place-items-center rounded-lg text-slate-400 hover:bg-slate-100">
+              <button onClick={() => setShowAdd(false)} className="grid h-9 w-9 place-items-center rounded-md text-slate-400 hover:bg-slate-100">
                 <X size={18} />
               </button>
             </div>
@@ -553,8 +622,8 @@ export default function MasterData({ view = "vendor" }) {
             </div>
 
             <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
-              <button onClick={() => setShowAdd(false)} className="h-10 rounded-lg border border-slate-200 px-4 text-xs font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
-              <button disabled={!form.vendorId || !form.orderId} onClick={saveVendorRow} className="h-10 rounded-lg bg-slate-900 px-4 text-xs font-bold text-white disabled:opacity-40">Add Row</button>
+              <button onClick={() => setShowAdd(false)} className="h-10 rounded-md border border-slate-200 px-4 text-xs font-bold text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button disabled={!form.vendorId || !form.orderId} onClick={saveVendorRow} className="h-10 rounded-md bg-slate-900 px-4 text-xs font-bold text-white disabled:opacity-40">Add Row</button>
             </div>
           </div>
         </div>
@@ -569,7 +638,7 @@ export default function MasterData({ view = "vendor" }) {
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Vendor overall view</p>
                 <h2 className="text-lg font-black text-slate-900">{viewVendor.vendorName || "Vendor"}</h2>
               </div>
-              <button onClick={() => setViewVendor(null)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100">
+              <button onClick={() => setViewVendor(null)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-100">
                 <X size={17} />
               </button>
             </div>
@@ -585,7 +654,7 @@ export default function MasterData({ view = "vendor" }) {
                 <InfoBox label="Contact No" value={viewVendor.vendorContactNo || "-"} wide />
               </div>
 
-              <div className="rounded-lg border border-slate-200">
+              <div className="rounded-md border border-slate-200">
                 <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
                   <p className="text-xs font-black uppercase tracking-widest text-slate-500">Orders</p>
                 </div>
@@ -624,7 +693,7 @@ export default function MasterData({ view = "vendor" }) {
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Order preview</p>
                 <p className="text-sm font-bold text-slate-800">Vendor master data</p>
               </div>
-              <button onClick={() => setSelectedOrderId(null)} className="grid h-9 w-9 place-items-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100" aria-label="Close order preview">
+              <button onClick={() => setSelectedOrderId(null)} className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-500 hover:bg-slate-100" aria-label="Close order preview">
                 <X size={17} />
               </button>
             </div>
@@ -638,11 +707,25 @@ export default function MasterData({ view = "vendor" }) {
 
 function VendorTable({ loading, vendorGroups, setSelectedOrderId, setViewVendor }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+    <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
       <div className="master-data-scroll overflow-x-auto">
-        <table className="min-w-[1120px] w-full border-collapse text-sm">
+        <table className="min-w-[900px] w-full border-collapse text-sm">
           <thead className="bg-slate-100 text-slate-600">
-            <tr>{columns.map(label => <th key={label} className="border border-slate-200 px-3 py-3 text-left text-[11px] font-black uppercase tracking-wide">{label}</th>)}</tr>
+            <tr>
+              {columns.map((label, i) => (
+                <th key={label} className={`border border-slate-200 px-3 py-3 text-left text-[11px] font-black uppercase tracking-wide ${
+                  i === 0 ? "w-[8%]" :          // Id
+                  i === 1 ? "w-[18%]" :         // Vendor name
+                  i === 2 ? "w-[9%]" :          // Company Code
+                  i === 3 ? "w-[8%]" :          // Site Code
+                  i === 4 ? "w-[9%]" :          // Order type
+                  i === 5 ? "w-[16%]" :         // Order no
+                  i === 6 ? "w-[12%]" :         // Item
+                  i === 7 ? "w-[10%] text-right" : // Order Value
+                  "w-[10%] text-right"           // Total Value of work
+                }`}>{label}</th>
+              ))}
+            </tr>
           </thead>
           <tbody>
             {loading ? (
@@ -712,12 +795,12 @@ function ValueFilter({ value, onChange }) {
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(o => !o)}
-        className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-bold shadow-sm transition ${value ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>
+        className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-xs font-bold shadow-sm transition ${value ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>
         <span>{label}</span>
         <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-72 rounded-lg border border-slate-200 bg-white shadow-2xl">
+        <div className="absolute right-0 z-30 mt-2 w-72 rounded-md border border-slate-200 bg-white shadow-2xl">
           <div className="p-2 border-b border-slate-100">
             <p className="px-2 py-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Presets</p>
             <button onClick={() => apply("top", 5)}
@@ -783,7 +866,7 @@ function MultiFilter({ label, options, selected, onChange }) {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-xs font-bold shadow-sm transition ${selected.length ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
+        className={`inline-flex h-10 items-center gap-2 rounded-md border px-3 text-xs font-bold shadow-sm transition ${selected.length ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}
       >
         <span>{label}</span>
         {selected.length > 0 && (
@@ -792,7 +875,7 @@ function MultiFilter({ label, options, selected, onChange }) {
         <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-64 rounded-lg border border-slate-200 bg-white shadow-2xl">
+        <div className="absolute right-0 z-30 mt-2 w-64 rounded-md border border-slate-200 bg-white shadow-2xl">
           <div className="border-b border-slate-100 p-2">
             <div className="flex items-center gap-2 rounded-md border border-slate-200 px-2">
               <Search size={13} className="text-slate-400" />
@@ -849,7 +932,7 @@ function Field({ label, children }) {
 
 function InfoBox({ label, value, strong = false, wide = false }) {
   return (
-    <div className={`${wide ? "col-span-2" : ""} rounded-lg border border-slate-200 bg-slate-50 p-3`}>
+    <div className={`${wide ? "col-span-2" : ""} rounded-md border border-slate-200 bg-slate-50 p-3`}>
       <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
       <p className={`mt-1 break-words text-sm ${strong ? "font-black text-emerald-700" : "font-bold text-slate-800"}`}>{value}</p>
     </div>
@@ -858,13 +941,13 @@ function InfoBox({ label, value, strong = false, wide = false }) {
 
 function Metric({ label, value, icon: Icon, wide = false }) {
   return (
-    <div className={`${wide ? "col-span-2 lg:col-span-1" : ""} rounded-lg border border-slate-200 bg-white p-4 shadow-sm`}>
+    <div className={`${wide ? "col-span-2 lg:col-span-1" : ""} rounded-md border border-slate-200 bg-white p-4 shadow-sm`}>
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
           <p className="mt-1 truncate text-lg font-black text-slate-900">{value}</p>
         </div>
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-slate-100 text-slate-700">
           <Icon size={18} />
         </div>
       </div>

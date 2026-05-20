@@ -13,10 +13,15 @@ const usersRoutes         = require("./src/routes/users");
 const projectsRoutes      = require("./src/routes/projects");
 const intakesRoutes       = require("./src/routes/intakes");
 const purchaseOrderRoutes = require("./src/routes/purchaseOrders");
-const approvalsRoutes     = require("./src/routes/approvals");
 const amendmentsRoutes    = require("./src/routes/amendments");
 const designationsRoutes   = require("./src/routes/designations");
+const departmentsRoutes    = require("./src/routes/departments");
+const teamsRoutes          = require("./src/routes/teams");
 const actionRequestRoutes  = require("./src/routes/actionRequests");
+const auditLogsRoutes        = require("./src/routes/auditLogs");
+const requestHandlersRoutes  = require("./src/routes/requestHandlers");
+const approvalFlowsRoutes    = require("./src/routes/approvalFlows");
+const delegationsRoutes      = require("./src/routes/delegations");
 
 const app = express();
 
@@ -40,10 +45,15 @@ app.use("/api/users",       usersRoutes);
 app.use("/api/projects",    projectsRoutes);
 app.use("/api/intakes",     intakesRoutes);
 app.use("/api/orders",      purchaseOrderRoutes);
-app.use("/api/approvals",   approvalsRoutes);
 app.use("/api/amendments",  amendmentsRoutes);
 app.use("/api/designations",    designationsRoutes);
+app.use("/api/departments",     departmentsRoutes);
+app.use("/api/teams",           teamsRoutes);
 app.use("/api/action-requests", actionRequestRoutes);
+app.use("/api/audit-logs",        auditLogsRoutes);
+app.use("/api/request-handlers",  requestHandlersRoutes);
+app.use("/api/approval-flows",    approvalFlowsRoutes);
+app.use("/api/delegations",       delegationsRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
@@ -52,3 +62,14 @@ app.listen(PORT, "0.0.0.0", () => {
 });
 
 process.on("SIGTERM", () => process.exit(0));
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("UNHANDLED REJECTION — this crashed the server:");
+  console.error("Promise:", promise);
+  console.error("Reason:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION — this crashed the server:");
+  console.error(err);
+});

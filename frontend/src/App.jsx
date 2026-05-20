@@ -14,15 +14,17 @@ const parseHash = () => {
   };
 };
 
-// Write tab + project to URL (pushState so back-button works)
-const pushUrl = (tab, project) => {
+const buildHash = (tab, project) => {
   const params = new URLSearchParams();
   params.set("tab", tab);
   if (project) params.set("project", project);
-  window.history.pushState(null, "", `#${params.toString()}`);
+  return `#${params.toString()}`;
 };
+const pushUrl    = (tab, project) => window.history.pushState(null, "", buildHash(tab, project));
+const replaceUrl = (tab, project) => window.history.replaceState(null, "", buildHash(tab, project));
 
 import Profile from "./pages/Profile";
+import Organisation from "./pages/Organisation";
 import MasterData from "./pages/MasterData";
 import ClauseMasterData from "./pages/ClauseMasterData";
 import Approvals from "./pages/Approvals";
@@ -63,17 +65,13 @@ import IntakeList from "./pages/Create/IntakeList";
 // Procurement
 import ItemList from "./pages/Procurement/ItemList";
 import VendorList from "./pages/Procurement/VendorList";
-import CompanyList from "./pages/Procurement/CompanyList";
-import OrderDashboard from "./pages/Procurement/OrderDashboard";
 import TermCondition from "./pages/Procurement/clauses/TermCondition";
 import PaymentTerms from "./pages/Procurement/clauses/PaymentTerms";
 import GovernmentLaws from "./pages/Procurement/clauses/GovernmentLaws";
 import SiteList from "./pages/Procurement/SiteList";
 import UOMList from "./pages/Procurement/UOMList";
 import CategoryList from "./pages/Procurement/CategoryList";
-import ContactList from "./pages/Procurement/ContactList";
 import AnnexureMaster from "./pages/Procurement/clauses/AnnexureMaster";
-import ApprovalConfig from "./components/ApprovalConfig";
 
 // Images
 import AllImages from "./pages/Images/AllImages";
@@ -83,6 +81,9 @@ import CompareImages from "./pages/Images/CompareImages";
 import Attendance from "./pages/Attendance/Attendance";
  
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
+const SIDEBAR_EXPANDED_WIDTH = 220;
+const SIDEBAR_COLLAPSED_WIDTH = 60;
+const SIDEBAR_TRANSITION_MS = 220;
 
 function App() {
   // Detect Supabase password-recovery / invite redirect
@@ -115,17 +116,33 @@ function App() {
   });
 
   // Restore tab + project from URL on load
-  const [activeTab, setActiveTab] = useState(() => {
-    const { isReset, tab } = parseHash();
-    if (!isReset && loggedIn) return tab;
-    return "global_dashboard";
-  });
+  const GLOBAL_TABS = ["global_dashboard","approvals","intake","orders","amendments","payments",
+    "create__intake","create__order","master_data__orders","profile",
+    "proc_setup__item_list","proc_setup__vendor_list",
+    "proc_setup__term_condition","proc_setup__payment_terms","proc_setup__government_laws",
+    "proc_setup__site_list","proc_setup__uom","proc_setup__category_list",
+    "proc_setup__annexure","approvals__config",
+    "master_data","master_data__vendor","master_data__clauses",
+    "master_data__products","master_data__orders","master_data__intakes","audit",
+    "organisation"];
+
   const [selectedProject, setSelectedProject] = useState(() => {
     const { isReset, project } = parseHash();
     if (!isReset && loggedIn) {
       return project || localStorage.getItem("last_selected_project") || null;
     }
     return null;
+  });
+
+  const [activeTab, setActiveTab] = useState(() => {
+    const { isReset, tab } = parseHash();
+    if (!isReset && loggedIn) {
+      const proj = parseHash().project || localStorage.getItem("last_selected_project");
+      // if tab needs a project but none available, go to global_dashboard
+      if (!proj && !GLOBAL_TABS.includes(tab)) return "global_dashboard";
+      return tab;
+    }
+    return "global_dashboard";
   });
 
   const [editingOrderId, setEditingOrderId] = useState(null);
@@ -240,8 +257,12 @@ function App() {
  
   const handleTabChange = (tab) => {
     const proj = tab === "global_dashboard" ? null : selectedProject;
-    if (tab === "global_dashboard") setSelectedProject(null);
+    if (tab === "global_dashboard") {
+      setSelectedProject(null);
+      localStorage.removeItem("last_selected_project");
+    }
     if (tab === activeTab) {
+      replaceUrl(tab, proj);
       if (isMobile) setMobileOpen(false);
       return;
     }
@@ -295,16 +316,15 @@ function App() {
     // Global procurement setup tabs — no project needed
     if (activeTab === "proc_setup__item_list") return <ItemList />;
     if (activeTab === "proc_setup__vendor_list") return <VendorList />;
-    if (activeTab === "proc_setup__company_list") return <CompanyList />;
     if (activeTab === "proc_setup__term_condition") return <TermCondition />;
     if (activeTab === "proc_setup__payment_terms") return <PaymentTerms />;
     if (activeTab === "proc_setup__government_laws") return <GovernmentLaws />;
     if (activeTab === "proc_setup__site_list") return <SiteList />;
     if (activeTab === "proc_setup__uom") return <UOMList />;
     if (activeTab === "proc_setup__category_list") return <CategoryList />;
-    if (activeTab === "proc_setup__contact_list") return <ContactList />;
     if (activeTab === "proc_setup__annexure") return <AnnexureMaster />;
-    if (activeTab === "approvals__config") return <ApprovalConfig showToast={(msg, type) => alert(`${type?.toUpperCase()}: ${msg}`)} />;
+
+    if (activeTab === "organisation") return <Organisation currentUser={currentUser} />;
 
     if (activeTab === "master_data" || activeTab === "master_data__vendor") return <MasterData view="vendor" />;
     if (activeTab === "master_data__clauses") return <ClauseMasterData />;
@@ -386,9 +406,9 @@ function App() {
  
   if (isResetMode) return <ResetPassword isInvite={isInviteMode} onComplete={() => { setIsResetMode(false); setIsInviteMode(false); window.history.replaceState(null, "", "/"); }} />;
   if (!isLoggedIn) return <Login onLogin={handleLogin} />;
- 
+
   return (
-    <div className="flex min-h-screen bg-[#f8fafc]">
+    <div className="flex h-svh min-h-0 overflow-hidden bg-[#f8fafc]">
  
       {/* ✅ HAMBURGER - sirf tab dikhega jab sidebar BAND ho */}
       {isMobile && !mobileOpen && (
@@ -438,12 +458,20 @@ function App() {
       {/* ✅ MAIN CONTENT */}
       <div
         className={`
-          flex-1 flex flex-col transition-all duration-300 min-h-screen min-w-0
-          ${!isMobile ? (isCollapsed ? "ml-[56px]" : "ml-[220px]") : "ml-0"}
+          flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden
+          ${!isMobile ? (isCollapsed ? "ml-[60px]" : "ml-[220px]") : "ml-0"}
+          transition-[margin-left] duration-[220ms] ease-in-out
         `}
       >
-        <main className={`flex-1 min-w-0 min-h-screen overflow-y-auto relative
-          ${isMobile ? "pt-14 px-3 pb-4" : "pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4"}
+        <main className={`flex-1 min-h-0 min-w-0 relative overflow-y-auto overscroll-y-contain thin-scrollbar-xs
+          ${activeTab === "profile" ? "flex flex-col" : ""}
+          ${isMobile
+            ? "pt-4 px-3 pb-4"
+            : activeTab === "profile"
+              ? "pt-0 px-0 pb-4 bg-[#f0f2f5]"
+              : activeTab === "organisation"
+                ? "pt-0 px-0 pb-0"
+                : "pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4"}
         `}>
           {renderPage()}
         </main>

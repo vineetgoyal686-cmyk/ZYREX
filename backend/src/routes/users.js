@@ -307,6 +307,16 @@ router.get("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
       can_revert:            perm.can_revert            || false,
       can_cancel:            perm.can_cancel            || false,
       can_manage_amend:      perm.can_manage_amend      || false,
+      can_log:               perm.can_log               || false,
+      can_trash:             perm.can_trash             || false,
+      can_take_action:       perm.can_take_action       || false,
+      can_submit:            perm.can_submit            || false,
+      can_approve:           perm.can_approve           || false,
+      can_request:           perm.can_request           || false,
+      can_withdraw:          perm.can_withdraw          || false,
+      order_overview_aging:  perm.order_overview_aging  || false,
+      order_intake:          perm.order_intake          || false,
+      order_payment:         perm.order_payment         || false,
     };
   });
 
@@ -340,6 +350,16 @@ router.put("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
       can_revert:            p.can_revert            || false,
       can_cancel:            p.can_cancel            || false,
       can_manage_amend:      p.can_manage_amend      || false,
+      can_log:               p.can_log               || false,
+      can_trash:             p.can_trash             || false,
+      can_take_action:       p.can_take_action       || false,
+      can_submit:            p.can_submit            || false,
+      can_approve:           p.can_approve           || false,
+      can_request:           p.can_request           || false,
+      can_withdraw:          p.can_withdraw          || false,
+      order_overview_aging:  p.order_overview_aging  || false,
+      order_intake:          p.order_intake          || false,
+      order_payment:         p.order_payment         || false,
     }));
     const { error: permError } = await admin.from("permissions").upsert(rows, { onConflict: "user_id,module_id" });
     if (permError) return res.status(500).json({ error: permError.message });

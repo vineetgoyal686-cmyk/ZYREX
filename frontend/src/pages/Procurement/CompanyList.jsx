@@ -1,33 +1,23 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+﻿import React, { useEffect, useRef, useState } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import {
   Building2,
   ChevronDown,
   CreditCard,
-  Download,
-  Eye,
-  FileSpreadsheet,
-  FileText,
   Image,
   Landmark,
   MapPin,
-  Pencil,
   Plus,
   Search,
   Star,
   Trash2,
   X,
 } from "lucide-react";
-import * as XLSX from "xlsx";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import { logAudit } from "../../utils/auditLog";
+import LogPanel from "../../components/LogPanel";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const ACCEPT = "image/jpeg,image/jpg,image/png,image/gif,image/webp,image/bmp,image/svg+xml,image/tiff";
-const perPage = 10;
-
-let cachedCompanies = null;
-const preloadedCompanyImageUrls = new Set();
 
 const INDIA_STATES = [
   "Andhra Pradesh",
@@ -156,38 +146,6 @@ const emptyForm = {
   signPath: "",
 };
 
-const preloadCompanyImages = (company) => {
-  if (typeof window === "undefined" || !company) return;
-  [company.logoUrl, company.stampUrl, company.signUrl].filter(Boolean).forEach((url) => {
-    if (preloadedCompanyImageUrls.has(url)) return;
-    preloadedCompanyImageUrls.add(url);
-    const img = new window.Image();
-    img.decoding = "async";
-    img.src = url;
-  });
-};
-
-const DeferredImage = ({ src, alt, className }) => {
-  const [activeSrc, setActiveSrc] = useState("");
-
-  useEffect(() => {
-    if (!src) {
-      setActiveSrc("");
-      return undefined;
-    }
-    let cancelled = false;
-    const frame = window.requestAnimationFrame(() => {
-      if (!cancelled) setActiveSrc(src);
-    });
-    return () => {
-      cancelled = true;
-      window.cancelAnimationFrame(frame);
-    };
-  }, [src]);
-
-  if (!activeSrc) return null;
-  return <img src={activeSrc} alt={alt} className={className} loading="lazy" decoding="async" />;
-};
 
 const Field = ({ label, value, onChange, placeholder, mono, textarea, select, options = [], className = "" }) => (
   <label className={cx("block", className)}>
@@ -204,7 +162,7 @@ const Field = ({ label, value, onChange, placeholder, mono, textarea, select, op
       <select
         value={value || ""}
         onChange={onChange}
-        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-50"
+        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-50 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M6%208L1%203h10z%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[right_0.75rem_center]"
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -320,51 +278,35 @@ const ImgUpload = ({ label, fieldKey, previewKey, form, setForm }) => {
   );
 };
 
-function CompanyList() {
-  const { canAdd, canEdit, canDelete, canExport } = useModulePermissions("company_list");
+function CompanyList({ actionsRef, onDataChange, autoOpenAdd, autoOpenEdit, formOnlyMode, onModalClose } = {}) {
+  const { canEdit } = useModulePermissions("company_list");
 
-  const [companies, setCompanies] = useState(cachedCompanies || []);
-  const [loading, setLoading] = useState(!cachedCompanies);
   const [showModal, setShowModal] = useState(false);
-  const [showView, setShowView] = useState(false);
-  const [viewData, setViewData] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [editId, setEditId] = useState(null);
-  const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
-  const [page, setPage] = useState(1);
-  const [showExportMenu, setShowExportMenu] = useState(false);
   const [stateQuery, setStateQuery] = useState("");
   const [selectedState, setSelectedState] = useState("");
   const [stateListOpen, setStateListOpen] = useState(false);
-  const exportMenuRef = useRef();
 
+  // expose actions to parent via actionsRef
   useEffect(() => {
-    if (!cachedCompanies) fetchCompanies();
-    else fetchCompanies(true);
-  }, []);
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) setShowExportMenu(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const fetchCompanies = async (isBackground = false) => {
-    if (!isBackground) setLoading(true);
-    try {
-      const res = await fetch(`${API}/api/procurement/companies`);
-      const data = await res.json();
-      cachedCompanies = data.companies || [];
-      setCompanies(cachedCompanies);
-    } catch {
-      if (!cachedCompanies) setCompanies([]);
+    if (actionsRef) {
+      actionsRef.current = {
+        openAdd:  () => openAdd(),
+        openEdit: (c) => openEdit(c),
+      };
     }
-    if (!isBackground) setLoading(false);
-  };
+  });
+
+  useEffect(() => {
+    if (autoOpenAdd) openAdd();
+  }, [autoOpenAdd]);
+
+  useEffect(() => {
+    if (autoOpenEdit) openEdit(autoOpenEdit);
+  }, [autoOpenEdit]);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -486,254 +428,31 @@ function CompanyList() {
         setSaving(false);
         return;
       }
+      const savedId   = editId || data.id;
+      const savedName = form.companyName;
+      logAudit("company", savedId, savedName, editId ? "updated" : "created");
       showToast(editId ? "Entity updated" : "Entity added");
       setShowModal(false);
-      fetchCompanies();
+      onDataChange?.();
     } catch {
       showToast("Failed to save", "error");
     }
     setSaving(false);
   };
 
-  const handleDelete = async (c) => {
-    if (!confirm("Delete this entity?")) return;
-    try {
-      await fetch(`${API}/api/procurement/companies/${c.id}`, { method: "DELETE" });
-      showToast("Entity deleted");
-      fetchCompanies();
-    } catch {
-      showToast("Failed to delete", "error");
-    }
-  };
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return companies;
-    return companies.filter((c) => (
-      c.companyName?.toLowerCase().includes(q) ||
-      c.companyCode?.toLowerCase().includes(q) ||
-      c.gstin?.toLowerCase().includes(q) ||
-      c.pan?.toLowerCase().includes(q) ||
-      c.email?.toLowerCase().includes(q)
-    ));
-  }, [companies, search]);
-
-  const totalPages = Math.ceil(filtered.length / perPage) || 1;
-  const paginated = useMemo(() => filtered.slice((page - 1) * perPage, page * perPage), [filtered, page]);
-  const stateOptions = INDIA_STATES.filter((state) => state.toLowerCase().includes(stateQuery.trim().toLowerCase()));
-
-  const exportRows = filtered.map((c, index) => ({
-    "S.No": index + 1,
-    "Entity Name": c.companyName,
-    "Entity Code": c.companyCode,
-    Phone: c.phone,
-    Email: c.email,
-    GSTIN: c.gstin,
-    PAN: c.pan,
-    Pincode: c.pincode,
-    State: c.state,
-    District: c.district,
-    Address: c.address,
-    Status: c.status || "active",
-    "Billing GSTIN": c.billingGstin || "",
-    "Billing Contact Name": c.billingContactName || "",
-    "Billing Contact Phone": c.billingContactPhone || "",
-    "Billing State": c.billingState || "",
-    "Billing Address": c.billingAddress || "",
-    "Account No": c.accountNo || "",
-    "Account Holder Name": c.accountHolderName || "",
-    "IFSC Code": c.ifscCode || "",
-    "Bank Name": c.bankName || "",
-    "Bank Branch": c.bankBranch || "",
-    "Bank City": c.bankCity || "",
-    "Bank State": c.bankState || "",
-  }));
-
-  const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(exportRows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Entities");
-    XLSX.writeFile(wb, "entity_list.xlsx");
-    setShowExportMenu(false);
-  };
-
-  const exportPDF = () => {
-    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-    const pageW = doc.internal.pageSize.getWidth();
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(15, 23, 42);
-    doc.text("Entity List", 14, 16);
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(100, 116, 139);
-    doc.text(`Total: ${filtered.length} entities | Exported: ${new Date().toLocaleDateString("en-IN")}`, 14, 23);
-    autoTable(doc, {
-      startY: 30,
-      head: [["S.No", "Entity Name", "Code", "Phone", "Email", "GSTIN", "PAN", "State", "Status"]],
-      body: filtered.map((c, i) => [i + 1, c.companyName, c.companyCode, c.phone, c.email, c.gstin, c.pan, c.state, c.status || "active"]),
-      tableWidth: pageW - 28,
-      styles: { fontSize: 7, cellPadding: 3, lineColor: [203, 213, 225], lineWidth: 0.25, textColor: [51, 65, 85], overflow: "linebreak" },
-      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: "bold" },
-      alternateRowStyles: { fillColor: [248, 250, 252] },
-    });
-    doc.save("entity_list.pdf");
-    setShowExportMenu(false);
-  };
+  const stateOptions = INDIA_STATES.filter((s) => s.toLowerCase().includes(stateQuery.trim().toLowerCase()));
 
   return (
-    <div className="w-full p-3 pb-32 sm:p-4 lg:p-6">
+    <>
       {toast && (
         <div className={cx(
-          "fixed right-5 top-5 z-50 rounded-md border px-4 py-3 text-sm font-semibold shadow-lg",
+          "fixed right-5 top-5 z-[200] rounded-md border px-4 py-3 text-sm font-semibold shadow-lg",
           toast.type === "error" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"
         )}>
           {toast.msg}
         </div>
       )}
 
-      <div className="mb-6 flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-cyan-50">
-            <Landmark size={20} className="text-cyan-700" />
-          </div>
-          <div>
-            <h1 className="text-xl font-black text-slate-900">Entity List</h1>
-            <p className="text-sm text-slate-400">Global - legal entity details for PO</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          {canExport && (
-            <div className="relative" ref={exportMenuRef}>
-              <button
-                onClick={() => setShowExportMenu((v) => !v)}
-                className="flex items-center gap-2 rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
-              >
-                <Download size={15} /> Export <ChevronDown size={13} />
-              </button>
-              {showExportMenu && (
-                <div className="absolute right-0 top-full z-30 mt-1.5 w-44 overflow-hidden rounded-md border border-slate-100 bg-white shadow-xl">
-                  <button onClick={exportExcel} className="flex w-full items-center gap-2.5 px-4 py-3 text-left text-sm text-emerald-700 transition hover:bg-emerald-50">
-                    <FileSpreadsheet size={14} /> Excel (.xlsx)
-                  </button>
-                  <button onClick={exportPDF} className="flex w-full items-center gap-2.5 border-t border-slate-100 px-4 py-3 text-left text-sm text-rose-600 transition hover:bg-rose-50">
-                    <FileText size={14} /> PDF
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-          {canAdd && (
-            <button
-              onClick={openAdd}
-              className="flex items-center gap-2 rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              <Plus size={15} /> Add Entity
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="relative mb-5">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          placeholder="Search by entity name, code, GSTIN, PAN or email..."
-          className="w-full rounded-md border border-slate-200 bg-white py-2.5 pl-9 pr-4 text-sm text-slate-700 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-50"
-        />
-      </div>
-
-      {loading ? (
-        <div className="py-16 text-center text-sm text-slate-400">Loading...</div>
-      ) : filtered.length === 0 ? (
-        <div className="flex items-center justify-center rounded-md border border-slate-100 bg-white p-16">
-          <p className="text-xs font-bold uppercase tracking-widest text-slate-300">No entities found</p>
-        </div>
-      ) : (
-        <div className="max-w-full overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
-          <div className="w-full overflow-x-auto">
-            <table className="w-full min-w-[1320px] border-collapse text-sm">
-              <thead>
-                <tr className="bg-slate-900 text-white">
-                  <th className="sticky left-0 z-30 w-[56px] min-w-[56px] bg-slate-900 px-3 py-3 text-center text-xs font-bold uppercase tracking-wide">S.No</th>
-                  <th className="sticky left-[56px] z-30 w-[210px] min-w-[210px] bg-slate-900 px-3 py-3 text-left text-xs font-bold uppercase tracking-wide">Entity Name</th>
-                  <th className="sticky left-[266px] z-30 w-[110px] min-w-[110px] bg-slate-900 px-3 py-3 text-left text-xs font-bold uppercase tracking-wide">Code</th>
-                  <th className="min-w-28 px-3 py-3 text-left text-xs font-bold uppercase tracking-wide">Phone</th>
-                  <th className="min-w-44 px-3 py-3 text-left text-xs font-bold uppercase tracking-wide">Email</th>
-                  <th className="min-w-40 px-3 py-3 text-left text-xs font-bold uppercase tracking-wide">GSTIN</th>
-                  <th className="min-w-32 px-3 py-3 text-left text-xs font-bold uppercase tracking-wide">PAN</th>
-                  <th className="w-24 px-3 py-3 text-center text-xs font-bold uppercase tracking-wide">Pincode</th>
-                  <th className="min-w-32 px-3 py-3 text-left text-xs font-bold uppercase tracking-wide">State</th>
-                  <th className="min-w-32 px-3 py-3 text-left text-xs font-bold uppercase tracking-wide">District</th>
-                  <th className="w-28 px-3 py-3 text-center text-xs font-bold uppercase tracking-wide">Status</th>
-                  <th className="sticky right-0 z-30 w-[104px] min-w-[104px] bg-slate-900 px-3 py-3 text-center text-xs font-bold uppercase tracking-wide">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginated.map((c, idx) => {
-                  const rowBg = idx % 2 === 0 ? "bg-white" : "bg-slate-50";
-                  const status = (c.status || "active").toLowerCase();
-                  return (
-                    <tr key={c.id || idx} className={cx("group transition hover:bg-cyan-50", rowBg)}>
-                      <td className={cx("sticky left-0 z-20 border-b border-r border-slate-200 px-3 py-3 text-center text-xs font-semibold text-slate-400 group-hover:bg-cyan-50", rowBg)}>
-                        {(page - 1) * perPage + idx + 1}
-                      </td>
-                      <td className={cx("sticky left-[56px] z-20 border-b border-r border-slate-200 px-3 py-3 group-hover:bg-cyan-50", rowBg)}>
-                        <span className="block text-xs font-bold leading-snug text-slate-900">{c.companyName || blank}</span>
-                      </td>
-                      <td className={cx("sticky left-[266px] z-20 border-b border-r border-slate-200 px-3 py-3 group-hover:bg-cyan-50", rowBg)}>
-                        <span className="inline-block rounded-md bg-cyan-50 px-2 py-0.5 font-mono text-xs font-bold text-cyan-700">{c.companyCode || "-"}</span>
-                      </td>
-                      <td className="border-b border-r border-slate-200 px-3 py-3 text-xs text-slate-600">{c.phone || blank}</td>
-                      <td className="border-b border-r border-slate-200 px-3 py-3 text-xs text-slate-600">{c.email || blank}</td>
-                      <td className="border-b border-r border-slate-200 px-3 py-3 font-mono text-xs text-slate-600">{c.gstin || blank}</td>
-                      <td className="border-b border-r border-slate-200 px-3 py-3 font-mono text-xs text-slate-600">{c.pan || blank}</td>
-                      <td className="border-b border-r border-slate-200 px-3 py-3 text-center text-xs text-slate-600">{c.pincode || blank}</td>
-                      <td className="border-b border-r border-slate-200 px-3 py-3 text-xs text-slate-600">{c.state || blank}</td>
-                      <td className="border-b border-r border-slate-200 px-3 py-3 text-xs text-slate-600">{c.district || blank}</td>
-                      <td className="border-b border-r border-slate-200 px-3 py-3 text-center">
-                        <span className={cx(
-                          "inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold capitalize",
-                          status === "inactive" ? "bg-slate-100 text-slate-500" : "bg-emerald-50 text-emerald-700"
-                        )}>
-                          {status}
-                        </span>
-                      </td>
-                      <td className={cx("sticky right-0 z-20 border-b border-l border-slate-200 px-3 py-3 group-hover:bg-cyan-50", rowBg)}>
-                        <div className="flex items-center justify-center gap-1">
-                          <button onMouseEnter={() => preloadCompanyImages(c)} onFocus={() => preloadCompanyImages(c)} onClick={() => openView(c)} title="View" className="rounded-md p-1.5 text-slate-400 transition hover:bg-cyan-50 hover:text-cyan-700">
-                            <Eye size={13} />
-                          </button>
-                          {canEdit && (
-                            <button onClick={() => openEdit(c)} title="Edit" className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
-                              <Pencil size={13} />
-                            </button>
-                          )}
-                          {canDelete && (
-                            <button onClick={() => handleDelete(c)} title="Delete" className="rounded-md p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-500">
-                              <Trash2 size={13} />
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-3">
-            <p className="text-xs text-slate-400">{filtered.length} entit{filtered.length !== 1 ? "ies" : "y"} - Page {page} of {totalPages}</p>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-1">
-                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-white disabled:opacity-30">Prev</button>
-                <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-white disabled:opacity-30">Next</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-3">
@@ -743,7 +462,7 @@ function CompanyList() {
                 <h2 className="text-base font-black text-slate-900">{editId ? "Edit Entity" : "Add Entity"}</h2>
                 <p className="text-xs text-slate-400">Main, billing, bank and state-specific billing profiles</p>
               </div>
-              <button onClick={() => setShowModal(false)} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+              <button onClick={() => { setShowModal(false); onModalClose?.(); }} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
                 <X size={18} />
               </button>
             </div>
@@ -916,7 +635,7 @@ function CompanyList() {
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4">
-              <button onClick={() => setShowModal(false)} className="rounded-md px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-200">Cancel</button>
+              <button onClick={() => { setShowModal(false); onModalClose?.(); }} className="rounded-md px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-200">Cancel</button>
               <button onClick={handleSave} disabled={saving} className="rounded-md bg-slate-950 px-5 py-2 text-sm font-bold text-white transition hover:bg-slate-800 disabled:opacity-50">
                 {saving ? "Saving..." : editId ? "Update Entity" : "Add Entity"}
               </button>
@@ -925,102 +644,8 @@ function CompanyList() {
         </div>
       )}
 
-      {showView && viewData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-3">
-          <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-md bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-              <div className="flex items-center gap-3">
-                {viewData.logoUrl ? (
-                  <DeferredImage src={imgUrl(viewData.logoUrl)} alt="" className="h-10 w-10 rounded-md border border-slate-100 bg-slate-50 object-contain p-1" />
-                ) : (
-                  <div className="flex h-10 w-10 items-center justify-center rounded-md bg-cyan-50"><Landmark size={18} className="text-cyan-700" /></div>
-                )}
-                <div>
-                  <h2 className="text-base font-black text-slate-900">{viewData.companyName}</h2>
-                  <p className="text-xs font-mono font-bold text-cyan-700">{viewData.companyCode}</p>
-                </div>
-              </div>
-              <button onClick={() => setShowView(false)} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={18} /></button>
-            </div>
-            <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
-              <ViewSection title="Main Detail" rows={[
-                ["Phone", viewData.phone],
-                ["Email", viewData.email],
-                ["GSTIN", viewData.gstin],
-                ["PAN", viewData.pan],
-                ["Pincode", viewData.pincode],
-                ["State", viewData.state],
-                ["District", viewData.district],
-                ["Status", viewData.status || "active"],
-                ["Address", viewData.address],
-              ]} />
-              <ViewSection title="Entity Billing Address" rows={[
-                ["Billing GSTIN No", viewData.billingGstin],
-                ["Billing Contact Name", viewData.billingContactName],
-                ["Billing Contact Phone", viewData.billingContactPhone],
-                ["Billing State", viewData.billingState],
-                ["Billing Address", viewData.billingAddress],
-              ]} />
-              <ViewSection title="Bank Detail" rows={[
-                ["Account No", viewData.accountNo],
-                ["Account Holder Name", viewData.accountHolderName],
-                ["IFSC Code", viewData.ifscCode],
-                ["Bank Name", viewData.bankName],
-                ["Bank Branch", viewData.bankBranch],
-                ["Bank City", viewData.bankCity],
-                ["Bank State", viewData.bankState],
-              ]} />
-              <div>
-                <p className="mb-3 text-[11px] font-black uppercase tracking-wide text-slate-500">State Specific Billing Address</p>
-                <div className="space-y-3">
-                  {viewData.stateBillingProfiles?.map((block) => (
-                    <div key={block.id} className="rounded-md border border-slate-200 p-3">
-                      <p className="mb-2 text-sm font-black text-slate-900">{block.stateName}</p>
-                      <div className="grid gap-2 md:grid-cols-2">
-                        {block.profiles.map((profile, index) => (
-                          <div key={profile.id} className="rounded-md bg-slate-50 p-3">
-                            <p className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-slate-700">
-                              Profile - {index + 1}
-                              {profile.isDefault && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700"><Star size={10} fill="currentColor" /> Default</span>}
-                            </p>
-                            <p className="text-xs text-slate-600"><b>Location:</b> {profile.locationName || "-"}</p>
-                            <p className="text-xs text-slate-600"><b>GSTIN:</b> {profile.gstin || "-"}</p>
-                            <p className="text-xs text-slate-600"><b>Contact:</b> {profile.contactName || "-"} {profile.contactPhone ? `- ${profile.contactPhone}` : ""}</p>
-                            {profile.address && <p className="text-xs text-slate-600"><b>Address:</b> {profile.address}</p>}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                  {!viewData.stateBillingProfiles?.length && <p className="rounded-md border border-dashed border-slate-200 p-4 text-center text-sm text-slate-400">No state profiles added.</p>}
-                </div>
-              </div>
-              <div>
-                <p className="mb-3 text-[11px] font-black uppercase tracking-wide text-slate-500">Entity Images</p>
-                <div className="grid gap-4 md:grid-cols-2">
-                  {[{ label: "Entity Logo", url: viewData.logoUrl }, { label: "Entity Stamp", url: viewData.stampUrl }].map(({ label, url }) => (
-                    <div key={label} className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-3">
-                      <div className="flex h-28 items-center justify-center overflow-hidden">
-                        {url ? <DeferredImage src={url} alt={label} className="max-h-full max-w-full object-contain" /> : <Image size={22} className="text-slate-300" />}
-                      </div>
-                      <p className="mt-2 text-center text-xs font-bold text-slate-500">{label}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4">
-              {canEdit && (
-                <button onClick={() => { setShowView(false); openEdit(viewData); }} className="inline-flex items-center gap-2 rounded-md border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-white">
-                  <Pencil size={13} /> Edit
-                </button>
-              )}
-              <button onClick={() => setShowView(false)} className="rounded-md bg-slate-950 px-5 py-2 text-sm font-bold text-white hover:bg-slate-800">Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+
+    </>
   );
 }
 
@@ -1041,5 +666,105 @@ const ViewSection = ({ title, rows }) => {
     </div>
   );
 };
+
+export function CompanyDetailPanel({ company, onClose, onSelect }) {
+  if (!company) return null;
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/35 p-3" onClick={onClose}>
+      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-md bg-white shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <div className="flex items-center gap-3">
+            {company.logoUrl ? (
+              <img src={company.logoUrl || ""} alt="" className="h-10 w-10 rounded-md border border-slate-100 bg-slate-50 object-contain p-1" loading="lazy" />
+            ) : (
+              <div className="flex h-10 w-10 items-center justify-center rounded-md bg-cyan-50"><Landmark size={18} className="text-cyan-700" /></div>
+            )}
+            <div>
+              <h2 className="text-base font-black text-slate-900">{company.companyName}</h2>
+              <p className="text-xs font-mono font-bold text-cyan-700">{company.companyCode}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-md p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={18} /></button>
+        </div>
+        <div className="flex-1 space-y-6 overflow-y-auto px-5 py-5">
+          <ViewSection title="Main Detail" rows={[
+            ["Phone", company.phone],
+            ["Email", company.email],
+            ["GSTIN", company.gstin],
+            ["PAN", company.pan],
+            ["Pincode", company.pincode],
+            ["State", company.state],
+            ["District", company.district],
+            ["Status", company.status || "active"],
+            ["Address", company.address],
+          ]} />
+          <ViewSection title="Entity Billing Address" rows={[
+            ["Billing GSTIN No", company.billingGstin],
+            ["Billing Contact Name", company.billingContactName],
+            ["Billing Contact Phone", company.billingContactPhone],
+            ["Billing State", company.billingState],
+            ["Billing Address", company.billingAddress],
+          ]} />
+          <ViewSection title="Bank Detail" rows={[
+            ["Account No", company.accountNo],
+            ["Account Holder Name", company.accountHolderName],
+            ["IFSC Code", company.ifscCode],
+            ["Bank Name", company.bankName],
+            ["Bank Branch", company.bankBranch],
+            ["Bank City", company.bankCity],
+            ["Bank State", company.bankState],
+          ]} />
+          <div>
+            <p className="mb-3 text-[11px] font-black uppercase tracking-wide text-slate-500">State Specific Billing Address</p>
+            <div className="space-y-3">
+              {company.stateBillingProfiles?.map((block) => (
+                <div key={block.id} className="rounded-md border border-slate-200 p-3">
+                  <p className="mb-2 text-sm font-black text-slate-900">{block.stateName}</p>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {block.profiles.map((profile, index) => (
+                      <div key={profile.id} className="rounded-md bg-slate-50 p-3">
+                        <p className="mb-2 flex items-center gap-2 text-xs font-black uppercase text-slate-700">
+                          Profile - {index + 1}
+                          {profile.isDefault && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700"><Star size={10} fill="currentColor" /> Default</span>}
+                        </p>
+                        <p className="text-xs text-slate-600"><b>Location:</b> {profile.locationName || "-"}</p>
+                        <p className="text-xs text-slate-600"><b>GSTIN:</b> {profile.gstin || "-"}</p>
+                        <p className="text-xs text-slate-600"><b>Contact:</b> {profile.contactName || "-"} {profile.contactPhone ? `- ${profile.contactPhone}` : ""}</p>
+                        {profile.address && <p className="text-xs text-slate-600"><b>Address:</b> {profile.address}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {!company.stateBillingProfiles?.length && <p className="rounded-md border border-dashed border-slate-200 p-4 text-center text-sm text-slate-400">No state profiles added.</p>}
+            </div>
+          </div>
+          <div>
+            <p className="mb-3 text-[11px] font-black uppercase tracking-wide text-slate-500">Entity Images</p>
+            <div className="grid gap-4 md:grid-cols-2">
+              {[{ label: "Entity Logo", url: company.logoUrl }, { label: "Entity Stamp", url: company.stampUrl }].map(({ label, url }) => (
+                <div key={label} className="rounded-md border border-dashed border-slate-200 bg-slate-50 p-3">
+                  <div className="flex h-28 items-center justify-center overflow-hidden">
+                    {url ? <img src={url} alt={label} className="max-h-full max-w-full object-contain" loading="lazy" /> : <Image size={22} className="text-slate-300" />}
+                  </div>
+                  <p className="mt-2 text-center text-xs font-bold text-slate-500">{label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 bg-slate-50 px-5 py-4">
+          {onSelect && (
+            <button onClick={() => { onSelect(company); onClose(); }}
+              className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-5 py-2 text-sm font-bold text-white hover:bg-indigo-700">
+              Select
+            </button>
+          )}
+          <button onClick={onClose} className="rounded-md bg-slate-950 px-5 py-2 text-sm font-bold text-white hover:bg-slate-800">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default CompanyList;

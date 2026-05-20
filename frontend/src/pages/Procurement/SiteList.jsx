@@ -2,319 +2,21 @@ import React, { useState, useEffect, useRef } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import {
   Plus, Search, Pencil, Trash2, X, MapPin, Upload, Download,
-  FileSpreadsheet, FileText, ChevronDown, Eye, ArrowLeft, User, Navigation,
+  FileSpreadsheet, FileText, ChevronDown, Eye, ArrowLeft, User, Navigation, History,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { SiteMapModal, SiteFormField, SiteContactPicker } from "../../components/procurement/SiteShared";
+import { logAudit } from "../../utils/auditLog";
+import LogPanel from "../../components/LogPanel";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const PER_PAGE = 10;
 const CSV_HEADERS = ["Site Name", "Site Code", "Status", "District", "State", "Pincode", "Site Address", "Slug"];
 
-/* ── Leaflet singleton loader ── */
-let _leafletPromise = null;
-const loadLeaflet = () => {
-  if (_leafletPromise) return _leafletPromise;
-  _leafletPromise = new Promise((resolve) => {
-    if (window.L) return resolve();
-    if (!document.querySelector('link[href*="leaflet"]')) {
-      const link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-      document.head.appendChild(link);
-    }
-    const s = document.createElement("script");
-    s.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    s.onload = () => {
-      const L = window.L;
-      delete L.Icon.Default.prototype._getIconUrl;
-      L.Icon.Default.mergeOptions({
-        iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-        iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-        shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-      });
-      resolve();
-    };
-    document.head.appendChild(s);
-  });
-  return _leafletPromise;
-};
-
-/* ── Map Modal ── */
-function MapModal({ initialLat, initialLng, onSave, onClose }) {
-  const mapContainerRef = useRef(null);
-  const mapInstanceRef = useRef(null);
-  const markerRef = useRef(null);
-  const [coords, setCoords] = useState({ lat: initialLat ? +initialLat : 28.6139, lng: initialLng ? +initialLng : 77.2090 });
-  const [searchQ, setSearchQ] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [gettingLoc, setGettingLoc] = useState(false);
-  const [mapReady, setMapReady] = useState(false);
-
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      await loadLeaflet();
-      if (!mounted || !mapContainerRef.current) return;
-      const L = window.L;
-      const map = L.map(mapContainerRef.current, { zoomControl: false, attributionControl: false })
-        .setView([coords.lat, coords.lng], 13);
-      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
-        maxZoom: 19,
-      }).addTo(map);
-      L.control.zoom({ position: "bottomright" }).addTo(map);
-      const marker = L.marker([coords.lat, coords.lng], { draggable: true }).addTo(map);
-      const update = (lat, lng) => {
-        if (mounted) setCoords({ lat: +lat.toFixed(6), lng: +lng.toFixed(6) });
-      };
-      marker.on("dragend", (e) => { const p = e.target.getLatLng(); update(p.lat, p.lng); });
-      map.on("click", (e) => { marker.setLatLng(e.latlng); update(e.latlng.lat, e.latlng.lng); });
-      mapInstanceRef.current = map;
-      markerRef.current = marker;
-      if (mounted) setMapReady(true);
-    })();
-    return () => {
-      mounted = false;
-      if (mapInstanceRef.current) { mapInstanceRef.current.remove(); mapInstanceRef.current = null; }
-    };
-  }, []);
-
-  const moveTo = (lat, lng) => {
-    const la = +lat, lo = +lng;
-    setCoords({ lat: +la.toFixed(6), lng: +lo.toFixed(6) });
-    if (mapInstanceRef.current && markerRef.current) {
-      mapInstanceRef.current.setView([la, lo], 15);
-      markerRef.current.setLatLng([la, lo]);
-    }
-  };
-
-  const handleSearch = async () => {
-    if (!searchQ.trim()) return;
-    setSearching(true);
-    try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQ)}&limit=1`);
-      const data = await res.json();
-      if (data[0]) moveTo(+data[0].lat, +data[0].lon);
-    } catch { }
-    setSearching(false);
-  };
-
-  const handleMyLocation = () => {
-    if (!navigator.geolocation) return;
-    setGettingLoc(true);
-    navigator.geolocation.getCurrentPosition(
-      (p) => { moveTo(p.coords.latitude, p.coords.longitude); setGettingLoc(false); },
-      () => setGettingLoc(false),
-      { timeout: 10000 }
-    );
-  };
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl flex flex-col overflow-hidden">
-
-        {/* Header */}
-        <div className="flex items-start justify-between px-5 pt-5 pb-4">
-          <div className="flex items-center gap-2">
-            <MapPin size={16} className="text-slate-700 shrink-0" />
-            <div>
-              <p className="font-bold text-slate-800 text-sm leading-tight">Select Location from Map</p>
-              <p className="text-xs text-slate-400 mt-0.5">Search for a location or click directly on the map.</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors -mt-0.5">
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Search row */}
-        <div className="px-5 pb-3 flex gap-2 items-center">
-          <div className="flex-1 relative">
-            <input
-              value={searchQ}
-              onChange={(e) => setSearchQ(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              placeholder="Search location..."
-              className="w-full border border-slate-200 rounded-full px-4 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-50 pr-8 text-slate-700 bg-white shadow-sm"
-            />
-            {searchQ && (
-              <button onClick={() => setSearchQ("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                <X size={13} />
-              </button>
-            )}
-          </div>
-          <button
-            onClick={handleMyLocation}
-            disabled={gettingLoc}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 text-white rounded-full text-sm font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-50 whitespace-nowrap shadow-sm"
-          >
-            <MapPin size={14} />
-            {gettingLoc ? "Locating…" : "Use My Location"}
-          </button>
-        </div>
-
-        {/* Map */}
-        <div className="px-5 pb-2 relative">
-          <div
-            ref={mapContainerRef}
-            style={{ height: 320 }}
-            className="w-full rounded-xl overflow-hidden border border-slate-200 shadow-sm"
-          />
-          {!mapReady && (
-            <div
-              className="absolute inset-x-5 rounded-xl bg-slate-100 flex items-center justify-center pointer-events-none"
-              style={{ height: 320, top: 0 }}
-            >
-              <span className="text-sm text-slate-400">Loading map…</span>
-            </div>
-          )}
-        </div>
-
-        {/* Coords */}
-        <div className="px-5 py-2 flex gap-5 text-xs font-mono text-slate-500">
-          <span>Lat: <b className="text-slate-700">{coords.lat}</b></span>
-          <span>Lng: <b className="text-slate-700">{coords.lng}</b></span>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-100">
-          <button
-            onClick={onClose}
-            className="px-5 py-2.5 rounded-full text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors"
-          >
-            Close
-          </button>
-          <button
-            onClick={() => onSave(String(coords.lat), String(coords.lng))}
-            className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-full text-sm font-semibold hover:bg-indigo-700 transition-colors shadow-sm"
-          >
-            <MapPin size={14} /> Save Location
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ── Form Field ── */
-const FormField = ({ label, value, onChange, placeholder, textarea, required, select, options = [], rows = 4 }) => (
-  <div className="flex flex-col">
-    {label && (
-      <label className="block text-sm font-medium text-slate-700 mb-1.5">
-        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
-      </label>
-    )}
-    {textarea ? (
-      <textarea value={value} onChange={onChange} rows={rows} placeholder={placeholder}
-        className="flex-1 w-full border border-slate-200 rounded-md px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-50 text-slate-700 resize-none transition-colors" />
-    ) : select ? (
-      <div className="relative">
-        <select value={value} onChange={onChange}
-          className="w-full border border-slate-200 rounded-md px-3 py-2.5 pr-8 text-sm outline-none focus:border-indigo-400 text-slate-700 bg-white transition-colors appearance-none">
-          {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-      </div>
-    ) : (
-      <input value={value} onChange={onChange} placeholder={placeholder}
-        className="w-full border border-slate-200 rounded-md px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-50 text-slate-700 transition-colors" />
-    )}
-  </div>
-);
-
-/* ── Contact Picker ── */
-function ContactPicker({ allContacts, contact, onSelect, onClear, isPrimary }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const blurTimer = useRef(null);
-
-  const matches = allContacts.filter(c =>
-    !query ||
-    c.personName?.toLowerCase().includes(query.toLowerCase()) ||
-    c.contactNumber?.toLowerCase().includes(query.toLowerCase()) ||
-    c.email?.toLowerCase().includes(query.toLowerCase())
-  );
-
-  const handleBlur = () => {
-    blurTimer.current = setTimeout(() => setOpen(false), 150);
-  };
-
-  const handlePick = (c) => {
-    clearTimeout(blurTimer.current);
-    onSelect(c);
-    setQuery("");
-    setOpen(false);
-  };
-
-  /* ── Selected state: show card ── */
-  if (contact.name) {
-    return (
-      <div className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 border border-slate-200 shadow-sm">
-        <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
-          <span className="text-indigo-700 text-sm font-bold">{contact.name?.[0]?.toUpperCase()}</span>
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-slate-800 leading-tight">{contact.name}</p>
-          <p className="text-xs text-slate-400 mt-0.5 truncate">
-            {contact.phone}{contact.email ? ` • ${contact.email}` : ""}
-          </p>
-        </div>
-        <button type="button" onClick={onClear}
-          className="w-6 h-6 rounded-full flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 shrink-0 transition-colors">
-          <X size={13} />
-        </button>
-      </div>
-    );
-  }
-
-  /* ── Empty state: show search ── */
-  return (
-    <div className="relative">
-      <div className="flex items-center gap-2 border border-slate-200 rounded-md px-3 py-2.5 bg-white focus-within:border-indigo-400 transition-colors">
-        <Search size={14} className="text-slate-400 shrink-0" />
-        <input
-          value={query}
-          onChange={e => { setQuery(e.target.value); setOpen(true); }}
-          onFocus={() => setOpen(true)}
-          onBlur={handleBlur}
-          placeholder={isPrimary ? "Search and select primary contact…" : "Search and select contact…"}
-          className="flex-1 text-sm outline-none text-slate-700 placeholder-slate-400 bg-transparent"
-        />
-        {query && (
-          <button type="button" onClick={() => setQuery("")} className="text-slate-400 hover:text-slate-600">
-            <X size={12} />
-          </button>
-        )}
-      </div>
-      {open && (
-        <div className="absolute z-40 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-56 overflow-y-auto">
-          {matches.length === 0 ? (
-            <p className="px-4 py-4 text-sm text-slate-400 text-center">No contacts found</p>
-          ) : matches.map(c => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => handlePick(c)}
-              className="w-full px-4 py-3 text-left hover:bg-indigo-50 flex items-center gap-3 border-b border-slate-100 last:border-0 transition-colors"
-            >
-              <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center shrink-0">
-                <span className="text-indigo-700 text-xs font-bold">{c.personName?.[0]?.toUpperCase()}</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-slate-800 leading-tight">{c.personName}</p>
-                <p className="text-xs text-slate-400 mt-0.5 truncate">
-                  {c.contactNumber}{c.email ? ` • ${c.email}` : ""}
-                </p>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+/* Map / FormField / ContactPicker moved to shared component */
 
 const emptyContact = (isPrimary = false) => ({ id: uid(), contactId: "", name: "", phone: "", email: "", isPrimary });
 
@@ -351,6 +53,7 @@ export default function SiteList() {
   const [saving, setSaving] = useState(false);
   const [bulking, setBulking] = useState(false);
   const [toast, setToast] = useState(null);
+  const [logTarget, setLogTarget] = useState(null);
   const [page, setPage] = useState(1);
   const [allContacts, setAllContacts] = useState([]);
   const exportRef = useRef();
@@ -430,6 +133,8 @@ export default function SiteList() {
       });
       const data = await res.json();
       if (!res.ok || data.error) { showToast(data.error || "Failed to save", "error"); setSaving(false); return; }
+      const savedId = editId || data.id;
+      logAudit("site", savedId, form.siteName, editId ? "updated" : "created");
       showToast(editId ? "Site updated" : "Site added");
       setShowForm(false);
       fetchSites();
@@ -440,7 +145,9 @@ export default function SiteList() {
   const handleDelete = async (id) => {
     if (!confirm("Delete this site?")) return;
     try {
+      const siteName = sites.find(s => s.id === id)?.site_name || "";
       await fetch(`${API}/api/procurement/sites/${id}`, { method: "DELETE" });
+      logAudit("site", id, siteName, "deleted");
       showToast("Site deleted");
       fetchSites();
     } catch { showToast("Failed to delete", "error"); }
@@ -559,7 +266,7 @@ export default function SiteList() {
     return (
       <div className="min-h-screen bg-slate-50 p-4 sm:p-6">
         {showMapModal && (
-          <MapModal
+          <SiteMapModal
             initialLat={form.latitude}
             initialLng={form.longitude}
             onSave={(lat, lng) => { setForm(f => ({ ...f, latitude: lat, longitude: lng })); setShowMapModal(false); }}
@@ -591,11 +298,11 @@ export default function SiteList() {
           <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
             <h2 className="text-base font-bold text-slate-800 mb-4">Site Details</h2>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <FormField label="Name" required value={form.siteName}
+              <SiteFormField label="Name" required value={form.siteName}
                 onChange={e => setForm(f => ({ ...f, siteName: e.target.value }))} placeholder="Enter site name" />
-              <FormField label="Code" required value={form.siteCode}
+              <SiteFormField label="Code" required value={form.siteCode}
                 onChange={e => setForm(f => ({ ...f, siteCode: e.target.value.toUpperCase() }))} placeholder="Enter site code" />
-              <FormField label="Status" required value={form.status}
+              <SiteFormField label="Status" required value={form.status}
                 onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
                 select options={[{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }]} />
             </div>
@@ -628,7 +335,7 @@ export default function SiteList() {
                       </button>
                     )}
                   </div>
-                  <ContactPicker
+                  <SiteContactPicker
                     allContacts={allContacts}
                     contact={contact}
                     isPrimary={idx === 0}
@@ -658,18 +365,18 @@ export default function SiteList() {
               </button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-              <FormField label="Pincode" required value={form.pincode}
+              <SiteFormField label="Pincode" required value={form.pincode}
                 onChange={e => setForm(f => ({ ...f, pincode: e.target.value }))} placeholder="Enter pincode" />
-              <FormField label="District" required value={form.district}
+              <SiteFormField label="District" required value={form.district}
                 onChange={e => setForm(f => ({ ...f, district: e.target.value }))} placeholder="Enter district" />
-              <FormField label="State" required value={form.state}
+              <SiteFormField label="State" required value={form.state}
                 onChange={e => setForm(f => ({ ...f, state: e.target.value }))} placeholder="Enter state" />
             </div>
             <div className="grid grid-cols-2 gap-4 items-stretch">
               <div className="flex flex-col gap-4">
-                <FormField label="Longitude" required value={form.longitude}
+                <SiteFormField label="Longitude" required value={form.longitude}
                   onChange={e => setForm(f => ({ ...f, longitude: e.target.value }))} placeholder="" />
-                <FormField label="Latitude" required value={form.latitude}
+                <SiteFormField label="Latitude" required value={form.latitude}
                   onChange={e => setForm(f => ({ ...f, latitude: e.target.value }))} placeholder="" />
               </div>
               <div className="flex flex-col">
@@ -902,6 +609,9 @@ export default function SiteList() {
                             <Trash2 size={14} />
                           </button>
                         )}
+                        <button onClick={() => setLogTarget({ entityType: "site", entityId: s.id, entityName: s.site_name })} className="w-8 h-8 flex items-center justify-center rounded border border-slate-200 text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-all" title="Activity Log">
+                          <History size={14} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1069,6 +779,130 @@ export default function SiteList() {
           </div>
         </div>
       )}
+      {logTarget && (
+        <LogPanel entityType={logTarget.entityType} entityId={logTarget.entityId} entityName={logTarget.entityName} onClose={() => setLogTarget(null)} />
+      )}
+    </div>
+  );
+}
+
+export function SiteDetailPanel({ site, onClose, onSelect }) {
+  if (!site) return null;
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm" onClick={onClose}>
+      <style>{`
+        .site-drawer-scroll::-webkit-scrollbar { width: 4px; }
+        .site-drawer-scroll::-webkit-scrollbar-track { background: transparent; }
+        .site-drawer-scroll::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+        .site-drawer-scroll::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+      `}</style>
+      <div className="bg-white w-full max-w-md max-h-[90vh] shadow-2xl flex flex-col rounded-xl overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
+              <MapPin size={20} className="text-indigo-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 leading-tight">Site Details</h2>
+              <p className="text-xs text-slate-400 font-medium">{site.siteCode || "No Code"}</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl transition-all">
+            <X size={20} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-7 site-drawer-scroll">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 mb-2">
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider
+                ${site.status === "active" ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-slate-50 text-slate-500 border border-slate-100"}`}>
+                {site.status || "active"}
+              </span>
+              <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold uppercase tracking-wider">Site Master</span>
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900">{site.siteName}</h1>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">District</p>
+              <p className="text-sm font-semibold text-slate-700">{site.district || site.city || "—"}</p>
+            </div>
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">State</p>
+              <p className="text-sm font-semibold text-slate-700">{site.state || "—"}</p>
+            </div>
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 col-span-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pincode</p>
+              <p className="text-sm font-semibold text-slate-700">{site.pincode || "—"}</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+              <Navigation size={13} /> Site Address
+            </h3>
+            <div className="p-4 rounded-xl border border-slate-200 text-slate-600 text-sm leading-relaxed bg-white shadow-sm">
+              {site.siteAddress || "No address provided."}
+            </div>
+          </div>
+          {(site.latitude || site.longitude) && (
+            <div className="p-4 rounded-xl bg-indigo-50/40 border border-indigo-100 space-y-3">
+              <h3 className="text-[11px] font-bold text-indigo-600 uppercase tracking-widest flex items-center gap-2">
+                <MapPin size={13} /> Coordinates
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Latitude</p>
+                  <p className="text-xs font-mono font-bold text-slate-700">{site.latitude || "0.000000"}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Longitude</p>
+                  <p className="text-xs font-mono font-bold text-slate-700">{site.longitude || "0.000000"}</p>
+                </div>
+              </div>
+            </div>
+          )}
+          {Array.isArray(site.contacts) && site.contacts.length > 0 && (
+            <div className="space-y-3">
+              <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <User size={13} /> Assigned Contacts
+              </h3>
+              <div className="space-y-2.5">
+                {site.contacts.map((c, i) => (
+                  <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-indigo-200 transition-all group bg-slate-50/50">
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 font-bold text-sm
+                      ${i === 0 ? "bg-indigo-600 text-white shadow-md" : "bg-slate-200 text-slate-500"}`}>
+                      {c.name?.[0]?.toUpperCase() || "C"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-slate-800 truncate">{c.name || "Unnamed"}</p>
+                        {i === 0 && <span className="text-[8px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full uppercase">Primary</span>}
+                      </div>
+                      <div className="flex items-center gap-3 mt-0.5 text-[11px] text-slate-500 font-medium">
+                        <span>{c.phone || "No phone"}</span>
+                        {c.email && <span className="opacity-50 truncate">{c.email}</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="px-6 py-5 border-t border-slate-100 bg-slate-50 flex items-center gap-3 shrink-0">
+          {onSelect && (
+            <button onClick={() => { onSelect(site); onClose(); }}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-all shadow-sm">
+              Select
+            </button>
+          )}
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-slate-900 text-white hover:bg-slate-800 transition-all shadow-lg shadow-slate-200">
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

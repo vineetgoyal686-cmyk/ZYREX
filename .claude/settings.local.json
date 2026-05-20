@@ -66,7 +66,24 @@
       "PowerShell($env:Path += \";C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\"; $d=Get-Date -Format yyyyMMdd; pg_dump \"postgresql://postgres.lhxgohcxcslbtnuubrsg:Bootes%40%23%242029@aws-1-ap-south-1.pooler.supabase.com:5432/postgres\" -f \"d:\\\\Zyrex\\\\database backup\\\\dev_backup_$d.sql\"; Write-Host \"Dev backup done: dev_backup_$d.sql\")",
       "Bash(python3 -)",
       "PowerShell($env:Path += \";C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\"; $d=Get-Date -Format yyyyMMdd_HHmm; pg_dump \"postgresql://postgres.flaxuaaytkvecoexbxej:Hobbs%40%23%212027@aws-1-ap-south-1.pooler.supabase.com:5432/postgres\" -f \"d:\\\\Zyrex\\\\database backup\\\\prod_backup_$d.sql\"; Write-Host \"Prod done: prod_backup_$d.sql\")",
-      "PowerShell($env:Path += \";C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\"; $d=Get-Date -Format yyyyMMdd_HHmm; pg_dump \"postgresql://postgres.lhxgohcxcslbtnuubrsg:Bootes%40%23%242029@aws-1-ap-south-1.pooler.supabase.com:5432/postgres\" -f \"d:\\\\Zyrex\\\\database backup\\\\dev_backup_$d.sql\"; Write-Host \"Dev done: dev_backup_$d.sql\")"
+      "PowerShell($env:Path += \";C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\"; $d=Get-Date -Format yyyyMMdd_HHmm; pg_dump \"postgresql://postgres.lhxgohcxcslbtnuubrsg:Bootes%40%23%242029@aws-1-ap-south-1.pooler.supabase.com:5432/postgres\" -f \"d:\\\\Zyrex\\\\database backup\\\\dev_backup_$d.sql\"; Write-Host \"Dev done: dev_backup_$d.sql\")",
+      "Bash(node -e \"require\\('./src/routes/procurement.js'\\)\")",
+      "Bash(node --check src/routes/actionRequests.js)",
+      "Bash(node --check src/sse.js)",
+      "Bash(node --check src/routes/finance.js)",
+      "Bash(node --check src/routes/users.js)",
+      "Bash(node --check src/routes/purchaseOrders.js)",
+      "PowerShell(cd \"d:\\\\Zyrex\\\\backend\"; $env:NODE_ENV=\"test\"; node -e \"require\\('dotenv'\\).config\\({path: '.env'}\\); require\\('dotenv'\\).config\\({path: '.env.local', override: true}\\); require\\('./server.js'\\);\" 2>&1 | Select-Object -First 20)",
+      "Bash(del \"d:\\\\Zyrex\\\\frontend\\\\src\\\\pages\\\\Procurement\\\\OrderDashboard.jsx\")",
+      "Bash(node --input-type=module)",
+      "Bash(node -e \"const d = require\\('./frontend/public/india-locations/part-21.json'\\); console.log\\('Total:', d.length\\); console.log\\('First 20:', JSON.stringify\\(d.slice\\(0,20\\)\\)\\);\")",
+      "Bash(node -e \"const d = require\\('./frontend/src/data/_raw_states_districts.json'\\); const raj = d['Rajasthan'] || d['rajasthan']; if\\(raj\\) { console.log\\('Type:', typeof raj, Array.isArray\\(raj\\)\\); if\\(Array.isArray\\(raj\\)\\) { console.log\\('Count:', raj.length\\); console.log\\('First 20:', JSON.stringify\\(raj.slice\\(0,20\\)\\)\\); } else { console.log\\(JSON.stringify\\(Object.keys\\(raj\\).slice\\(0,5\\)\\)\\); } } else { console.log\\('Keys:', JSON.stringify\\(Object.keys\\(d\\).slice\\(0,10\\)\\)\\); }\")",
+      "Bash(npx tsc *)",
+      "PowerShell($env:Path += \";C:\\\\Program Files\\\\PostgreSQL\\\\18\\\\bin\"; $d=Get-Date -Format yyyyMMdd; pg_dump \"postgresql://postgres.lhxgohcxcslbtnuubrsg:Bootes%40%23%242029@aws-1-ap-south-1.pooler.supabase.com:5432/postgres\" -f \"d:/Zyrex/database backup/dev_backup_$d.sql\")",
+      "Bash(curl -s http://localhost:3000/api/procurement/categories)",
+      "Bash(curl -s \"http://localhost:3000/api/orders\")",
+      "Bash(node -e \"const d=require\\('fs'\\);let s='';process.stdin.on\\('data',c=>s+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(s\\);const o=j.orders?.[0];console.log\\('notes field:',JSON.stringify\\(o?.notes\\)\\);console.log\\('snapshot.notes:',JSON.stringify\\(o?.snapshot?.notes\\)\\);}\\)\")",
+      "Bash(node -e \"const s=[];process.stdin.on\\('data',c=>s.push\\(c\\)\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(Buffer.concat\\(s\\)\\);const id=j.orders?.[0]?.id;if\\(id\\){const http=require\\('http'\\);http.get\\('http://localhost:3000/api/orders/'+id,\\(r\\)=>{const d=[];r.on\\('data',c=>d.push\\(c\\)\\);r.on\\('end',\\(\\)=>{const o=JSON.parse\\(Buffer.concat\\(d\\)\\);console.log\\('notes:',JSON.stringify\\(o.order?.notes\\)\\);console.log\\('snapshot.notes:',JSON.stringify\\(o.order?.snapshot?.notes\\)\\);}\\)}\\);}}\\);\")"
     ]
   }
 }

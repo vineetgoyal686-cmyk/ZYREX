@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
-import { Plus, Search, Pencil, Trash2, X, Building2, Upload, FileText, ChevronLeft, ChevronRight, Download, FileSpreadsheet, ChevronDown, Eye, Copy, Check, Trash, RotateCcw } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, X, Building2, Upload, FileText, ChevronLeft, ChevronRight, FileSpreadsheet, ChevronDown, Eye, Copy, Check, Trash, RotateCcw, History } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { logAudit } from "../../utils/auditLog";
+import LogPanel from "../../components/LogPanel";
+import VendorPool from "./VendorPool";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const PER_PAGE = 15;
@@ -121,6 +124,7 @@ export default function VendorList() {
   const [showTrash, setShowTrash] = useState(false);
   const [trashVendors, setTrashVendors] = useState([]);
   const [trashLoading, setTrashLoading] = useState(false);
+  const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
 
   const fetchTrash = async () => {
     setTrashLoading(true);
@@ -143,13 +147,20 @@ export default function VendorList() {
     } catch { showToast("Failed to restore", "error"); }
   };
 
-  const handlePermanentDelete = async (id, name) => {
-    if (!confirm(`Permanently delete "${name}"?\n\nThis cannot be undone.`)) return;
-    try {
-      await fetch(`${API}/api/procurement/vendors/${id}/permanent`, { method: "DELETE" });
-      showToast("Vendor permanently deleted");
-      fetchTrash();
-    } catch { showToast("Failed to delete", "error"); }
+  const handlePermanentDelete = (id, name) => {
+    setConfirmModal({
+      message: `Permanently delete "${name}"? This cannot be undone.`,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          const res = await fetch(`${API}/api/procurement/vendors/${id}/permanent`, { method: "DELETE" });
+          const data = await res.json();
+          if (!res.ok) return showToast(data.error || "Failed to delete", "error");
+          showToast("Vendor permanently deleted");
+          fetchTrash();
+        } catch { showToast("Failed to delete", "error"); }
+      },
+    });
   };
   const [form, setForm]           = useState(emptyForm);
   const [editId, setEditId]       = useState(null);
@@ -160,12 +171,16 @@ export default function VendorList() {
   const [saving, setSaving]       = useState(false);
   const [toast, setToast]         = useState(null);
   const [tab, setTab]             = useState("basic");
+  const [logTarget, setLogTarget] = useState(null);
+  const [mainTab, setMainTab]     = useState("vendors");
   const [page, setPage]           = useState(1);
   const [showBulk, setShowBulk]   = useState(false);
   const [bulkRows, setBulkRows]   = useState([]);
   const [bulkFile, setBulkFile]   = useState("");
   const [bulkSaving, setBulkSaving] = useState(false);
-  const [showExport, setShowExport] = useState(false);
+  const [showMore, setShowMore]     = useState(false);
+  const [poolMoreOpen, setPoolMoreOpen] = useState(false);
+  const vendorPoolRef               = useRef(null);
   const [sites, setSites]         = useState(cachedSites || []);
   const [companies, setCompanies] = useState(cachedCompanies || []);
   const [showCompanySearch, setShowCompanySearch] = useState(false);
@@ -184,7 +199,12 @@ export default function VendorList() {
   const siteRef                   = useRef();
   const companyRef                = useRef();
 
-  useEffect(() => { 
+  useEffect(() => {
+    setShowMore(false);
+    setPoolMoreOpen(false);
+  }, [mainTab]);
+
+  useEffect(() => {
     if (!cachedVendors) fetchVendors(); else fetchVendors(true);
     if (!cachedSites) fetchSites(); else fetchSites(true);
     if (!cachedCompanies) fetchCompanies(); else fetchCompanies(true);
@@ -261,8 +281,10 @@ export default function VendorList() {
       });
       const url    = editId ? `${API}/api/procurement/vendors/${editId}` : `${API}/api/procurement/vendors`;
       const method = editId ? "PUT" : "POST";
-      const res    = await fetch(url, { method, body: fd });
+      const res     = await fetch(url, { method, body: fd });
       if (!res.ok) throw new Error("Save failed");
+      const resData = await res.json();
+      logAudit("vendor", editId || resData.id || "", form.vendorName, editId ? "updated" : "created");
       showToast(editId ? "Vendor updated" : "Vendor added");
       setShowModal(false);
       fetchVendors();
@@ -270,18 +292,24 @@ export default function VendorList() {
     setSaving(false);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("Move this vendor to Trash? You can restore it later.")) return;
-    try {
-      const currentUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
-      await fetch(`${API}/api/procurement/vendors/${id}`, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deletedById: currentUser.id || "", deletedByName: currentUser.name || "" }),
-      });
-      showToast("Vendor moved to trash");
-      fetchVendors();
-    } catch { showToast("Failed to delete", "error"); }
+  const handleDelete = (id) => {
+    setConfirmModal({
+      message: "Move this vendor to Trash? You can restore it later.",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          const currentUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
+          await fetch(`${API}/api/procurement/vendors/${id}`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ deletedById: currentUser.id || "", deletedByName: currentUser.name || "" }),
+          });
+          logAudit("vendor", id, vendors.find(v => v.id === id)?.vendor_name || "", "deleted");
+          showToast("Vendor moved to trash");
+          fetchVendors();
+        } catch { showToast("Failed to delete", "error"); }
+      },
+    });
   };
 
   const forceDownload = async (url, filename) => {
@@ -323,7 +351,7 @@ export default function VendorList() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Vendors");
     XLSX.writeFile(wb, "vendor_list.xlsx");
-    setShowExport(false);
+    setShowMore(false);
   };
 
   const exportPDF = () => {
@@ -344,7 +372,7 @@ export default function VendorList() {
       alternateRowStyles: { fillColor: [248, 249, 255] },
     });
     doc.save("vendor_list.pdf");
-    setShowExport(false);
+    setShowMore(false);
   };
 
   const downloadTemplate = () => {
@@ -452,60 +480,125 @@ export default function VendorList() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center shrink-0">
-            <Building2 size={18} className="text-purple-600" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold text-slate-800">Vendor List</h1>
-            <p className="text-xs text-slate-400">{vendors.length} vendors registered</p>
-          </div>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-200 pb-4 mb-5">
+        <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+          {[
+            { key: "vendors", label: "Vendor List" },
+            { key: "pool",    label: "Vendor Pool" },
+          ].map(t => (
+            <button key={t.key} type="button" onClick={() => setMainTab(t.key)}
+              className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${
+                mainTab === t.key ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}>
+              {t.label}
+            </button>
+          ))}
         </div>
         <div className="flex items-center gap-2 flex-wrap sm:justify-end">
-          {/* Export dropdown */}
-          {canExport && (
+          {/* More dropdown — Export / Bulk Upload / Trash */}
+          {mainTab === "vendors" && (
             <div className="relative">
-              <button onClick={() => { setShowExport(s => !s); setShowBulk(false); }}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
-                <Download size={14} /> Export <ChevronDown size={12} />
+              <button type="button" onClick={() => setShowMore(s => !s)}
+                className={`inline-flex h-9 select-none items-center gap-2 rounded-md border px-3.5 text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
+                  showMore
+                    ? "border-indigo-500 bg-indigo-100 text-indigo-950 shadow-inner ring-1 ring-indigo-300/70 focus-visible:ring-indigo-500/45"
+                    : "border-slate-400 bg-gradient-to-b from-slate-100 to-slate-200 text-slate-800 shadow-sm hover:border-slate-500 hover:from-slate-50 hover:to-slate-200 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:ring-slate-400/50"
+                }`}>
+                More <ChevronDown size={12} className={`transition-transform shrink-0 ${showMore ? "rotate-180" : ""}`} />
               </button>
-              {showExport && (
-                <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl shadow-lg border border-slate-100 py-1 min-w-35">
-                  <button onClick={exportExcel}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
-                    <FileSpreadsheet size={14} className="text-green-600" /> Excel (.xlsx)
-                  </button>
-                  <button onClick={exportPDF}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
-                    <FileText size={14} className="text-red-500" /> PDF
+              {showMore && (
+                <div className="absolute right-0 top-full mt-1 z-30 bg-white rounded-lg shadow-xl border border-slate-100 py-1 w-48">
+                  {canExport && <>
+                    <p className="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Export As</p>
+                    <button onClick={exportExcel}
+                      className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                      <FileSpreadsheet size={14} className="text-green-600" /> Excel (.xlsx)
+                    </button>
+                    <button onClick={exportPDF}
+                      className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                      <FileText size={14} className="text-red-500" /> PDF
+                    </button>
+                    <div className="border-t border-slate-100 my-1" />
+                  </>}
+                  {canEdit && (
+                    <button onClick={() => { setShowBulk(s => !s); setShowMore(false); }}
+                      className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                      <Upload size={14} className="text-slate-500" /> Bulk Upload
+                    </button>
+                  )}
+                  <div className="border-t border-slate-100 my-1" />
+                  <button onClick={() => { openTrash(); setShowMore(false); }}
+                    className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 transition-colors">
+                    <Trash size={14} className="text-slate-400" /> Trash
                   </button>
                 </div>
               )}
             </div>
           )}
 
-          {/* Bulk Upload */}
-          {canEdit && (
-            <button onClick={() => { setShowBulk(s => !s); setShowExport(false); }}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
-              <Upload size={14} /> Bulk Upload
+          {mainTab === "vendors" && canAdd && (
+            <button type="button" onClick={openAdd}
+              className="inline-flex h-9 select-none items-center gap-2 rounded-md border border-indigo-700 bg-gradient-to-b from-indigo-600 to-indigo-700 px-3.5 text-xs font-bold text-white shadow-sm transition-all hover:border-indigo-800 hover:from-indigo-500 hover:to-indigo-600 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/55 focus-visible:ring-offset-1">
+              <Plus size={14} className="shrink-0" /> Add
             </button>
           )}
 
-          <button onClick={openTrash}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-sm font-medium hover:bg-slate-50 transition-all" title="View deleted vendors">
-            <Trash size={14} /> Trash
-          </button>
+          {mainTab === "pool" && (
+            <div className="relative">
+              <button type="button" onClick={() => setPoolMoreOpen(s => !s)}
+                className={`inline-flex h-9 select-none items-center gap-2 rounded-md border px-3.5 text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
+                  poolMoreOpen
+                    ? "border-indigo-500 bg-indigo-100 text-indigo-950 shadow-inner ring-1 ring-indigo-300/70 focus-visible:ring-indigo-500/45"
+                    : "border-slate-400 bg-gradient-to-b from-slate-100 to-slate-200 text-slate-800 shadow-sm hover:border-slate-500 hover:from-slate-50 hover:to-slate-200 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:ring-slate-400/50"
+                }`}>
+                More <ChevronDown size={12} className={`transition-transform shrink-0 ${poolMoreOpen ? "rotate-180" : ""}`} />
+              </button>
+              {poolMoreOpen && (
+                <div className="absolute right-0 top-full mt-1 z-30 bg-white rounded-lg shadow-xl border border-slate-100 py-1 w-48">
+                  {canExport && <>
+                    <p className="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Export As</p>
+                    <button type="button" onClick={() => { vendorPoolRef.current?.exportExcel?.(); setPoolMoreOpen(false); }}
+                      className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                      <FileSpreadsheet size={14} className="text-green-600" /> Excel (.xlsx)
+                    </button>
+                    <button type="button" onClick={() => { vendorPoolRef.current?.exportPDF?.(); setPoolMoreOpen(false); }}
+                      className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                      <FileText size={14} className="text-red-500" /> PDF
+                    </button>
+                    <div className="border-t border-slate-100 my-1" />
+                  </>}
+                  {canEdit && (
+                    <button type="button" onClick={() => { vendorPoolRef.current?.openBulkUpload?.(); setPoolMoreOpen(false); }}
+                      className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                      <Upload size={14} className="text-slate-500" /> Bulk Upload
+                    </button>
+                  )}
+                  <div className="border-t border-slate-100 my-1" />
+                  <button type="button" onClick={() => { vendorPoolRef.current?.openTrash?.(); setPoolMoreOpen(false); }}
+                    className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 transition-colors">
+                    <Trash size={14} className="text-slate-400" /> Trash
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
-          {canAdd && (
-            <button onClick={openAdd}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 transition-all">
-              <Plus size={14} /> Add Vendor
+          {mainTab === "pool" && canAdd && (
+            <button type="button" onClick={() => vendorPoolRef.current?.openAdd?.()}
+              className="inline-flex h-9 select-none items-center gap-2 rounded-md border border-indigo-700 bg-gradient-to-b from-indigo-600 to-indigo-700 px-3.5 text-xs font-bold text-white shadow-sm transition-all hover:border-indigo-800 hover:from-indigo-500 hover:to-indigo-600 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/55 focus-visible:ring-offset-1">
+              <Plus size={14} className="shrink-0" /> Add
             </button>
           )}
         </div>
       </div>
+
+      {/* Vendor Pool tab */}
+      {mainTab === "pool" && (
+        <VendorPool ref={vendorPoolRef} onPromoted={() => { cachedVendors = null; fetchVendors(true); }} />
+      )}
+
+      {/* Vendor List tab content */}
+      {mainTab === "vendors" && (<>
 
       {/* Bulk Upload Panel */}
       {showBulk && (
@@ -572,12 +665,20 @@ export default function VendorList() {
       )}
 
       {/* Search + Filters */}
-      <div className="flex flex-col gap-2 mb-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="relative lg:max-w-md flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search by name, GSTIN or email…"
-            className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 text-sm outline-none focus:border-indigo-400 bg-white text-slate-700" />
+      <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
+          <div className="relative min-w-0 flex-1 lg:max-w-md">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+              placeholder="Search by name, GSTIN or email…"
+              className="w-full pl-9 pr-4 py-2 rounded-md border border-slate-200 text-sm outline-none focus:border-indigo-400 bg-white text-slate-700" />
+          </div>
+          <span
+            className="inline-flex h-9 shrink-0 items-center self-start rounded-md border border-slate-200 bg-white px-2.5 text-xs font-bold tabular-nums text-slate-700 shadow-sm sm:self-center"
+            title="Registered vendors in master"
+          >
+            {vendors.length} {vendors.length === 1 ? "vendor" : "vendors"}
+          </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <VendorMultiFilter label="Name" options={filterOptions.names} selected={nameFilter} onChange={v => { setNameFilter(v); setPage(1); }} />
@@ -585,7 +686,7 @@ export default function VendorList() {
           <VendorMultiFilter label="Site" options={filterOptions.sites} selected={siteFilter} onChange={v => { setSiteFilter(v); setPage(1); }} />
           {(nameFilter.length || entityFilter.length || siteFilter.length) ? (
             <button onClick={() => { setNameFilter([]); setEntityFilter([]); setSiteFilter([]); setPage(1); }}
-              className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-500 hover:bg-slate-50">
+              className="inline-flex h-9 items-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-500 hover:bg-slate-50">
               <X size={12} /> Clear
             </button>
           ) : null}
@@ -593,7 +694,7 @@ export default function VendorList() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-lg border border-slate-100 shadow-sm overflow-hidden">
         {loading ? (
           <div className="py-16 text-center text-slate-400 text-sm">Loading…</div>
         ) : filtered.length === 0 ? (
@@ -711,6 +812,9 @@ export default function VendorList() {
                             <Trash2 size={13} />
                           </button>
                         )}
+                        <button onClick={() => setLogTarget({ entityType: "vendor", entityId: v.id, entityName: v.vendor_name || v.vendorName })} className="p-1.5 rounded-lg text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-all" title="Activity Log">
+                          <History size={13} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1093,6 +1197,25 @@ export default function VendorList() {
         </div>
       )}
 
+      {/* ── CONFIRM MODAL ── */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-4">
+            <p className="text-sm font-semibold text-slate-700 leading-relaxed">{confirmModal.message}</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-all">
+                Cancel
+              </button>
+              <button onClick={confirmModal.onConfirm}
+                className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition-all">
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── VIEW MODAL ── */}
       {showTrash && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -1377,6 +1500,10 @@ export default function VendorList() {
           </div>
         </div>
       )}
+      </>)}
+      {logTarget && (
+        <LogPanel entityType={logTarget.entityType} entityId={logTarget.entityId} entityName={logTarget.entityName} onClose={() => setLogTarget(null)} />
+      )}
     </div>
   );
 }
@@ -1403,7 +1530,7 @@ function VendorMultiFilter({ label, options, selected, onChange }) {
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(o => !o)}
-        className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-bold shadow-sm transition ${selected.length ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>
+        className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-xs font-bold shadow-sm transition ${selected.length ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"}`}>
         <span>{label}</span>
         {selected.length > 0 && (
           <span className="grid h-5 min-w-5 place-items-center rounded-full bg-indigo-600 px-1.5 text-[10px] font-black text-white">{selected.length}</span>
@@ -1411,9 +1538,9 @@ function VendorMultiFilter({ label, options, selected, onChange }) {
         <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-64 rounded-lg border border-slate-200 bg-white shadow-2xl">
+        <div className="absolute right-0 z-30 mt-2 w-64 rounded-md border border-slate-200 bg-white shadow-2xl">
           <div className="border-b border-slate-100 p-2">
-            <div className="flex items-center gap-2 rounded-md border border-slate-200 px-2">
+            <div className="flex items-center gap-2 rounded border border-slate-200 px-2">
               <Search size={12} className="text-slate-400" />
               <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
                 placeholder={`Search ${label.toLowerCase()}...`}

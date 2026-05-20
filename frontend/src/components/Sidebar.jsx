@@ -4,7 +4,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
   BarChart3,
+  BookOpen,
   Box,
+  Building2,
   CheckCircle2,
   ChevronDown,
   ChevronsUpDown,
@@ -20,6 +22,7 @@ import {
   Lock,
   LogOut,
   MapPinned,
+  Network,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
@@ -86,7 +89,8 @@ const globalRows = [
 ];
 
 const managementRows = [
-  { id: "audit", label: "Audit", icon: Activity, description: "System audit logs and history" },
+  { id: "organisation", label: "Organisation", icon: Building2, description: "Org structure, hierarchy and SOPs" },
+  { id: "audit",        label: "Audit",        icon: Activity,  description: "System audit logs and history" },
 ];
 
 const masterDataRows = [
@@ -98,11 +102,9 @@ const masterDataRows = [
 ];
 
 const setupRows = [
-  { id: "proc_setup__company_list", label: "Entity", description: "Manage entities" },
   { id: "proc_setup__site_list", label: "Site", description: "Manage sites / locations" },
   { id: "proc_setup__vendor_list", label: "Vendor", description: "Manage vendors" },
   { id: "proc_setup__item_list", label: "Item", description: "Manage items" },
-  { id: "proc_setup__contact_list", label: "Contact", description: "Manage contacts" },
   { id: "proc_setup__category_list", label: "Category", description: "Manage categories" },
   { id: "proc_setup__uom", label: "UOM", description: "Units of measurement" },
 ];
@@ -112,6 +114,11 @@ const clauseRows = [
   { id: "proc_setup__payment_terms", label: "Payment Terms", description: "Manage payment terms" },
   { id: "proc_setup__government_laws", label: "Government Laws", description: "Government laws and regulations" },
   { id: "proc_setup__annexure", label: "Annexure", description: "Manage annexures and documents" },
+];
+
+const organisationRows = [
+  { id: "organisation__structure", label: "Structure", description: "Organisation hierarchy and structure" },
+  { id: "organisation__sop", label: "SOP", description: "Standard Operating Procedures" },
 ];
 
 const projectSections = [
@@ -190,6 +197,8 @@ const iconById = {
   proc_setup__government_laws: ShieldCheck,
   proc_setup__annexure: ClipboardEdit,
   boq_prepare: FileSpreadsheet,
+  organisation__structure: Network,
+  organisation__sop: BookOpen,
 };
 
 const Tip = ({ label, show, children }) => {
@@ -239,6 +248,7 @@ export default React.memo(function Sidebar({
     setup: false,
     master_data: false,
     clauses: false,
+    organisation: false,
     procurement: false,
     inventory: false,
     operations: false,
@@ -252,6 +262,7 @@ export default React.memo(function Sidebar({
         setup: false,
         master_data: false,
         clauses: false,
+        organisation: false,
         procurement: false,
         inventory: false,
         operations: false,
@@ -290,23 +301,29 @@ export default React.memo(function Sidebar({
     const fetchCounts = async () => {
       try {
         const token = localStorage.getItem("bms_token") || "";
-        const [ordersRes, intakesRes, amendRes, arRes] = await Promise.all([
-          fetch(`${API}/api/orders`),
+        const headers = { 'Authorization': `Bearer ${token}` };
+        const currentUserId = String(JSON.parse(localStorage.getItem("bms_user") || "{}").id || "");
+
+        const [orderCountRes, intakesRes, amendRes, arRes, approvalRes] = await Promise.all([
+          fetch(`${API}/api/orders/pending-count?userId=${currentUserId}&isGlobalAdmin=${isGlobalAdmin}`),
           fetch(`${API}/api/intakes`),
-          fetch(`${API}/api/amendments/requests`, { headers: { 'Authorization': `Bearer ${token}` } }),
-          fetch(`${API}/api/action-requests/pending`, { headers: { 'Authorization': `Bearer ${token}` } }),
+          fetch(`${API}/api/amendments/requests`, { headers }),
+          fetch(`${API}/api/action-requests/pending`, { headers }),
+          fetch(`${API}/api/approval-flows/pending-for-me`, { headers }),
         ]);
-        const ordersData = ordersRes.ok ? await ordersRes.json().catch(() => ({})) : {};
-        const intakesData = intakesRes.ok ? await intakesRes.json().catch(() => ({})) : {};
-        const amendData = amendRes.ok ? await amendRes.json().catch(() => ({})) : {};
-        const arData = arRes.ok ? await arRes.json().catch(() => ({})) : {};
+        const orderCountData = orderCountRes.ok ? await orderCountRes.json().catch(() => ({})) : {};
+        const intakesData    = intakesRes.ok    ? await intakesRes.json().catch(() => ({}))    : {};
+        const amendData      = amendRes.ok      ? await amendRes.json().catch(() => ({}))      : {};
+        const arData         = arRes.ok         ? await arRes.json().catch(() => ({}))         : {};
+        const approvalData   = approvalRes.ok   ? await approvalRes.json().catch(() => ({}))   : {};
 
-        const orderCount = (ordersData.orders || []).filter((o) => ["Pending Issue", "To Issue"].includes(o?.status)).length;
-        const intakeCount = (intakesData.intakes || []).filter((i) => ["submitted", "in_review"].includes(i?.status)).length;
-        const amendmentCount = (amendData.requests || []).length;
+        const orderCount       = orderCountData.count || 0;
+        const intakeCount      = (intakesData.intakes || []).filter((i) => ["submitted", "in_review"].includes(i?.status)).length;
+        const amendmentCount   = (amendData.requests || []).length;
         const actionRequestCount = (arData.requests || []).length;
+        const approvalCount    = (approvalData.requests || []).filter(r => r.can_act).length;
 
-        const newTotal = orderCount + intakeCount + amendmentCount + actionRequestCount;
+        const newTotal = orderCount + intakeCount + amendmentCount + actionRequestCount + approvalCount;
         if (alive) {
           setApprovalCount(newTotal);
           localStorage.setItem("last_approval_count", newTotal.toString());
@@ -319,21 +336,26 @@ export default React.memo(function Sidebar({
     fetchCounts();
     const interval = setInterval(fetchCounts, 30000);
 
-    // SSE — instant refresh when orders or action requests change
+    // SSE — debounced so rapid order_updated events don't fire multiple fetches
     let es;
+    let sseDebounce = null;
+    const debouncedFetch = () => {
+      clearTimeout(sseDebounce);
+      sseDebounce = setTimeout(fetchCounts, 500);
+    };
     const connectSSE = () => {
       es = new EventSource(`${API}/api/orders/events`);
       es.onmessage = (e) => {
         try {
           const d = JSON.parse(e.data);
-          if (d.type === "order_updated" || d.type === "action_request_updated") fetchCounts();
+          if (d.type === "order_updated" || d.type === "action_request_updated") debouncedFetch();
         } catch {}
       };
       es.onerror = () => { es.close(); setTimeout(connectSSE, 5000); };
     };
     connectSSE();
 
-    return () => { alive = false; clearInterval(interval); if (es) es.close(); };
+    return () => { alive = false; clearTimeout(sseDebounce); clearInterval(interval); if (es) es.close(); };
   }, []);
 
   const isTabVisible = (tabId) => {
@@ -447,12 +469,12 @@ export default React.memo(function Sidebar({
   );
 
   return (
-    <motion.aside
-      initial={false}
-      animate={{ width: collapsed ? "60px" : "220px" }}
-      transition={{ duration: 0.22, ease: "easeInOut" }}
-      className="group relative h-screen shrink-0 overflow-visible border-r border-cyan-400/15 bg-[#04111f] text-white print:hidden"
-      style={{ boxShadow: "inset -1px 0 0 rgba(34,211,238,0.08)" }}
+    <aside
+      className={cx(
+        "group relative h-screen shrink-0 overflow-hidden border-r border-cyan-400/15 bg-[#04111f] text-white transition-[width] duration-[220ms] ease-in-out print:hidden",
+        collapsed ? "w-[60px]" : "w-[220px]"
+      )}
+      style={{ boxShadow: "inset -1px 0 0 rgba(34,211,238,0.08)", willChange: "width" }}
     >
       <div className="flex h-full flex-col">
         <div className={cx("relative shrink-0 border-b border-cyan-400/12", collapsed ? "px-2 py-2" : "px-4 py-3")}>
@@ -648,6 +670,6 @@ export default React.memo(function Sidebar({
           )}
         </div>
       </div>
-    </motion.aside>
+    </aside>
   );
 });

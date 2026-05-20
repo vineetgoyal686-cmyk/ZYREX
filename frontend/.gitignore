@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# GeoNames build cache (large)
+scripts/.cache/
+src/data/_raw_states_districts.json

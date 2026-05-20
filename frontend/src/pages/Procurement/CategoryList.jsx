@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
-import { Plus, Search, Pencil, Trash2, X, Tag, Upload, Download, FileSpreadsheet, FileText, ChevronDown, Eye } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, X, Tag, Upload, Download, FileSpreadsheet, FileText, ChevronDown, Eye, History } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { logAudit } from "../../utils/auditLog";
+import LogPanel from "../../components/LogPanel";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const PER_PAGE = 10;
@@ -32,6 +34,7 @@ export default function CategoryList() {
   const [saving, setSaving]             = useState(false);
   const [toast, setToast]               = useState(null);
   const [page, setPage]                 = useState(1);
+  const [logTarget, setLogTarget]       = useState(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showBulkMenu, setShowBulkMenu]     = useState(false);
   const [viewCategory, setViewCategory]     = useState(null);
@@ -78,7 +81,9 @@ export default function CategoryList() {
       const method = editId ? "PUT" : "POST";
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
       const payload = { ...form, createdById: u.id || "", createdByName: u.name || "" };
-      await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const res     = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const resData = await res.json();
+      logAudit("category", editId || resData.id || "", form.categoryName, editId ? "updated" : "created");
       showToast(editId ? "Category updated" : "Category added");
       setShowModal(false);
       if (editId) {
@@ -93,7 +98,9 @@ export default function CategoryList() {
   const handleDelete = async (id) => {
     if (!confirm("Delete this category?")) return;
     try {
+      const catName = categories.find(c => c.id === id)?.categoryName || "";
       await fetch(`${API}/api/procurement/categories/${id}`, { method: "DELETE" });
+      logAudit("category", id, catName, "deleted");
       showToast("Category deleted");
       fetchCategories();
     } catch { showToast("Failed to delete", "error"); }
@@ -358,6 +365,7 @@ export default function CategoryList() {
                       <button onClick={() => setViewCategory(c)} className="p-1.5 rounded-lg text-slate-300 hover:text-teal-600 hover:bg-teal-50 transition-all"><Eye size={14} /></button>
                       {canEdit && <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg text-slate-300 hover:text-slate-600 hover:bg-slate-100 transition-all"><Pencil size={14} /></button>}
                       {canDelete && <button onClick={() => handleDelete(c.id)} className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"><Trash2 size={14} /></button>}
+                      <button onClick={() => setLogTarget({ entityType: "category", entityId: c.id, entityName: c.categoryName })} className="p-1.5 rounded-lg text-slate-300 hover:text-violet-600 hover:bg-violet-50 transition-all" title="Activity Log"><History size={14} /></button>
                     </div>
                   </td>
                 </tr>
@@ -488,6 +496,53 @@ export default function CategoryList() {
           </div>
         </div>
       )}
+      {logTarget && (
+        <LogPanel entityType={logTarget.entityType} entityId={logTarget.entityId} entityName={logTarget.entityName} onClose={() => setLogTarget(null)} />
+      )}
+    </div>
+  );
+}
+
+export function CategoryDetailPanel({ category, onClose, onSelect }) {
+  if (!category) return null;
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="bg-linear-to-r from-slate-800 to-slate-700 px-6 py-5 relative">
+          <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"><X size={18} /></button>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-teal-500/20 flex items-center justify-center shrink-0">
+              <Tag size={20} className="text-teal-300" />
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">Category Name</p>
+              <h2 className="text-lg font-bold text-white leading-tight">{category.categoryName}</h2>
+              <div className="flex items-center gap-1.5 mt-1.5">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest">Code</p>
+                <span className="px-2.5 py-0.5 bg-teal-500/20 text-teal-200 rounded-lg text-xs font-mono font-semibold tracking-wider">{category.categoryCode}</span>
+                <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-semibold ${category.status === "Active" ? "bg-emerald-500/20 text-emerald-300" : "bg-slate-500/20 text-slate-300"}`}>{category.status}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="px-6 py-5">
+          <div className="rounded-xl border border-slate-100 overflow-hidden">
+            <div className="bg-slate-50 px-4 py-2 border-b border-slate-100">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Description</p>
+            </div>
+            <p className="px-4 py-3 text-sm text-slate-600 leading-relaxed">{category.description || "—"}</p>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100">
+          {onSelect && (
+            <button onClick={() => { onSelect(category); onClose(); }}
+              className="px-5 py-2 rounded-xl text-sm font-semibold bg-indigo-600 text-white hover:bg-indigo-700 transition-all">
+              Select
+            </button>
+          )}
+          <button onClick={onClose} className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 transition-all">Close</button>
+        </div>
+      </div>
     </div>
   );
 }

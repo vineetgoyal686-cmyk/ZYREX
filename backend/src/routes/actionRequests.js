@@ -10,6 +10,13 @@ const extractUserId = (token) => {
   } catch { return null; }
 };
 
+// Check if userId is listed in request_handlers for given module+action
+const isHandlerUser = async (admin, userId, moduleKey, actionKey) => {
+  const { data } = await admin.from("request_handlers")
+    .select("users").eq("module_key", moduleKey).eq("action_key", actionKey).maybeSingle();
+  return (data?.users || []).some(u => String(u.id) === String(userId));
+};
+
 const requireAuth = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "Login required" });
@@ -18,6 +25,16 @@ const requireAuth = (req, res, next) => {
   req.userId = userId;
   next();
 };
+
+const historyHasAction = (order = {}, expected = "") => {
+  const want = String(expected || "").toLowerCase();
+  const snapshot = order.snapshot || {};
+  const matches = (entry) => String(entry?.action || entry?._history_action || "").toLowerCase() === want;
+  return matches(order) ||
+    (Array.isArray(snapshot.activity_log) && snapshot.activity_log.some(matches)) ||
+    (Array.isArray(snapshot.status_history) && snapshot.status_history.some(matches));
+};
+
 
 // POST /api/action-requests — submit recall or cancel request
 router.post("/", requireAuth, async (req, res) => {
@@ -79,12 +96,11 @@ router.get("/can-manage", requireAuth, async (req, res) => {
     const { data: user } = await admin.from("users").select("role").eq("id", req.userId).single();
     if (user?.role === "global_admin") return res.json({ canManage: true });
 
-    const { data: steps } = await admin.from("approval_steps")
-      .select("permissions").eq("approver_id", req.userId);
-    const canManage = (steps || []).some(s =>
-      !!(s.permissions?.recall_after_issue) || !!(s.permissions?.cancel_after_issue)
-    );
-    res.json({ canManage });
+    const [isRecall, isCancel] = await Promise.all([
+      isHandlerUser(admin, req.userId, "order", "recall"),
+      isHandlerUser(admin, req.userId, "order", "cancel"),
+    ]);
+    res.json({ canManage: isRecall || isCancel });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -139,7 +155,24 @@ router.get("/for-order/:orderId", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/action-requests/direct-amend — power user directly moves Issued → Draft
+// Generate next amendment number — e.g. "PO/2026-27/3" → "PO/2026-27/3A", "3A" → "3B"
+const nextAmendNumber = async (admin, currentNumber) => {
+  const stem = currentNumber.replace(/[A-Z]$/, "");
+  const { data: siblings } = await admin.schema("procurement")
+    .from("purchase_orders").select("order_number").like("order_number", `${stem}%`);
+  const used = new Set();
+  (siblings || []).forEach(o => {
+    const tail = o.order_number.slice(stem.length);
+    if (/^[A-Z]$/.test(tail)) used.add(tail);
+  });
+  for (let code = 65; code <= 90; code++) {
+    const letter = String.fromCharCode(code);
+    if (!used.has(letter)) return stem + letter;
+  }
+  throw new Error("All amendment slots A–Z are exhausted for this order");
+};
+
+// POST /api/action-requests/direct-amend — power user creates amendment clone directly (Issued → Amended + new Draft clone)
 router.post("/direct-amend", requireAuth, async (req, res) => {
   const admin = supabaseClient;
   const { order_id, reason, attachment_url } = req.body;
@@ -151,63 +184,134 @@ router.post("/direct-amend", requireAuth, async (req, res) => {
     const { data: user } = await admin.from("users").select("name, role").eq("id", userId).single();
     const isGlobalAdmin = user?.role === "global_admin";
 
-    let hasRecallPerm = isGlobalAdmin;
-    if (!hasRecallPerm) {
-      const { data: approvalReq } = await admin.from("approval_requests")
-        .select("workflow:approval_workflows(steps:approval_steps(*))")
-        .eq("document_id", order_id)
-        .eq("module_key", "order")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const steps = approvalReq?.workflow?.steps || [];
-      hasRecallPerm = steps.some(s =>
-        String(s.approver_id) === String(userId) && !!(s.permissions || {}).recall_after_issue
-      );
-    }
+    const hasRecallPerm = isGlobalAdmin || await isHandlerUser(admin, userId, "order", "recall");
 
     if (!hasRecallPerm) {
       return res.status(403).json({ error: "You do not have permission to directly amend this order" });
     }
 
     const { data: order } = await admin.schema("procurement").from("purchase_orders")
-      .select("snapshot, status").eq("id", order_id).single();
+      .select("*").eq("id", order_id).single();
     if (!order || order.status !== "Issued") {
       return res.status(400).json({ error: "Order must be Issued to amend" });
+    }
+
+    const { data: items } = await admin.schema("procurement")
+      .from("purchase_order_items").select("*").eq("order_id", order_id);
+
+    const now = new Date().toISOString();
+    const newNumber = await nextAmendNumber(admin, order.order_number);
+
+    // Create amendment Draft clone (same as regular amendment approval flow)
+    const { id: _id, created_at: _ca, updated_at: _ua, ...clonedData } = order;
+    const cloneSnapshot = { ...(clonedData.snapshot || {}), activity_log: [] };
+    const { data: clone, error: cloneErr } = await admin.schema("procurement")
+      .from("purchase_orders").insert({
+        ...clonedData,
+        snapshot:        cloneSnapshot,
+        order_number:    newNumber,
+        status:          "Draft",
+        made_by:         user?.name || userId,
+        created_by_id:   userId,
+        amended_from_id: order_id,
+      }).select().single();
+    if (cloneErr) throw cloneErr;
+
+    // Clone items into the new Draft
+    const newItems = (items || []).map(({ id: _iId, order_id: _oId, created_at: _c, ...it }) => ({
+      ...it, order_id: clone.id,
+    }));
+    if (newItems.length) {
+      await admin.schema("procurement").from("purchase_order_items").insert(newItems);
+    }
+
+    // Mark original as Amended and record in activity log
+    const snap = order.snapshot || {};
+    const actLog = Array.isArray(snap.activity_log) ? [...snap.activity_log] : [];
+    actLog.push({
+      action: "Amended",
+      action_by: user?.name || "",
+      action_at: now,
+      comments: `Amendment draft ${newNumber} created${reason ? `: ${reason}` : ""}`,
+      ...(attachment_url ? { attachment_url } : {}),
+    });
+    await admin.schema("procurement").from("purchase_orders")
+      .update({ status: "Amended", snapshot: { ...snap, activity_log: actLog } }).eq("id", order_id);
+
+    await admin.from("order_amendments").insert({
+      order_id,
+      original_order_id: order_id,
+      new_order_id:      clone.id,
+      requestor_id:      userId,
+      reason:            reason || "",
+      attachment_url:    attachment_url || "",
+      status:            "Approved",
+      actioned_by_id:    userId,
+      actioned_at:       now,
+      approved_by_id:    userId,
+      approved_at:       now,
+    });
+
+    res.json({ success: true, clone_id: clone.id });
+  } catch (err) {
+    console.error("POST /action-requests/direct-amend failed:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/action-requests/withdraw-direct-action — undo a direct recall/cancel by a power user
+router.post("/withdraw-direct-action", requireAuth, async (req, res) => {
+  const admin = supabaseClient;
+  const { order_id, action_type, comment } = req.body;
+  const userId = req.userId;
+
+  if (!order_id || !["recall", "cancel"].includes(action_type)) {
+    return res.status(400).json({ error: "order_id and valid action_type required" });
+  }
+
+  try {
+    const { data: user } = await admin.from("users").select("name, role").eq("id", userId).single();
+    const { data: order, error: orderErr } = await admin.schema("procurement")
+      .from("purchase_orders")
+      .select("id, status, snapshot, created_by_id")
+      .eq("id", order_id)
+      .single();
+    if (orderErr) throw orderErr;
+
+    const expectedStatus = action_type === "recall" ? "Draft" : "Cancelled";
+    const expectedAction = action_type === "recall" ? "Recalled" : "Cancelled";
+    if (!order || order.status !== expectedStatus || !historyHasAction(order, expectedAction)) {
+      return res.status(400).json({ error: `This order does not have an active ${action_type} action to withdraw.` });
+    }
+
+    const isGlobalAdmin = user?.role === "global_admin";
+    const isCreator = String(order.created_by_id || "") === String(userId);
+    const actionKey = action_type === "recall" ? "recall" : "cancel";
+    const hasPerm = isGlobalAdmin || isCreator || await isHandlerUser(admin, userId, "order", actionKey);
+    if (!hasPerm) {
+      return res.status(403).json({ error: "You do not have permission to withdraw this action." });
     }
 
     const now = new Date().toISOString();
     const snap = order.snapshot || {};
     const actLog = Array.isArray(snap.activity_log) ? [...snap.activity_log] : [];
     actLog.push({
-      action: "Recalled",
+      action: action_type === "recall" ? "Recall Cancelled" : "Cancel Order Withdrawn",
       action_by: user?.name || "",
       action_at: now,
-      ...(reason ? { comments: reason } : {}),
+      ...(comment ? { comments: comment } : {}),
     });
 
-    await admin.schema("procurement").from("purchase_orders").update({
-      status: "Draft",
-      made_by: user?.name || "",
-      created_by_id: userId,
-      snapshot: { ...snap, activity_log: actLog },
-    }).eq("id", order_id);
+    const { error: updateErr } = await admin.schema("procurement")
+      .from("purchase_orders")
+      .update({ status: "Issued", snapshot: { ...snap, activity_log: actLog } })
+      .eq("id", order_id);
+    if (updateErr) throw updateErr;
 
-    await admin.from("order_amendments").insert({
-      order_id,
-      requestor_id: userId,
-      reason: reason || "",
-      attachment_url: attachment_url || "",
-      status: "Approved",
-      actioned_by_id: userId,
-      actioned_at: now,
-      approved_by_id: userId,
-      approved_at: now,
-    });
-
+    broadcast({ type: "action_request_updated" });
     res.json({ success: true });
   } catch (err) {
-    console.error("POST /action-requests/direct-amend failed:", err.message);
+    console.error("POST /action-requests/withdraw-direct-action failed:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -255,24 +359,13 @@ router.post("/:id/action", requireAuth, async (req, res) => {
       return res.json({ success: true });
     }
 
-    // Approve / Reject — needs global_admin or recall_after_issue / cancel_after_issue permission
+    // Approve / Reject — needs global_admin or be a request handler for that action type
     const { data: user } = await admin.from("users").select("role, name").eq("id", userId).single();
     const isGlobalAdmin = user?.role === "global_admin";
 
     if (!isGlobalAdmin) {
-      // Check if user has recall_after_issue or cancel_after_issue in the order's approval steps
-      const permKey = request.request_type === "recall" ? "recall_after_issue" : "cancel_after_issue";
-      const { data: approvalReq } = await admin.from("approval_requests")
-        .select("workflow:approval_workflows(steps:approval_steps(*))")
-        .eq("document_id", request.order_id)
-        .eq("module_key", "order")
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const steps = approvalReq?.workflow?.steps || [];
-      const hasPerm = steps.some(s =>
-        String(s.approver_id) === String(userId) && !!(s.permissions || {})[permKey]
-      );
+      const actionKey = request.request_type === "recall" ? "recall" : "cancel";
+      const hasPerm = await isHandlerUser(admin, userId, "order", actionKey);
       if (!hasPerm) {
         return res.status(403).json({ error: "You do not have permission to action this request" });
       }

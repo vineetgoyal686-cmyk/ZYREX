@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag, Activity, Calendar } from "lucide-react";
 import * as XLSX from "xlsx";
 import { FullSiteModal, FullCompanyModal, FullVendorModal, FullViewSiteModal, FullViewCompanyModal, FullViewVendorModal, FullContactModal, FullViewContactModal, FullClauseModal } from "./FullMasterModals";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
-import ViewOrder, { preloadOrderDetails, seedOrderDetails } from "../Procurement/ViewOrder";
+import ViewOrder from "../Procurement/ViewOrder";
+import { preloadOrderDetails, seedOrderDetails } from "../Procurement/orderDetailsCache";
 
 const QUILL_MODULES = {
   toolbar: [
@@ -22,11 +24,66 @@ const SCROLLBAR_STYLE = `
   .premium-scroll::-webkit-scrollbar-track { background: transparent; }
   .premium-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; transition: all 0.2s; }
   .premium-scroll::-webkit-scrollbar-thumb:hover { background: #6366f1; }
+  /* Thin scrollbar for calc modal tables */
+  .calc-thin-scroll::-webkit-scrollbar { width: 4px; height: 4px; }
+  .calc-thin-scroll::-webkit-scrollbar-track { background: transparent; }
+  .calc-thin-scroll::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.8); border-radius: 999px; }
+  .calc-thin-scroll::-webkit-scrollbar-thumb:hover { background: rgba(99,102,241,0.9); }
+  .scrollbar-thin::-webkit-scrollbar { width: 2px; height: 2px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
   .table-fixed-header th { position: sticky; top: 0; z-index: 10; }
+  /* Ensure ALL header cells share identical tint (solid, non-transparent) */
+  .create-order-items-table thead th { background: rgb(243, 243, 245); }
+  /* Hide number input spinners (use class on specific inputs) */
+  .no-spin::-webkit-outer-spin-button,
+  .no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .no-spin { -moz-appearance: textfield; appearance: textfield; }
+  /* Column separators for Create Order items table */
+  .col-lines { border-collapse: separate; border-spacing: 0; }
+  .col-lines th, .col-lines td { border-right: 1px solid rgba(226,232,240,0.9); }
+  .col-lines th:last-child, .col-lines td:last-child { border-right: 0; }
+  /* Don't double-border next to sticky action column */
+  .col-lines .no-col-line { border-right: 0 !important; }
+  /* Full-width row divider (use on group header row) */
+  .col-lines tr.row-divider > td,
+  .col-lines tr.row-divider > th { border-top: 1px solid rgba(226,232,240,0.9); }
 `;
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 let cachedOrders = null;
+
+const CancelledStampIcon = ({ size = 14, className = "" }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 64 64"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+    aria-hidden="true"
+  >
+    <circle cx="32" cy="32" r="24" stroke="currentColor" strokeWidth="5" />
+    <circle cx="32" cy="32" r="17" stroke="currentColor" strokeWidth="4" />
+    <g transform="rotate(-45 32 32)">
+      <rect x="5" y="24" width="54" height="16" rx="8" fill="white" stroke="currentColor" strokeWidth="5" />
+      <text
+        x="32"
+        y="35"
+        textAnchor="middle"
+        fontSize="9"
+        fontWeight="900"
+        fill="currentColor"
+        fontFamily="Arial, sans-serif"
+        letterSpacing="0"
+      >
+        CANCELLED
+      </text>
+    </g>
+  </svg>
+);
+
 const normalizeRichTextHtml = (value) =>
   typeof value === "string"
     ? value.replace(/&nbsp;|&#160;|\u00A0/g, " ")
@@ -34,6 +91,20 @@ const normalizeRichTextHtml = (value) =>
 
 const normalizeRichTextArray = (value) =>
   Array.isArray(value) ? value.map(normalizeRichTextHtml) : [];
+
+const hasRecallHistory = (order = {}) => {
+  const snapshot = order.snapshot || {};
+  const matchesRecall = (entry) => String(entry?.action || entry?._history_action || "").toLowerCase() === "recalled";
+  return order.status === "Recalled" ||
+    matchesRecall(order) ||
+    (Array.isArray(snapshot.activity_log) && snapshot.activity_log.some(matchesRecall)) ||
+    (Array.isArray(snapshot.status_history) && snapshot.status_history.some(matchesRecall));
+};
+
+const makeOrderPdfFilename = (orderNumber, fallback = "Order") => {
+  const base = String(orderNumber || fallback).trim().replace(/\.pdf$/i, "") || fallback;
+  return `${base.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")}.pdf`;
+};
 
 
 /* Strip Quill v2 internal markers and convert flat ql-indent lists to nested lists. */
@@ -175,43 +246,152 @@ const amountToWords = (amount) => {
   return res + " Only";
 };
 
-const Input = ({ label, value, onChange, placeholder, type = "text", required, mono, span2, readOnly, className }) => (
-  <div className={span2 ? "col-span-2" : ""}>
-    {label && <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">{label} {required && <span className="text-red-400 normal-case">*</span>}</label>}
-    <input type={type} value={value || ""} onChange={onChange} placeholder={placeholder} readOnly={readOnly}
-      className={`w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none transition-all focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/10 ${readOnly ? "bg-slate-50 text-slate-500 font-medium cursor-not-allowed" : "bg-white text-slate-800 shadow-sm"} ${mono ? "font-mono" : ""} ${className}`} />
-  </div>
-);
+const FIELD_LABEL_CLASS = "block text-[15px] font-semibold text-slate-950 mb-2 tracking-normal";
+const FIELD_BASE_CLASS = "w-full border border-slate-300 rounded-md px-4 text-[15px] font-normal outline-none transition-colors bg-white text-slate-950 placeholder:text-slate-400 focus:border-slate-400 focus:ring-0";
+const FIELD_READONLY_CLASS = "bg-[#f7f7f7] text-slate-500 cursor-not-allowed";
 
-const SpecViewModal = ({ html, onClose, onEdit }) => (
-  <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[80vh] animate-in fade-in zoom-in-95 duration-200">
-      <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center">
-            <Eye size={14} className="text-indigo-600" />
+const Input = ({ label, value: propValue, onChange, placeholder, type = "text", required, mono, span2, readOnly, disabled, className, multiline, rows = 4 }) => {
+  const [localValue, setLocalValue] = useState(propValue || "");
+  const timerRef = useRef(null);
+  const isLocked = readOnly || disabled;
+
+  useEffect(() => {
+    setLocalValue(propValue || "");
+  }, [propValue]);
+
+  const handleChange = (e) => {
+    if (isLocked) return;
+    const val = e.target.value;
+    setLocalValue(val);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      if (typeof onChange === "function") onChange({ target: { value: val } });
+    }, 50); // Small delay to batch updates
+  };
+
+  const handleBlur = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (typeof onChange === "function") onChange({ target: { value: localValue } });
+  };
+
+  return (
+    <div className={span2 ? "col-span-2" : ""}>
+      {label && <label className={FIELD_LABEL_CLASS}>{label} {required && <span className="text-red-500">*</span>}</label>}
+      {multiline ? (
+        <textarea
+          value={localValue}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          readOnly={readOnly}
+          disabled={disabled}
+          rows={rows}
+          className={`${FIELD_BASE_CLASS} py-3 min-h-[102px] resize-y ${isLocked ? FIELD_READONLY_CLASS : ""} ${mono ? "font-mono" : ""} ${className || ""}`}
+        />
+      ) : (
+        <input
+          type={type}
+          value={localValue}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          readOnly={readOnly}
+          disabled={disabled}
+          className={`${FIELD_BASE_CLASS} h-14 ${isLocked ? FIELD_READONLY_CLASS : ""} ${mono ? "font-mono" : ""} ${className || ""}`}
+        />
+      )}
+    </div>
+  );
+};
+
+const SpecViewModal = ({ html, onClose, onEdit, clauseCode, clauseType, clauseTitle }) => {
+  const isClause = Boolean(clauseCode || clauseType || clauseTitle);
+  // Setup-like colors based on clause type
+  const getTheme = () => {
+    const type = (clauseType || "").toLowerCase();
+    if (type.includes("payment")) return { header: "from-emerald-500 to-teal-600", iconBg: "bg-emerald-50", iconColor: "text-emerald-600" };
+    if (type.includes("governing")) return { header: "from-amber-500 to-orange-600", iconBg: "bg-amber-50", iconColor: "text-amber-600" };
+    if (type.includes("annexure")) return { header: "from-rose-500 to-pink-600", iconBg: "bg-rose-50", iconColor: "text-rose-600" };
+    return { header: "from-indigo-500 to-purple-600", iconBg: "bg-indigo-50", iconColor: "text-indigo-600" };
+  };
+  const theme = getTheme();
+
+  return (
+    <div className={`fixed inset-0 z-[1200] flex ${isClause ? "justify-end" : "items-center justify-center p-4"}`}>
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]" onClick={onClose} />
+      <div
+        className={`relative w-full bg-white shadow-2xl flex flex-col ${
+          isClause
+            ? "max-w-[560px] h-full border-l border-slate-200"
+            : "max-w-[760px] max-h-[85vh] rounded-2xl border border-slate-200"
+        }`}
+        style={isClause ? { animation: "slideInRight 0.3s ease-out" } : { animation: "fadeIn 0.15s ease-out" }}
+      >
+        {/* HEADER */}
+        {isClause ? (
+          <div className={`px-6 py-6 border-b border-slate-100 shrink-0 bg-gradient-to-r ${theme.header}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0 flex-1">
+                <div className={`w-11 h-11 rounded-2xl ${theme.iconBg} flex items-center justify-center shrink-0 shadow-lg shadow-black/10`}>
+                  <ShieldCheck size={22} className={theme.iconColor} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] text-white/80 uppercase tracking-[0.2em] font-black mb-1">Clause Preview</p>
+                  <h3 className="text-lg font-bold text-white leading-tight truncate">{clauseTitle || "Clause Details"}</h3>
+                  <div className="flex items-center gap-2 mt-2">
+                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-white/20 text-white backdrop-blur-md border border-white/20`}>
+                      {clauseCode || "N/A"}
+                    </span>
+                    {!!clauseType && (
+                      <span className="px-2.5 py-1 rounded-lg bg-white/10 text-white/90 text-[10px] font-bold uppercase tracking-wider backdrop-blur-md border border-white/10">
+                        {clauseType}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <button onClick={onClose} className="p-2 rounded-xl hover:bg-white/10 text-white/70 hover:text-white transition-all">
+                <X size={20} />
+              </button>
+            </div>
           </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-700">Description</h3>
-            <p className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Full View</p>
+        ) : (
+          <div className="px-6 py-5 border-b border-slate-100 shrink-0 bg-white">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-slate-900/5 flex items-center justify-center text-slate-700 border border-slate-200">
+                  <FileText size={20} strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Specification</p>
+                  <h3 className="text-base font-black text-slate-900 leading-tight truncate">Specification Details</h3>
+                </div>
+              </div>
+              <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-all">
+                <X size={18} />
+              </button>
+            </div>
           </div>
+        )}
+
+        {/* SETUP-STYLE BODY */}
+        <div className={`${isClause ? "p-8" : "p-6"} overflow-y-auto flex-1 premium-scroll bg-white`}>
+          <div className="quill-content text-[15px] text-slate-700 leading-relaxed break-words" dangerouslySetInnerHTML={{ __html: html || '' }} />
         </div>
-        <button onClick={onClose} className="text-slate-400 hover:text-rose-500 transition-colors bg-white rounded-md p-1 border border-slate-200"><X size={16} /></button>
-      </div>
-      <div className="p-5 overflow-y-auto overflow-x-hidden flex-1 premium-scroll">
-        <div className="quill-content text-sm text-slate-700 leading-relaxed break-words" dangerouslySetInnerHTML={{ __html: html || '' }} />
-      </div>
-      <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2 bg-slate-50 shrink-0">
-        <button onClick={onClose} className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-200 transition-colors">Close</button>
-        <button onClick={onEdit} className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors flex items-center gap-1.5 shadow-md shadow-indigo-200">
-          <Pencil size={13} /> Edit
-        </button>
+
+        {/* FOOTER */}
+        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 bg-slate-50 shrink-0">
+          <button onClick={onClose} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-200 transition-all">Close</button>
+          <button onClick={onEdit} className="px-6 py-2.5 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 transition-all flex items-center gap-2 shadow-lg shadow-slate-200 active:scale-95">
+            <Pencil size={14} /> {isClause ? "Edit Clause" : "Edit Spec"}
+          </button>
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
-const InlineSelect = ({ value, onChange, options, placeholder, className, disabled, onAdd, addLabel, onEdit, onView, renderHtml, searchable, minDropWidth }) => {
+const InlineSelect = ({ value, onChange, options, placeholder, className, disabled, onAdd, addLabel, onEdit, onView, renderHtml, searchable, minDropWidth, variant }) => {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
   const [search, setSearch] = useState("");
@@ -255,9 +435,10 @@ const InlineSelect = ({ value, onChange, options, placeholder, className, disabl
   return (
     <div className="relative w-full group/inlsel" ref={triggerRef}>
       <div onClick={openDropdown}
-        className={`w-full min-h-[30px] px-2 py-1.5 rounded-md text-xs cursor-pointer border flex items-center gap-1.5 transition-all
-          ${disabled ? "opacity-40 cursor-not-allowed bg-slate-50 border-slate-100" : "bg-white border-slate-200 hover:border-indigo-300"}
-          ${open ? "border-indigo-400 ring-1 ring-indigo-200" : ""} ${className}`}>
+        className={`w-full cursor-pointer border flex items-center gap-1.5 transition-all
+          ${variant === "table" ? "min-h-[34px] px-2 py-2 rounded-[6px] text-xs" : "min-h-[30px] px-2 py-1.5 rounded-md text-xs"}
+          ${disabled ? "opacity-40 cursor-not-allowed bg-slate-50 border-slate-100" : "bg-white border-slate-200 hover:border-slate-300"}
+          ${open ? "border-slate-400" : ""} ${className}`}>
         <span className={`flex-1 text-xs leading-snug whitespace-normal break-words ${!value ? "text-slate-300 italic" : "text-slate-800 font-medium font-inter"}`}>
           {renderHtml && value ? (
             <div className="quill-content quill-compact" dangerouslySetInnerHTML={{ __html: normalizeRichTextHtml(displayLabel) }} />
@@ -269,17 +450,18 @@ const InlineSelect = ({ value, onChange, options, placeholder, className, disabl
           <button
             onClick={(e) => { e.stopPropagation(); onView(value); }}
             className="opacity-0 group-hover/inlsel:opacity-100 shrink-0 p-0.5 rounded text-slate-300 hover:text-indigo-500 transition-all"
-            title="View full spec">
-            <Eye size={12} />
+            title="View Details"
+          >
+            <Eye size={14} />
           </button>
         )}
-        <ChevronDown size={10} className={`text-slate-400 shrink-0 transition-transform ${open ? "rotate-180 text-indigo-500" : ""}`} />
+        <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </div>
 
-      {open && (
+      {open && createPortal(
         <>
-          <div className="fixed inset-0 z-[999]" onClick={() => setOpen(false)} />
-          <div ref={dropdownRef} style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width, zIndex: 1000 }}
+          <div className="fixed inset-0 z-[1100]" onClick={() => setOpen(false)} />
+          <div ref={dropdownRef} style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width, zIndex: 1101 }}
             className="bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden">
             <div className="px-3 py-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-b border-slate-100">{placeholder}</div>
             {searchable && (
@@ -334,7 +516,8 @@ const InlineSelect = ({ value, onChange, options, placeholder, className, disabl
               </div>
             )}
           </div>
-        </>
+        </>,
+        document.body
       )}
     </div>
   );
@@ -344,6 +527,37 @@ const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const containerRef = useRef(null);
+
+  const toSnake = (key) => String(key || "").replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
+  const getField = (obj, key) => {
+    if (!obj || !key) return "";
+    const direct = obj[key];
+    if (direct !== undefined && direct !== null && direct !== "") return direct;
+    const snake = obj[toSnake(key)];
+    if (snake !== undefined && snake !== null) return snake;
+    return "";
+  };
+  const cleanText = (v) => String(v || "").trim().replace(/^["']|["']$/g, "");
+  const extractCityState = (addr) => {
+    const raw = cleanText(addr);
+    if (!raw) return "";
+    const parts = raw
+      .split(",")
+      .map(p => p.trim())
+      .filter(Boolean)
+      .filter(p => !/^\d{5,6}$/.test(p)); // drop pure pincode token
+    if (parts.length === 0) return "";
+    // Prefer last two tokens (city, state). If last token looks like country/pincode, it's already dropped.
+    const state = parts[parts.length - 1] || "";
+    const city = parts[parts.length - 2] || "";
+    const res = [city, state].filter(Boolean).join(", ");
+    return res || state || city || "";
+  };
+  const siteSecondary = (o) => {
+    const d = cleanText(getField(o, "district") || getField(o, "city"));
+    const s = cleanText(getField(o, "state"));
+    return [d, s].filter(Boolean).join(", ");
+  };
 
   useEffect(() => {
     const handleOutside = (e) => { if (containerRef.current && !containerRef.current.contains(e.target)) setOpen(false); };
@@ -356,9 +570,23 @@ const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "
     : options.filter(o => o[valueKey] === value);
 
   const filteredOptions = options.filter(o => {
-    const text = (o[labelKey] || "").toLowerCase() + " " + (subLabelKey ? (o[subLabelKey] || "").toLowerCase() : "");
+    const labelTxt = String(getField(o, labelKey) || "").toLowerCase();
+    const subTxt = subLabelKey ? String(getField(o, subLabelKey) || "").toLowerCase() : "";
+    const text = `${labelTxt} ${subTxt}`.trim();
     return text.includes(search.toLowerCase());
   });
+  const totalKind = (() => {
+    const low = String(label || "").toLowerCase();
+    if (low.includes("vendor")) return "Vendors";
+    if (low.includes("company") || low.includes("business entity")) return "Companies";
+    if (low.includes("site")) return "Sites";
+    if (low.includes("contact")) return "Contacts";
+    return "Results";
+  })();
+  const prefersResultsFound = (() => {
+    const low = String(label || "").toLowerCase();
+    return low.includes("site") || low.includes("location");
+  })();
 
   const handleToggle = (id) => {
     if (isMulti) {
@@ -374,68 +602,136 @@ const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "
 
   return (
     <div className={`relative ${span2 ? "col-span-2" : ""}`} ref={containerRef}>
-      <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
-        {label} {required && <span className="text-red-400 normal-case">*</span>}
+      <label className={FIELD_LABEL_CLASS}>
+        {label} {required && <span className="text-red-500">*</span>}
       </label>
       <div
         onClick={() => !disabled && setOpen(!open)}
-        className={`w-full border rounded-xl px-3 py-2 text-sm outline-none transition-all flex justify-between items-center min-h-[42px]
-          ${disabled ? "bg-slate-50 border-slate-100 cursor-not-allowed opacity-60" : "bg-white cursor-pointer border-slate-200 hover:border-slate-300"}
-          ${open ? "border-indigo-400 ring-2 ring-indigo-50" : ""}`}
+        className={`${FIELD_BASE_CLASS} h-14 flex justify-between items-center
+          ${disabled ? FIELD_READONLY_CLASS : "cursor-pointer hover:border-slate-400"}
+          ${open ? "border-slate-400" : ""}`}
       >
-        <div className="flex flex-wrap gap-1.5 py-1 flex-1 min-w-0">
+        <div className="flex flex-wrap gap-1.5 flex-1 min-w-0">
           {selectedOptions.length > 0 ? (
             selectedOptions.map(o => (
-              <span key={o[valueKey]} className={`${isMulti ? "bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-0.5 rounded-lg text-[10px] font-bold flex items-center gap-1 max-w-full" : "text-slate-700 truncate"}`}>
-                <span className="truncate">{o[labelKey]}</span>
+              <span key={o[valueKey]} className={`${isMulti ? "bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 rounded text-[12px] font-medium flex items-center gap-1 max-w-full" : "text-slate-950 truncate"}`}>
+                <span className="truncate">{getField(o, labelKey)}</span>
                 {isMulti && !disabled && (
                   <X size={10} className="hover:text-red-500 cursor-pointer shrink-0" onClick={(e) => { e.stopPropagation(); handleToggle(o[valueKey]); }} />
                 )}
               </span>
             ))
           ) : (
-            <span className='text-slate-400 italic'>{placeholder || 'Select...'}</span>
+            <span className='text-slate-400'>{placeholder || 'Select...'}</span>
           )}
         </div>
-        {!disabled && <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : "ml-2"}`} />}
+        {!disabled && <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : "ml-2"}`} />}
       </div>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-xl flex flex-col overflow-hidden min-w-[240px]">
-          <div className="p-2 border-b border-slate-100 bg-slate-50">
+        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-md shadow-lg flex flex-col overflow-hidden min-w-[240px]">
+          <div className="p-2 border-b border-slate-100 bg-white">
             <input type="text" autoFocus value={search} onChange={e => setSearch(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm bg-white border border-slate-200 rounded-lg outline-none focus:border-indigo-400"
+              className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-md outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50/50 shadow-sm"
               placeholder="Search here..." />
           </div>
-          <div className="overflow-y-auto max-h-56 w-full p-1 scrollbar-thin">
+          <div className="overflow-y-auto max-h-56 w-full scrollbar-thin">
             {!required && !isMulti && (
               <div onClick={() => { onChange({ target: { value: "" } }); setOpen(false); setSearch(""); }}
-                className={`px-3 py-2 text-sm cursor-pointer rounded-lg hover:bg-slate-50 transition-colors ${!value ? "text-slate-400 font-bold" : "text-slate-400"}`}>
+                className={`px-4 py-2 text-sm cursor-pointer hover:bg-slate-50 transition-colors ${!value ? "text-slate-400 font-bold" : "text-slate-400"}`}>
                 {placeholder || 'Clear Selection'}
               </div>
             )}
-            {filteredOptions.length > 0 && <div className="px-3 py-1.5 text-[10px] uppercase font-bold text-slate-400 border-b border-slate-50 mb-1">{filteredOptions.length} results found</div>}
+            {options.length > 0 && (
+              <div className="px-4 py-1.5 text-[11px] font-medium text-slate-500 bg-slate-50 border-b border-slate-100">
+                {prefersResultsFound ? `${filteredOptions.length} results found` : `Total ${totalKind}: ${options.length}`}
+              </div>
+            )}
             {filteredOptions.map(o => {
               const isSelected = isMulti ? (value || []).includes(o[valueKey]) : value === o[valueKey];
+              const primary = getField(o, labelKey);
+              const secondary = subLabelKey ? getField(o, subLabelKey) : "";
+              const isAddressStyle = subLabelKey === "address";
+              const isCompanyStyle = subLabelKey === "companyCode";
+              const isSiteStyle = subLabelKey === "siteCode";
+              const useChevronView = ["address", "companyCode", "siteCode", "code"].includes(subLabelKey);
+              const secondaryLine = isAddressStyle ? extractCityState(secondary) : secondary;
+              const gstin = getField(o, "gstin") || getField(o, "billingGstin") || getField(o, "billing_gstin");
               return (
                 <div key={o[valueKey]}
-                  className={`flex items-center justify-between px-3 py-2 cursor-pointer rounded-lg hover:bg-indigo-50 transition-colors group ${isSelected ? "bg-indigo-50" : ""}`}>
+                  className={`flex items-center justify-between px-4 py-2 cursor-pointer transition-colors group border-b border-slate-100 last:border-0
+                    ${isSelected ? "bg-indigo-50" : "bg-white hover:bg-slate-50"}`}
+                >
                   <div className="flex-1 min-w-0" onClick={() => handleToggle(o[valueKey])}>
-                    <p className={`text-sm truncate ${isSelected ? "text-indigo-700 font-bold" : "text-slate-700 font-semibold"}`}>{o[labelKey]}</p>
-                    {subLabelKey && o[subLabelKey] && <p className="text-[11px] text-slate-500 truncate">{o[subLabelKey]}</p>}
+                    {isSiteStyle ? (
+                      <div className="min-w-0">
+                        <p className={`text-[13px] truncate ${isSelected ? "text-indigo-700 font-semibold" : "text-slate-900 font-semibold"}`}>
+                          {primary}{secondary ? ` (${secondary})` : ""}
+                        </p>
+                        {siteSecondary(o) && (
+                          <p className="text-[11px] text-slate-500 truncate leading-tight">{siteSecondary(o)}</p>
+                        )}
+                      </div>
+                    ) : isCompanyStyle ? (
+                      <div className="min-w-0">
+                        <p className={`text-[13px] truncate ${isSelected ? "text-indigo-700 font-semibold" : "text-slate-900 font-semibold"}`}>
+                          {primary}
+                        </p>
+                        {secondary && (
+                          <p className="text-[11px] text-slate-600 truncate mt-0.5">
+                            <span className="text-slate-500">Code:</span> <span className="font-semibold text-slate-700">{secondary}</span>
+                          </p>
+                        )}
+                        {gstin && (
+                          <p className="text-[11px] text-slate-600 truncate">
+                            <span className="text-slate-500">GSTIN:</span> {gstin}
+                          </p>
+                        )}
+                      </div>
+                    ) : isAddressStyle ? (
+                      <div className="min-w-0">
+                        <p className={`text-[13px] truncate ${isSelected ? "text-indigo-700 font-semibold" : "text-slate-900 font-semibold"}`}>
+                          {primary}
+                        </p>
+                        {secondaryLine && (
+                          <p className="text-[11px] text-slate-500 truncate leading-tight">{secondaryLine}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        {subLabelKey && secondaryLine && (
+                          <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded-sm shrink-0 uppercase tracking-tight">
+                            {secondaryLine}
+                          </span>
+                        )}
+                        <p className={`text-sm truncate ${isSelected ? "text-indigo-700 font-bold" : "text-slate-700 font-semibold"}`}>{primary}</p>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center gap-2 ml-2">
-                    {onView && (
-                      <button onClick={(e) => { e.stopPropagation(); setOpen(false); onView(o); }} className="p-1 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-100 transition-colors shrink-0">
+                  <div className="flex items-center gap-2 ml-3 shrink-0">
+                    {isMulti && isSelected && <Check size={14} className="text-indigo-600" />}
+                    {onView && useChevronView ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setOpen(false); onView(o); }}
+                        className="p-1 rounded-md text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors shrink-0"
+                        title="View"
+                      >
+                        <ChevronRight size={16} />
+                      </button>
+                    ) : onView ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setOpen(false); onView(o); }}
+                        className="p-1.5 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-100 transition-colors shrink-0"
+                        title="View"
+                      >
                         <Eye size={14} />
                       </button>
-                    )}
-                    {isMulti && isSelected && <Check size={14} className="text-indigo-600" />}
+                    ) : null}
                   </div>
                 </div>
               );
             })}
-            {filteredOptions.length === 0 && <div className="px-3 py-4 text-center text-xs text-slate-400">No results found</div>}
+            {filteredOptions.length === 0 && <div className="px-4 py-4 text-center text-xs text-slate-400">No results found</div>}
           </div>
           {onAdd && (
             <div onClick={() => { setOpen(false); onAdd(); }}
@@ -454,7 +750,7 @@ const DocUpload = ({ label, file, onChange, required }) => (
     <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
       {label} {required && <span className="text-red-400 normal-case">*</span>}
     </label>
-    <label className={`w-full flex items-center justify-between border rounded-xl px-3 py-2.5 text-sm cursor-pointer transition-all
+    <label className={`w-full flex items-center justify-between border rounded-md px-3 py-2.5 text-sm cursor-pointer transition-all
       ${file ? "border-green-200 bg-green-50/50" : "border-slate-200 hover:border-indigo-300"}`}>
       <div className="flex items-center gap-2 truncate">
         <FileText size={15} className={file ? "text-green-500" : "text-slate-400"} />
@@ -476,12 +772,12 @@ const MultiDocUpload = ({ label, files, onAdd, onRemove, onPreview, max = 6, req
     </label>
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
       {files.map((f, i) => (
-        <div key={i} className="flex items-center justify-between bg-white border border-emerald-100 rounded-xl px-3 py-2 shadow-sm animate-in fade-in slide-in-from-left-2 transition-all">
+        <div key={i} className="flex items-center justify-between bg-white border border-emerald-100 rounded-md px-3 py-2 shadow-sm animate-in fade-in slide-in-from-left-2 transition-all">
           <div
             className={`flex items-center gap-2 min-w-0 ${onPreview ? 'cursor-pointer hover:opacity-80' : ''}`}
             onClick={() => onPreview && onPreview(f)}
           >
-            <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
+            <div className="w-7 h-7 rounded-md bg-emerald-50 flex items-center justify-center shrink-0">
               <FileText size={14} className="text-emerald-500" />
             </div>
             <span className={`text-xs font-medium text-slate-700 truncate ${onPreview ? 'hover:text-emerald-600 hover:underline' : ''}`}>{f.name}</span>
@@ -492,7 +788,7 @@ const MultiDocUpload = ({ label, files, onAdd, onRemove, onPreview, max = 6, req
         </div>
       ))}
       {files.length < max && (
-        <label className="flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/30 rounded-xl p-2.5 cursor-pointer transition-all text-slate-400 hover:text-indigo-600 group">
+        <label className="flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/30 rounded-md p-2.5 cursor-pointer transition-all text-slate-400 hover:text-indigo-600 group">
           <Plus size={16} className="group-hover:scale-110 transition-transform" />
           <span className="text-xs font-semibold uppercase tracking-wider">Add Document</span>
           <input type="file" className="hidden" multiple={false} onChange={onAdd} />
@@ -510,6 +806,14 @@ function makeGroup() {
   return { id: Date.now(), itemId: "", unit: "", subRows: [makeSubRow()] };
 }
 
+const autoGrowTextarea = (el) => {
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+};
+
+const formatINR = (n) => `₹${(Number(n) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const user = JSON.parse(localStorage.getItem("bms_user") || "{}");
 
@@ -522,7 +826,9 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const [loading, setLoading] = useState(orders.length === 0);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
+  const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
   const [actionModal, setActionModal] = useState({ type: null, data: null });
+  const [calcModalOpen, setCalcModalOpen] = useState(false);
   const [customInputModal, setCustomInputModal] = useState({ open: false, type: "", groupId: "", subId: "", itemId: "", text: "", originalValue: "" });
   const [specViewModal, setSpecViewModal] = useState({ open: false, html: '', onEdit: null });
   const [uomModal, setUomModal] = useState({ open: false, gid: null, name: "", code: "", saving: false });
@@ -534,6 +840,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const [contacts, setContacts] = useState([]);
   const [itemsList, setItemsList] = useState([]);
   const [clauses, setClauses] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [uomList, setUomList] = useState([]);
 
   useEffect(() => {
@@ -541,6 +848,22 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     const interval = setInterval(fetchOrders, 30000); // Background sync every 30s
     return () => clearInterval(interval);
   }, []);
+
+  // Body scroll lock for modals/drawers
+  useEffect(() => {
+    const isModalOpen = actionModal.type || specViewModal.open || uomModal.open || customInputModal.open || confirmModal || calcModalOpen;
+    if (isModalOpen) {
+      document.body.style.overflow = "hidden";
+      document.body.style.paddingRight = "6px"; // Prevent layout shift
+    } else {
+      document.body.style.overflow = "auto";
+      document.body.style.paddingRight = "0px";
+    }
+    return () => {
+      document.body.style.overflow = "auto";
+      document.body.style.paddingRight = "0px";
+    };
+  }, [actionModal.type, specViewModal.open, uomModal.open, customInputModal.open, confirmModal, calcModalOpen]);
 
   const fetchOrders = async () => {
     try {
@@ -570,7 +893,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   // Form State - Header
   const [header, setHeader] = useState({
     orderType: "Supply", orderNumber: "", refNumber: "", subject: "", orderName: "",
-    siteId: "", companyId: "", vendorId: "", contactPersonIds: [],
+    siteId: "", companyId: "", vendorId: "", categoryId: "", contactPersonIds: [],
     requestBy: "", madeBy: user.name || "", priority: "Medium", deliveryDate: "",
     creationDate: new Date().toISOString().split('T')[0],
     notes: ""
@@ -581,6 +904,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const [siteDetails, setSiteDetails] = useState(null);
   const [companyDetails, setCompanyDetails] = useState(null);
   const [vendorDetails, setVendorDetails] = useState(null);
+  const [isRecalledEdit, setIsRecalledEdit] = useState(false);
 
   // Sync siteDetails/companyDetails when IDs change (covers edit-load and manual selection)
   useEffect(() => {
@@ -604,6 +928,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsPos, setSettingsPos] = useState({ top: 0, right: 0 });
   const settingsBtnRef = useRef(null);
+  const notesRef = useRef("");
   const [transactionDiscount, setTransactionDiscount] = useState(0);
   const [transactionTax, setTransactionTax] = useState(18);
   const [frightCharges, setFrightCharges] = useState(0);
@@ -636,6 +961,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     const init = async () => {
       await fetchMasterData();
       if (editOrderId) fetchOrderForEdit();
+      else setIsRecalledEdit(false);
     };
     init();
   }, [editOrderId]);
@@ -645,6 +971,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     try {
       const res = await fetch(`${API}/api/orders/${editOrderId}`);
       const { order, items: rawItems } = await res.json();
+      setIsRecalledEdit(hasRecallHistory(order));
 
       // 1. Map Header
       setHeader({
@@ -656,6 +983,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         siteId: order.site_id,
         companyId: order.company_id,
         vendorId: order.vendor_id,
+        categoryId: order.category_id || "",
         contactPersonIds: (order.snapshot?.contacts && order.snapshot.contacts.length > 0)
           ? order.snapshot.contacts.map(c => c.id)
           : [order.contact_person_id].filter(Boolean),
@@ -664,7 +992,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         priority: order.priority,
         deliveryDate: order.delivery_date ? order.delivery_date.split('T')[0] : "",
         creationDate: order.date_of_creation ? order.date_of_creation.split('T')[0] : "",
-        notes: normalizeRichTextHtml(order.notes || "")
+        notes: normalizeRichTextHtml(order.notes || order.snapshot?.notes || "")
       });
 
       setTcPoints(normalizeRichTextArray(order.terms_conditions));
@@ -759,6 +1087,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
     } catch (err) {
       console.error(err);
+      setIsRecalledEdit(false);
       showToast("Failed to load order for editing", "error");
     }
     setLoading(false);
@@ -767,13 +1096,14 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const fetchMasterData = async () => {
     // setLoading is handled by caller or kept here for fresh loads
     try {
-      const [sRes, cRes, vRes, coRes, iRes, clRes] = await Promise.all([
+      const [sRes, cRes, vRes, coRes, iRes, clRes, catRes] = await Promise.all([
         fetch(`${API}/api/procurement/sites`),
         fetch(`${API}/api/procurement/companies`),
         fetch(`${API}/api/procurement/vendors`),
         fetch(`${API}/api/procurement/contacts`),
         fetch(`${API}/api/procurement/items`),
-        fetch(`${API}/api/procurement/clauses`)
+        fetch(`${API}/api/procurement/clauses`),
+        fetch(`${API}/api/procurement/categories`),
       ]);
       const s = await sRes.json(); setSites(s.sites || []);
       const c = await cRes.json(); setCompanies(c.companies || []);
@@ -781,6 +1111,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       const co = await coRes.json(); setContacts(co.contacts || []);
       const i = await iRes.json(); setItemsList(i.items || []);
       const cl = await clRes.json(); setClauses(cl.clauses || []);
+      const cat = await catRes.json(); setCategories(cat.categories || []);
       const uomRes = await fetch(`${API}/api/procurement/uom`);
       const uomData = await uomRes.json(); setUomList(uomData.uoms || []);
     } catch {
@@ -1134,8 +1465,17 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       if (!header.siteId || !header.companyId || !header.vendorId || !finalOrderNumber) {
         return showToast("Site, Company, Vendor and Order Number are required for submission.", "error");
       }
+      if (!header.orderName) {
+        return showToast(`${header.orderType === "Supply" ? "PO" : "WO"} Name is required for submission.`, "error");
+      }
+      if (!header.categoryId) {
+        return showToast("Category is required for submission.", "error");
+      }
       if (!header.subject) {
         return showToast("Order Subject is required for submission.", "error");
+      }
+      if (!header.refNumber) {
+        return showToast("Reference Number is required for submission.", "error");
       }
       if (files.quotations.length === 0) {
         return showToast("At least 1 Quotation Document is mandatory for submission.", "error");
@@ -1186,6 +1526,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       site_id: header.siteId || null,
       company_id: header.companyId || null,
       vendor_id: header.vendorId || null,
+      category_id: header.categoryId || null,
       contact_person_id: header.contactPersonIds?.[0] || null,
       request_by: header.requestBy || "",
       made_by: header.madeBy || "",
@@ -1205,11 +1546,11 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         showModel: settings.model,
         showRemarks: settings.remarks
       },
-      notes: normalizeRichTextHtml(header.notes || ""),
+      notes: normalizeRichTextHtml(notesRef.current || header.notes || ""),
       created_by_id: user.id,
       status: submitStatus,
       action_by: user.name || "",
-      snapshot: { ...snapshot, proof_type: files.proof.type, notes: normalizeRichTextHtml(header.notes || "") }
+      snapshot: { ...snapshot, proof_type: files.proof.type, notes: normalizeRichTextHtml(notesRef.current || header.notes || "") }
     };
 
     const mappedItems = items.flatMap(g => g.subRows.map(({ id, ...s }) => ({
@@ -1270,7 +1611,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     const div = document.createElement("div");
     div.innerHTML = html;
 
-    // Remove Quill v2 marker spans (.ql-ui) � these are empty marker-hosts
+    // Remove Quill v2 marker spans (.ql-ui)  these are empty marker-hosts
     // that only render content via CSS ::before in the editor context
     div.querySelectorAll(".ql-ui").forEach(el => el.remove());
 
@@ -1293,77 +1634,207 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   /* ── Clause Component ── */
   const renderClauses = (title, type, ptsState, setPtsState) => {
     const list = clauses.filter(c => c.type === type);
-    return (
-      <div className="bg-slate-100/50 border border-slate-200 p-4 sm:p-5 rounded-2xl space-y-4">
-        <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
-          <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
-          {title}
-        </h3>
-        <Select
-          value=""
-          onChange={e => {
-            const v = e.target.value;
-            if (!v) return;
-            const c = list.find(x => x.id === v);
-            if (c) {
-              setPtsState([getCleanHTML(c.points)]);
-            }
-          }}
-          options={list}
-          valueKey="id"
-          labelKey="title"
-          placeholder="- Select from Template -"
-          onAdd={() => setActionModal({ type: 'manageClause', clauseType: type, initialAction: 'add' })}
-          addLabel={`Add New`}
-          onView={(c) => setActionModal({ type: 'manageClause', clauseType: type, initialViewId: c.id, initialAction: 'view', setPoints: setPtsState })}
-        />
-        {ptsState.length > 0 && (
-          <div className="mt-2 space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
-            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden relative group/clause">
-              {/* Main Clause Content Box */}
-              <div className="px-5 py-3">
-                <div className="quill-content max-w-full break-words prose prose-sm prose-slate leading-normal text-slate-600" dangerouslySetInnerHTML={{ __html: ptsState[0] || "" }} />
-              </div>
+    // Find the template that matches the current points to show its ID and Title
+    const selectedTemplate = ptsState.length > 0 ? list.find(x => getCleanHTML(x.points) === ptsState[0]) : null;
 
-              {/* Action Overlay or Clear Button */}
-              <div className="absolute top-4 right-4 opacity-0 group-hover/clause:opacity-100 transition-opacity">
-                <button onClick={() => setPtsState([])} title="Remove Template"
-                  className="h-8 w-8 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-rose-400 hover:text-rose-600 hover:bg-rose-50 hover:border-rose-100 shadow-sm transition-all">
-                  <X size={15} strokeWidth={2.5} />
+    return (
+      <div className="bg-slate-50/50 border border-slate-100 p-4 rounded-lg flex flex-col gap-3 min-h-[140px]">
+        <div className="flex items-center justify-between">
+          <h3 className="text-[15px] font-semibold text-slate-950 tracking-normal flex items-center gap-2">
+            {title}
+          </h3>
+          {ptsState.length > 0 && (
+            <button onClick={() => setPtsState([])} className="text-slate-300 hover:text-rose-500 transition-colors">
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
+
+        {!selectedTemplate ? (
+          <div className="flex-1 flex flex-col justify-end">
+            <Select
+              value=""
+              onChange={e => {
+                const v = e.target.value;
+                if (!v) return;
+                const c = list.find(x => x.id === v);
+                if (c) setPtsState([getCleanHTML(c.points)]);
+              }}
+              options={list}
+              valueKey="id"
+              labelKey="title"
+              subLabelKey="code"
+              placeholder={`Select ${title}...`}
+              onAdd={() => setActionModal({ type: 'manageClause', clauseType: type, initialAction: 'add' })}
+              addLabel={`Add`}
+              onView={(c) => setActionModal({ type: 'manageClause', clauseType: type, initialViewId: c.id, initialAction: 'view', setPoints: setPtsState })}
+            />
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col justify-end">
+            <div className="bg-white border border-slate-200 rounded-md p-2.5 flex items-center justify-between gap-3 shadow-sm group">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded-sm shrink-0 uppercase tracking-tight">
+                  {selectedTemplate.code || selectedTemplate.id?.slice(0, 8)}
+                </span>
+                <span className="text-xs font-bold text-slate-700 truncate">{selectedTemplate.title}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setActionModal({ type: 'manageClause', clauseType: type, initialViewId: selectedTemplate.id, initialAction: 'view', setPoints: setPtsState })}
+                  className="p-1.5 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                  title="View"
+                >
+                  <ChevronRight size={16} />
+                </button>
+                <button
+                  onClick={() => setPtsState([])}
+                  className="p-1.5 rounded-md text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                >
+                  <X size={14} />
                 </button>
               </div>
             </div>
-
-            <div className="flex justify-end pr-2">
-              <button
-                onClick={() => setPtsState([])}
-                className="text-[10px] font-bold text-slate-400 hover:text-rose-500 uppercase tracking-widest transition-all flex items-center gap-1.5 px-3 py-1.5 rounded-xl hover:bg-rose-50 border border-transparent hover:border-rose-100"
-              >
-                <Trash2 size={12} /> Clear Selected Clause
-              </button>
-            </div>
-
-            <style>{`
-              .quill-content p { margin: 0; }
-              .quill-content ul, .quill-content ol { padding-left: 1rem; margin: 0; }
-              .quill-content ol ol { list-style-type: lower-alpha; }
-              .quill-content ol ol ol { list-style-type: lower-roman; }
-              .quill-content li { margin-bottom: 0.125rem; }
-              .quill-content * { max-width: 100%; word-break: break-word; }
-              .quill-compact p { margin-bottom: 0px !important; text-align: justify !important; }
-              .quill-compact ul, .quill-compact ol { margin: 0 !important; }
-              .quill-content { text-align: justify !important; }
-            `}</style>
           </div>
         )}
       </div>
     );
   };
 
+  const lockRecallIdentityFields = Boolean(editOrderId && isRecalledEdit);
+
   if (loading && sites.length === 0 && companies.length === 0) return <div className="p-6 text-slate-400 text-center py-20 flex items-center justify-center flex-col gap-4"><Loader2 size={30} className="animate-spin text-indigo-500" /> <p>Loading master data...</p></div>;
 
   return (
-    <div className="p-4 md:p-6 w-full max-w-[1400px] mx-auto pb-32">
+    <div className="p-4 md:p-6 w-full max-w-none mx-0 pb-32">
+      <style>{SCROLLBAR_STYLE}</style>
+      {calcModalOpen && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-4xl rounded-md shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+              <div>
+                <h2 className="text-base font-black text-slate-900">Calculation breakdown</h2>
+                <p className="text-xs text-slate-400">How the total is calculated (simple steps)</p>
+              </div>
+              <button onClick={() => setCalcModalOpen(false)} className="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5 bg-slate-50">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="bg-white border border-slate-200 rounded-md p-4">
+                  <p className="text-[11px] font-bold text-slate-600 uppercase tracking-widest mb-3">Step by step</p>
+                  <div className="space-y-2 text-[13px] font-medium text-slate-600">
+                    <div className="flex items-center justify-between">
+                      <span>1) Subtotal (Σ Qty × Rate)</span>
+                      <span className="text-slate-900 font-bold">{formatINR(totals.subtotal)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span>
+                        2) Discount{settings.discountMode === "line" ? " (per line)" : settings.discountMode === "total" ? ` (${totals.txDiscountPct || 0}%)` : ""}
+                      </span>
+                      <span className="text-slate-900 font-bold">- {formatINR(totals.totalDiscountAmt)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span>3) Taxable amount</span>
+                      <span className="text-slate-900 font-bold">{formatINR((totals.subtotal || 0) - (totals.totalDiscountAmt || 0))}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span>
+                        4) GST{settings.tax ? " (item wise)" : ` (${totals.txTaxPct || 0}%)`}{settings.frightMode === "before" ? " + Freight GST" : ""}
+                      </span>
+                      <span className="text-slate-900 font-bold">{formatINR(totals.gst)}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span>
+                        5) Freight{settings.frightMode === "before" ? ` (+GST ${totals.frightTax || 0}%)` : ""}
+                      </span>
+                      <span className="text-slate-900 font-bold">{formatINR(totals.frightCharges)}</span>
+                    </div>
+
+                    <div className="pt-3 mt-2 border-t border-slate-200 flex items-center justify-between">
+                      <span className="text-slate-900 font-bold">Grand Total</span>
+                      <span className="text-slate-900 font-bold text-base">{formatINR(totals.grandTotal)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-md p-4">
+                  <p className="text-[11px] font-bold text-slate-600 uppercase tracking-widest mb-3">Formula view</p>
+                  <div className="text-[13px] font-medium text-slate-600 space-y-2">
+                    <p><span className="text-slate-900 font-bold">Subtotal</span> = Σ(Qty × Rate)</p>
+                    <p><span className="text-slate-900 font-bold">Discount</span> = {settings.discountMode === "line" ? "Σ(Line Discount)" : settings.discountMode === "total" ? "Subtotal × Discount%" : "0"}</p>
+                    <p><span className="text-slate-900 font-bold">Taxable</span> = Subtotal − Discount</p>
+                    <p><span className="text-slate-900 font-bold">GST</span> = {settings.tax ? "Σ(Item Base × Tax%)" : "Taxable × GST%"}{settings.frightMode === "before" ? " (+ Freight × FreightTax%)" : ""}</p>
+                    <p><span className="text-slate-900 font-bold">Grand Total</span> = Taxable + Freight + GST</p>
+                  </div>
+                  <div className="mt-4 rounded-md border border-slate-100 bg-slate-50 p-3">
+                    <p className="text-[11px] font-bold text-slate-600 uppercase tracking-widest mb-1">Total in words</p>
+                    <p className="text-sm font-semibold text-slate-900">{totals.words || amountToWords(Number(totals.grandTotal) || 0)}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 bg-white border border-slate-200 rounded-md overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+                  <p className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Line items</p>
+                  <p className="text-xs text-slate-400">Qty × Rate → Discount → GST → Total</p>
+                </div>
+                <div className="overflow-x-auto calc-thin-scroll">
+                  <table className="min-w-[900px] w-full text-xs">
+                    <thead className="bg-slate-50">
+                      <tr className="border-b border-slate-100 text-slate-600 text-[13px] font-medium">
+                        <th className="px-3 py-2 text-left">Item</th>
+                        <th className="px-3 py-2 text-left">Spec</th>
+                        <th className="px-3 py-2 text-right">Qty</th>
+                        <th className="px-3 py-2 text-right">Rate</th>
+                        <th className="px-3 py-2 text-right">Gross</th>
+                        <th className="px-3 py-2 text-right">Disc</th>
+                        <th className="px-3 py-2 text-right">GST</th>
+                        <th className="px-3 py-2 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {totals.processedItems.map((p) => {
+                        const group = items.find((g) => (g.subRows || []).some((s) => String(s.id) === String(p.id)));
+                        const item = itemsList.find((it) => String(it.id) === String(group?.itemId));
+                        const itemName = item?.materialName || item?.name || item?.itemCode || "—";
+                        const spec = p.specification || "—";
+                        return (
+                          <tr key={p.id} className="border-b border-slate-50 last:border-0 text-[13px] font-medium text-slate-600">
+                            <td className="px-3 py-2 text-slate-900 font-bold">{itemName}</td>
+                            <td className="px-3 py-2">{spec}</td>
+                            <td className="px-3 py-2 text-right">{Number(p.qty || 0)}</td>
+                            <td className="px-3 py-2 text-right">{formatINR(p.unitRate || 0)}</td>
+                            <td className="px-3 py-2 text-right">{formatINR(p.gross || 0)}</td>
+                            <td className="px-3 py-2 text-right">{formatINR(p.dAmt || 0)}</td>
+                            <td className="px-3 py-2 text-right">{formatINR(p.rowGst || 0)}</td>
+                            <td className="px-3 py-2 text-right text-slate-900 font-bold">{formatINR(p.total || 0)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 bg-white shrink-0 flex items-center justify-end">
+              <button
+                onClick={() => setCalcModalOpen(false)}
+                className="px-5 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-lg
           ${toast.type === "error" ? "bg-red-50 text-red-700 border border-red-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
@@ -1395,9 +1866,9 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-6 bg-white p-5 rounded-[1.5rem] border border-slate-100 shadow-sm">
+      <div className="flex items-center justify-between mb-6 bg-white p-5 rounded-lg border border-slate-100 shadow-sm">
         <div className="flex items-center gap-4">
-          <div className="h-12 w-12 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100">
+          <div className="h-12 w-12 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-100">
             <FileSpreadsheet size={22} className="text-white" />
           </div>
           <div>
@@ -1411,13 +1882,13 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={onCancel} className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-all text-sm">Cancel</button>
+          <button onClick={onCancel} className="px-4 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-all text-sm">Cancel</button>
           <button onClick={() => handleSave("Draft")} disabled={saving}
-            className="px-5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-100 transition-all disabled:opacity-50 text-sm">
+            className="px-5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-100 transition-all disabled:opacity-50 text-sm">
             <Save size={16} /> {saving ? "..." : "Save as Draft"}
           </button>
-          <button onClick={() => handleSave("Review")} disabled={saving || !header.companyId || !header.siteId || !header.vendorId || !header.subject}
-            className="px-6 py-2.5 rounded-xl bg-indigo-600 text-white font-semibold flex items-center gap-2 hover:bg-indigo-700 shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50 text-sm">
+          <button onClick={() => handleSave("Review")} disabled={saving || !header.companyId || !header.siteId || !header.vendorId || !header.categoryId || !header.subject || !header.orderName || !header.refNumber}
+            className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white font-semibold flex items-center gap-2 hover:bg-indigo-700 shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50 text-sm">
             <Check size={16} /> {saving ? "..." : "Submit for Review"}
           </button>
         </div>
@@ -1427,73 +1898,83 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
         {/* TOP SECTION - Settings & Details */}
         <div className="grid grid-cols-1 gap-6">
-          <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-5">
+          <div className="bg-white rounded-lg border border-slate-100 p-5 shadow-sm space-y-5">
             <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2">Order Setup</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <Input label={header.orderType === "Supply" ? "PO Name" : "WO Name"}
+                value={header.orderName} onChange={e => setHeader(h => ({ ...h, orderName: e.target.value }))}
+                placeholder={header.orderType === "Supply" ? "Enter PO Name..." : "Enter WO Name..."} required />
               <Select label="Order Type" value={header.orderType} onChange={e => setHeader(h => ({ ...h, orderType: e.target.value }))}
                 options={[{ id: "Supply", name: "Supply (PO)" }, { id: "SITC", name: "SITC (WO)" }, { id: "ITC", name: "ITC (WO)" }]} required />
               <Input label={header.orderType === "Supply" ? "PO Number" : "WO Number"}
-                value={header.orderNumber || "WILL BE ASSIGNED UPON ISSUANCE"}
+                value={header.orderNumber || ""}
+                placeholder="Will be assigned upon issuance"
                 readOnly mono
-                className={!header.orderNumber ? "text-amber-600 font-bold italic text-[11px]" : ""}
               />
               <Select label="Select Site" value={header.siteId} onChange={handleSiteChange} options={sites} valueKey="id" labelKey="siteName" subLabelKey="siteCode" required
-                disabled={!!project}
-                onAdd={() => setActionModal({ type: "addSite" })} addLabel="Add New Site" onView={(s) => setActionModal({ type: "viewSite", data: s })} />
+                disabled={!!project || lockRecallIdentityFields}
+                onAdd={() => setActionModal({ type: "addSite" })} addLabel="Add New Site"
+                onView={(s) => setActionModal({ type: "viewSite", data: s })} />
               <Select label="Select Company" value={header.companyId} onChange={handleCompanyChange} options={companies} valueKey="id" labelKey="companyName" subLabelKey="companyCode" required
+                disabled={lockRecallIdentityFields}
                 onAdd={() => setActionModal({ type: "addCompany" })} addLabel="Add New Company" onView={(c) => setActionModal({ type: "viewCompany", data: c })} />
               <Select label="Select Vendor" value={header.vendorId} onChange={handleVendorChange} options={vendors} valueKey="id" labelKey="vendorName" subLabelKey="address" required
                 onAdd={() => setActionModal({ type: "addVendor" })} addLabel="Add New Vendor" onView={(v) => setActionModal({ type: "viewVendor", data: v })} />
-              <Input label="Date of Creation" type="date" value={header.creationDate} onChange={e => setHeader(h => ({ ...h, creationDate: e.target.value }))} required />
+              <Select label="Category" value={header.categoryId} onChange={e => setHeader(h => ({ ...h, categoryId: e.target.value }))}
+                options={categories} valueKey="id" labelKey="categoryName" subLabelKey="categoryCode" placeholder="Select category..." required />
+              <Input label="Date of Creation" type="date" value={header.creationDate} onChange={e => setHeader(h => ({ ...h, creationDate: e.target.value }))} disabled={lockRecallIdentityFields} required />
               <Input label="Order Made By" value={header.madeBy} readOnly />
             </div>
           </div>
 
           {/* ── Billing Detail & GST (auto from site state + entity profiles) ── */}
-          <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-              <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2 mb-4">
-                <div className="w-5 h-5 bg-emerald-50 rounded-md flex items-center justify-center"><Landmark size={12} className="text-emerald-600" /></div>
-                Billing Detail &amp; GST
-                {siteDetails?.state && (
-                  <span className="ml-auto text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                    State: {siteDetails.state}
-                  </span>
+          <div className="bg-white rounded-lg border border-slate-100 p-5 shadow-sm">
+            <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2 mb-4">
+              <div className="w-5 h-5 bg-emerald-50 rounded-md flex items-center justify-center"><Landmark size={12} className="text-emerald-600" /></div>
+              Billing Detail &amp; GST
+              {siteDetails?.state && (
+                <span className="ml-auto text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                  State: {siteDetails.state}
+                </span>
+              )}
+            </h2>
+            {billingProfile ? (
+              <div className="space-y-3">
+                {billingProfile.source === "entity" && siteDetails?.state && (
+                  <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5">
+                    No state-specific profile for <span className="font-bold">{siteDetails.state}</span> — using entity billing details
+                  </p>
                 )}
-              </h2>
-              {billingProfile ? (
-                <div className="space-y-3">
-                  {billingProfile.source === "entity" && siteDetails?.state && (
-                    <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5">
-                      No state-specific profile for <span className="font-bold">{siteDetails.state}</span> — using entity billing details
-                    </p>
-                  )}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Billing Address</p>
-                      <p className="text-sm text-slate-700 leading-relaxed">{billingProfile.address || "—"}</p>
-                    </div>
-                    <div className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">GSTIN</p>
-                      <p className="text-sm font-mono font-bold text-slate-800 tracking-wider">{billingProfile.gstin || "—"}</p>
-                      {billingProfile.contactName && (
-                        <p className="text-xs text-slate-500 mt-2">Contact: {billingProfile.contactName}{billingProfile.contactPhone ? ` · ${billingProfile.contactPhone}` : ""}</p>
-                      )}
-                    </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2">
+                    <Input label="Billing Address" value={billingProfile.address || "—"} readOnly multiline rows={3} />
+                  </div>
+                  <div className="space-y-4">
+                    <Input label="GSTIN" value={billingProfile.gstin || "—"} readOnly />
+                    {(billingProfile.contactName || billingProfile.contactPhone) && (
+                      <div className="px-4 py-2 bg-slate-50 rounded-xl border border-slate-100">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Contact Details</p>
+                        <p className="text-xs font-bold text-slate-600">
+                          {billingProfile.contactName}{billingProfile.contactPhone ? ` · ${billingProfile.contactPhone}` : ""}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
-              ) : (
-                <div className="text-center py-5 text-slate-400">
-                  {!siteDetails && !companyDetails
-                    ? <p className="text-xs">Select site and company to see billing details</p>
-                    : !siteDetails
+              </div>
+            ) : (
+              <div className="text-center py-5 text-slate-400">
+                {!siteDetails && !companyDetails
+                  ? <p className="text-xs">Select site and company to see billing details</p>
+                  : !siteDetails
                     ? <p className="text-xs">Select a site to determine billing state</p>
                     : <p className="text-xs">Select a company to load billing profile</p>
-                  }
-                </div>
-              )}
+                }
+              </div>
+            )}
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-6">
+          <div className="bg-white rounded-lg border border-slate-100 p-5 shadow-sm space-y-6">
             <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2 mb-4">
               <div className="w-5 h-5 bg-indigo-50 rounded-md flex items-center justify-center"><FileText size={12} className="text-indigo-600" /></div>
               Order Meta
@@ -1501,11 +1982,11 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="col-span-full">
                 <Input label="Subject" value={header.subject} onChange={e => setHeader(h => ({ ...h, subject: e.target.value }))} placeholder="Enter full order subject (e.g. Supply of IT Equipment for Varanasi Site)..."
-                  className="text-lg font-bold" />
+                  multiline rows={4} required />
               </div>
               <div className="lg:col-span-2">
                 <Input label="Reference No" value={header.refNumber} onChange={e => setHeader(h => ({ ...h, refNumber: e.target.value }))} placeholder="e.g. BMS/PRO/2026/001"
-                  className="font-bold text-slate-800" />
+                  className="font-bold text-slate-800" required />
               </div>
               <Input label="Date of Delivery" type="date" value={header.deliveryDate} onChange={e => setHeader(h => ({ ...h, deliveryDate: e.target.value }))} />
               <Select label="Priority" value={header.priority} onChange={e => setHeader(h => ({ ...h, priority: e.target.value }))}
@@ -1523,14 +2004,14 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-6">
+          <div className="bg-white rounded-md border border-slate-100 p-5 shadow-sm space-y-6">
             <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
               <div className="w-5 h-5 bg-indigo-50 rounded-md flex items-center justify-center"><FilePlus size={12} className="text-indigo-600" /></div>
               Order Documentation
             </h2>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* QUOTATIONS */}
-              <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+              <div className="bg-slate-100/60 p-4 rounded-md border border-slate-100">
                 <MultiDocUpload label="Quotation(s) * (Min 1, Max 6)" files={files.quotations} max={6} required
                   onAdd={e => {
                     const f = e.target.files[0];
@@ -1541,15 +2022,21 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
               </div>
 
               {/* COMPARATIVE / PROOF */}
-              <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 space-y-4">
+              <div className="bg-slate-100/60 p-4 rounded-md border border-slate-100 space-y-4">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Proof Type *</label>
-                  <select value={files.proof.type} onChange={e => setFiles(prev => ({ ...prev, proof: { ...prev.proof, type: e.target.value } }))}
-                    className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-indigo-400 bg-white">
-                    <option value="">� Select Type �</option>
-                    <option value="Comparative Docs">Comparative Docs</option>
-                    <option value="Mail Proof Doc">Mail Proof Doc</option>
-                  </select>
+                  <div className="relative">
+                    <select
+                      value={files.proof.type}
+                      onChange={e => setFiles(prev => ({ ...prev, proof: { ...prev.proof, type: e.target.value } }))}
+                      className="w-full border border-slate-200 rounded-md pl-3 pr-10 h-10 text-sm outline-none focus:border-indigo-400 bg-white appearance-none"
+                    >
+                      <option value="">Select Type</option>
+                      <option value="Comparative Docs">Comparative Docs</option>
+                      <option value="Mail Proof Doc">Mail Proof Doc</option>
+                    </select>
+                    <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
                 </div>
                 {files.proof.type && (
                   <MultiDocUpload label={`${files.proof.type} *`} files={files.proof.files} max={3} required
@@ -1557,13 +2044,18 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                       const f = e.target.files[0];
                       if (f) setFiles(prev => ({ ...prev, proof: { ...prev.proof, files: [...prev.proof.files, f] } }));
                     }}
-                    onRemove={i => setFiles(prev => ({ ...prev, proof: { ...prev.proof, files: prev.proof.files.filter((_, idx) => idx !== i) } }))}
+                    onRemove={i => {
+                      setFiles(prev => {
+                        const newFiles = prev.proof.files.filter((_, idx) => idx !== i);
+                        return { ...prev, proof: { ...prev.proof, files: newFiles } };
+                      });
+                    }}
                     onPreview={handlePreviewDoc} />
                 )}
               </div>
 
               {/* OTHERS */}
-              <div className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100">
+              <div className="bg-slate-100/60 p-4 rounded-md border border-slate-100">
                 <MultiDocUpload label="Other Documents (Max 2)" files={files.others} max={2}
                   onAdd={e => {
                     const f = e.target.files[0];
@@ -1582,11 +2074,11 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         <div className="w-full space-y-6 min-w-0 flex-1">
 
           {/* ITEMS TABLE */}
-          <div className="bg-white rounded-[2rem] border border-slate-200 shadow-[0_20px_50px_rgba(0,0,0,0.05)] overflow-hidden flex flex-col border-b-0">
+          <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col border-b-0">
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
               <h2 className="text-base font-black text-slate-800 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-xl shadow-indigo-100">
-                  <ShieldCheck size={20} strokeWidth={2.5} />
+                  <FileText size={20} strokeWidth={2.5} />
                 </div>
                 <div className="flex flex-col">
                   <span className="leading-tight text-sm font-black">Table of Content</span>
@@ -1614,7 +2106,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                           <div className="space-y-1.5">
                             {[
                               { key: 'model', label: 'Model Number' },
-                              { key: 'brand', label: 'Make / Brand' },
+                              { key: 'brand', label: 'Brand' },
                               { key: 'tax', label: 'GST (Tax)' },
                               { key: 'remarks', label: 'Remarks' }
                             ].filter(({ key }) => !settings[key]).map(({ key, label }) => (
@@ -1664,187 +2156,650 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
               </div>
             </div>
 
-            <div className="w-full premium-scroll" style={{ overflowX: "auto" }}>
-              <table className="text-xs border-collapse" style={{ minWidth: '100%', tableLayout: 'auto' }}>
-                <thead>
-                  <tr className="bg-slate-700 border-b border-slate-600">
-                    <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-center whitespace-nowrap" style={{ width: '40px' }}>S.No</th>
-                    {["SITC", "ITC"].includes(header.orderType) ? (
-                      <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-left" style={{ minWidth: '340px' }}>Item Name & Description</th>
-                    ) : (
-                      <>
-                        <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-left" style={{ minWidth: '200px' }}>Item Name</th>
-                        <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-left" style={{ minWidth: '180px' }}>Specification</th>
-                      </>
-                    )}
-                    {settings.model && (
-                      <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-left group/th" style={{ minWidth: '110px' }}>
-                        <div className="flex items-center gap-1 whitespace-nowrap">Model No
-                          <button onClick={() => updateSettingsAndClearData('model', false)} className="opacity-0 group-hover/th:opacity-100 ml-1 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Remove column"><X size={8} strokeWidth={3} /></button>
-                        </div>
+            <div className="px-5 pb-5">
+              <div className="relative isolate w-full premium-scroll border border-slate-200 rounded bg-white overflow-x-auto overflow-y-hidden">
+                <table className="create-order-items-table w-full text-xs table-fixed col-lines" style={{ minWidth: '100%', tableLayout: 'fixed' }}>
+                  <thead>
+                    <tr className="border-b border-slate-200">
+                      <th
+                        className="col-sep sticky left-0 z-50 py-3 pl-3 pr-2 text-xs font-semibold text-slate-700 text-left whitespace-nowrap"
+                        style={{ width: '60px', left: 0 }}
+                      >
+                        S.No
                       </th>
-                    )}
-                    {settings.brand && (
-                      <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-left group/th" style={{ minWidth: '120px' }}>
-                        <div className="flex items-center gap-1 whitespace-nowrap">Make / Brand
-                          <button onClick={() => updateSettingsAndClearData('brand', false)} className="opacity-0 group-hover/th:opacity-100 ml-1 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Remove column"><X size={8} strokeWidth={3} /></button>
-                        </div>
-                      </th>
-                    )}
-                    <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-center whitespace-nowrap" style={{ width: '60px' }}>Unit</th>
-                    <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-center whitespace-nowrap" style={{ width: '90px' }}>Qty</th>
-                    <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-right whitespace-nowrap" style={{ width: '120px' }}>Rate (₹)</th>
-                    {settings.discountMode === "line" && <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-center whitespace-nowrap" style={{ width: '70px' }}>Disc%</th>}
-                    {settings.tax && (
-                      <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-center whitespace-nowrap group/th" style={{ width: '80px' }}>
-                        <div className="flex items-center justify-center gap-1">GST%
-                          <button onClick={() => updateSettingsAndClearData('tax', false)} className="opacity-0 group-hover/th:opacity-100 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Move to summary"><X size={8} strokeWidth={3} /></button>
-                        </div>
-                      </th>
-                    )}
-                    <th className="px-2 py-2.5 text-[10px] font-bold text-indigo-300 uppercase tracking-wider text-right whitespace-nowrap" style={{ width: '140px' }}>Amount (₹)</th>
-                    {settings.remarks && (
-                      <th className="px-2 py-2.5 text-[10px] font-bold text-slate-300 uppercase tracking-wider text-left group/th" style={{ minWidth: '140px' }}>
-                        <div className="flex items-center gap-1 whitespace-nowrap">Remarks
-                          <button onClick={() => updateSettingsAndClearData('remarks', false)} className="opacity-0 group-hover/th:opacity-100 ml-1 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Remove column"><X size={8} strokeWidth={3} /></button>
-                        </div>
-                      </th>
-                    )}
-                    <th className="sticky right-0 bg-slate-700" style={{ width: '32px' }}></th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-slate-100">
-                  {items.map((group, gIdx) => {
-                    const itemData = itemsList.find(i => i.id === group.itemId);
-                    return group.subRows.map((sub, sIdx) => {
-                      const isFirst = sIdx === 0;
-                      return (
-                        <tr key={sub.id} className={`transition-colors border-b border-slate-100
-                          ${isFirst && gIdx > 0 ? "border-t-2 border-slate-300" : ""}
-                          ${!isFirst ? "bg-slate-50/60 hover:bg-slate-100/60" : "bg-white hover:bg-indigo-50/30"}`}>
-
-                          {/* S.No � rowspan */}
-                          {isFirst && (
-                            <td rowSpan={group.subRows.length} className="px-1 py-2 text-center align-middle border-r border-slate-100">
-                              <span className="text-[11px] font-bold text-slate-400">{(gIdx + 1).toString().padStart(2, "0")}</span>
-                            </td>
-                          )}
-
-                          {["SITC", "ITC"].includes(header.orderType) ? (
-                            <td className="px-3 py-2 border-r border-slate-100 min-w-[320px]">
-                              {isFirst && (
-                                <div className="mb-3 pb-3 border-b border-slate-100/50">
-                                  <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-                                    <span className="w-1 h-3 bg-indigo-500 rounded-full"></span>
-                                    Item / Service Name
+                      {["SITC", "ITC"].includes(header.orderType) ? (
+                        <th
+                          className="col-sep sticky z-40 px-3 py-3 text-xs font-semibold text-slate-700 text-left"
+                          style={{ width: '420px', left: 60 }}
+                        >
+                          Product Name & Description
+                        </th>
+                      ) : (
+                        <>
+                          <th
+                            className="col-sep sticky z-40 px-3 py-3 text-xs font-semibold text-slate-700 text-left"
+                            style={{ width: '320px', minWidth: '320px', maxWidth: '320px', left: 60 }}
+                          >
+                            Product Name
+                          </th>
+                          <th
+                            className="col-sep sticky z-30 px-3 py-3 text-xs font-semibold text-slate-700 text-left"
+                            style={{ width: '260px', minWidth: '260px', maxWidth: '260px', left: 380 }}
+                          >
+                            Specification
+                          </th>
+                        </>
+                      )}
+                      {settings.model && (
+                        <th className="px-3 py-3 text-xs font-semibold text-slate-700 text-left group/th" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
+                          <div className="flex items-center gap-1 whitespace-nowrap">Model No
+                            <button onClick={() => updateSettingsAndClearData('model', false)} className="opacity-0 group-hover/th:opacity-100 ml-1 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Remove column"><X size={8} strokeWidth={3} /></button>
+                          </div>
+                        </th>
+                      )}
+                      {settings.brand && (
+                        <th className="px-3 py-3 text-xs font-semibold text-slate-700 text-left group/th" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
+                          <div className="flex items-center gap-1 whitespace-nowrap">Brand
+                            <button onClick={() => updateSettingsAndClearData('brand', false)} className="opacity-0 group-hover/th:opacity-100 ml-1 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Remove column"><X size={8} strokeWidth={3} /></button>
+                          </div>
+                        </th>
+                      )}
+                      <th className="px-3 py-3 text-xs font-semibold text-slate-700 text-center whitespace-nowrap" style={{ width: '80px' }}>Unit</th>
+                      <th className="px-3 py-3 text-xs font-semibold text-slate-700 text-center whitespace-nowrap" style={{ width: '100px' }}>Quantity</th>
+                      <th className="px-3 py-3 text-xs font-semibold text-slate-700 text-right whitespace-nowrap" style={{ width: '120px' }}>Rate (₹)</th>
+                      {settings.discountMode === "line" && <th className="px-3 py-3 text-xs font-semibold text-slate-700 text-center whitespace-nowrap" style={{ width: '70px' }}>Disc (%)</th>}
+                      {settings.tax && (
+                        <th className="px-3 py-3 text-xs font-semibold text-slate-700 text-center whitespace-nowrap group/th" style={{ width: '80px' }}>
+                          <div className="flex items-center justify-center gap-1">Tax (%)
+                            <button onClick={() => updateSettingsAndClearData('tax', false)} className="opacity-0 group-hover/th:opacity-100 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Move to summary"><X size={8} strokeWidth={3} /></button>
+                          </div>
+                        </th>
+                      )}
+                      <th className="px-3 py-3 text-xs font-semibold text-slate-700 text-right whitespace-nowrap" style={{ width: '140px' }}>Amount (₹)</th>
+                      {settings.remarks && (
+                        <th className="px-3 py-3 text-xs font-semibold text-slate-700 text-left group/th" style={{ width: '240px' }}>
+                          <div className="flex items-center gap-1 whitespace-nowrap">Remarks
+                            <button onClick={() => updateSettingsAndClearData('remarks', false)} className="opacity-0 group-hover/th:opacity-100 ml-1 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Remove column"><X size={8} strokeWidth={3} /></button>
+                          </div>
+                        </th>
+                      )}
+                      <th
+                        className="sticky right-0 z-50 no-col-line"
+                        style={{ width: '32px' }}
+                      ></th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    {items.map((group, gIdx) => {
+                      const itemData = itemsList.find(i => i.id === group.itemId);
+                      return group.subRows.map((sub, sIdx) => {
+                        const isFirst = sIdx === 0;
+                        const isLast = sIdx === group.subRows.length - 1;
+                        const isSITC = ["SITC", "ITC"].includes(header.orderType);
+                        const showPointLabel = isSITC && group.subRows.length > 1;
+                        if (isSITC && isFirst) {
+                          const rowSpan = group.subRows.length + 1; // header row + points rows
+                          return (
+                            <React.Fragment key={`${group.id}-sitc`}>
+                              {/* Header row: only Item/Service */}
+                              <tr className={`bg-white ${gIdx > 0 ? "row-divider" : ""}`}>
+                                <td
+                                  rowSpan={rowSpan}
+                                  className="col-sep sticky left-0 z-40 px-1 py-3 text-center align-top bg-white"
+                                  style={{ left: 0, width: '60px', minWidth: '60px', maxWidth: '60px' }}
+                                >
+                                  <span className="text-[11px] font-black text-slate-900">{(gIdx + 1).toString().padStart(2, "0")}</span>
+                                </td>
+                                <td
+                                  className="col-sep sticky z-30 px-3 py-2 border-r border-slate-50 bg-white align-top"
+                                  style={{ left: 60 }}
+                                >
+                                  <p className="h-4 mb-1.5 text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+                                    <span className="w-1 h-3 bg-slate-200 rounded-full"></span>
+                                    Item Name
                                   </p>
-                                  <InlineSelect value={group.itemId} onChange={e => handleGroupChange(group.id, e.target.value)}
-                                    options={itemsList.filter(i => header.orderType === "ITC" ? ["SITC", "ITC"].includes(i.itemType) : i.itemType === header.orderType)} placeholder="Select Item..." />
-                                </div>
-                              )}
-                              <div className={!isFirst ? "pl-4 border-l-2 border-slate-100 mt-1" : "mt-1"}>
-                                {isFirst ? (
-                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Technical Description</p>
+                                  <InlineSelect
+                                    value={group.itemId}
+                                    onChange={e => handleGroupChange(group.id, e.target.value)}
+                                    options={itemsList.filter(i => header.orderType === "ITC" ? ["SITC", "ITC"].includes(i.itemType) : i.itemType === header.orderType)}
+                                    placeholder="Select Item..."
+                                    variant="table"
+                                  />
+                                </td>
+                                {/* Fill remaining columns in header row */}
+                                {group.subRows.length === 1 ? (
+                                  <>
+                                    {/* Model */}
+                                    {settings.model && (
+                                      <td className="px-2 pt-2 pb-2 align-top" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
+                                        <div className="h-4 mb-1.5" />
+                                        {group.subRows[0].hideModel ? (
+                                          <button onClick={() => handleSubRowChange(group.id, group.subRows[0].id, "hideModel", false)}
+                                            className="w-full text-[10px] text-slate-300 border border-dashed border-slate-200 rounded-[6px] px-2 py-2 text-center hover:border-indigo-300 hover:text-indigo-400 transition-all min-h-[34px]">
+                                            + Add
+                                          </button>
+                                        ) : (
+                                          <div className="flex items-center gap-1">
+                                            <input
+                                              type="text"
+                                              value={group.subRows[0].modelNumber}
+                                              onChange={e => handleSubRowChange(group.id, group.subRows[0].id, "modelNumber", e.target.value)}
+                                              className="flex-1 min-w-0 text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] px-2 py-2 outline-none focus:border-slate-400 transition-all placeholder:text-slate-300 placeholder:italic min-h-[34px]"
+                                              placeholder="Model #"
+                                            />
+                                            <button
+                                              onClick={() => { handleSubRowChange(group.id, group.subRows[0].id, "modelNumber", ""); handleSubRowChange(group.id, group.subRows[0].id, "hideModel", true); }}
+                                              className="shrink-0 text-slate-300 hover:text-red-400 transition-colors p-0.5 rounded"
+                                            >
+                                              <X size={11} strokeWidth={2.5} />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </td>
+                                    )}
+
+                                    {/* Brand */}
+                                    {settings.brand && (
+                                      <td className="px-1 pt-2 pb-2 align-top" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
+                                        <div className="h-4 mb-1.5" />
+                                        {group.subRows[0].hideBrand ? (
+                                          <button onClick={() => handleSubRowChange(group.id, group.subRows[0].id, "hideBrand", false)}
+                                            className="w-full text-[10px] text-slate-300 border border-dashed border-slate-200 rounded-[6px] px-2 py-2 text-center hover:border-indigo-300 hover:text-indigo-400 transition-all min-h-[34px]">
+                                            + Add
+                                          </button>
+                                        ) : (
+                                          <div className="flex items-center gap-1">
+                                            <div className="flex-1 min-w-0">
+                                              <InlineSelect
+                                                value={group.subRows[0].make}
+                                                onChange={e => handleSubRowChange(group.id, group.subRows[0].id, "make", e.target.value)}
+                                                options={itemData?.brands || []}
+                                                placeholder="Brand"
+                                                disabled={!group.itemId}
+                                                variant="table"
+                                                onAdd={() => setCustomInputModal({ open: true, type: "make", groupId: group.id, subId: group.subRows[0].id, itemId: group.itemId, text: group.subRows[0].make || "", originalValue: "" })}
+                                                onEdit={(val) => setCustomInputModal({ open: true, type: "make", groupId: group.id, subId: group.subRows[0].id, itemId: group.itemId, text: val, originalValue: val })}
+                                                addLabel="+ Add New Brand"
+                                              />
+                                            </div>
+                                            <button
+                                              onClick={() => { handleSubRowChange(group.id, group.subRows[0].id, "make", ""); handleSubRowChange(group.id, group.subRows[0].id, "hideBrand", true); }}
+                                              className="shrink-0 text-slate-300 hover:text-red-400 transition-colors p-0.5 rounded"
+                                            >
+                                              <X size={11} strokeWidth={2.5} />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </td>
+                                    )}
+
+                                    {/* Unit */}
+                                    <td className="py-2 px-1 text-center align-top whitespace-nowrap" style={{ width: '80px' }}>
+                                      <div className="h-4 mb-1.5" />
+                                      <InlineSelect
+                                        value={group.unit || ""}
+                                        onChange={e => setItems(prev => prev.map(g => g.id !== group.id ? g : { ...g, unit: e.target.value }))}
+                                        options={uomList.map(u => u.uomCode || u.uomName)}
+                                        placeholder="Unit"
+                                        searchable={true}
+                                        minDropWidth={160}
+                                        variant="table"
+                                        className="text-center"
+                                        onAdd={(searchText) => handleAddCustomUnit(group.id, searchText)}
+                                        addLabel="+ Add"
+                                      />
+                                    </td>
+
+                                    {/* Qty */}
+                                    <td className="px-1 py-2 whitespace-nowrap align-top text-center" style={{ width: '90px' }}>
+                                      <div className="h-4 mb-1.5" />
+                                      <input
+                                        type="number"
+                                        value={group.subRows[0].qty || ""}
+                                        onChange={e => handleSubRowChange(group.id, group.subRows[0].id, "qty", Number(e.target.value))}
+                                        className="no-spin w-full block text-center text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] px-2 py-2 outline-none focus:border-slate-400 transition-all"
+                                        placeholder="0"
+                                      />
+                                    </td>
+
+                                    {/* Rate */}
+                                    <td className="px-1 py-2 whitespace-nowrap align-top" style={{ width: '120px' }}>
+                                      <div className="h-4 mb-1.5" />
+                                      <div className="relative">
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-300">₹</span>
+                                        <input
+                                          type="number"
+                                          value={group.subRows[0].unitRate || ""}
+                                          onChange={e => handleSubRowChange(group.id, group.subRows[0].id, "unitRate", Number(e.target.value))}
+                                          className="no-spin w-full block text-right text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] pl-5 pr-2 py-2 outline-none focus:border-slate-400 transition-all"
+                                          placeholder="0.00"
+                                        />
+                                      </div>
+                                    </td>
+
+                                    {/* Discount */}
+                                    {settings.discountMode === "line" && (
+                                      <td className="px-1 py-2 whitespace-nowrap align-top text-center" style={{ width: '70px' }}>
+                                        <div className="h-4 mb-1.5" />
+                                        <input
+                                          type="number"
+                                          value={group.subRows[0].discountPct || ""}
+                                          onChange={e => handleSubRowChange(group.id, group.subRows[0].id, "discountPct", Number(e.target.value))}
+                                          className="no-spin w-full text-center text-xs font-bold text-rose-500 bg-rose-50/30 border border-rose-100 rounded-[6px] px-2 py-2 outline-none focus:border-rose-300 transition-all"
+                                          placeholder="%"
+                                        />
+                                      </td>
+                                    )}
+
+                                    {/* Tax */}
+                                    {settings.tax && (
+                                      <td className="px-1 py-2 whitespace-nowrap align-top text-center" style={{ width: '80px' }}>
+                                        <div className="h-4 mb-1.5" />
+                                        <div className="relative">
+                                          <select
+                                            value={group.subRows[0].taxPct}
+                                            onChange={e => handleSubRowChange(group.id, group.subRows[0].id, "taxPct", Number(e.target.value))}
+                                            className="w-full appearance-none text-center text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] px-2 py-2 outline-none focus:border-slate-400 cursor-pointer transition-all"
+                                          >
+                                            <option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option>
+                                          </select>
+                                          <ChevronDown size={9} className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" />
+                                        </div>
+                                      </td>
+                                    )}
+
+                                    {/* Amount */}
+                                    <td className="px-3 py-2 text-right text-sm font-bold text-slate-800 whitespace-nowrap align-top" style={{ width: '140px' }}>
+                                      <div className="h-4 mb-1.5" />
+                                      {(() => {
+                                        const p = totals.processedItems.find(x => x.id === group.subRows[0].id);
+                                        return `₹${(p?.total || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                                      })()}
+                                    </td>
+
+                                    {/* Remarks (single-point) */}
+                                    {settings.remarks && (
+                                      <td className="px-2 pt-2 pb-2 align-top" style={{ width: '240px' }}>
+                                        <div className="h-4 mb-1.5" />
+                                        <textarea
+                                          ref={(el) => autoGrowTextarea(el)}
+                                          value={group.subRows[0].remarks || ""}
+                                          onChange={e => handleSubRowChange(group.id, group.subRows[0].id, "remarks", e.target.value)}
+                                          onInput={(e) => autoGrowTextarea(e.currentTarget)}
+                                          onFocus={(e) => autoGrowTextarea(e.currentTarget)}
+                                          rows={1}
+                                          className="w-full resize-none overflow-hidden text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] px-2 py-2 outline-none focus:border-slate-400 transition-all leading-snug"
+                                          placeholder="Remarks..."
+                                        />
+                                      </td>
+                                    )}
+                                    {/* Action (single-point) */}
+                                    <td className="px-1 pt-2 pb-2 sticky right-0 z-40 bg-white align-top no-col-line">
+                                      <div className="h-4 mb-1.5" />
+                                      <div className="w-full flex justify-center items-start pt-[2px]">
+                                        <button
+                                          onClick={() => removeGroup(group.id)}
+                                          disabled={items.length === 1}
+                                          className="w-6 h-6 flex items-center justify-center mx-auto text-slate-300 hover:text-white hover:bg-rose-400 rounded transition-all disabled:opacity-0"
+                                        >
+                                          <X size={11} strokeWidth={2.5} />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </>
                                 ) : (
-                                  <p className="text-[8px] font-bold text-slate-300 uppercase tracking-tighter mb-1">Point {sIdx + 1}</p>
+                                  <>
+                                    {settings.model && <td style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}><div className="h-4 mb-1.5" /></td>}
+                                    {settings.brand && <td style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}><div className="h-4 mb-1.5" /></td>}
+                                    <td><div className="h-4 mb-1.5" /></td>
+                                    <td><div className="h-4 mb-1.5" /></td>
+                                    <td><div className="h-4 mb-1.5" /></td>
+                                    {settings.discountMode === "line" && <td><div className="h-4 mb-1.5" /></td>}
+                                    {settings.tax && <td><div className="h-4 mb-1.5" /></td>}
+                                    <td><div className="h-4 mb-1.5" /></td>
+                                    {settings.remarks && <td><div className="h-4 mb-1.5" /></td>}
+                                    <td className="sticky right-0 bg-white no-col-line"><div className="h-4 mb-1.5" /></td>
+                                  </>
                                 )}
-                                <div className="text-justify">
-                                  <InlineSelect value={sub.specification} onChange={e => handleSubRowChange(group.id, sub.id, "specification", e.target.value)}
-                                    options={itemData?.specifications || []} placeholder="� Spec �" disabled={!group.itemId} renderHtml={true}
+                              </tr>
+                              {/* Point 1 row (rendered here so it doesn't get skipped) */}
+                              <tr className="bg-white hover:bg-slate-50 transition-colors">
+                                <td
+                                  className="col-sep sticky z-30 px-3 py-2 border-r border-slate-50 bg-white align-top"
+                                  style={{ width: '420px', left: 60 }}
+                                >
+                                  <div className="pl-4 border-l-2 border-slate-50 flex items-start gap-2">
+                                    {group.subRows.length > 1 ? (
+                                      <span className="shrink-0 mt-[7px] text-[10px] font-bold text-slate-600 bg-white border border-slate-300 rounded px-1.5 py-0.5">
+                                        Point-1
+                                      </span>
+                                    ) : (
+                                      isFirst && <p className="shrink-0 mt-[7px] text-[9px] font-black text-slate-400 uppercase tracking-widest">Technical</p>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <InlineSelect value={sub.specification} onChange={e => handleSubRowChange(group.id, sub.id, "specification", e.target.value)}
+                                        options={itemData?.specifications || []} placeholder=" Spec " disabled={!group.itemId} renderHtml={true}
+                                        variant="table"
+                                        onAdd={() => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: "", originalValue: "" })}
+                                        onEdit={(val) => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val })}
+                                        onView={(val) => setSpecViewModal({ open: true, html: val, onEdit: () => { setSpecViewModal({ open: false, html: '', onEdit: null }); setCustomInputModal({ open: true, type: 'specification', groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val }); } })}
+                                        addLabel="+ Type Custom Spec" />
+                                      {isLast && group.itemId && (
+                                        <button
+                                          onClick={() => addSubRow(group.id)}
+                                          className="mt-2 inline-flex items-center gap-1 text-[9px] font-bold text-indigo-500 hover:text-indigo-700 px-2 py-1 rounded-lg bg-indigo-50 transition-colors border border-indigo-100/50"
+                                          title="Add Description Point"
+                                        >
+                                          <Plus size={10} strokeWidth={3} /> Add Point
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </td>
+                                {group.subRows.length === 1 ? (
+                                  <>
+                                    {settings.model && <td style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }} />}
+                                    {settings.brand && <td style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }} />}
+                                    <td style={{ width: '80px' }} />
+                                    <td style={{ width: '90px' }} />
+                                    <td style={{ width: '120px' }} />
+                                    {settings.discountMode === "line" && <td style={{ width: '70px' }} />}
+                                    {settings.tax && <td style={{ width: '80px' }} />}
+                                    <td style={{ width: '140px' }} />
+                                    {settings.remarks && <td style={{ width: '240px' }} />}
+                                    <td className="sticky right-0 bg-white no-col-line" style={{ width: '32px' }} />
+                                  </>
+                                ) : (
+                                  <>
+                                    {/* Model (Point 1) */}
+                                    {settings.model && (
+                                      <td className="px-2 py-2 align-top" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
+                                        {sub.hideModel ? (
+                                          <button
+                                            onClick={() => handleSubRowChange(group.id, sub.id, "hideModel", false)}
+                                            className="w-full text-[10px] text-slate-300 border border-dashed border-slate-200 rounded-[6px] px-2 py-2 text-center hover:border-indigo-300 hover:text-indigo-400 transition-all min-h-[34px]"
+                                          >
+                                            + Add
+                                          </button>
+                                        ) : (
+                                          <div className="flex items-center gap-1">
+                                            <input
+                                              type="text"
+                                              value={sub.modelNumber}
+                                              onChange={e => handleSubRowChange(group.id, sub.id, "modelNumber", e.target.value)}
+                                              className="flex-1 min-w-0 text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] px-2 py-2 outline-none focus:border-slate-400 transition-all placeholder:text-slate-300 placeholder:italic min-h-[34px]"
+                                              placeholder="Model #"
+                                            />
+                                            <button
+                                              onClick={() => { handleSubRowChange(group.id, sub.id, "modelNumber", ""); handleSubRowChange(group.id, sub.id, "hideModel", true); }}
+                                              className="shrink-0 text-slate-300 hover:text-red-400 transition-colors p-0.5 rounded"
+                                            >
+                                              <X size={11} strokeWidth={2.5} />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </td>
+                                    )}
+
+                                    {/* Brand (Point 1) */}
+                                    {settings.brand && (
+                                      <td className="px-1 py-2 align-top" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
+                                        {sub.hideBrand ? (
+                                          <button
+                                            onClick={() => handleSubRowChange(group.id, sub.id, "hideBrand", false)}
+                                            className="w-full text-[10px] text-slate-300 border border-dashed border-slate-200 rounded-[6px] px-2 py-2 text-center hover:border-indigo-300 hover:text-indigo-400 transition-all min-h-[34px]"
+                                          >
+                                            + Add
+                                          </button>
+                                        ) : (
+                                          <div className="flex items-center gap-1">
+                                            <div className="flex-1 min-w-0">
+                                              <InlineSelect
+                                                value={sub.make}
+                                                onChange={e => handleSubRowChange(group.id, sub.id, "make", e.target.value)}
+                                                options={itemData?.brands || []}
+                                                placeholder="Brand"
+                                                disabled={!group.itemId}
+                                                variant="table"
+                                                onAdd={() => setCustomInputModal({ open: true, type: "make", groupId: group.id, subId: sub.id, itemId: group.itemId, text: sub.make || "", originalValue: "" })}
+                                                onEdit={(val) => setCustomInputModal({ open: true, type: "make", groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val })}
+                                                addLabel="+ Add New Brand"
+                                              />
+                                            </div>
+                                            <button
+                                              onClick={() => { handleSubRowChange(group.id, sub.id, "make", ""); handleSubRowChange(group.id, sub.id, "hideBrand", true); }}
+                                              className="shrink-0 text-slate-300 hover:text-red-400 transition-colors p-0.5 rounded"
+                                            >
+                                              <X size={11} strokeWidth={2.5} />
+                                            </button>
+                                          </div>
+                                        )}
+                                      </td>
+                                    )}
+                                    <td className="py-2 px-1 text-center align-top whitespace-nowrap" style={{ width: '80px' }}>
+                                      <InlineSelect
+                                        value={group.unit || ""}
+                                        onChange={e => setItems(prev => prev.map(g => g.id !== group.id ? g : { ...g, unit: e.target.value }))}
+                                        options={uomList.map(u => u.uomCode || u.uomName)}
+                                        placeholder="Unit"
+                                        searchable={true}
+                                        minDropWidth={160}
+                                        variant="table"
+                                        className="text-center"
+                                        onAdd={(searchText) => handleAddCustomUnit(group.id, searchText)}
+                                        addLabel="+ Add"
+                                      />
+                                    </td>
+                                    <td className="px-1 py-2 whitespace-nowrap align-top text-center" style={{ width: '90px' }}>
+                                      <input type="number" value={sub.qty || ""} onChange={e => handleSubRowChange(group.id, sub.id, "qty", Number(e.target.value))}
+                                        className="no-spin w-full block text-center text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] px-2 py-2 outline-none focus:border-slate-400 transition-all" placeholder="0" />
+                                    </td>
+                                    <td className="px-1 py-2 whitespace-nowrap align-top" style={{ width: '120px' }}>
+                                      <div className="relative">
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-300">₹</span>
+                                        <input type="number" value={sub.unitRate || ""} onChange={e => handleSubRowChange(group.id, sub.id, "unitRate", Number(e.target.value))}
+                                          className="no-spin w-full block text-right text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] pl-5 pr-2 py-2 outline-none focus:border-slate-400 transition-all" placeholder="0.00" />
+                                      </div>
+                                    </td>
+                                    {settings.discountMode === "line" && (
+                                      <td className="px-1 py-2 whitespace-nowrap align-top text-center" style={{ width: '70px' }}>
+                                        <input type="number" value={sub.discountPct || ""} onChange={e => handleSubRowChange(group.id, sub.id, "discountPct", Number(e.target.value))}
+                                          className="no-spin w-full text-center text-xs font-bold text-rose-500 bg-rose-50/30 border border-rose-100 rounded-[6px] px-2 py-2 outline-none focus:border-rose-300 transition-all" placeholder="%" />
+                                      </td>
+                                    )}
+                                    {settings.tax && (
+                                      <td className="px-1 py-2 whitespace-nowrap align-top text-center" style={{ width: '80px' }}>
+                                        <div className="relative">
+                                          <select value={sub.taxPct} onChange={e => handleSubRowChange(group.id, sub.id, "taxPct", Number(e.target.value))}
+                                            className="w-full appearance-none text-center text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] px-2 py-2 outline-none focus:border-slate-400 cursor-pointer transition-all">
+                                            <option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option>
+                                          </select>
+                                          <ChevronDown size={9} className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" />
+                                        </div>
+                                      </td>
+                                    )}
+                                    <td className="px-3 py-2 text-right text-sm font-bold text-slate-800 whitespace-nowrap align-top" style={{ width: '140px' }}>
+                                      {(() => {
+                                        const p = totals.processedItems.find(x => x.id === sub.id);
+                                        return `₹${(p?.total || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                                      })()}
+                                    </td>
+                                    {settings.remarks && (
+                                      <td className="px-2 py-2 align-top" style={{ width: '240px' }}>
+                                        <textarea
+                                          ref={(el) => autoGrowTextarea(el)}
+                                          value={sub.remarks || ""}
+                                          onChange={e => handleSubRowChange(group.id, sub.id, "remarks", e.target.value)}
+                                          onInput={(e) => autoGrowTextarea(e.currentTarget)}
+                                          onFocus={(e) => autoGrowTextarea(e.currentTarget)}
+                                          rows={1}
+                                          className="w-full resize-none overflow-hidden text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] px-2 py-2 outline-none focus:border-slate-400 transition-all leading-snug"
+                                          placeholder="Remarks..."
+                                        />
+                                      </td>
+                                    )}
+                                    <td className="px-1 py-2 sticky right-0 z-40 bg-white align-top no-col-line">
+                                      <div className="w-full flex justify-center items-start pt-[2px]">
+                                        <button onClick={() => removeGroup(group.id)}
+                                          disabled={items.length === 1}
+                                          className="w-6 h-6 flex items-center justify-center mx-auto text-slate-300 hover:text-white hover:bg-rose-400 rounded transition-all disabled:opacity-0">
+                                          <X size={11} strokeWidth={2.5} />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </>
+                                )}
+                              </tr>
+                            </React.Fragment>
+                          );
+                        }
+
+                        return (
+                          <tr key={sub.id} className={`transition-colors
+                          ${isFirst && gIdx > 0 ? "row-divider" : ""}
+                          ${isLast ? "border-b border-slate-100" : "border-b-0"}
+                          ${!isFirst ? "bg-slate-50/20 hover:bg-slate-100/40" : "bg-white hover:bg-slate-50"}`}>
+
+                            {["SITC", "ITC"].includes(header.orderType) ? (
+                              <td
+                                className="sticky z-30 px-3 py-2 border-r border-slate-50 bg-white align-top"
+                                style={{ width: '420px', left: 60 }}
+                              >
+                                <div className="pl-4 border-l-2 border-slate-50 flex items-start gap-2">
+                                  {group.subRows.length > 1 ? (
+                                    <span className="shrink-0 mt-[7px] text-[10px] font-bold text-slate-600 bg-white border border-slate-300 rounded px-1.5 py-0.5">
+                                      {`Point-${sIdx + 1}`}
+                                    </span>
+                                  ) : (
+                                    isFirst && <p className="shrink-0 mt-[7px] text-[9px] font-black text-slate-400 uppercase tracking-widest">Technical</p>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <InlineSelect value={sub.specification} onChange={e => handleSubRowChange(group.id, sub.id, "specification", e.target.value)}
+                                      options={itemData?.specifications || []} placeholder=" Spec " disabled={!group.itemId} renderHtml={true}
+                                      variant="table"
+                                      onAdd={() => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: "", originalValue: "" })}
+                                      onEdit={(val) => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val })}
+                                      onView={(val) => setSpecViewModal({ open: true, html: val, onEdit: () => { setSpecViewModal({ open: false, html: '', onEdit: null }); setCustomInputModal({ open: true, type: 'specification', groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val }); } })}
+                                      addLabel="+ Type Custom Spec" />
+                                    {isLast && group.itemId && (
+                                      <button
+                                        onClick={() => addSubRow(group.id)}
+                                        className="mt-2 inline-flex items-center gap-1 text-[9px] font-bold text-indigo-500 hover:text-indigo-700 px-2 py-1 rounded-lg bg-indigo-50 transition-colors border border-indigo-100/50"
+                                        title="Add Description Point"
+                                      >
+                                        <Plus size={10} strokeWidth={3} /> Add Point
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            ) : (
+                              <>
+                                {/* S.No (Standard PO) */}
+                                {isFirst && (
+                                  <td
+                                    rowSpan={group.subRows.length}
+                                    className="col-sep sticky left-0 z-40 px-1 py-3 text-center align-top bg-white"
+                                    style={{ left: 0, width: '60px', minWidth: '60px', maxWidth: '60px' }}
+                                  >
+                                    <span className="text-[11px] font-black text-slate-900">
+                                      {(gIdx + 1).toString().padStart(2, "0")}
+                                    </span>
+                                  </td>
+                                )}
+                                {/* Item  rowspan (Standard PO) */}
+                                {isFirst && (
+                                  <td
+                                    rowSpan={group.subRows.length}
+                                    className="col-sep sticky z-30 px-2 py-2 align-top border-r border-slate-50 bg-white"
+                                    style={{ width: '320px', minWidth: '320px', maxWidth: '320px', left: 60 }}
+                                  >
+                                    <div className="pl-0">
+                                      <InlineSelect
+                                        value={group.itemId}
+                                        onChange={e => handleGroupChange(group.id, e.target.value)}
+                                        options={itemsList.filter(i => header.orderType === "ITC" ? ["SITC", "ITC"].includes(i.itemType) : i.itemType === header.orderType)}
+                                        placeholder="Select Item..."
+                                        variant="table"
+                                      />
+                                      {group.itemId && (
+                                        <button onClick={() => addSubRow(group.id)}
+                                          className="mt-1 flex items-center gap-0.5 text-[9px] font-bold text-indigo-400 hover:text-indigo-600 px-1 rounded hover:bg-indigo-50 transition-colors">
+                                          <Plus size={9} strokeWidth={3} /> Add Spec
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                )}
+
+                                {/* Spec (Standard PO) */}
+                                <td
+                                  className="col-sep sticky z-20 px-2 py-2 align-top bg-white"
+                                  style={{ width: '260px', minWidth: '260px', maxWidth: '260px', left: 380 }}
+                                >
+                                  <InlineSelect
+                                    value={sub.specification}
+                                    onChange={e => handleSubRowChange(group.id, sub.id, "specification", e.target.value)}
+                                    options={itemData?.specifications || []}
+                                    placeholder=" Spec "
+                                    disabled={!group.itemId}
+                                    renderHtml={true}
+                                    variant="table"
                                     onAdd={() => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: "", originalValue: "" })}
                                     onEdit={(val) => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val })}
                                     onView={(val) => setSpecViewModal({ open: true, html: val, onEdit: () => { setSpecViewModal({ open: false, html: '', onEdit: null }); setCustomInputModal({ open: true, type: 'specification', groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val }); } })}
                                     addLabel="+ Type Custom Spec" />
-                                </div>
-                              </div>
-                              {isFirst && group.itemId && (
-                                <button onClick={() => addSubRow(group.id)}
-                                  className="mt-3 flex items-center gap-1.5 text-[9px] font-bold text-indigo-500 hover:text-indigo-700 px-2.5 py-1.5 rounded-xl bg-indigo-50 overflow-hidden relative group/btn transition-all border border-indigo-100/50">
-                                  <Plus size={10} strokeWidth={3} /> Add Description Point
-                                  <div className="absolute inset-0 bg-indigo-600 opacity-0 group-hover/btn:opacity-10 transition-opacity"></div>
-                                </button>
-                              )}
-                            </td>
-                          ) : (
-                            <>
-                              {/* Item � rowspan (Standard PO) */}
-                              {isFirst && (
-                                <td rowSpan={group.subRows.length} className="px-2 py-2 align-middle border-r border-slate-100">
-                                  <div className="border-l-2 border-indigo-300 pl-1.5">
-                                    <InlineSelect value={group.itemId} onChange={e => handleGroupChange(group.id, e.target.value)}
-                                      options={itemsList.filter(i => header.orderType === "ITC" ? ["SITC", "ITC"].includes(i.itemType) : i.itemType === header.orderType)} placeholder="Select Item..." />
-                                    {group.itemId && (
-                                      <button onClick={() => addSubRow(group.id)}
-                                        className="mt-1 flex items-center gap-0.5 text-[9px] font-bold text-indigo-400 hover:text-indigo-600 px-1 rounded hover:bg-indigo-50 transition-colors">
-                                        <Plus size={9} strokeWidth={3} /> Add Spec
-                                      </button>
-                                    )}
-                                  </div>
                                 </td>
-                              )}
+                              </>
+                            )}
 
-                              {/* Spec (Standard PO) */}
-                              <td className="px-2 py-2">
-                                <InlineSelect value={sub.specification} onChange={e => handleSubRowChange(group.id, sub.id, "specification", e.target.value)}
-                                  options={itemData?.specifications || []} placeholder="� Spec �" disabled={!group.itemId} renderHtml={true}
-                                  onAdd={() => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: "", originalValue: "" })}
-                                  onEdit={(val) => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val })}
-                                  onView={(val) => setSpecViewModal({ open: true, html: val, onEdit: () => { setSpecViewModal({ open: false, html: '', onEdit: null }); setCustomInputModal({ open: true, type: 'specification', groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val }); } })}
-                                  addLabel="+ Type Custom Spec" />
-                              </td>
-                            </>
-                          )}
-
-                          {/* Model */}
-                          {settings.model && (
-                            <td className="px-2 py-2" style={{ minWidth: '110px' }}>
-                              {sub.hideModel ? (
-                                <button onClick={() => handleSubRowChange(group.id, sub.id, "hideModel", false)}
-                                  className="w-full text-[10px] text-slate-300 border border-dashed border-slate-200 rounded-md px-2 py-1.5 text-center hover:border-indigo-300 hover:text-indigo-400 transition-all">
-                                  + Add
-                                </button>
-                              ) : (
-                                <div className="flex items-center gap-1">
-                                  <input type="text" value={sub.modelNumber} onChange={e => handleSubRowChange(group.id, sub.id, "modelNumber", e.target.value)}
-                                    className="flex-1 min-w-0 text-xs text-slate-700 bg-white border border-slate-200 rounded-md px-2 py-1.5 outline-none focus:border-indigo-400 placeholder:text-slate-300 placeholder:italic" placeholder="Model #" />
-                                  <button onClick={() => { handleSubRowChange(group.id, sub.id, "modelNumber", ""); handleSubRowChange(group.id, sub.id, "hideModel", true); }}
-                                    className="shrink-0 text-slate-300 hover:text-red-400 transition-colors p-0.5 rounded">
-                                    <X size={11} strokeWidth={2.5} />
+                            {/* Model */}
+                            {settings.model && (
+                              <td className="px-2 py-2 align-top" style={{ width: '110px', minWidth: '110px', maxWidth: '110px' }}>
+                                {sub.hideModel ? (
+                                  <button onClick={() => handleSubRowChange(group.id, sub.id, "hideModel", false)}
+                                    className="w-full text-[10px] text-slate-300 border border-dashed border-slate-200 rounded-[6px] px-2 py-2 text-center hover:border-indigo-300 hover:text-indigo-400 transition-all min-h-[34px]">
+                                    + Add
                                   </button>
-                                </div>
-                              )}
-                            </td>
-                          )}
-
-                          {/* Brand */}
-                          {settings.brand && (
-                            <td className="px-1 py-2" style={{ minWidth: '120px' }}>
-                              {sub.hideBrand ? (
-                                <button onClick={() => handleSubRowChange(group.id, sub.id, "hideBrand", false)}
-                                  className="w-full text-[10px] text-slate-300 border border-dashed border-slate-200 rounded-md px-2 py-1.5 text-center hover:border-indigo-300 hover:text-indigo-400 transition-all">
-                                  + Add
-                                </button>
-                              ) : (
-                                <div className="flex items-center gap-1">
-                                  <div className="flex-1 min-w-0">
-                                    <InlineSelect value={sub.make} onChange={e => handleSubRowChange(group.id, sub.id, "make", e.target.value)}
-                                      options={itemData?.brands || []} placeholder="Brand" disabled={!group.itemId}
-                                      onAdd={() => setCustomInputModal({ open: true, type: "make", groupId: group.id, subId: sub.id, itemId: group.itemId, text: sub.make || "", originalValue: "" })}
-                                      onEdit={(val) => setCustomInputModal({ open: true, type: "make", groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val })}
-                                      addLabel="+ Add New Brand" />
+                                ) : (
+                                  <div className="flex items-center gap-1">
+                                    <input type="text" value={sub.modelNumber} onChange={e => handleSubRowChange(group.id, sub.id, "modelNumber", e.target.value)}
+                                      className="flex-1 min-w-0 text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] px-2 py-2 outline-none focus:border-slate-400 transition-all placeholder:text-slate-300 placeholder:italic min-h-[34px]" placeholder="Model #" />
+                                    <button onClick={() => { handleSubRowChange(group.id, sub.id, "modelNumber", ""); handleSubRowChange(group.id, sub.id, "hideModel", true); }}
+                                      className="shrink-0 text-slate-300 hover:text-red-400 transition-colors p-0.5 rounded">
+                                      <X size={11} strokeWidth={2.5} />
+                                    </button>
                                   </div>
-                                  <button onClick={() => { handleSubRowChange(group.id, sub.id, "make", ""); handleSubRowChange(group.id, sub.id, "hideBrand", true); }}
-                                    className="shrink-0 text-slate-300 hover:text-red-400 transition-colors p-0.5 rounded">
-                                    <X size={11} strokeWidth={2.5} />
-                                  </button>
-                                </div>
-                              )}
-                            </td>
-                          )}
+                                )}
+                              </td>
+                            )}
 
-                          {/* Unit � rowspan, editable from UOM list */}
-                          {isFirst && (
-                            <td rowSpan={group.subRows.length} className="py-2 px-1 text-center align-middle bg-slate-50 border-x border-slate-100 whitespace-nowrap" style={{ width: '80px' }}>
+                            {/* Brand */}
+                            {settings.brand && (
+                              <td className="px-1 py-2 align-top" style={{ width: '120px', minWidth: '120px', maxWidth: '120px' }}>
+                                {sub.hideBrand ? (
+                                  <button onClick={() => handleSubRowChange(group.id, sub.id, "hideBrand", false)}
+                                    className="w-full text-[10px] text-slate-300 border border-dashed border-slate-200 rounded-[6px] px-2 py-2 text-center hover:border-indigo-300 hover:text-indigo-400 transition-all min-h-[34px]">
+                                    + Add
+                                  </button>
+                                ) : (
+                                  <div className="flex items-center gap-1">
+                                    <div className="flex-1 min-w-0">
+                                      <InlineSelect value={sub.make} onChange={e => handleSubRowChange(group.id, sub.id, "make", e.target.value)}
+                                        options={itemData?.brands || []} placeholder="Brand" disabled={!group.itemId} variant="table"
+                                        onAdd={() => setCustomInputModal({ open: true, type: "make", groupId: group.id, subId: sub.id, itemId: group.itemId, text: sub.make || "", originalValue: "" })}
+                                        onEdit={(val) => setCustomInputModal({ open: true, type: "make", groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val })}
+                                        addLabel="+ Add New Brand" />
+                                    </div>
+                                    <button onClick={() => { handleSubRowChange(group.id, sub.id, "make", ""); handleSubRowChange(group.id, sub.id, "hideBrand", true); }}
+                                      className="shrink-0 text-slate-300 hover:text-red-400 transition-colors p-0.5 rounded">
+                                      <X size={11} strokeWidth={2.5} />
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            )}
+                            <td className="py-2 px-1 text-center align-top whitespace-nowrap" style={{ width: '80px' }}>
                               <InlineSelect
                                 value={group.unit || ""}
                                 onChange={e => setItems(prev => prev.map(g => g.id !== group.id ? g : { ...g, unit: e.target.value }))}
@@ -1852,181 +2807,202 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                 placeholder="Unit"
                                 searchable={true}
                                 minDropWidth={160}
+                                variant="table"
+                                className="text-center"
                                 onAdd={(searchText) => handleAddCustomUnit(group.id, searchText)}
                                 addLabel="+ Add"
                               />
                             </td>
-                          )}
 
-                          {/* Qty */}
-                          <td className="px-1 py-2 whitespace-nowrap" style={{ width: '90px' }}>
-                            <input type="number" value={sub.qty || ""} onChange={e => handleSubRowChange(group.id, sub.id, "qty", Number(e.target.value))}
-                              className="text-center text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-md px-1 py-1.5 outline-none focus:border-indigo-400" style={{ width: '78px' }} placeholder="0" />
-                          </td>
-
-                          {/* Rate */}
-                          <td className="px-1 py-2 whitespace-nowrap" style={{ width: '120px' }}>
-                            <div className="relative">
-                              <span className="absolute left-1.5 top-1/2 -translate-y-1/2 text-[9px] text-slate-300">₹</span>
-                              <input type="number" value={sub.unitRate || ""} onChange={e => handleSubRowChange(group.id, sub.id, "unitRate", Number(e.target.value))}
-                                className="text-right text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-md pl-4 pr-1 py-1.5 outline-none focus:border-indigo-400" style={{ width: '108px' }} placeholder="0.00" />
-                            </div>
-                          </td>
-
-                          {/* Disc */}
-                          {settings.discountMode === "line" && (
-                            <td className="px-1 py-2 whitespace-nowrap" style={{ width: '70px' }}>
-                              <input type="number" value={sub.discountPct || ""} onChange={e => handleSubRowChange(group.id, sub.id, "discountPct", Number(e.target.value))}
-                                className="text-center text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-md py-1.5 outline-none focus:border-indigo-400" style={{ width: '58px' }} placeholder="%" />
+                            {/* Qty */}
+                            <td className="px-1 py-2 whitespace-nowrap align-top text-center" style={{ width: '90px' }}>
+                              <input type="number" value={sub.qty || ""} onChange={e => handleSubRowChange(group.id, sub.id, "qty", Number(e.target.value))}
+                                className="no-spin w-full block text-center text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] px-2 py-2 outline-none focus:border-slate-400 transition-all" placeholder="0" />
                             </td>
-                          )}
 
-                          {/* GST % */}
-                          {settings.tax && (
-                            <td className="px-1 py-2 whitespace-nowrap" style={{ width: '80px' }}>
+                            {/* Rate */}
+                            <td className="px-1 py-2 whitespace-nowrap align-top" style={{ width: '120px' }}>
                               <div className="relative">
-                                <select value={sub.taxPct} onChange={e => handleSubRowChange(group.id, sub.id, "taxPct", Number(e.target.value))}
-                                  className="appearance-none text-center text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-md px-1 py-1.5 outline-none focus:border-indigo-400 cursor-pointer" style={{ width: '68px' }}>
-                                  <option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option>
-                                </select>
-                                <ChevronDown size={9} className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" />
+                                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] text-slate-300">₹</span>
+                                <input type="number" value={sub.unitRate || ""} onChange={e => handleSubRowChange(group.id, sub.id, "unitRate", Number(e.target.value))}
+                                  className="no-spin w-full block text-right text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] pl-5 pr-2 py-2 outline-none focus:border-slate-400 transition-all" placeholder="0.00" />
                               </div>
                             </td>
-                          )}
 
-                          {/* Amount (Total) */}
-                          <td className="px-2 py-2 text-right text-xs font-bold text-indigo-600 bg-indigo-50/50 font-mono border-l border-indigo-100 whitespace-nowrap" style={{ width: '140px' }}>
-                            {(() => {
-                              const p = totals.processedItems.find(x => x.id === sub.id);
-                              return (p?.total || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
-                            })()}
-                          </td>
+                            {/* Disc */}
+                            {settings.discountMode === "line" && (
+                              <td className="px-1 py-2 whitespace-nowrap align-top text-center" style={{ width: '70px' }}>
+                                <input type="number" value={sub.discountPct || ""} onChange={e => handleSubRowChange(group.id, sub.id, "discountPct", Number(e.target.value))}
+                                  className="no-spin w-full text-center text-xs font-bold text-rose-500 bg-rose-50/30 border border-rose-100 rounded-[6px] px-2 py-2 outline-none focus:border-rose-300 transition-all" placeholder="%" />
+                              </td>
+                            )}
 
-                          {/* Remarks */}
-                          {settings.remarks && (
-                            <td className="px-2 py-2" style={{ minWidth: '140px' }}>
-                              <input type="text" value={sub.remarks} onChange={e => handleSubRowChange(group.id, sub.id, "remarks", e.target.value)}
-                                className="w-full text-xs text-slate-500 bg-slate-50 border border-transparent rounded-md px-2 py-1.5 focus:bg-white focus:border-indigo-300 outline-none italic" placeholder="Remarks..." />
+                            {/* GST % */}
+                            {settings.tax && (
+                              <td className="px-1 py-2 whitespace-nowrap align-top text-center" style={{ width: '80px' }}>
+                                <div className="relative">
+                                  <select value={sub.taxPct} onChange={e => handleSubRowChange(group.id, sub.id, "taxPct", Number(e.target.value))}
+                                    className="w-full appearance-none text-center text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] px-2 py-2 outline-none focus:border-slate-400 cursor-pointer transition-all">
+                                    <option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option>
+                                  </select>
+                                  <ChevronDown size={9} className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-300 pointer-events-none" />
+                                </div>
+                              </td>
+                            )}
+
+                            {/* Amount (Total) */}
+                            <td className="px-3 py-2 text-right text-sm font-bold text-slate-800 border-b border-slate-50 whitespace-nowrap align-top" style={{ width: '140px' }}>
+                              {(() => {
+                                const p = totals.processedItems.find(x => x.id === sub.id);
+                                return `₹${(p?.total || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                              })()}
                             </td>
-                          )}
 
-                          {/* Action */}
-                          <td className="px-1 py-2 text-center sticky right-0 border-l border-slate-100 bg-inherit">
-                            <button onClick={() => group.subRows.length > 1 ? removeSubRow(group.id, sub.id) : removeGroup(group.id)}
-                              disabled={group.subRows.length === 1 && items.length === 1}
-                              className="w-6 h-6 flex items-center justify-center mx-auto text-slate-300 hover:text-white hover:bg-rose-400 rounded transition-all disabled:opacity-0">
-                              <X size={11} strokeWidth={2.5} />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    });
-                  })}
-                </tbody>
-              </table>
+                            {/* Remarks */}
+                            {settings.remarks && (
+                              <td className="px-2 py-2 align-top" style={{ width: '240px' }}>
+                                <textarea
+                                  ref={(el) => autoGrowTextarea(el)}
+                                  value={sub.remarks || ""}
+                                  onChange={e => handleSubRowChange(group.id, sub.id, "remarks", e.target.value)}
+                                  onInput={(e) => autoGrowTextarea(e.currentTarget)}
+                                  onFocus={(e) => autoGrowTextarea(e.currentTarget)}
+                                  rows={1}
+                                  className="w-full resize-none overflow-hidden text-xs text-slate-700 bg-white border border-slate-200 rounded-[6px] px-2 py-2 outline-none focus:border-slate-400 transition-all leading-snug"
+                                  placeholder="Remarks..."
+                                />
+                              </td>
+                            )}
+
+                            {/* Action */}
+                            <td className="px-1 py-2 sticky right-0 z-40 bg-white align-top no-col-line">
+                              <div className="w-full flex justify-center items-start pt-[2px]">
+                              <button onClick={() => group.subRows.length > 1 ? removeSubRow(group.id, sub.id) : removeGroup(group.id)}
+                                disabled={group.subRows.length === 1 && items.length === 1}
+                                className="w-6 h-6 flex items-center justify-center mx-auto text-slate-300 hover:text-white hover:bg-rose-400 rounded transition-all disabled:opacity-0">
+                                <X size={11} strokeWidth={2.5} />
+                              </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             {/* Footer: Add Item + Summary */}
-            <div className="border-t-2 border-slate-100 grid grid-cols-1 md:grid-cols-2">
-              {/* Add Item */}
-              <div className="p-5 flex items-center border-r border-slate-100">
+            {/* Footer: Add Item + Summary Card */}
+            <div className="p-6 flex flex-col md:flex-row justify-between items-start gap-8 bg-slate-50/30">
+              {/* Add Item Button Area */}
+              <div className="pt-0 md:pt-1">
                 <button onClick={addItem}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200">
-                  <Plus size={16} strokeWidth={2.5} /> Add New Item
+                  className="group inline-flex items-center justify-center gap-2.5 px-6 py-3 min-w-[170px] whitespace-nowrap rounded-2xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95">
+                  <Plus size={18} strokeWidth={3} /> Add New Item
                 </button>
               </div>
 
-              {/* Summary */}
-              <div className="p-5 space-y-2.5">
-                <div className="flex justify-between text-xs font-medium text-slate-500 pb-2 border-b border-slate-100">
-                  <span>Subtotal</span>
-                  <span className="font-mono font-bold text-indigo-600">₹ {totals.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+              {/* Summary Card Area */}
+              <div className="w-full flex flex-col md:flex-row gap-4 md:justify-between md:items-start">
+                {/* Total in Words (uses the empty left space) */}
+                <div className="w-full md:w-[520px] md:flex-none bg-slate-900/5 rounded-lg border border-slate-200 px-6 py-4 shadow-sm md:mx-auto">
+                  <p className="text-[11px] font-bold text-slate-600 uppercase tracking-widest">Total (in words)</p>
+                  <p className="mt-2 text-[13px] font-semibold text-slate-950 leading-relaxed">
+                    {amountToWords(Number(totals.grandTotal) || 0)}
+                  </p>
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setCalcModalOpen(true)}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline underline-offset-4"
+                    >
+                      View calculation
+                    </button>
+                  </div>
                 </div>
 
-                {settings.discountMode === "line" && totals.lineDiscountSum > 0 && (
-                  <div className="flex justify-between items-center text-xs font-medium text-rose-500">
-                    <span>Discount (Line)</span>
-                    <span className="font-mono font-bold text-rose-500">
-                      - ₹ {totals.lineDiscountSum.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                    </span>
+                <div className="w-full md:w-[380px] bg-slate-900/5 rounded-md border border-slate-200 pl-6 pr-10 py-4 space-y-3 shadow-sm">
+                  <div className="flex justify-between items-center text-[13px] font-medium text-slate-600">
+                    <span>Subtotal</span>
+                    <span className="text-slate-900 font-bold">₹{totals.subtotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
                   </div>
-                )}
 
-                {settings.discountMode === "total" && (
-                  <div className="flex justify-between items-center text-xs font-medium text-rose-500">
-                    <span className="flex items-center gap-2">
-                      <span className="flex items-center gap-1">
-                        Discount <span className="text-[10px] font-normal italic">(Global)</span>
-                      </span>
-                      <div className="flex items-center border border-rose-200 rounded-md bg-rose-50 overflow-hidden">
-                        <input type="number"
-                          value={transactionDiscount}
-                          onChange={e => setTransactionDiscount(e.target.value)}
-                          className="w-10 text-right outline-none font-mono text-xs bg-transparent text-rose-600 px-1.5 py-1 placeholder:text-rose-300"
-                          placeholder="0" />
-                        <span className="text-[11px] text-rose-400 font-bold pr-1.5">%</span>
+                  {settings.discountMode === "total" && (
+                    <div className="grid grid-cols-[72px_1fr_auto] items-center gap-x-2 text-[13px] font-medium text-slate-600">
+                      <span>Discount</span>
+                      <div className="flex items-center justify-start">
+                        <div className="inline-flex items-center border border-slate-200 rounded-[6px] bg-white overflow-hidden shadow-sm h-9">
+                          <input
+                            type="number"
+                            value={transactionDiscount}
+                            onChange={e => setTransactionDiscount(e.target.value)}
+                            className="no-spin w-12 text-center outline-none text-[13px] bg-transparent text-slate-700 px-2 font-bold"
+                            placeholder="0.00"
+                            inputMode="decimal"
+                            step="0.01"
+                            onWheel={(e) => e.currentTarget.blur()}
+                          />
+                          <span className="text-[11px] text-slate-400 font-bold px-3 bg-slate-50 border-l border-slate-100 h-full flex items-center">%</span>
+                        </div>
                       </div>
-                    </span>
-                    <span className="font-mono font-bold text-rose-500 whitespace-nowrap text-right">
-                      - ₹ {(Number(totals.txDiscountAmt) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                )}
+                      <span className="text-slate-900 font-bold justify-self-end">
+                        ₹{(Number(totals.txDiscountAmt) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
 
                 {settings.frightMode !== "none" && (
-                  <div className="flex justify-between items-center text-xs font-medium text-slate-500 border-t border-slate-100 pt-2">
-                    <div className="flex items-center gap-2">
-                      <span>Freight & Packing</span>
-                      {settings.frightMode === "before" && (
-                        <select value={frightTax} onChange={e => setFrightTax(Number(e.target.value))}
-                          className="text-[10px] border border-slate-200 rounded-md px-1.5 py-0.5 outline-none bg-white text-slate-600 ml-1">
-                          <option value="0">0% GST</option><option value="5">5% GST</option>
-                          <option value="12">12% GST</option><option value="18">18% GST</option>
-                        </select>
-                      )}
+                  <div className="grid grid-cols-[72px_auto_1fr_auto] items-center gap-x-2 text-[13px] font-medium text-slate-600">
+                    <span>Freight</span>
+                    <div className="border border-slate-200 rounded-[6px] bg-white px-2 shadow-sm h-9 flex items-center">
+                      <select
+                        value={frightTax}
+                        onChange={e => setFrightTax(Number(e.target.value))}
+                        disabled={settings.frightMode !== "before"}
+                        className="text-[12px] outline-none bg-transparent text-slate-600 font-bold cursor-pointer disabled:opacity-40"
+                      >
+                        <option value="0">0%</option><option value="5">5%</option>
+                        <option value="12">12%</option><option value="18">18%</option>
+                      </select>
                     </div>
-                    <input type="number"
-                      value={frightCharges}
-                      onChange={e => setFrightCharges(e.target.value)}
-                      className="w-28 text-right border border-slate-200 rounded-lg px-2 py-1 outline-none font-mono text-xs focus:border-indigo-400 bg-white"
-                      placeholder="0.00" />
+                    <div />
+                    <div className="border border-slate-200 rounded-[6px] bg-white overflow-hidden shadow-sm h-9 flex items-center justify-self-end">
+                      <input
+                        type="number"
+                        value={frightCharges}
+                        onChange={e => setFrightCharges(e.target.value)}
+                        className="no-spin w-20 text-right outline-none text-[13px] bg-transparent px-3 text-slate-900 font-bold"
+                        placeholder="0.00"
+                        inputMode="decimal"
+                        step="0.01"
+                        onWheel={(e) => e.currentTarget.blur()}
+                      />
+                    </div>
                   </div>
                 )}
 
-                <div className="flex justify-between items-center text-xs font-medium text-slate-500 pt-1">
-                  <div className="flex items-center gap-2">
-                    <span>GST {settings.tax ? "(Summary)" : "(Applied Global)"}</span>
-                    {!settings.tax && (
-                      <div className="flex items-center border border-indigo-200 rounded-md bg-indigo-50 overflow-hidden ml-1">
-                        <select value={transactionTax} onChange={e => setTransactionTax(Number(e.target.value))}
-                          className="text-[11px] outline-none font-mono bg-transparent text-indigo-700 px-1.5 py-0.5 cursor-pointer">
-                          <option value="0">0%</option><option value="5">5%</option>
-                          <option value="12">12%</option><option value="18">18%</option><option value="28">28%</option>
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                  <span className="font-mono font-bold text-indigo-600 whitespace-nowrap text-right">
-                    ₹ {(Number(totals.gst) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                <div className="flex justify-between items-center text-[13px] font-medium text-slate-600">
+                  <span>GST</span>
+                  <span className="text-slate-900 font-bold">
+                    ₹{(Number(totals.gst) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                   </span>
                 </div>
 
-                <div className="pt-3 border-t-2 border-slate-200 mt-1 space-y-1.5">
-                  <div className="flex justify-between items-center">
-                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Grand Total</p>
-                    <p className="text-2xl font-black text-indigo-600 font-mono">₹ {totals.grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</p>
+                  <div className="pt-3 border-t border-slate-400">
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm font-bold text-slate-900">Total</p>
+                      <p className="text-lg font-bold text-slate-900">₹{totals.grandTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</p>
+                    </div>
                   </div>
-                  <p className="text-[11px] text-slate-400 italic leading-snug">
-                    {header.orderType === "Supply" ? "Total Purchase Order Value: " : "Total Work Order Value: "}
-                    {totals.words}
-                  </p>
                 </div>
               </div>
             </div>
           </div>
 
           {/* ── ORDER NOTES (RICH TEXT) ── */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden mb-6">
+          <div className="bg-white rounded-lg border border-slate-100 shadow-sm overflow-hidden mb-6">
             <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
                 <FileText size={16} className="text-amber-600" />
@@ -2061,9 +3037,13 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                   }
                 `}</style>
                 <ReactQuill
+                  key={editOrderId || "new-order"}
                   theme="snow"
-                  value={header.notes}
-                  onChange={(val) => setHeader(h => ({ ...h, notes: val }))}
+                  defaultValue={header.notes}
+                  onChange={(val) => {
+                    notesRef.current = val;
+                    setHeader(h => ({ ...h, notes: val }));
+                  }}
                   placeholder="Type your custom notes here (Select text to format as Bold, Italics or Lists)..."
                   modules={{
                     toolbar: [
@@ -2078,20 +3058,21 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
           </div>
 
           {/* CLAUSES */}
-          <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm space-y-5">
+          <div className="bg-white rounded-lg border border-slate-100 p-5 shadow-sm space-y-4">
             <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2"><ShieldCheck size={16} className="text-slate-400" /> Order Clauses & Terms</h2>
-            <div className="grid grid-cols-1 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {renderClauses("Terms & Conditions", "TC", tcPoints, setTcPoints)}
               {renderClauses("Payment Terms", "PAY", payPoints, setPayPoints)}
               {renderClauses("Governing Laws", "GOV", govPoints, setGovPoints)}
 
               {!showAnnexure && anxPoints.length === 0 ? (
-                <div className="flex justify-center p-4 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                <div className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-200 rounded-lg bg-slate-50/50 hover:bg-slate-50 transition-colors group">
                   <button
                     onClick={() => setShowAnnexure(true)}
-                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100"
+                    className="flex flex-col items-center gap-2 text-slate-400 group-hover:text-indigo-600 transition-all"
                   >
-                    <Plus size={16} strokeWidth={3} /> Add Order Annexure
+                    <Plus size={24} className="opacity-40 group-hover:opacity-100" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Add Annexure</span>
                   </button>
                 </div>
               ) : (
@@ -2100,10 +3081,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                   {anxPoints.length === 0 && (
                     <button
                       onClick={() => setShowAnnexure(false)}
-                      className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all opacity-0 group-hover/anx-outer:opacity-100"
+                      className="absolute top-2 right-2 p-1 rounded text-slate-300 hover:text-rose-500 hover:bg-rose-50 transition-all"
                       title="Remove Section"
                     >
-                      <X size={14} />
+                      <X size={12} />
                     </button>
                   )}
                 </div>
@@ -2115,11 +3096,11 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       </div>
 
       {/* Master Data Interactivity Modals */}
-      {actionModal.type === "addSite" && <FullSiteModal onClose={() => setActionModal({ type: null })} onSuccess={(id) => { fetchMasterData(); setHeader(h => ({ ...h, siteId: id })); handleSiteChange({ target: { value: id } }); }} />}
+      {actionModal.type === "addSite" && <FullSiteModal allContacts={contacts} onClose={() => setActionModal({ type: null })} onSuccess={(id) => { fetchMasterData(); setHeader(h => ({ ...h, siteId: id })); handleSiteChange({ target: { value: id } }); }} />}
       {actionModal.type === "addCompany" && <FullCompanyModal onClose={() => setActionModal({ type: null })} onSuccess={(id) => { fetchMasterData(); setHeader(h => ({ ...h, companyId: id })); handleCompanyChange({ target: { value: id } }); }} />}
       {actionModal.type === "addVendor" && <FullVendorModal onClose={() => setActionModal({ type: null })} onSuccess={(id) => { fetchMasterData(); setHeader(h => ({ ...h, vendorId: id })); handleVendorChange({ target: { value: id } }); }} />}
 
-      {actionModal.type === "editSite" && <FullSiteModal editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => fetchMasterData()} />}
+      {actionModal.type === "editSite" && <FullSiteModal allContacts={contacts} editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => fetchMasterData()} />}
       {actionModal.type === "editCompany" && <FullCompanyModal editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => fetchMasterData()} />}
       {actionModal.type === "editVendor" && <FullVendorModal editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => fetchMasterData()} />}
 
@@ -2136,8 +3117,15 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       {specViewModal.open && (
         <SpecViewModal
           html={specViewModal.html}
-          onClose={() => setSpecViewModal({ open: false, html: '', onEdit: null })}
-          onEdit={specViewModal.onEdit}
+          clauseCode={specViewModal.code}
+          clauseType={specViewModal.type}
+          clauseTitle={specViewModal.title}
+          onClose={() => setSpecViewModal({ open: false, html: '' })}
+          onEdit={() => {
+            const h = specViewModal.onEdit;
+            setSpecViewModal({ open: false, html: '' });
+            if (h) h();
+          }}
         />
       )}
 
@@ -2246,6 +3234,29 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
           }}
         />
       )}
+
+      {/* Confirm Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-4">
+            <p className="text-sm font-semibold text-slate-700 leading-relaxed">{confirmModal.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { confirmModal.onConfirm(); setConfirmModal(null); }}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2275,7 +3286,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         setCurrentUser(updated);
         window.dispatchEvent(new CustomEvent("bms_permissions_updated"));
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   // Users with create/edit order access can edit any Draft/Review order.
@@ -2287,9 +3298,17 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   };
 
   const canDeleteOrder = (o) => {
-    if (o._history || ["Issued", "Rejected", "Cancelled", "Reverted", "Recalled"].includes(o.status)) return false;
-    return canDelete;
+    if (o._history) return false;
+    return canDelete && ["Draft", "Review"].includes(o.status);
   };
+  const canWithdrawApproval = (o) =>
+    !o._history &&
+    ["Pending Issue", "To Issue"].includes(o.status) &&
+    o.pending_approval_request?.status === "Pending" &&
+    (
+      String(o.pending_approval_request?.requestor_id) === String(currentUser.id) ||
+      String(o.created_by_id) === String(currentUser.id)
+    );
   const [orders, setOrders] = useState(cachedOrders || []);
   const [loading, setLoading] = useState(!cachedOrders);
   const [search, setSearch] = useState("");
@@ -2309,7 +3328,10 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const [bulkResult, setBulkResult] = useState(null);
   const bulkRef = React.useRef();
 
+  const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
   const [copiedOrderId, setCopiedOrderId] = useState("");
+  const [trashedOrders, setTrashedOrders] = useState([]);
+  const [trashLoading, setTrashLoading] = useState(false);
   const [logPanel, setLogPanel] = useState(null); // { orderId, orderNumber }
   const [logLoading, setLogLoading] = useState(false);
   const [logEvents, setLogEvents] = useState([]);
@@ -2322,7 +3344,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     Promise.all([
       fetch(`${API}/api/orders/${logPanel.orderId}`).then(r => r.json()),
       fetch(`${API}/api/amendments/requests?order_id=${logPanel.orderId}`, { headers }).then(r => r.json()).catch(() => ({ requests: [] })),
-      fetch(`${API}/api/approvals/requests/${logPanel.orderId}`, { headers }).then(r => r.json()).catch(() => ({ request: null })),
+      fetch(`${API}/api/approval-flows/request/${logPanel.orderId}`, { headers }).then(r => r.json()).catch(() => ({ request: null })),
     ]).then(([orderData, amendData, approvalData]) => {
       const order = orderData.order || {};
       const events = [];
@@ -2331,10 +3353,16 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         Review: 'Submitted for Review', 'Pending Issue': 'Submitted for Approval',
         Issued: 'Issued', Draft: 'Returned to Draft', Reverted: 'Reverted',
         Recalled: 'Recalled', Cancelled: 'Cancelled', Rejected: 'Rejected',
+        Deleted: 'Deleted', Restored: 'Restored', Withdrawn: 'Approval Withdrawn',
+        Amended: 'Amended',
         'Recall Requested': 'Recall Requested', 'Cancel Requested': 'Cancel Requested',
         'Recall Rejected': 'Recall Rejected', 'Cancel Rejected': 'Cancel Rejected',
         'Recall Request Cancelled': 'Recall Request Cancelled',
         'Cancel Request Cancelled': 'Cancel Request Cancelled',
+        'Recall Cancelled': 'Recall Cancelled',
+        'Cancel Order Withdrawn': 'Cancel Order Withdrawn',
+        'Amendment Cancelled': 'Amendment Cancelled',
+        'Amendment Request Cancelled': 'Amendment Request Cancelled',
       };
 
       // 1. Synthetic created event
@@ -2345,8 +3373,25 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       // 2. activity_log entries
       const actLog = Array.isArray(order.snapshot?.activity_log) ? order.snapshot.activity_log : [];
       actLog.forEach(e => {
-        events.push({ ...e, action: statusLabels[e.action] || e.action });
+        events.push({ ...e, action: statusLabels[e.action] || e.action, _attach: e.attachment_url || undefined });
       });
+
+      // Older trash rows may only have the _deleted marker, not an activity_log entry.
+      const deletedMeta = order.snapshot?._deleted || {};
+      if (deletedMeta.deleted_at) {
+        const deletedMinute = deletedMeta.deleted_at?.slice(0, 16);
+        const hasDeletedEvent = events.some(e =>
+          e.action === "Deleted" && e.action_at?.slice(0, 16) === deletedMinute
+        );
+        if (!hasDeletedEvent) {
+          events.push({
+            action_at: deletedMeta.deleted_at,
+            action_by: deletedMeta.deleted_by || "Unknown",
+            action: "Deleted",
+            comments: `Moved to Trash from ${deletedMeta.original_status || "Unknown"}`,
+          });
+        }
+      }
 
       // 3. Approval logs — intermediate approver decisions (dedupe against activity_log)
       const activityTs = new Set(actLog.map(e => e.action_at?.slice(0, 16)));
@@ -2379,27 +3424,46 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       events.sort((a, b) => new Date(a.action_at) - new Date(b.action_at));
       setLogEvents(events);
     })
-    .catch(() => setLogEvents([]))
-    .finally(() => setLogLoading(false));
+      .catch(() => setLogEvents([]))
+      .finally(() => setLogLoading(false));
   }, [logPanel]);
+
+  // Body scroll lock for modals/drawers in OrderList
+  useEffect(() => {
+    const isModalOpen = logPanel || pdfPreviewId || showBulk || confirmModal;
+    if (isModalOpen) {
+      document.body.style.overflow = "hidden";
+      document.body.style.paddingRight = "6px";
+    } else {
+      document.body.style.overflow = "auto";
+      document.body.style.paddingRight = "0px";
+    }
+    return () => {
+      document.body.style.overflow = "auto";
+      document.body.style.paddingRight = "0px";
+    };
+  }, [logPanel, pdfPreviewId, showBulk, confirmModal]);
 
   const getLogStyle = (action = "") => {
     const a = action.toLowerCase();
-    if (a.includes("created"))                        return { dot: "bg-indigo-500",  badge: "bg-indigo-100 text-indigo-700",   icon: <FileText size={12} /> };
-    if (a === "issued")                               return { dot: "bg-emerald-600", badge: "bg-emerald-100 text-emerald-800", icon: <CheckCircle2 size={12} /> };
-    if (a.includes("edit"))                           return { dot: "bg-cyan-500",    badge: "bg-cyan-100 text-cyan-700",       icon: <Pencil size={12} /> };
-    if (a.includes("recall") && a.includes("cancel")) return { dot: "bg-slate-400",   badge: "bg-slate-100 text-slate-500",     icon: <X size={12} /> };
-    if (a.includes("recall") && a.includes("reject")) return { dot: "bg-rose-500",    badge: "bg-rose-100 text-rose-700",       icon: <X size={12} /> };
-    if (a.includes("recall"))                         return { dot: "bg-purple-500",  badge: "bg-purple-100 text-purple-700",   icon: <FileText size={12} /> };
-    if (a.includes("cancel") && a.includes("reject")) return { dot: "bg-rose-500",    badge: "bg-rose-100 text-rose-700",       icon: <X size={12} /> };
-    if (a === "cancelled")                            return { dot: "bg-slate-600",   badge: "bg-slate-100 text-slate-600",     icon: <X size={12} /> };
-    if (a.includes("cancel"))                         return { dot: "bg-rose-400",    badge: "bg-rose-50 text-rose-600",        icon: <FileText size={12} /> };
-    if (a.includes("reject"))                         return { dot: "bg-rose-500",    badge: "bg-rose-100 text-rose-700",       icon: <X size={12} /> };
-    if (a.includes("amend") && a.includes("approv"))  return { dot: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700", icon: <CheckCircle2 size={12} /> };
-    if (a.includes("amend"))                          return { dot: "bg-amber-500",   badge: "bg-amber-100 text-amber-700",     icon: <FileText size={12} /> };
-    if (a.includes("review"))                         return { dot: "bg-sky-500",     badge: "bg-sky-100 text-sky-700",         icon: <FileText size={12} /> };
-    if (a.includes("approv"))                         return { dot: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700", icon: <CheckCircle2 size={12} /> };
-    if (a === "draft")                                return { dot: "bg-blue-400",    badge: "bg-blue-100 text-blue-700",       icon: <FileText size={12} /> };
+    if (a.includes("created")) return { dot: "bg-indigo-500", badge: "bg-indigo-100 text-indigo-700", icon: <FileText size={12} /> };
+    if (a === "issued") return { dot: "bg-emerald-600", badge: "bg-emerald-100 text-emerald-800", icon: <CheckCircle2 size={12} /> };
+    if (a === "restored") return { dot: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700", icon: <Undo2 size={12} /> };
+    if (a === "deleted") return { dot: "bg-rose-600", badge: "bg-rose-100 text-rose-700", icon: <Trash2 size={12} /> };
+    if (a.includes("withdraw")) return { dot: "bg-amber-500", badge: "bg-amber-100 text-amber-700", icon: <Undo2 size={12} /> };
+    if (a.includes("edit")) return { dot: "bg-cyan-500", badge: "bg-cyan-100 text-cyan-700", icon: <Pencil size={12} /> };
+    if (a.includes("recall") && a.includes("cancel")) return { dot: "bg-slate-400", badge: "bg-slate-100 text-slate-500", icon: <X size={12} /> };
+    if (a.includes("recall") && a.includes("reject")) return { dot: "bg-rose-500", badge: "bg-rose-100 text-rose-700", icon: <X size={12} /> };
+    if (a.includes("recall")) return { dot: "bg-purple-500", badge: "bg-purple-100 text-purple-700", icon: <FileText size={12} /> };
+    if (a.includes("cancel") && a.includes("reject")) return { dot: "bg-rose-500", badge: "bg-rose-100 text-rose-700", icon: <X size={12} /> };
+    if (a === "cancelled") return { dot: "bg-slate-600", badge: "bg-slate-100 text-slate-600", icon: <X size={12} /> };
+    if (a.includes("cancel")) return { dot: "bg-rose-400", badge: "bg-rose-50 text-rose-600", icon: <FileText size={12} /> };
+    if (a.includes("reject")) return { dot: "bg-rose-500", badge: "bg-rose-100 text-rose-700", icon: <X size={12} /> };
+    if (a.includes("amend") && a.includes("approv")) return { dot: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700", icon: <CheckCircle2 size={12} /> };
+    if (a.includes("amend")) return { dot: "bg-amber-500", badge: "bg-amber-100 text-amber-700", icon: <FileText size={12} /> };
+    if (a.includes("review")) return { dot: "bg-sky-500", badge: "bg-sky-100 text-sky-700", icon: <FileText size={12} /> };
+    if (a.includes("approv")) return { dot: "bg-emerald-500", badge: "bg-emerald-100 text-emerald-700", icon: <CheckCircle2 size={12} /> };
+    if (a === "draft") return { dot: "bg-blue-400", badge: "bg-blue-100 text-blue-700", icon: <FileText size={12} /> };
     return { dot: "bg-slate-400", badge: "bg-slate-100 text-slate-600", icon: <FileText size={12} /> };
   };
 
@@ -2430,14 +3494,31 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const [customTo, setCustomTo] = useState("");
   const [showMoreTabs, setShowMoreTabs] = useState(false);
 
-  const PRIMARY_TABS = ["All", "Draft", "Review", "To Issue", "Issued", "Amend Request", "Amended"];
-  const MORE_TABS = ["Reverted", "Rejected", "Recalled", "Cancelled"];
+  const PRIMARY_TABS = ["All", "Draft", "Review", "Pending Approval", "Pending Issue", "Issued", "Amend Request", "Amended"];
+  const MORE_TABS = ["Reverted", "Rejected", "Recalled", "Cancelled", "Trash"];
   const TABS = [...PRIMARY_TABS, ...MORE_TABS];
 
   useEffect(() => {
     if (cachedOrders) fetchOrders(true);
     else fetchOrders();
+    fetchTrash(true);
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "Trash") fetchTrash();
+  }, [activeTab]);
+
+  const fetchTrash = async (isBackground = false) => {
+    if (!isBackground) setTrashLoading(true);
+    try {
+      const res = await fetch(`${API}/api/orders/trash`);
+      const data = await res.json();
+      setTrashedOrders(data.orders || []);
+    } catch {
+      if (!isBackground) showToast("Failed to load trash", "error");
+    }
+    if (!isBackground) setTrashLoading(false);
+  };
 
   const fetchOrders = async (isBackground = false) => {
     if (!isBackground) setLoading(true);
@@ -2452,20 +3533,52 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     if (!isBackground) setLoading(false);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("Are you sure you want to delete this order?")) return;
-    try {
-      const res = await fetch(`${API}/api/orders/${id}`, { method: "DELETE" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        showToast(data.error || `Delete failed (${res.status})`, "error");
-        return;
+  const handleDelete = (id) => {
+    setConfirmModal({
+      message: "Move this order to Trash?", onConfirm: async () => {
+        try {
+          const user = JSON.parse(localStorage.getItem("bms_user") || "{}");
+          const deleted_by = encodeURIComponent(user.name || user.id || "Unknown");
+          const res = await fetch(`${API}/api/orders/${id}?deleted_by=${deleted_by}`, { method: "DELETE" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) { showToast(data.error || `Delete failed (${res.status})`, "error"); return; }
+          showToast("Order moved to Trash");
+          fetchOrders();
+          fetchTrash(true);
+        } catch (err) { showToast(err.message || "Failed to delete", "error"); }
       }
-      showToast("Order deleted successfully");
-      fetchOrders();
-    } catch (err) {
-      showToast(err.message || "Failed to delete", "error");
-    }
+    });
+  };
+
+  const handleRestore = (id) => {
+    setConfirmModal({
+      message: "Restore this order? It will return to its original status.", onConfirm: async () => {
+        try {
+          const user = JSON.parse(localStorage.getItem("bms_user") || "{}");
+          const restored_by = encodeURIComponent(user.name || user.id || "Unknown");
+          const res = await fetch(`${API}/api/orders/${id}/restore?restored_by=${restored_by}`, { method: "POST" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) { showToast(data.error || "Restore failed", "error"); return; }
+          showToast(`Order restored to ${data.restored_status || "original status"}`);
+          fetchTrash();
+          fetchOrders(true);
+        } catch (err) { showToast(err.message || "Restore failed", "error"); }
+      }
+    });
+  };
+
+  const handlePermanentDelete = (id) => {
+    setConfirmModal({
+      message: "Permanently delete this order? This CANNOT be undone — all data will be lost.", onConfirm: async () => {
+        try {
+          const res = await fetch(`${API}/api/orders/${id}/permanent`, { method: "DELETE" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) { showToast(data.error || "Delete failed", "error"); return; }
+          showToast("Order permanently deleted");
+          fetchTrash();
+        } catch (err) { showToast(err.message || "Permanent delete failed", "error"); }
+      }
+    });
   };
 
   const handleApprovalAction = async (id, action, promptMsg) => {
@@ -2473,16 +3586,16 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     if (comments === null) return;
     try {
       const token = localStorage.getItem("bms_token") || "";
-      const reqRes = await fetch(`${API}/api/approvals/requests/${id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const reqRes = await fetch(`${API}/api/approval-flows/request/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
       const reqData = await reqRes.json();
       const requestId = reqData?.request?.id;
       if (!requestId) throw new Error("No approval request found");
-      const actRes = await fetch(`${API}/api/approvals/action`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ request_id: requestId, action, comments: comments || action })
+      const actRes = await fetch(`${API}/api/approval-flows/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ request_id: requestId, action: action.toLowerCase(), comments: comments || action }),
       });
       if (!actRes.ok) {
         const errData = await actRes.json().catch(() => ({}));
@@ -2496,30 +3609,20 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   };
 
   const handleRecall = async (id) => {
-    if (!confirm("Recall this order? A frozen recall record will be kept and the live order will move back to Draft for editing.")) return;
     try {
       const token = localStorage.getItem("bms_token") || "";
-      const reqRes = await fetch(`${API}/api/approvals/requests/${id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      const res = await fetch(`${API}/api/orders/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: JSON.stringify({ mainData: { status: "Recalled" } }) }),
       });
-      const reqData = await reqRes.json();
-      const requestId = reqData?.request?.id;
-      if (!requestId) throw new Error("No approval request found");
-      const actRes = await fetch(`${API}/api/approvals/action`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ request_id: requestId, action: 'Recalled', comments: 'Recalled by user' })
-      });
-      if (!actRes.ok) throw new Error("Recall failed");
+      if (!res.ok) throw new Error("Recall failed");
       showToast("Order recalled");
       fetchOrders();
-    } catch (err) {
-      showToast(err.message || "Recall failed", "error");
-    }
+    } catch (err) { showToast(err.message || "Recall failed", "error"); }
   };
 
   const handleCancel = async (id) => {
-    if (!confirm("Cancel this order? This cannot be undone.")) return;
     try {
       const res = await fetch(`${API}/api/orders/${id}`, {
         method: 'PUT',
@@ -2536,33 +3639,57 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
 
   const handleSendToApproval = async (id) => {
     try {
-      showToast("Initializing approval flow...");
-      // 1. Update Order Status to Pending Issue
-      const updRes = await fetch(`${API}/api/orders/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: JSON.stringify({ mainData: { status: 'To Issue' } }) })
+      showToast("Submitting for approval...");
+      const token = localStorage.getItem("bms_token") || "";
+      const bmsUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
+      const res = await fetch(`${API}/api/approval-flows/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ module: "order", document_id: id }),
       });
-      if (!updRes.ok) throw new Error("Failed to update status");
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Submit failed");
 
-      // 2. Initialize Approval Engine
-      const appRes = await fetch(`${API}/api/approvals/requests`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem("bms_token") || ""}` },
-        body: JSON.stringify({
-          module_key: "procurement",
-          point_key: "po_submission",
-          document_id: id,
-          requestor_id: JSON.parse(localStorage.getItem("bms_user") || "{}").id
-        })
-      });
-      if (!appRes.ok) throw new Error("Approval init failed");
+      if (d.skip && !d.auto_approved) {
+        // No flow — push directly to Pending Issue
+        await fetch(`${API}/api/orders/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: JSON.stringify({ mainData: { status: "Pending Issue", action_by: bmsUser.name || "" } }) }),
+        });
+      }
 
-      showToast("Order submitted for approval!");
+      showToast(
+        d.auto_approved
+          ? "Auto-approved — moved to Pending Issue"
+          : d.skip
+          ? "No approval flow — moved to Pending Issue"
+          : "Order submitted for approval"
+      );
       fetchOrders();
     } catch (err) {
       showToast(err.message, "error");
     }
+  };
+
+  const handleWithdrawApproval = (id) => {
+    setConfirmModal({
+      message: "Withdraw this approval request? The order will return to Review.", onConfirm: async () => {
+        try {
+          const token = localStorage.getItem("bms_token") || "";
+          const res = await fetch(`${API}/api/approval-flows/withdraw/${id}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok || !data.success) throw new Error(data.error || "Withdraw failed");
+          showToast("Approval request withdrawn. Order moved back to Review.");
+          fetchOrders();
+        } catch (err) {
+          showToast(err.message || "Withdraw failed", "error");
+        }
+      }
+    });
   };
 
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3000); };
@@ -2677,7 +3804,8 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       cursorY += 25;
 
       /* ── NOTES ── */
-      if (order.notes && order.notes.trim() !== "" && order.notes !== "<p><br></p>") {
+      const notesText = (order.notes || "").replace(/<[^>]+>/g, "").trim();
+      if (notesText) {
         if (cursorY > pageHeight - 60) { doc.addPage(); cursorY = 20; }
         doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("ORDER NOTES:", 15, cursorY);
         cursorY += 6;
@@ -2725,7 +3853,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.5); doc.line(15, pageHeight - 15, pageWidth - 15, pageHeight - 15);
       doc.setFontSize(8); doc.setTextColor(150, 150, 150); doc.text("This is a computer generated document.", pageWidth / 2, pageHeight - 10, { align: "center" });
 
-      doc.save(`Order_${order.order_number.replace(/\//g, "_")}.pdf`);
+      doc.save(makeOrderPdfFilename(order.order_number));
       showToast("PDF exported successfully!");
     } catch (err) { console.error(err); showToast("Error generating PDF", "error"); }
   };
@@ -2741,14 +3869,17 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       return;
     }
     let cancelled = false;
+    const order = orders.find(o => String(o.id) === String(pdfPreviewId));
+    const filename = makeOrderPdfFilename(order?.order_number, `Order_${pdfPreviewId}`);
     fetch(`${API}/api/orders/${pdfPreviewId}/pdf?t=${pdfPreviewNonce || Date.now()}`)
       .then(r => r.blob())
       .then(blob => {
         if (cancelled) return;
-        const url = URL.createObjectURL(blob);
+        const pdfFile = new File([blob], filename, { type: "application/pdf" });
+        const url = URL.createObjectURL(pdfFile);
         setPdfBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return url; });
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => { cancelled = true; };
   }, [pdfPreviewId, pdfPreviewNonce]);
 
@@ -2762,7 +3893,8 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `PO_${pdfPreviewId}.pdf`;
+      const order = orders.find(o => String(o.id) === String(pdfPreviewId));
+      a.download = makeOrderPdfFilename(order?.order_number, `Order_${pdfPreviewId}`);
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
       showToast("PDF downloaded successfully!");
@@ -2990,12 +4122,12 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const projectScoped = (o) => !project || getSiteCodeForOrder(o) === project;
 
   const getTabCount = (tabName) => {
+    if (tabName === "Trash") return trashedOrders.filter(projectScoped).length;
     const scoped = orders.filter(projectScoped);
     if (tabName === "All") return scoped.filter(o => !o._history && !["Reverted", "Recalled"].includes(o.status)).length;
-    // "Issued" is the broader bucket — includes amended orders that were issued
-    // at some point in their lifecycle. "Amended" tab still shows only those.
     if (tabName === "Issued") return scoped.filter(o => ["Issued", "Amended"].includes(o.status)).length;
-    if (tabName === "To Issue") return scoped.filter(o => ["Pending Issue", "To Issue"].includes(o.status)).length;
+    if (tabName === "Pending Approval") return scoped.filter(o => o.status === "Pending Approval").length;
+    if (tabName === "Pending Issue") return scoped.filter(o => ["Pending Issue", "To Issue"].includes(o.status)).length;
     if (tabName === "Amend Request") return scoped.filter(o => ["Amendment Request", "Amend Request"].includes(o.status)).length;
     return scoped.filter(o => o.status === tabName).length;
   };
@@ -3004,9 +4136,11 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   // Build unique option lists for filter dropdowns
   const getCompanyCode = (o) => o.snapshot?.company?.companyCode || o.companies?.company_code || "";
   const getSiteCode = (o) => o.snapshot?.site?.siteCode || o.sites?.site_code || "";
-  const siteOptions = Array.from(new Set(orders.map(getSiteCode).filter(Boolean))).sort();
-  const companyOptions = Array.from(new Set(orders.map(getCompanyCode).filter(Boolean))).sort();
-  const madeByOptions = Array.from(new Set(orders.map(o => o.made_by).filter(Boolean))).sort();
+  const optionOrders = activeTab === "Trash" ? trashedOrders : orders;
+  const scopedOptionOrders = optionOrders.filter(projectScoped);
+  const siteOptions = Array.from(new Set(scopedOptionOrders.map(getSiteCode).filter(Boolean))).sort();
+  const companyOptions = Array.from(new Set(scopedOptionOrders.map(getCompanyCode).filter(Boolean))).sort();
+  const madeByOptions = Array.from(new Set(scopedOptionOrders.map(o => o.made_by).filter(Boolean))).sort();
 
   // Date range helpers
   const getFYBounds = (yearOffset = 0) => {
@@ -3018,58 +4152,93 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     return { from, to };
   };
 
-  const filtered = orders.filter(o => {
-    const ms = search.toLowerCase();
+  const searchMatch = (o, ms) => {
     const snap = o.snapshot || {};
-    const searchBlob = [
-      o.order_number,
-      o.subject,
-      o.vendors?.vendor_name,
-      snap.vendor?.vendorName,
-      o.companies?.company_code,
-      o.companies?.company_name,
-      snap.company?.companyCode,
-      snap.company?.companyName,
-      o.sites?.site_code,
-      o.sites?.site_name,
-      snap.site?.siteCode,
-      snap.site?.siteName,
-      o.made_by,
-      o.order_type
+    const blob = [o.order_number, o.subject, o.vendors?.vendor_name, snap.vendor?.vendorName,
+    o.companies?.company_code, o.companies?.company_name, snap.company?.companyCode,
+    snap.company?.companyName, o.sites?.site_code, o.sites?.site_name,
+    snap.site?.siteCode, snap.site?.siteName, o.made_by, o.order_type
     ].filter(Boolean).join(" ").toLowerCase();
-    const matchSearch = !ms || searchBlob.includes(ms);
-    const matchTab = activeTab === "All"
-      ? (!o._history && !["Reverted", "Recalled"].includes(o.status))
-      : activeTab === "Issued"
-        ? ["Issued", "Amended"].includes(o.status)
-        : activeTab === "To Issue"
-          ? ["Pending Issue", "To Issue"].includes(o.status)
-          : activeTab === "Amend Request"
-            ? ["Amendment Request", "Amend Request"].includes(o.status)
-            : o.status === activeTab;
-    const matchSite = !filterSite || getSiteCode(o) === filterSite;
-    const matchCompany = !filterCompany || getCompanyCode(o) === filterCompany;
-    const matchType = !filterType || o.order_type === filterType;
-    const matchMadeBy = !filterMadeBy || o.made_by === filterMadeBy;
-    const matchStatus = activeTab !== "All" || !filterStatus || o.status === filterStatus;
+    return !ms || blob.includes(ms);
+  };
 
-    let matchDate = true;
-    if (dateRange !== "all") {
-      const created = new Date(o.date_of_creation || o.created_at);
-      let from, to;
-      if (dateRange === "this_year") ({ from, to } = getFYBounds(0));
-      else if (dateRange === "last_year") ({ from, to } = getFYBounds(-1));
-      else if (dateRange === "custom") {
-        from = customFrom ? new Date(customFrom) : null;
-        to = customTo ? new Date(customTo + "T23:59:59") : null;
+  const filtered = activeTab === "Trash"
+    ? trashedOrders.filter(o => {
+      const created = new Date(o.snapshot?._deleted?.deleted_at || o.updated_at || o.date_of_creation || o.created_at);
+      let matchDate = true;
+      if (dateRange !== "all") {
+        let from, to;
+        if (dateRange === "this_year") ({ from, to } = getFYBounds(0));
+        else if (dateRange === "last_year") ({ from, to } = getFYBounds(-1));
+        else if (dateRange === "custom") {
+          from = customFrom ? new Date(customFrom) : null;
+          to = customTo ? new Date(customTo + "T23:59:59") : null;
+        }
+        if (from && created < from) matchDate = false;
+        if (to && created > to) matchDate = false;
       }
-      if (from && created < from) matchDate = false;
-      if (to && created > to) matchDate = false;
-    }
+      return projectScoped(o)
+        && searchMatch(o, search.toLowerCase())
+        && (!filterSite || getSiteCode(o) === filterSite)
+        && (!filterCompany || getCompanyCode(o) === filterCompany)
+        && (!filterType || o.order_type === filterType)
+        && (!filterMadeBy || o.made_by === filterMadeBy)
+        && matchDate;
+    })
+    : orders.filter(o => {
+      const ms = search.toLowerCase();
+      const snap = o.snapshot || {};
+      const searchBlob = [
+        o.order_number,
+        o.subject,
+        o.vendors?.vendor_name,
+        snap.vendor?.vendorName,
+        o.companies?.company_code,
+        o.companies?.company_name,
+        snap.company?.companyCode,
+        snap.company?.companyName,
+        o.sites?.site_code,
+        o.sites?.site_name,
+        snap.site?.siteCode,
+        snap.site?.siteName,
+        o.made_by,
+        o.order_type
+      ].filter(Boolean).join(" ").toLowerCase();
+      const matchSearch = !ms || searchBlob.includes(ms);
+      const matchTab = activeTab === "All"
+        ? (!o._history && !["Reverted", "Recalled"].includes(o.status))
+        : activeTab === "Issued"
+          ? ["Issued", "Amended"].includes(o.status)
+          : activeTab === "Pending Approval"
+            ? o.status === "Pending Approval"
+            : activeTab === "Pending Issue"
+              ? ["Pending Issue", "To Issue"].includes(o.status)
+              : activeTab === "Amend Request"
+                ? ["Amendment Request", "Amend Request"].includes(o.status)
+                : o.status === activeTab;
+      const matchSite = !filterSite || getSiteCode(o) === filterSite;
+      const matchCompany = !filterCompany || getCompanyCode(o) === filterCompany;
+      const matchType = !filterType || o.order_type === filterType;
+      const matchMadeBy = !filterMadeBy || o.made_by === filterMadeBy;
+      const matchStatus = activeTab !== "All" || !filterStatus || o.status === filterStatus;
 
-    const matchProject = !project || getSiteCode(o) === project;
-    return matchProject && matchSearch && matchTab && matchSite && matchCompany && matchType && matchMadeBy && matchStatus && matchDate;
-  });
+      let matchDate = true;
+      if (dateRange !== "all") {
+        const created = new Date(o.date_of_creation || o.created_at);
+        let from, to;
+        if (dateRange === "this_year") ({ from, to } = getFYBounds(0));
+        else if (dateRange === "last_year") ({ from, to } = getFYBounds(-1));
+        else if (dateRange === "custom") {
+          from = customFrom ? new Date(customFrom) : null;
+          to = customTo ? new Date(customTo + "T23:59:59") : null;
+        }
+        if (from && created < from) matchDate = false;
+        if (to && created > to) matchDate = false;
+      }
+
+      const matchProject = !project || getSiteCode(o) === project;
+      return matchProject && matchSearch && matchTab && matchSite && matchCompany && matchType && matchMadeBy && matchStatus && matchDate;
+    });
 
   const clearFilters = () => {
     setFilterSite(""); setFilterCompany(""); setFilterType(""); setFilterMadeBy(""); setFilterStatus("");
@@ -3094,353 +4263,356 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       woCount: wo.length, woValue: sumTaxable(wo),
     };
   }, [filtered]);
+  const tableLoading = activeTab === "Trash" ? trashLoading : loading;
 
   return (
     <>
-    <div className="p-0 sm:p-2 lg:p-3 w-full pb-10">
-      {toast && (
-        <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-lg
+      <style>{SCROLLBAR_STYLE}</style>
+      <div className="p-0 sm:p-2 lg:p-3 w-full pb-10">
+        {toast && (
+          <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-lg
           ${toast.type === "error" ? "bg-red-50 text-red-700 border border-red-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
-          {toast.msg}
-        </div>
-      )}
-
-      {pdfPreviewId && (
-        <div className="fixed inset-0 z-50 flex">
-          <div className="flex-1 bg-black/50" onClick={() => setPdfPreviewId(null)} />
-          <div className="w-full max-w-[860px] bg-slate-200 flex flex-col h-full shadow-2xl">
-            <div className="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between shrink-0">
-              <span className="font-bold text-slate-700 text-sm">PDF Preview</span>
-              <div className="flex items-center gap-2">
-                <button
-                  disabled={pdfDownloading}
-                  onClick={handlePDFDownload}
-                  className={`flex items-center gap-2 px-4 py-2 text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all ${pdfDownloading ? 'bg-slate-400 cursor-not-allowed' : 'bg-[#1b3e8a] hover:bg-[#16326d]'}`}>
-                  {pdfDownloading
-                    ? <div className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    : <FileDown size={14} />}
-                  {pdfDownloading ? "Downloading..." : "Download PDF"}
-                </button>
-                <button
-                  onClick={() => setPdfPreviewId(null)}
-                  className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-all">
-                  <X size={18} />
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 bg-slate-300">
-              <iframe
-                title="Order PDF"
-                src={pdfBlobUrl || "about:blank"}
-                className="w-full h-full border-0 bg-white"
-              />
-            </div>
+            {toast.msg}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4 bg-white p-4 px-6 rounded-2xl border border-slate-100 shadow-sm">
-        <div className="flex items-center gap-4">
-          <div className="h-12 w-12 bg-[#6366f1] rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100">
-            <FileSpreadsheet size={24} className="text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-800 tracking-tight leading-none mb-1.5">
-              {project ? `${project} Order Data` : "Order Master Data"}
-            </h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-              {project ? "• Project Specific Order Logs" : "• Global Order Management System"}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <button onClick={handleExport}
-            className="h-10 px-5 rounded-xl bg-white border border-slate-200 text-slate-700 font-bold flex items-center gap-2 hover:bg-slate-50 transition-all text-xs shadow-sm">
-            <Download size={14} className="text-slate-400" /> Export
-          </button>
-          <button onClick={() => { setShowBulk(true); setBulkRows([]); setBulkFileName(""); setBulkResult(null); }}
-            className="h-10 px-5 rounded-xl bg-white border border-slate-200 text-slate-700 font-bold flex items-center gap-2 hover:bg-slate-50 transition-all text-xs shadow-sm">
-            <Upload size={14} className="text-slate-400" /> Bulk Upload
-          </button>
-          <button onClick={onCreateClick}
-            className="h-10 px-6 rounded-xl bg-[#4f46e5] text-white font-bold flex items-center gap-2 hover:bg-[#4338ca] transition-all text-xs shadow-lg shadow-indigo-100">
-            <Plus size={16} /> Create Order
-          </button>
-        </div>
-      </div>
-
-      {/* Bulk Upload Modal */}
-      {showBulk && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <FileSpreadsheet size={20} className="text-emerald-600" />
-                <div>
-                  <h3 className="font-bold text-slate-800">Bulk Upload Orders</h3>
-                  <p className="text-xs text-slate-500">Imported orders will be marked as Issued</p>
+        {pdfPreviewId && (
+          <div className="fixed inset-0 z-50 flex">
+            <div className="flex-1 bg-black/50" onClick={() => setPdfPreviewId(null)} />
+            <div className="w-full max-w-[860px] bg-slate-200 flex flex-col h-full shadow-2xl">
+              <div className="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between shrink-0">
+                <span className="font-bold text-slate-700 text-sm">PDF Preview</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={pdfDownloading}
+                    onClick={handlePDFDownload}
+                    className={`flex items-center gap-2 px-4 py-2 text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all ${pdfDownloading ? 'bg-slate-400 cursor-not-allowed' : 'bg-[#1b3e8a] hover:bg-[#16326d]'}`}>
+                    {pdfDownloading
+                      ? <div className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      : <FileDown size={14} />}
+                    {pdfDownloading ? "Downloading..." : "Download PDF"}
+                  </button>
+                  <button
+                    onClick={() => setPdfPreviewId(null)}
+                    className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-all">
+                    <X size={18} />
+                  </button>
                 </div>
               </div>
-              <button onClick={() => setShowBulk(false)} className="p-1.5 hover:bg-slate-100 rounded-lg">
-                <X size={18} className="text-slate-500" />
-              </button>
-            </div>
-
-            <div className="p-6 overflow-y-auto flex-1">
-              {/* Order Kind selector */}
-              <div className="mb-4">
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Order Kind</label>
-                <div className="relative">
-                  <select value={bulkKind} onChange={e => { setBulkKind(e.target.value); setBulkRows([]); setBulkFileName(""); setBulkResult(null); }}
-                    className="appearance-none w-full pl-3 pr-8 py-2 border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 bg-white outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-50 cursor-pointer">
-                    <option value="Purchase Order">Purchase Order</option>
-                    <option value="Work Order">Work Order</option>
-                  </select>
-                  <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
+              <div className="flex-1 bg-slate-300">
+                <iframe
+                  title="Order PDF"
+                  src={pdfBlobUrl || "about:blank"}
+                  className="w-full h-full border-0 bg-white"
+                />
               </div>
-
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-xs text-amber-800">
-                <p className="font-bold mb-1">Instructions:</p>
-                <ul className="list-disc pl-5 space-y-0.5">
-                  <li>Download the template, fill it, then upload</li>
-                  <li><b>One row = one item.</b> Same <i>{bulkKind} No.</i> in multiple rows = one order with multiple items</li>
-                  <li>Order-level fields (Vendor, Company, Status, Totals, Clauses) only needed in the <b>first row</b> of each order</li>
-                  <li><b>Company Code</b> and <b>Site Code</b> must already exist in master data</li>
-                  <li>Excel values <b>override</b> master data and are <b>frozen</b> in the order (later master edits won't affect imported orders)</li>
-                  <li>If Excel cell is blank, data is picked from master (Company / Site / Vendor tab)</li>
-                  <li><b>Vendor Bank Details</b> (Bank Name, IFSC, Account No) can be set per-order in Excel — blank picks from vendor master</li>
-                  {bulkKind === "Work Order" ? (
-                    <li><b>Multi-point description</b>: in the <i>Description</i> cell, press <kbd>Alt + Enter</kbd> after each point to add a new line. Multiple lines = multiple points for that item. Model No & Brand Name are optional</li>
-                  ) : (
-                    <li>Item columns: <b>Specification</b>, <b>Model No</b>, <b>Brand Name</b> (leave blank if not applicable)</li>
-                  )}
-                  <li><b>Status</b>: Draft / Review / Pending Issue / Issued / Rejected / Reverted / Recalled / Cancelled. Default = Issued</li>
-                  <li>Orders with status Issued get an auto-assigned {bulkKind === "Purchase Order" ? "PO" : "WO"} number if not provided</li>
-                  <li>Non-Issued orders will continue normal workflow from that stage</li>
-                  <li>Clauses accept multiple items separated by newline or <code>;</code></li>
-                </ul>
-              </div>
-
-              <button onClick={downloadBulkTemplate}
-                className="mb-4 text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1.5">
-                <Download size={13} /> Download {bulkKind} Template
-              </button>
-
-              <input ref={bulkRef} type="file" accept=".xlsx,.xls" onChange={handleBulkFile} className="hidden" />
-              <button onClick={() => bulkRef.current?.click()}
-                className="w-full border-2 border-dashed border-slate-300 rounded-xl p-6 hover:border-indigo-400 hover:bg-indigo-50/30 transition-all text-center">
-                <Upload size={20} className="mx-auto text-slate-400 mb-2" />
-                <p className="text-sm font-semibold text-slate-700">{bulkFileName || "Click to select Excel file"}</p>
-                <p className="text-xs text-slate-400 mt-0.5">{bulkRows.length > 0 ? `${bulkRows.length} rows ready to import` : ".xlsx or .xls"}</p>
-              </button>
-
-              {bulkResult && (
-                <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs">
-                  <p className="font-bold text-slate-800 mb-2">Import Result</p>
-                  <p className="text-slate-600">Orders detected in Excel: <b>{bulkResult.ordersInExcel}</b></p>
-                  <p className="text-emerald-600">✓ Imported: {bulkResult.inserted}</p>
-                  {bulkResult.failed?.length > 0 && (
-                    <>
-                      <p className="text-red-600 mt-1">✗ Failed: {bulkResult.failed.length}</p>
-                      <ul className="mt-2 max-h-40 overflow-y-auto space-y-1">
-                        {bulkResult.failed.map((f, i) => (
-                          <li key={i} className="text-slate-600">
-                            {f.orderKey && !f.orderKey.startsWith("__row_") ? <b>{f.orderKey}</b> : `Row ${f.row}`}: {f.reason}
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                </div>
-              )}
             </div>
+          </div>
+        )}
 
-            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
-              <button onClick={() => setShowBulk(false)}
-                className="px-4 py-2 text-sm font-bold text-slate-600 rounded-lg hover:bg-slate-100">
-                Close
-              </button>
-              <button onClick={handleBulkUpload} disabled={bulkSaving || bulkRows.length === 0}
-                className="px-5 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
-                {bulkSaving ? <><Loader2 size={14} className="animate-spin" /> Importing...</> : <><Upload size={14} /> Import {bulkRows.length} Orders</>}
-              </button>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4 bg-white p-4 px-6 rounded-2xl border border-slate-100 shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 bg-[#6366f1] rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100">
+              <FileSpreadsheet size={24} className="text-white" />
             </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-800 tracking-tight leading-none mb-1.5">
+                {project ? `${project} Order Data` : "Order Master Data"}
+              </h1>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                {project ? "• Project Specific Order Logs" : "• Global Order Management System"}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={handleExport}
+              className="h-10 px-5 rounded-xl bg-white border border-slate-200 text-slate-700 font-bold flex items-center gap-2 hover:bg-slate-50 transition-all text-xs shadow-sm">
+              <Download size={14} className="text-slate-400" /> Export
+            </button>
+            <button onClick={() => { setShowBulk(true); setBulkRows([]); setBulkFileName(""); setBulkResult(null); }}
+              className="h-10 px-5 rounded-xl bg-white border border-slate-200 text-slate-700 font-bold flex items-center gap-2 hover:bg-slate-50 transition-all text-xs shadow-sm">
+              <Upload size={14} className="text-slate-400" /> Bulk Upload
+            </button>
+            <button onClick={onCreateClick}
+              className="h-10 px-6 rounded-xl bg-[#4f46e5] text-white font-bold flex items-center gap-2 hover:bg-[#4338ca] transition-all text-xs shadow-lg shadow-indigo-100">
+              <Plus size={16} /> Create Order
+            </button>
           </div>
         </div>
-      )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {[
-          { label: "Total Orders", val: stats.total, icon: ShoppingBag, color: "text-[#4f46e5] bg-[#eef2ff]" },
-          { label: "Total PO", val: stats.poCount, sub: `₹ ${stats.poValue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: FileText, color: "text-[#2563eb] bg-[#eff6ff]" },
-          { label: "Total WO", val: stats.woCount, sub: `₹ ${stats.woValue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: Box, color: "text-[#0891b2] bg-[#ecfeff]" },
-          { label: "Taxable Value", val: `₹ ${(stats.poValue + stats.woValue).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: IndianRupee, color: "text-[#9333ea] bg-[#faf5ff]" },
-        ].map((s, i) => (
-          <div key={i} className="bg-white p-3.5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)] flex items-center gap-3.5">
-            <div className={`w-11 h-11 rounded-[14px] ${s.color} flex items-center justify-center shrink-0`}>
-              <s.icon size={20} strokeWidth={2} />
-            </div>
-            <div className="min-w-0">
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-0.5">{s.label}</p>
-              <div className="flex items-baseline gap-1.5 flex-wrap">
-                <span className="text-base font-black text-slate-800 leading-none">{s.val}</span>
-                {s.sub && <span className="text-[10px] font-bold text-indigo-600 leading-none">{s.sub}</span>}
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="bg-white rounded-none shadow-sm border border-slate-200">
-
-        <div className="flex px-5 pt-4 pb-0 border-b border-slate-100 bg-white gap-8 overflow-visible relative">
-          {PRIMARY_TABS.map(t => {
-            const count = getTabCount(t);
-            return (
-              <button key={t} onClick={() => { setActiveTab(t); setShowMoreTabs(false); }}
-                className={`pb-3.5 text-[13px] font-bold transition-all whitespace-nowrap border-b-[3px] flex items-center gap-2.5
-                  ${activeTab === t ? "text-[#4f46e5] border-[#4f46e5]" : "text-slate-400 border-transparent hover:text-slate-600"}`}>
-                {t}
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${activeTab === t ? "bg-[#4f46e5] text-white" : "bg-slate-100 text-slate-500"
-                  }`}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-
-          {/* More Dropdown */}
-          <div className="relative pb-3.5 flex items-center">
-            <div className="flex items-center">
-              <button
-                onClick={() => setShowMoreTabs(!showMoreTabs)}
-                className={`text-[13px] font-bold transition-all whitespace-nowrap flex items-center gap-2.5 px-3 py-1.5 rounded-lg
-                  ${MORE_TABS.includes(activeTab) ? "text-[#4f46e5] bg-indigo-50/50" : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"}`}>
-                {MORE_TABS.includes(activeTab) ? activeTab : "More"}
-                <ChevronDown size={14} className={`transition-transform ${showMoreTabs ? "rotate-180" : ""}`} />
-                {(() => {
-                  const currentTabCount = MORE_TABS.includes(activeTab) ? getTabCount(activeTab) : MORE_TABS.reduce((acc, t) => acc + getTabCount(t), 0);
-                  return currentTabCount > 0 ? (
-                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${MORE_TABS.includes(activeTab) ? "bg-[#4f46e5] text-white" : "bg-slate-100 text-slate-500"}`}>
-                      {currentTabCount}
-                    </span>
-                  ) : null;
-                })()}
-              </button>
-
-              {MORE_TABS.includes(activeTab) && (
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setActiveTab("All"); }}
-                  className="ml-1 p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
-                  title="Clear selection">
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-
-            {showMoreTabs && (
-              <>
-                <div className="fixed inset-0 z-[60]" onClick={() => setShowMoreTabs(false)}></div>
-                <div className="absolute top-[100%] right-0 mt-1 w-52 bg-white border border-slate-200 shadow-2xl rounded-xl py-2 z-[70] animate-in fade-in zoom-in-95 duration-150 origin-top-right">
-                  <div className="px-4 py-1.5 mb-1 border-b border-slate-50">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Status</span>
+        {/* Bulk Upload Modal */}
+        {showBulk && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <FileSpreadsheet size={20} className="text-emerald-600" />
+                  <div>
+                    <h3 className="font-bold text-slate-800">Bulk Upload Orders</h3>
+                    <p className="text-xs text-slate-500">Imported orders will be marked as Issued</p>
                   </div>
-                  {MORE_TABS.map(t => {
-                    const count = getTabCount(t);
-                    return (
-                      <button
-                        key={t}
-                        onClick={() => {
-                          setActiveTab(t);
-                          setShowMoreTabs(false);
-                        }}
-                        className={`w-full px-4 py-2.5 text-left text-[13px] flex items-center justify-between transition-all
-                          ${activeTab === t ? "bg-indigo-50 text-indigo-700 font-bold" : "text-slate-600 hover:bg-slate-50 hover:pl-5"}`}>
-                        <div className="flex items-center gap-3">
-                          {t === "Reverted" && <RotateCcw size={14} className={activeTab === t ? "text-indigo-500" : "text-slate-400"} />}
-                          {t === "Rejected" && <Ban size={14} className={activeTab === t ? "text-red-500" : "text-slate-400"} />}
-                          {t === "Recalled" && <RefreshCw size={14} className={activeTab === t ? "text-amber-500" : "text-slate-400"} />}
-                          {t === "Cancelled" && <Trash2 size={14} className={activeTab === t ? "text-slate-500" : "text-slate-400"} />}
-                          {t}
-                        </div>
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${activeTab === t ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500"}`}>
-                          {count}
-                        </span>
-                      </button>
-                    );
-                  })}
                 </div>
-              </>
-            )}
+                <button onClick={() => setShowBulk(false)} className="p-1.5 hover:bg-slate-100 rounded-lg">
+                  <X size={18} className="text-slate-500" />
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto flex-1">
+                {/* Order Kind selector */}
+                <div className="mb-4">
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Order Kind</label>
+                  <div className="relative">
+                    <select value={bulkKind} onChange={e => { setBulkKind(e.target.value); setBulkRows([]); setBulkFileName(""); setBulkResult(null); }}
+                      className="appearance-none w-full pl-3 pr-8 py-2 border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 bg-white outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-50 cursor-pointer">
+                      <option value="Purchase Order">Purchase Order</option>
+                      <option value="Work Order">Work Order</option>
+                    </select>
+                    <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-xs text-amber-800">
+                  <p className="font-bold mb-1">Instructions:</p>
+                  <ul className="list-disc pl-5 space-y-0.5">
+                    <li>Download the template, fill it, then upload</li>
+                    <li><b>One row = one item.</b> Same <i>{bulkKind} No.</i> in multiple rows = one order with multiple items</li>
+                    <li>Order-level fields (Vendor, Company, Status, Totals, Clauses) only needed in the <b>first row</b> of each order</li>
+                    <li><b>Company Code</b> and <b>Site Code</b> must already exist in master data</li>
+                    <li>Excel values <b>override</b> master data and are <b>frozen</b> in the order (later master edits won't affect imported orders)</li>
+                    <li>If Excel cell is blank, data is picked from master (Company / Site / Vendor tab)</li>
+                    <li><b>Vendor Bank Details</b> (Bank Name, IFSC, Account No) can be set per-order in Excel — blank picks from vendor master</li>
+                    {bulkKind === "Work Order" ? (
+                      <li><b>Multi-point description</b>: in the <i>Description</i> cell, press <kbd>Alt + Enter</kbd> after each point to add a new line. Multiple lines = multiple points for that item. Model No & Brand Name are optional</li>
+                    ) : (
+                      <li>Item columns: <b>Specification</b>, <b>Model No</b>, <b>Brand Name</b> (leave blank if not applicable)</li>
+                    )}
+                    <li><b>Status</b>: Draft / Review / Pending Issue / Issued / Rejected / Reverted / Recalled / Cancelled. Default = Issued</li>
+                    <li>Orders with status Issued get an auto-assigned {bulkKind === "Purchase Order" ? "PO" : "WO"} number if not provided</li>
+                    <li>Non-Issued orders will continue normal workflow from that stage</li>
+                    <li>Clauses accept multiple items separated by newline or <code>;</code></li>
+                  </ul>
+                </div>
+
+                <button onClick={downloadBulkTemplate}
+                  className="mb-4 text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1.5">
+                  <Download size={13} /> Download {bulkKind} Template
+                </button>
+
+                <input ref={bulkRef} type="file" accept=".xlsx,.xls" onChange={handleBulkFile} className="hidden" />
+                <button onClick={() => bulkRef.current?.click()}
+                  className="w-full border-2 border-dashed border-slate-300 rounded-xl p-6 hover:border-indigo-400 hover:bg-indigo-50/30 transition-all text-center">
+                  <Upload size={20} className="mx-auto text-slate-400 mb-2" />
+                  <p className="text-sm font-semibold text-slate-700">{bulkFileName || "Click to select Excel file"}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{bulkRows.length > 0 ? `${bulkRows.length} rows ready to import` : ".xlsx or .xls"}</p>
+                </button>
+
+                {bulkResult && (
+                  <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs">
+                    <p className="font-bold text-slate-800 mb-2">Import Result</p>
+                    <p className="text-slate-600">Orders detected in Excel: <b>{bulkResult.ordersInExcel}</b></p>
+                    <p className="text-emerald-600">✓ Imported: {bulkResult.inserted}</p>
+                    {bulkResult.failed?.length > 0 && (
+                      <>
+                        <p className="text-red-600 mt-1">✗ Failed: {bulkResult.failed.length}</p>
+                        <ul className="mt-2 max-h-40 overflow-y-auto space-y-1">
+                          {bulkResult.failed.map((f, i) => (
+                            <li key={i} className="text-slate-600">
+                              {f.orderKey && !f.orderKey.startsWith("__row_") ? <b>{f.orderKey}</b> : `Row ${f.row}`}: {f.reason}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+                <button onClick={() => setShowBulk(false)}
+                  className="px-4 py-2 text-sm font-bold text-slate-600 rounded-lg hover:bg-slate-100">
+                  Close
+                </button>
+                <button onClick={handleBulkUpload} disabled={bulkSaving || bulkRows.length === 0}
+                  className="px-5 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+                  {bulkSaving ? <><Loader2 size={14} className="animate-spin" /> Importing...</> : <><Upload size={14} /> Import {bulkRows.length} Orders</>}
+                </button>
+              </div>
+            </div>
           </div>
+        )}
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          {[
+            { label: "Total Orders", val: stats.total, icon: ShoppingBag, color: "text-[#4f46e5] bg-[#eef2ff]" },
+            { label: "Total PO", val: stats.poCount, sub: `₹ ${stats.poValue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: FileText, color: "text-[#2563eb] bg-[#eff6ff]" },
+            { label: "Total WO", val: stats.woCount, sub: `₹ ${stats.woValue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: Box, color: "text-[#0891b2] bg-[#ecfeff]" },
+            { label: "Taxable Value", val: `₹ ${(stats.poValue + stats.woValue).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: IndianRupee, color: "text-[#9333ea] bg-[#faf5ff]" },
+          ].map((s, i) => (
+            <div key={i} className="bg-white p-3.5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)] flex items-center gap-3.5">
+              <div className={`w-11 h-11 rounded-[14px] ${s.color} flex items-center justify-center shrink-0`}>
+                <s.icon size={20} strokeWidth={2} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-0.5">{s.label}</p>
+                <div className="flex items-baseline gap-1.5 flex-wrap">
+                  <span className="text-base font-black text-slate-800 leading-none">{s.val}</span>
+                  {s.sub && <span className="text-[10px] font-bold text-indigo-600 leading-none">{s.sub}</span>}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
 
-        <div className="px-5 py-3 border-b border-slate-100 bg-[#f8fafc]/50 flex flex-col gap-3">
-          <div className="flex items-center flex-wrap gap-2">
-            {/* Search */}
-            <div className="relative flex-1 min-w-[180px] max-w-[260px]">
-              <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-              <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Search PO, subject, vendor..."
-                className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 bg-white shadow-sm" />
-            </div>
+        <div className="bg-white rounded-none shadow-sm border border-slate-200">
 
-            {/* Filters */}
-            <div className="flex items-center gap-2 ml-auto flex-wrap">
-              {[
-                { val: filterCompany, set: setFilterCompany, placeholder: "Entity", opts: companyOptions, min: 110, icon: Building2 },
-                !project && { val: filterSite, set: setFilterSite, placeholder: "Sites", opts: siteOptions, min: 100, icon: MapPin },
-                { val: filterType, set: setFilterType, placeholder: "Type", opts: ["Supply", "SITC", "ITC"], min: 100, icon: Tag },
-                activeTab === "All" && { val: filterStatus, set: setFilterStatus, placeholder: "Status", opts: ["Draft", "Review", "To Issue", "Amend Request", "Amended", "Issued", "Rejected", "Cancelled"], min: 110, icon: CheckCircle2 },
-                { val: filterMadeBy, set: setFilterMadeBy, placeholder: "Users", opts: madeByOptions, min: 105, icon: User }
-              ].filter(Boolean).map((f, i) => (
-                <div key={i} className="relative" style={{ minWidth: f.min }}>
-                  <f.icon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                  <select value={f.val} onChange={e => f.set(e.target.value)}
+          <div className="flex px-5 pt-4 pb-0 border-b border-slate-100 bg-white gap-8 overflow-visible relative">
+            {PRIMARY_TABS.map(t => {
+              const count = getTabCount(t);
+              return (
+                <button key={t} onClick={() => { setActiveTab(t); setShowMoreTabs(false); }}
+                  className={`pb-3.5 text-[13px] font-bold transition-all whitespace-nowrap border-b-[3px] flex items-center gap-2.5
+                  ${activeTab === t ? "text-[#4f46e5] border-[#4f46e5]" : "text-slate-400 border-transparent hover:text-slate-600"}`}>
+                  {t}
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${activeTab === t ? "bg-[#4f46e5] text-white" : "bg-slate-100 text-slate-500"
+                    }`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+
+            {/* More Dropdown */}
+            <div className="relative pb-3.5 flex items-center">
+              <div className="flex items-center">
+                <button
+                  onClick={() => setShowMoreTabs(!showMoreTabs)}
+                  className={`text-[13px] font-bold transition-all whitespace-nowrap flex items-center gap-2.5 px-3 py-1.5 rounded-lg
+                  ${MORE_TABS.includes(activeTab) ? "text-[#4f46e5] bg-indigo-50/50" : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"}`}>
+                  {MORE_TABS.includes(activeTab) ? activeTab : "More"}
+                  <ChevronDown size={14} className={`transition-transform ${showMoreTabs ? "rotate-180" : ""}`} />
+                  {(() => {
+                    const currentTabCount = MORE_TABS.includes(activeTab) ? getTabCount(activeTab) : MORE_TABS.reduce((acc, t) => acc + getTabCount(t), 0);
+                    return currentTabCount > 0 ? (
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${MORE_TABS.includes(activeTab) ? "bg-[#4f46e5] text-white" : "bg-slate-100 text-slate-500"}`}>
+                        {currentTabCount}
+                      </span>
+                    ) : null;
+                  })()}
+                </button>
+
+                {MORE_TABS.includes(activeTab) && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setActiveTab("All"); }}
+                    className="ml-1 p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
+                    title="Clear selection">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              {showMoreTabs && (
+                <>
+                  <div className="fixed inset-0 z-[60]" onClick={() => setShowMoreTabs(false)}></div>
+                  <div className="absolute top-[100%] right-0 mt-1 w-52 bg-white border border-slate-200 shadow-2xl rounded-xl py-2 z-[70] animate-in fade-in zoom-in-95 duration-150 origin-top-right">
+                    <div className="px-4 py-1.5 mb-1 border-b border-slate-50">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Status</span>
+                    </div>
+                    {MORE_TABS.map(t => {
+                      const count = getTabCount(t);
+                      return (
+                        <button
+                          key={t}
+                          onClick={() => {
+                            setActiveTab(t);
+                            setShowMoreTabs(false);
+                          }}
+                          className={`w-full px-4 py-2.5 text-left text-[13px] flex items-center justify-between transition-all
+                          ${activeTab === t ? "bg-indigo-50 text-indigo-700 font-bold" : "text-slate-600 hover:bg-slate-50 hover:pl-5"}`}>
+                          <div className="flex items-center gap-3">
+                            {t === "Reverted" && <RotateCcw size={14} className={activeTab === t ? "text-indigo-500" : "text-slate-400"} />}
+                            {t === "Rejected" && <Ban size={14} className={activeTab === t ? "text-red-500" : "text-slate-400"} />}
+                            {t === "Recalled" && <RefreshCw size={14} className={activeTab === t ? "text-amber-500" : "text-slate-400"} />}
+                            {t === "Cancelled" && <CancelledStampIcon size={16} className={activeTab === t ? "text-slate-600" : "text-slate-400"} />}
+                            {t === "Trash" && <Trash2 size={14} className={activeTab === t ? "text-red-500" : "text-slate-400"} />}
+                            {t}
+                          </div>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${activeTab === t ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500"}`}>
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div className="px-5 py-3 border-b border-slate-100 bg-[#f8fafc]/50 flex flex-col gap-3">
+            <div className="flex items-center flex-wrap gap-2">
+              {/* Search */}
+              <div className="relative flex-1 min-w-[180px] max-w-[260px]">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Search PO, subject, vendor..."
+                  className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 bg-white shadow-sm" />
+              </div>
+
+              {/* Filters */}
+              <div className="flex items-center gap-2 ml-auto flex-wrap">
+                {[
+                  { val: filterCompany, set: setFilterCompany, placeholder: "Entity", opts: companyOptions, min: 110, icon: Building2 },
+                  !project && { val: filterSite, set: setFilterSite, placeholder: "Sites", opts: siteOptions, min: 100, icon: MapPin },
+                  { val: filterType, set: setFilterType, placeholder: "Type", opts: ["Supply", "SITC", "ITC"], min: 100, icon: Tag },
+                  activeTab === "All" && { val: filterStatus, set: setFilterStatus, placeholder: "Status", opts: ["Draft", "Review", "Pending Issue", "Amend Request", "Amended", "Issued", "Rejected", "Cancelled"], min: 110, icon: CheckCircle2 },
+                  { val: filterMadeBy, set: setFilterMadeBy, placeholder: "Users", opts: madeByOptions, min: 105, icon: User }
+                ].filter(Boolean).map((f, i) => (
+                  <div key={i} className="relative" style={{ minWidth: f.min }}>
+                    <f.icon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                    <select value={f.val} onChange={e => f.set(e.target.value)}
+                      className="appearance-none w-full pl-7 pr-7 py-2 border border-slate-200 rounded-[12px] text-[11px] font-bold text-slate-600 bg-white outline-none focus:border-indigo-400 cursor-pointer shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)] hover:border-slate-300 transition-all">
+                      <option value="">{f.placeholder}</option>
+                      {f.opts.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                    <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                ))}
+
+                <div className="relative" style={{ minWidth: 105 }}>
+                  <CalendarDays size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                  <select value={dateRange} onChange={e => setDateRange(e.target.value)}
                     className="appearance-none w-full pl-7 pr-7 py-2 border border-slate-200 rounded-[12px] text-[11px] font-bold text-slate-600 bg-white outline-none focus:border-indigo-400 cursor-pointer shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)] hover:border-slate-300 transition-all">
-                    <option value="">{f.placeholder}</option>
-                    {f.opts.map(o => <option key={o} value={o}>{o}</option>)}
+                    <option value="all">All Time</option>
+                    <option value="this_year">This Year</option>
+                    <option value="last_year">Last Year</option>
+                    <option value="custom">Custom</option>
                   </select>
                   <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 </div>
-              ))}
-
-              <div className="relative" style={{ minWidth: 105 }}>
-                <CalendarDays size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                <select value={dateRange} onChange={e => setDateRange(e.target.value)}
-                  className="appearance-none w-full pl-7 pr-7 py-2 border border-slate-200 rounded-[12px] text-[11px] font-bold text-slate-600 bg-white outline-none focus:border-indigo-400 cursor-pointer shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)] hover:border-slate-300 transition-all">
-                  <option value="all">All Time</option>
-                  <option value="this_year">This Year</option>
-                  <option value="last_year">Last Year</option>
-                  <option value="custom">Custom</option>
-                </select>
-                <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
               </div>
+
+              {dateRange === "custom" && (
+                <>
+                  <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                    className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 bg-white outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-50" />
+                  <span className="text-xs text-slate-400">to</span>
+                  <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                    className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 bg-white outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-50" />
+                </>
+              )}
+
+              {hasActiveFilters && (
+                <button onClick={clearFilters}
+                  className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
+                  Clear
+                </button>
+              )}
+
             </div>
-
-            {dateRange === "custom" && (
-              <>
-                <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-                  className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 bg-white outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-50" />
-                <span className="text-xs text-slate-400">to</span>
-                <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-                  className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 bg-white outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-50" />
-              </>
-            )}
-
-            {hasActiveFilters && (
-              <button onClick={clearFilters}
-                className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
-                Clear
-              </button>
-            )}
-
           </div>
-        </div>
 
-        <div className="overflow-x-auto w-full rounded-none thin-scrollbar-light border-r border-slate-200">
+          <div className="overflow-x-auto w-full rounded-none thin-scrollbar-light border-r border-slate-200">
             <table className="w-full text-sm text-left border-separate border-spacing-0 whitespace-nowrap border-t border-l border-slate-200">
               <thead>
                 <tr className="bg-slate-100">
@@ -3459,23 +4631,23 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                   <th className="sticky right-0 z-30 px-5 py-2.5 text-[12px] font-bold uppercase tracking-wider text-slate-500 border-b border-l border-slate-200 bg-slate-100 whitespace-nowrap [box-shadow:-1px_0_0_0_#e2e8f0]" style={{ width: '180px', minWidth: '180px' }}>Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {loading && filtered.length > 0 && (
+              <tbody>
+                {tableLoading && filtered.length > 0 && (
                   <tr>
-                    <td colSpan="11" className="py-4 text-center">
+                    <td colSpan="13" className="py-4 text-center">
                       <div className="smooth-loader w-5 h-5 text-indigo-500 mx-auto"></div>
                     </td>
                   </tr>
                 )}
-                {loading && filtered.length === 0 ? (
+                {tableLoading && filtered.length === 0 ? (
                   <tr>
-                    <td colSpan="11" className="py-32 text-center bg-white">
+                    <td colSpan="13" className="py-32 text-center bg-white">
                       <div className="smooth-loader w-8 h-8 text-indigo-600 mx-auto"></div>
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan="11" className="py-24 text-center bg-white">
+                    <td colSpan="13" className="py-24 text-center bg-white">
                       <div className="flex flex-col items-center justify-center">
                         <div className="h-16 w-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 border border-slate-100">
                           <FileText size={24} className="text-slate-300" />
@@ -3488,155 +4660,194 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                   </tr>
                 ) :
                   filtered.map(o => {
-                  const snap = o.snapshot || {};
-                  const cCode = snap.company?.companyCode || o.companies?.company_code || "-";
-                  const sCode = snap.site?.siteCode || o.sites?.site_code || "-";
-                  const vName = snap.vendor?.vendorName || o.vendors?.vendor_name || "-";
+                    const snap = o.snapshot || {};
+                    const cCode = snap.company?.companyCode || o.companies?.company_code || "-";
+                    const sCode = snap.site?.siteCode || o.sites?.site_code || "-";
+                    const vName = snap.vendor?.vendorName || o.vendors?.vendor_name || "-";
 
-                  const typeCode = o.order_type === "Supply" ? "PO" : "WO";
-                  const prefix = `${cCode}/${sCode}/${typeCode}/`;
-                  const displayNo = o.order_number?.startsWith("PENDING-")
-                    ? `${typeCode}-DRAFT`
-                    : o.order_number;
+                    const typeCode = o.order_type === "Supply" ? "PO" : "WO";
+                    const prefix = `${cCode}/${sCode}/${typeCode}/`;
+                    const displayNo = o.order_number?.startsWith("PENDING-")
+                      ? `${typeCode}-DRAFT`
+                      : o.order_number;
 
-                  return (
-                    <tr key={o.id} className="hover:bg-slate-50 transition-colors group bg-white">
-                      <td className="sticky left-0 z-10 px-5 py-2 border-b border-r border-slate-200 bg-white group-hover:bg-slate-50 transition-colors whitespace-nowrap" style={{ width: '240px', minWidth: '240px' }}>
-                        {displayNo ? (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onMouseEnter={() => preloadOrderDetails(o.id).catch(() => { })}
-                              onFocus={() => preloadOrderDetails(o.id).catch(() => { })}
-                              onClick={() => onViewClick(o)}
-                              className="font-medium text-[13.5px] text-[#5b4fbe] hover:text-[#4236a1] transition-all text-left">
-                              {displayNo}
-                            </button>
-                            <button
-                              onClick={(e) => copyOrderNumber(displayNo, o.id, e)}
-                              title={copiedOrderId === o.id ? "Copied!" : "Copy order number"}
-                              className={`p-1 rounded transition-colors shrink-0 ${copiedOrderId === o.id ? "text-emerald-500" : "text-transparent group-hover:text-slate-300 hover:!text-slate-500"}`}>
-                              {copiedOrderId === o.id ? <Check size={12} /> : <Copy size={12} />}
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="font-medium text-[13.5px] text-slate-300">-</span>
-                        )}
-                      </td>
-                      <td className="sticky z-10 px-5 py-2 border-b border-r border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors" style={{ left: '240px', width: '130px', minWidth: '130px' }}>
-                        <span className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold
+                    return (
+                      <tr key={o.id} className="hover:bg-slate-50 transition-colors group bg-white">
+                        <td className="sticky left-0 z-10 px-5 py-2 border-b border-r border-slate-200 bg-white group-hover:bg-slate-50 transition-colors whitespace-nowrap" style={{ width: '240px', minWidth: '240px' }}>
+                          {displayNo ? (
+                            <div className="flex items-center gap-2">
+                              <button
+                                onMouseEnter={() => preloadOrderDetails(o.id).catch(() => { })}
+                                onFocus={() => preloadOrderDetails(o.id).catch(() => { })}
+                                onClick={() => onViewClick(o)}
+                                className="font-medium text-[13.5px] text-[#5b4fbe] hover:text-[#4236a1] transition-all text-left">
+                                {displayNo}
+                              </button>
+                              <button
+                                onClick={(e) => copyOrderNumber(displayNo, o.id, e)}
+                                title={copiedOrderId === o.id ? "Copied!" : "Copy order number"}
+                                className={`p-1 rounded transition-colors shrink-0 ${copiedOrderId === o.id ? "text-emerald-500" : "text-transparent group-hover:text-slate-300 hover:!text-slate-500"}`}>
+                                {copiedOrderId === o.id ? <Check size={12} /> : <Copy size={12} />}
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="font-medium text-[13.5px] text-slate-300">-</span>
+                          )}
+                        </td>
+                        <td className="sticky z-10 px-5 py-2 border-b border-r border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors" style={{ left: '240px', width: '130px', minWidth: '130px' }}>
+                          <span className={`inline-flex px-2.5 py-1 rounded-full text-[11px] font-semibold
                            ${o.status === "Draft" ? "bg-slate-100 text-slate-600" :
-                            o.status === "Approved" || o.status === "Issued" ? "bg-emerald-50 text-emerald-600" :
-                              o.status === "Amendment Request" ? "bg-amber-100 text-amber-700" :
-                                o.status === "Amended" ? "bg-slate-100 text-slate-600" :
-                                  o.status === "Rejected" ? "bg-red-50 text-red-600" :
-                                    o.status === "Review" ? "bg-sky-50 text-sky-600" :
-                                      o.status === "Reverted" ? "bg-orange-50 text-orange-600" :
-                                        (o.status === "Pending Issue" || o.status === "To Issue") ? "bg-amber-50 text-amber-600" :
-                                          o.status === "Recalled" ? "bg-purple-50 text-purple-600" :
-                                            o.status === "Cancelled" ? "bg-slate-100 text-slate-500 line-through" :
-                                              "bg-slate-100 text-slate-600"}`}>
-                          {(o.status === "Pending Issue" || o.status === "To Issue") ? "To Issue" : 
-                           (o.status === "Amendment Request" || o.status === "Amend Request") ? "Amend Request" :
-                           (o.status || "Draft")}
-                        </span>
-                      </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
-                        {o.order_type === "Supply" ? "Purchase Order" : o.order_type === "SITC" || o.order_type === "ITC" ? "Work Order" : (o.order_type || "-")}
-                      </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
-                        {sCode}
-                      </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
-                        {cCode}
-                      </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
-                        {o.made_by || "System"}
-                      </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
-                        {new Date(o.date_of_creation || o.created_at).toLocaleDateString("en-GB").replace(/\//g, '.')}
-                      </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-normal min-w-[280px] leading-relaxed bg-white group-hover:bg-slate-50 transition-colors">
-                        {o.subject || "-"}
-                      </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-normal min-w-[200px] leading-relaxed bg-white group-hover:bg-slate-50 transition-colors">
-                        {vName}
-                      </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">
-                        {(["Issued", "Amended"].includes(o.status) && (o.totals?.issuedAt || o.updated_at))
-                          ? new Date(o.totals?.issuedAt || o.updated_at).toLocaleDateString("en-GB").replace(/\//g, '.')
-                          : <span className="text-slate-300">-</span>}
-                      </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-700 text-[13.5px] font-medium text-right whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">
-                        {(() => {
-                          const t = o.totals || {};
-                          let sub = Number(t.subtotal) || 0;
-                          const disc = Number(t.totalDiscountAmt) || 0;
-                          // Fallback: calculate from items or snapshot if totals missing
-                          if (sub === 0) {
-                            const its = o.order_items || o.snapshot?.items || [];
-                            if (its.length > 0) {
-                              sub = its.reduce((s, it) => s + (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0), 0);
+                              o.status === "Approved" || o.status === "Issued" ? "bg-emerald-50 text-emerald-600" :
+                                o.status === "Amendment Request" ? "bg-amber-100 text-amber-700" :
+                                  o.status === "Amended" ? "bg-slate-100 text-slate-600" :
+                                    o.status === "Rejected" ? "bg-red-50 text-red-600" :
+                                      o.status === "Review" ? "bg-sky-50 text-sky-600" :
+                                        o.status === "Reverted" ? "bg-orange-50 text-orange-600" :
+                                          o.status === "Pending Approval" ? "bg-violet-50 text-violet-600" :
+                                          (o.status === "Pending Issue" || o.status === "To Issue") ? "bg-amber-50 text-amber-600" :
+                                            o.status === "Recalled" ? "bg-purple-50 text-purple-600" :
+                                              o.status === "Cancelled" ? "bg-slate-100 text-slate-500 line-through" :
+                                                o.status === "Deleted" ? "bg-red-50 text-red-600" :
+                                                  "bg-slate-100 text-slate-600"}`}>
+                            {(o.status === "Pending Issue" || o.status === "To Issue") ? "Pending Issue" :
+                              (o.status === "Amendment Request" || o.status === "Amend Request") ? "Amend Request" :
+                                (o.status || "Draft")}
+                          </span>
+                        </td>
+                        <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
+                          {o.order_type === "Supply" ? "Purchase Order" : o.order_type === "SITC" || o.order_type === "ITC" ? "Work Order" : (o.order_type || "-")}
+                        </td>
+                        <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
+                          {sCode}
+                        </td>
+                        <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
+                          {cCode}
+                        </td>
+                        <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
+                          {o.made_by || "System"}
+                        </td>
+                        <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap">
+                          {new Date(o.date_of_creation || o.created_at).toLocaleDateString("en-GB").replace(/\//g, '.')}
+                        </td>
+                        <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-normal min-w-[280px] leading-relaxed bg-white group-hover:bg-slate-50 transition-colors">
+                          {o.subject || "-"}
+                        </td>
+                        <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-normal min-w-[200px] leading-relaxed bg-white group-hover:bg-slate-50 transition-colors">
+                          {vName}
+                        </td>
+                        <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">
+                          {(["Issued", "Amended"].includes(o.status) && (o.totals?.issuedAt || o.updated_at))
+                            ? new Date(o.totals?.issuedAt || o.updated_at).toLocaleDateString("en-GB").replace(/\//g, '.')
+                            : <span className="text-slate-300">-</span>}
+                        </td>
+                        <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-700 text-[13.5px] font-medium text-right whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">
+                          {(() => {
+                            const t = o.totals || {};
+                            let sub = Number(t.subtotal) || 0;
+                            const disc = Number(t.totalDiscountAmt) || 0;
+                            // Fallback: calculate from items or snapshot if totals missing
+                            if (sub === 0) {
+                              const its = o.order_items || o.snapshot?.items || [];
+                              if (its.length > 0) {
+                                sub = its.reduce((s, it) => s + (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0), 0);
+                              }
                             }
-                          }
-                          const taxable = sub - disc;
-                          return taxable > 0
-                            ? `₹ ${taxable.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                            : <span className="text-slate-300 font-normal">-</span>;
-                        })()}
-                      </td>
-                      <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-700 text-[13.5px] font-medium text-right whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">
-                        {(() => {
-                          let totalVal = Number(o.totals?.grandTotal || 0);
-                          // Fallback: calculate from items or snapshot if totals missing
-                          if (totalVal === 0) {
-                            const its = o.order_items || o.snapshot?.items || [];
-                            if (its.length > 0) {
-                              const sub = its.reduce((s, it) => s + (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0), 0);
-                              const gst = its.reduce((s, it) => {
-                                const base = Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0;
-                                return s + (base * (Number(it.tax_pct) || 0) / 100);
-                              }, 0);
-                              totalVal = sub + gst;
+                            const taxable = sub - disc;
+                            return taxable > 0
+                              ? `₹ ${taxable.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : <span className="text-slate-300 font-normal">-</span>;
+                          })()}
+                        </td>
+                        <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-700 text-[13.5px] font-medium text-right whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">
+                          {(() => {
+                            let totalVal = Number(o.totals?.grandTotal || 0);
+                            // Fallback: calculate from items or snapshot if totals missing
+                            if (totalVal === 0) {
+                              const its = o.order_items || o.snapshot?.items || [];
+                              if (its.length > 0) {
+                                const sub = its.reduce((s, it) => s + (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0), 0);
+                                const gst = its.reduce((s, it) => {
+                                  const base = Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0;
+                                  return s + (base * (Number(it.tax_pct) || 0) / 100);
+                                }, 0);
+                                totalVal = sub + gst;
+                              }
                             }
-                          }
-                          return totalVal > 0
-                            ? `₹ ${totalVal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-                            : <span className="text-slate-300 font-normal">-</span>;
-                        })()}
-                      </td>
-                      <td className="sticky right-0 z-40 px-5 py-1 border-b border-l border-slate-200 bg-white group-hover:bg-slate-50 transition-colors whitespace-nowrap [box-shadow:-1px_0_0_0_#e2e8f0]" style={{ width: '190px', minWidth: '190px', maxWidth: '190px' }}>
-                        <div className="flex items-center justify-center gap-1.5">
-                          {canEditOrder(o) && (
-                            <button onClick={() => onEditClick(o.id)}
-                              className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-sky-600 hover:border-sky-200 hover:bg-sky-50 transition-all shadow-sm"
-                              title="Full Edit">
-                              <Pencil size={13} />
-                            </button>
-                          )}
-                          {canDeleteOrder(o) && (
-                            <button onClick={() => handleDelete(o.id)}
-                              className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all shadow-sm"
-                              title="Delete">
-                              <Trash2 size={13} />
-                            </button>
-                          )}
-                          <button
-                            onClick={() => openPDFPreview(o.id)}
-                            className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-all shadow-sm"
-                            title="Export PDF">
-                            <FileDown size={14} />
-                          </button>
-                          <button
-                            onClick={() => setLogPanel({ orderId: o.id, orderNumber: o.order_number || "Draft" })}
-                            className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-violet-600 hover:border-violet-200 hover:bg-violet-50 transition-all shadow-sm"
-                            title="Activity Log">
-                            <Activity size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                            return totalVal > 0
+                              ? `₹ ${totalVal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : <span className="text-slate-300 font-normal">-</span>;
+                          })()}
+                        </td>
+                        <td className="sticky right-0 z-40 px-5 py-1 border-b border-l border-slate-200 bg-white group-hover:bg-slate-50 transition-colors whitespace-nowrap [box-shadow:-1px_0_0_0_#e2e8f0]" style={{ width: '190px', minWidth: '190px', maxWidth: '190px' }}>
+                          <div className="flex items-center justify-center gap-1.5">
+                            {activeTab === "Trash" ? (
+                              <>
+                                <button
+                                  onClick={() => setLogPanel({ orderId: o.id, orderNumber: o.order_number || "Draft" })}
+                                  className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-violet-600 hover:border-violet-200 hover:bg-violet-50 transition-all shadow-sm"
+                                  title="Activity Log">
+                                  <Activity size={14} />
+                                </button>
+                                {canDelete && (
+                                  <>
+                                    <button
+                                      onClick={() => handleRestore(o.id)}
+                                      className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 transition-all shadow-sm"
+                                      title="Restore">
+                                      <Undo2 size={14} />
+                                    </button>
+                                    <button
+                                      onClick={() => handlePermanentDelete(o.id)}
+                                      className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all shadow-sm"
+                                      title="Permanent Delete">
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                {canWithdrawApproval(o) && (
+                                  <button
+                                    onClick={() => handleWithdrawApproval(o.id)}
+                                    className="h-8 w-8 rounded-md border border-amber-200 flex items-center justify-center text-amber-600 hover:text-amber-700 hover:border-amber-300 hover:bg-amber-50 transition-all shadow-sm"
+                                    title="Withdraw Request">
+                                    <Undo2 size={14} />
+                                  </button>
+                                )}
+                                {canEditOrder(o) && (
+                                  <button onClick={() => onEditClick(o.id)}
+                                    className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-sky-600 hover:border-sky-200 hover:bg-sky-50 transition-all shadow-sm"
+                                    title="Full Edit">
+                                    <Pencil size={13} />
+                                  </button>
+                                )}
+                                {canDeleteOrder(o) && (
+                                  <button onClick={() => handleDelete(o.id)}
+                                    className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all shadow-sm"
+                                    title="Delete">
+                                    <Trash2 size={13} />
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => openPDFPreview(o.id)}
+                                  className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-all shadow-sm"
+                                  title="Export PDF">
+                                  <FileDown size={14} />
+                                </button>
+                                <button
+                                  onClick={() => setLogPanel({ orderId: o.id, orderNumber: o.order_number || "Draft" })}
+                                  className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-violet-600 hover:border-violet-200 hover:bg-violet-50 transition-all shadow-sm"
+                                  title="Activity Log">
+                                  <Activity size={14} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
@@ -3714,8 +4925,31 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         </div>
       )}
       <style>{`@keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }`}</style>
+
+      {/* Confirm Modal */}
+      {confirmModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-4">
+            <p className="text-sm font-semibold text-slate-700 leading-relaxed">{confirmModal.message}</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmModal(null)}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { confirmModal.onConfirm(); setConfirmModal(null); }}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-red-500 text-white hover:bg-red-600 transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
-    );
+  );
 }
 
 // ============== MAIN CONTROLLER ==============

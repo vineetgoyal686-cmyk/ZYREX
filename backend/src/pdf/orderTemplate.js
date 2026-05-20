@@ -151,12 +151,13 @@ const css = `
     display: inline-block; margin-bottom: 6px; page-break-inside: avoid;
   }
   .section .content { font-size: 11.5px; line-height: 1.45; text-align: justify; }
-  .section .content ol { margin: 0; padding-left: 28px; list-style: decimal; }
+  .section .content ol { margin: 0 0 5px 0; padding-left: 28px; list-style: decimal; }
   .section .content ol ol { list-style-type: lower-alpha; }
   .section .content ol ol ol { list-style-type: lower-roman; }
-  .section .content ul { margin: 0; padding-left: 28px; list-style: disc; }
+  .section .content ul { margin: 0 0 5px 0; padding-left: 28px; list-style: disc; }
   .section .content li { margin-bottom: 2px; }
-  .section .content p { margin: 0 0 3px 0; }
+  .section .content p { margin: 0 0 4px 0; }
+  .section .content b, .section .content strong { font-weight: 800; }
 
   .signatures { margin-top: 24px; padding-left: 8mm; display: flex; justify-content: space-between; gap: 70px; page-break-inside: avoid; break-inside: avoid-page; align-items: flex-start; }
   .sig-side { flex: 1; min-width: 0; }
@@ -401,7 +402,7 @@ const renderTotals = (order) => {
   `;
 };
 
-const renderRichSection = (title, content) => {
+const renderRichSectionLegacy = (title, content) => {
   if (!content) return "";
   let body = "";
   if (Array.isArray(content)) {
@@ -438,6 +439,115 @@ const renderRichSection = (title, content) => {
       : `${lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}`;
   } else {
     body = sanitizeHtml(content);
+  }
+  return `
+    <div class="section">
+      <div class="section-title">${escapeHtml(title)}</div>
+      <div class="content">${body}</div>
+    </div>
+  `;
+};
+
+const hasHtmlMarkup = (value) => /<\s*[a-z][\s\S]*>/i.test(String(value || ""));
+
+const stripPlainListPrefix = (value) =>
+  String(value ?? "")
+    .replace(/^\s*(?:\(?\d+\)?\s*[.)\-:]+|[-*â€¢])\s*/, "");
+
+const plainTextLines = (value) =>
+  String(value ?? "")
+    .replace(/&nbsp;|&#160;|\u00A0/g, " ")
+    .split(/\r?\n/)
+    .map((s) => s.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+const renderNodeList = (list) =>
+  `<${list.tag}>${list.items.map((item) => `<li>${item.html}${item.children.map(renderNodeList).join("")}</li>`).join("")}</${list.tag}>`;
+
+const stripQuillListNoise = (html) =>
+  String(html || "")
+    .replace(/<span\b[^>]*class=["'][^"']*\bql-ui\b[^"']*["'][^>]*><\/span>/gi, "")
+    .replace(/<span\b[^>]*class=["'][^"']*\bql-ui\b[^"']*["'][^>]*\/>/gi, "")
+    .replace(/\s*data-list=["'][^"']*["']/gi, "")
+    .replace(/\s*class=["'](?:\s*ql-indent-\d+\s*)+["']/gi, "");
+
+const rebuildFlatQuillList = (tag, attrs, innerHtml) => {
+  const items = [];
+  innerHtml.replace(/<li\b([^>]*)>([\s\S]*?)<\/li>/gi, (_match, liAttrs = "", liHtml = "") => {
+    const indentMatch = liAttrs.match(/\bql-indent-(\d+)\b/i);
+    const dataListMatch = liAttrs.match(/\bdata-list=["']([^"']+)["']/i);
+    items.push({
+      indent: indentMatch ? Number(indentMatch[1]) || 0 : 0,
+      tag: dataListMatch?.[1] === "bullet" ? "ul" : tag.toLowerCase(),
+      html: stripQuillListNoise(liHtml).trim(),
+    });
+    return "";
+  });
+
+  if (!items.length || !items.some((item) => item.indent > 0)) {
+    return `<${tag}${attrs}>${stripQuillListNoise(innerHtml)}</${tag}>`;
+  }
+
+  const root = { tag: items[0]?.tag || tag.toLowerCase(), items: [] };
+  const listsAtLevel = [root];
+  const lastLiAtLevel = [];
+
+  items.forEach((item) => {
+    let level = item.indent;
+    while (level > 0 && !lastLiAtLevel[level - 1]) level -= 1;
+
+    if (level > 0 && (!listsAtLevel[level] || listsAtLevel[level].tag !== item.tag)) {
+      const parentLi = lastLiAtLevel[level - 1];
+      const childList = { tag: item.tag, items: [] };
+      parentLi.children.push(childList);
+      listsAtLevel[level] = childList;
+    }
+
+    const li = { html: item.html, children: [] };
+    listsAtLevel[level].items.push(li);
+    lastLiAtLevel[level] = li;
+    listsAtLevel.length = level + 1;
+    lastLiAtLevel.length = level + 1;
+  });
+
+  return renderNodeList(root);
+};
+
+const normalizeRichHtmlForPdf = (html) => {
+  const normalized = sanitizeHtml(html);
+  if (!/\b(?:ql-indent-\d+|data-list=|ql-ui)\b/i.test(normalized)) return normalized;
+
+  return normalized
+    .replace(/<(ol|ul)\b([^>]*)>([\s\S]*?)<\/\1>/gi, (match, tag, attrs, innerHtml) => {
+      if (!/\b(?:ql-indent-\d+|data-list=|ql-ui)\b/i.test(innerHtml)) return match;
+      return rebuildFlatQuillList(tag, attrs || "", innerHtml);
+    })
+    .replace(/\s*data-list=["'][^"']*["']/gi, "")
+    .replace(/\s*class=["'](?:\s*ql-indent-\d+\s*)+["']/gi, "")
+    .replace(/<span\b[^>]*class=["'][^"']*\bql-ui\b[^"']*["'][^>]*><\/span>/gi, "");
+};
+
+const renderRichSection = (title, content) => {
+  if (!content) return "";
+  let body = "";
+  if (Array.isArray(content)) {
+    const entries = content.filter((entry) => hasMeaningfulContent(entry));
+    const hasHtml = entries.some(hasHtmlMarkup);
+
+    if (hasHtml) {
+      body = entries.map((entry) => normalizeRichHtmlForPdf(entry)).join("");
+    } else {
+      const lines = entries.flatMap(plainTextLines);
+      const first = lines[0] || "";
+      const shouldRenderAsList = lines.length > 1 || stripPlainListPrefix(first) !== first;
+      body = shouldRenderAsList
+        ? `<ol>${lines.map((line) => `<li>${escapeHtml(stripPlainListPrefix(line))}</li>`).join("")}</ol>`
+        : lines.map((line) => `<p>${escapeHtml(line)}</p>`).join("");
+    }
+  } else if (hasHtmlMarkup(content)) {
+    body = normalizeRichHtmlForPdf(content);
+  } else {
+    body = plainTextLines(content).map((line) => `<p>${escapeHtml(line)}</p>`).join("");
   }
   return `
     <div class="section">
@@ -492,14 +602,15 @@ const renderAnnexure = (order) => {
 const renderSignatures = (order, comp, vend, issuer = null) => {
   const companyName = comp.company_name || comp.companyName || "Company";
   const vendorName = vend.vendor_name || vend.vendorName || "Vendor";
-  const companyPerson = issuer?.name || comp.person_name || comp.personName || order.made_by || "";
-  const companyDesig = issuer?.designation || comp.designation || "";
   const vendorPerson = vend.contact_person || vend.contactPerson || "";
-  const poDate = issuer
-    ? formatDate(order.totals?.issuedAt || order.date_of_creation || order.created_at)
-    : formatDate(order.date_of_creation || order.created_at);
+  const isIssued = ["Issued", "Amended"].includes(order.status);
+
   const stampUrl = comp.stampDataUri || comp.stampUrl || comp.stamp_url || "";
-  const signUrl = issuer?.signDataUri || comp.signDataUri || comp.signUrl || comp.sign_url || "";
+  const signUrl  = isIssued ? (issuer?.signDataUri || comp.signDataUri || comp.signUrl || comp.sign_url || "") : "";
+  const companyPerson = isIssued ? (issuer?.name || comp.person_name || comp.personName || order.made_by || "") : "";
+  const companyDesig  = isIssued ? (issuer?.designation || comp.designation || "") : "";
+  const poDate = isIssued ? formatDate(order.totals?.issuedAt || order.date_of_creation || order.created_at) : "";
+
   return `
     <div class="signatures">
       <div class="sig-side">
@@ -511,7 +622,7 @@ const renderSignatures = (order, comp, vend, issuer = null) => {
           </div>
           <div class="sig-italic">(Authorized Signature)</div>
           <div class="sig-kv">
-            <div><b>Name:</b> ${escapeHtml(companyPerson || "--")}${companyDesig ? ` (${escapeHtml(companyDesig)})` : ""}</div>
+            <div><b>Name:</b> ${escapeHtml(companyPerson || "")}</div>
             <div><b>Date:</b> ${escapeHtml(poDate)}</div>
           </div>
         </div>
@@ -523,7 +634,7 @@ const renderSignatures = (order, comp, vend, issuer = null) => {
           <div class="sig-area"></div>
           <div class="sig-italic">(Agreed & Accepted by)</div>
           <div class="sig-kv">
-            <div><b>Name:</b> ${escapeHtml(vendorPerson || "--")}</div>
+            <div><b>Name:</b> ${escapeHtml(vendorPerson || "")}</div>
             <div><b>Date:</b> </div>
           </div>
         </div>

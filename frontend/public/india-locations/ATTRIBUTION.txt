@@ -1,0 +1,7 @@
+This directory contains place names derived from GeoNames (https://www.geonames.org/),
+country dump IN.txt (populated places, feature class P).
+
+License: Creative Commons Attribution 4.0 License
+https://creativecommons.org/licenses/by/4.0/
+
+You must attribute GeoNames when redistributing or displaying this data.

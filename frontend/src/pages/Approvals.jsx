@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { 
-  FileText, Check, X, AlertCircle, RefreshCw, 
+import {
+  FileText, Check, X, AlertCircle, RefreshCw,
   ChevronDown, Building2, CircleCheck, CircleX, RotateCcw,
-  ClipboardList, Clock, IndianRupee, Search, Undo2, User
+  ClipboardList, Clock, IndianRupee, Search, Undo2, User, FileDown
 } from "lucide-react";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
@@ -35,7 +35,7 @@ export default function Approvals() {
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); };
 
   const [activeTab, setActiveTab] = useState(readApprovalTabFromHash);
-  const [orderSubTab, setOrderSubTab] = useState("issued");
+  const [orderSubTab, setOrderSubTab] = useState("pending_approval");
   const [orders, setOrders] = useState([]);
   const [intakes, setIntakes] = useState([]);
   const [amendments, setAmendments] = useState([]);
@@ -46,6 +46,7 @@ export default function Approvals() {
   const [search, setSearch] = useState("");
   const [canManageAmend, setCanManageAmend] = useState(false);
   const [canManageActionRequests, setCanManageActionRequests] = useState(false);
+  const [isIssueHandler, setIsIssueHandler] = useState(false);
   const [actionRequests, setActionRequests] = useState([]);
   const [arActionLoading, setArActionLoading] = useState(null);
   const [arCommentModal, setArCommentModal] = useState({ open: false, requestId: null, action: null });
@@ -55,6 +56,7 @@ export default function Approvals() {
   const [amendCompanyFilter, setAmendCompanyFilter] = useState("");
   const [pdfPreviewId, setPdfPreviewId] = useState(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
 
   const load = async (isInitial = false) => {
     if (isInitial) {
@@ -77,21 +79,25 @@ export default function Approvals() {
 
     try {
       const token = localStorage.getItem("bms_token") || "";
-      const [ordersRes, intakesRes, amendRes, capRes, arRes, arCapRes] = await Promise.all([
+      const [ordersRes, intakesRes, amendRes, capRes, arRes, arCapRes, pendingApprovalsRes, handlersRes] = await Promise.all([
         fetch(`${API}/api/orders`),
         fetch(`${API}/api/intakes`),
-        fetch(`${API}/api/amendments/requests`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`${API}/api/amendments/can-manage`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`${API}/api/action-requests/pending`, { headers: { 'Authorization': `Bearer ${token}` } }),
-        fetch(`${API}/api/action-requests/can-manage`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`${API}/api/amendments/requests`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API}/api/amendments/can-manage`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API}/api/action-requests/pending`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API}/api/action-requests/can-manage`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API}/api/approval-flows/pending-for-me`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API}/api/request-handlers`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
-      const [ordersData, intakesData, amendData, capData, arData, arCapData] = await Promise.all([
+      const [ordersData, intakesData, amendData, capData, arData, arCapData, pendingApprovalsData, handlersData] = await Promise.all([
         ordersRes.json().catch(() => ({})),
         intakesRes.json().catch(() => ({})),
         amendRes.json().catch(() => ({})),
         capRes.json().catch(() => ({})),
         arRes.json().catch(() => ({})),
         arCapRes.json().catch(() => ({})),
+        pendingApprovalsRes.json().catch(() => ({})),
+        handlersRes.json().catch(() => ({})),
       ]);
 
       const ords = ordersData.orders || [];
@@ -100,12 +106,18 @@ export default function Approvals() {
       const caps = !!capData.canManage;
       const ars  = arData.requests || [];
 
+      const issueUsers = (handlersData.config?.order?.issue?.users || []);
+      const issueHandlerFlag = isGlobalAdmin || issueUsers.some(u => String(u.id) === String(currentUser.id));
+
+      const pas = pendingApprovalsData.requests || [];
       setOrders(ords);
       setIntakes(ints);
       setAmendments(amds);
       setCanManageAmend(caps);
       setActionRequests(ars);
       setCanManageActionRequests(!!arCapData.canManage);
+      setPendingApprovals(pas);
+      setIsIssueHandler(issueHandlerFlag);
       
       // 2. Update Cache for next time
       localStorage.setItem("last_approvals_data", JSON.stringify({
@@ -162,28 +174,49 @@ export default function Approvals() {
       return;
     }
     let cancelled = false;
-    fetch(`${API}/api/orders/${pdfPreviewId}/preview`)
+    fetch(`${API}/api/orders/${pdfPreviewId}/pdf?t=${Date.now()}`)
       .then(r => r.blob())
       .then(blob => {
         if (cancelled) return;
-        const url = URL.createObjectURL(blob);
+        const pdfFile = new File([blob], `Order_${pdfPreviewId}.pdf`, { type: "application/pdf" });
+        const url = URL.createObjectURL(pdfFile);
         setPdfBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return url; });
       })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [pdfPreviewId]);
 
+  const handlePDFDownload = async () => {
+    if (!pdfPreviewId || pdfDownloading) return;
+    setPdfDownloading(true);
+    try {
+      const res = await fetch(`${API}/api/orders/${pdfPreviewId}/pdf?download=1&t=${Date.now()}`);
+      if (!res.ok) throw new Error("PDF failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Order_${pdfPreviewId}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) { console.error(err); }
+    setPdfDownloading(false);
+  };
+
   const handleOrderAction = async (orderId, action, comments = "") => {
     setActionLoading(orderId);
     try {
-      const bmsUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
-      const res = await fetch(`${API}/api/orders/${orderId}`, {
-        method: "PUT",
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem("bms_token") || ""}` },
-        body: JSON.stringify({ data: JSON.stringify({ mainData: { status: action, action_by: bmsUser.name || "", ...(comments ? { comments } : {}) } }) })
+      const token = localStorage.getItem("bms_token") || "";
+      // Map UI action names to issue-action endpoint action keys
+      const actionMap = { "Issued": "issue", "Reverted": "revert", "Rejected": "reject" };
+      const apiAction = actionMap[action];
+      const res = await fetch(`${API}/api/orders/${orderId}/issue-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action: apiAction, comment: comments }),
       });
       const data = await res.json();
-      if (res.ok && !data.error) {
+      if (res.ok && data.success) {
         load();
       } else {
         showToast(data.error || "Action failed", "error");
@@ -237,6 +270,22 @@ export default function Approvals() {
     setActionLoading(null);
   };
 
+  const handleApprovalFlowAction = async (requestId, action, comments = "") => {
+    setActionLoading(requestId);
+    try {
+      const token = localStorage.getItem("bms_token") || "";
+      const res = await fetch(`${API}/api/approval-flows/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ request_id: requestId, action, comments }),
+      });
+      const d = await res.json();
+      if (d.success) load();
+      else showToast(d.error || "Action failed", "error");
+    } catch { showToast("Network error", "error"); }
+    setActionLoading(null);
+  };
+
   const handleAmendAction = async (request_id, action) => {
     setActionLoading(request_id);
     try {
@@ -257,6 +306,12 @@ export default function Approvals() {
     setActionLoading(null);
   };
 
+  const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [approvalActionModal, setApprovalActionModal] = useState({ open: false, requestId: null, action: null });
+  const [approvalActionComment, setApprovalActionComment] = useState("");
+  const [amendView, setAmendView] = useState("tile"); // 'table' or 'tile'
+  const [orderView, setOrderView] = useState("tile"); // 'table' or 'tile'
+
   const pendingOrders = useMemo(() => (
     orders.filter((o) => ["Pending Issue", "To Issue"].includes(o.status))
   ), [orders]);
@@ -267,7 +322,7 @@ export default function Approvals() {
 
   const tabs = [
     { key: "intake", label: "Intake", icon: FileText, count: pendingIntakes.length },
-    { key: "orders", label: "Orders", icon: ClipboardList, count: pendingOrders.length + amendments.length + actionRequests.length },
+    { key: "orders", label: "Orders", icon: ClipboardList, count: pendingOrders.length + amendments.length + actionRequests.length + pendingApprovals.length },
     { key: "payments", label: "Payments", icon: IndianRupee, count: 0 },
   ];
 
@@ -288,9 +343,6 @@ export default function Approvals() {
     const text = [intakeTitle(i), i.name, i.site_name, i.requisition_by, i.status].filter(Boolean).join(" ").toLowerCase();
     return !query || text.includes(query);
   });
-
-  const [amendView, setAmendView] = useState("tile"); // 'table' or 'tile'
-  const [orderView, setOrderView] = useState("tile"); // 'table' or 'tile'
   const hasApprovalData = orders.length > 0 || intakes.length > 0 || amendments.length > 0;
   const showInitialLoading = loading && !hasApprovalData;
 
@@ -352,10 +404,16 @@ export default function Approvals() {
           <div className="flex items-center justify-between border-b border-slate-200 pb-0.5 px-1">
             <div className="flex items-center gap-2">
               <button
+                onClick={() => setOrderSubTab("pending_approval")}
+                className={`px-4 py-2 text-sm font-bold transition-all border-b-2 ${orderSubTab === "pending_approval" ? "border-violet-600 text-violet-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+              >
+                Pending Approval {pendingApprovals.length > 0 && <span className="ml-1 bg-violet-100 text-violet-700 text-[10px] font-black px-1.5 py-0.5 rounded-full">{pendingApprovals.length}</span>}
+              </button>
+              <button
                 onClick={() => setOrderSubTab("issued")}
                 className={`px-4 py-2 text-sm font-bold transition-all border-b-2 ${orderSubTab === "issued" ? "border-cyan-600 text-cyan-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
               >
-                Issued ({pendingOrders.length})
+                Pending Issue ({pendingOrders.length})
               </button>
               <button
                 onClick={() => setOrderSubTab("amendment")}
@@ -393,7 +451,78 @@ export default function Approvals() {
             </div>
           </div>
 
-          {orderSubTab === "issued" ? (
+          {orderSubTab === "pending_approval" ? (
+            <div className="space-y-3">
+              {pendingApprovals.length === 0 ? (
+                <div className={`${cardCls} p-8 text-center text-sm font-semibold text-slate-400`}>
+                  No orders are pending your approval.
+                </div>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {pendingApprovals.map((req) => {
+                    const doc = req.document || {};
+                    const flow = req.flow_snapshot || {};
+                    const levels = flow.levels || [];
+                    const currentLevel = levels[(req.current_level || 1) - 1];
+                    const vendorName = doc.vendors?.vendor_name || doc.snapshot?.vendor?.vendorName || "—";
+                    const totalVal = doc.totals?.grandTotal ?? doc.totals?.grand_total ?? 0;
+                    return (
+                      <div key={req.id} className={`${cardCls} flex flex-col rounded-none shadow-sm border-t-4 border-t-violet-600`}>
+                        <div className="p-3.5 border-b border-slate-50 flex items-start justify-between">
+                          <div className="min-w-0">
+                            <button
+                              onClick={() => setPdfPreviewId(doc.id)}
+                              className="text-[11px] font-black text-violet-700 hover:underline uppercase tracking-tight truncate block leading-none"
+                            >
+                              {doc.order_number || `Order ${req.document_id?.slice(0, 8)}`}
+                            </button>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase truncate mt-1">by {doc.made_by || "—"}</p>
+                          </div>
+                          <span className="text-[8px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded-none border border-slate-200 uppercase shrink-0">{doc.sites?.site_code || "—"}</span>
+                        </div>
+                        <div className="p-3.5 flex-1 flex flex-col gap-4">
+                          <div className="bg-white p-2 border border-slate-100 relative">
+                            <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-violet-500 uppercase tracking-widest">Vendor Name</span>
+                            <p className="text-[12px] font-bold text-slate-800 truncate">{vendorName}</p>
+                          </div>
+                          <div className="bg-white p-2 border border-slate-100 relative">
+                            <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-violet-500 uppercase tracking-widest">Order Subject</span>
+                            <p className="text-[11px] text-slate-700 line-clamp-1 font-bold">{doc.subject || doc.snapshot?.subject || "No Subject"}</p>
+                          </div>
+                          <div className="bg-slate-50 p-2 border border-slate-200 relative">
+                            <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-violet-500 uppercase tracking-widest">Total Value</span>
+                            <p className="text-[12px] text-slate-900 font-black">Rs {money(totalVal)}</p>
+                          </div>
+                        </div>
+                        {req.can_act && (
+                          <div className="px-3.5 pb-3.5 flex gap-1.5 pt-3 border-t border-slate-100">
+                            <button
+                              disabled={actionLoading === req.id}
+                              onClick={() => { setApprovalActionModal({ open: true, requestId: req.id, action: "reverted" }); setApprovalActionComment(""); }}
+                              className="flex-1 h-8 bg-white border border-amber-200 text-amber-600 font-bold text-[10px] hover:bg-amber-50 transition-all uppercase">
+                              REVERT
+                            </button>
+                            <button
+                              disabled={actionLoading === req.id}
+                              onClick={() => { setApprovalActionModal({ open: true, requestId: req.id, action: "rejected" }); setApprovalActionComment(""); }}
+                              className="flex-1 h-8 bg-white border border-rose-200 text-rose-600 font-bold text-[10px] hover:bg-rose-50 transition-all uppercase">
+                              REJECT
+                            </button>
+                            <button
+                              disabled={actionLoading === req.id}
+                              onClick={() => handleApprovalFlowAction(req.id, "approved")}
+                              className="flex-1 h-8 bg-emerald-500 text-white font-bold text-[10px] hover:bg-emerald-600 transition-all uppercase">
+                              {actionLoading === req.id ? "..." : "APPROVE"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          ) : orderSubTab === "issued" ? (
             <>
               {loading && (
                 <div className="flex items-center gap-2 px-1">
@@ -430,14 +559,16 @@ export default function Approvals() {
                             <td className="px-5 py-4 border-r border-slate-100 text-slate-600 font-bold text-[11px] whitespace-nowrap">{o.made_by || o.snapshot?.madeBy || "—"}</td>
                             <td className="px-5 py-4 border-r border-slate-100 text-slate-800 font-black text-[12px] whitespace-nowrap">Rs {money(o.totals?.grandTotal || 0)}</td>
                             <td className="px-5 py-4">
-                              <div className="flex items-center justify-center gap-1.5">
-                                <button disabled={actionLoading === o.id} onClick={() => handleOrderAction(o.id, "Issued")} title="Issue Order"
-                                  className="h-8 w-8 rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 shadow-sm flex items-center justify-center transition-all"><CircleCheck size={18} /></button>
-                                <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Rejected" }); setCommentText(""); }} title="Reject Order"
-                                  className="h-8 w-8 rounded-md bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-40 shadow-sm flex items-center justify-center transition-all"><CircleX size={18} /></button>
-                                <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Reverted" }); setCommentText(""); }} title="Revert to Draft"
-                                  className="h-8 w-8 rounded-md bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-40 shadow-sm flex items-center justify-center transition-all"><RotateCcw size={16} /></button>
-                              </div>
+                              {isIssueHandler ? (
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button disabled={actionLoading === o.id} onClick={() => handleOrderAction(o.id, "Issued")} title="Issue Order"
+                                    className="h-8 w-8 rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 shadow-sm flex items-center justify-center transition-all"><CircleCheck size={18} /></button>
+                                  <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Rejected" }); setCommentText(""); }} title="Reject Order"
+                                    className="h-8 w-8 rounded-md bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-40 shadow-sm flex items-center justify-center transition-all"><CircleX size={18} /></button>
+                                  <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Reverted" }); setCommentText(""); }} title="Revert to Draft"
+                                    className="h-8 w-8 rounded-md bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-40 shadow-sm flex items-center justify-center transition-all"><RotateCcw size={16} /></button>
+                                </div>
+                              ) : <span className="text-[10px] text-slate-400">—</span>}
                             </td>
                           </tr>
                         ))}
@@ -470,7 +601,7 @@ export default function Approvals() {
                           <p className="text-[12px] text-slate-900 font-black">Rs {money(o.totals?.grandTotal || 0)}</p>
                         </div>
                       </div>
-                      <div className="flex gap-1.5 pt-3 border-t border-slate-100">
+                      {isIssueHandler && <div className="flex gap-1.5 pt-3 border-t border-slate-100">
                         <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Reverted" }); setCommentText(""); }}
                           className="flex-1 h-8 bg-white border border-amber-200 text-amber-600 font-bold text-[10px] hover:bg-amber-500 hover:text-white transition-all uppercase">REVERT</button>
                         <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Rejected" }); setCommentText(""); }}
@@ -479,7 +610,7 @@ export default function Approvals() {
                           className="flex-1 h-8 bg-emerald-500 text-white font-bold text-[10px] hover:bg-emerald-600 shadow-sm transition-all uppercase flex items-center justify-center gap-1">
                           {actionLoading === o.id ? "..." : "ISSUE"}
                         </button>
-                      </div>
+                      </div>}
                     </div>
                   ))}
                 </div>
@@ -581,11 +712,7 @@ export default function Approvals() {
                 )}
               </div>
 
-              {!canManageAmend && (
-                <div className={`${cardCls} p-3 text-center text-[11px] font-medium text-amber-700 bg-amber-50 border-amber-200`}>
-                  You can view amendment requests but only users with <b>Manage Amend</b> permission can approve or reject them.
-                </div>
-              )}
+
 
               {amendments.filter(a => {
                 if (amendSiteFilter && a.original_order?.site_code !== amendSiteFilter) return false;
@@ -725,13 +852,28 @@ export default function Approvals() {
 
       {pdfPreviewId && (
         <div className="fixed inset-0 z-[100] flex">
-          <div className="flex-1 bg-slate-900/40 backdrop-blur-sm" onClick={() => setPdfPreviewId(null)} />
-          <div className="w-full max-w-5xl h-full bg-white shadow-2xl flex flex-col">
-            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-              <p className="text-xs font-black text-slate-700 uppercase tracking-widest">Order Preview</p>
-              <button onClick={() => setPdfPreviewId(null)} className="h-8 w-8 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors">✕</button>
+          <div className="flex-1 bg-black/50" onClick={() => setPdfPreviewId(null)} />
+          <div className="w-full max-w-[860px] bg-slate-200 flex flex-col h-full shadow-2xl">
+            <div className="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between shrink-0">
+              <span className="font-bold text-slate-700 text-sm">PDF Preview</span>
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={pdfDownloading}
+                  onClick={handlePDFDownload}
+                  className={`flex items-center gap-2 px-4 py-2 text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all ${pdfDownloading ? "bg-slate-400 cursor-not-allowed" : "bg-[#1b3e8a] hover:bg-[#16326d]"}`}>
+                  {pdfDownloading
+                    ? <div className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    : <FileDown size={14} />}
+                  {pdfDownloading ? "Downloading..." : "Download PDF"}
+                </button>
+                <button onClick={() => setPdfPreviewId(null)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-all">
+                  <X size={18} />
+                </button>
+              </div>
             </div>
-            <iframe src={pdfBlobUrl || "about:blank"} className="flex-1 w-full" title="Order PDF Preview" />
+            <div className="flex-1 bg-slate-300">
+              <iframe title="Order PDF" src={pdfBlobUrl || "about:blank"} className="w-full h-full border-0 bg-white" />
+            </div>
           </div>
         </div>
       )}
@@ -779,6 +921,56 @@ export default function Approvals() {
                   }}
                   className={`flex-[2] py-3 text-xs font-bold text-white rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:grayscale ${commentModal.action === "Reverted" ? "bg-amber-500 hover:bg-amber-600" : "bg-rose-600 hover:bg-rose-700"}`}>
                   {commentModal.action === "Reverted" ? "Confirm Revert" : "Confirm Reject"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approval flow action modal (revert/reject from inbox) */}
+      {approvalActionModal.open && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  {approvalActionModal.action === "reverted" ? "Revert Order" : "Reject Order"}
+                </h3>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Mandatory Reason Required</p>
+              </div>
+              <button onClick={() => setApprovalActionModal({ open: false, requestId: null, action: null })}
+                className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-[13px] text-slate-600 font-medium bg-amber-50 p-3 rounded-xl border border-amber-100">
+                {approvalActionModal.action === "reverted"
+                  ? "Order will return to Review status for correction."
+                  : "Order will be permanently rejected."}
+              </p>
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Comments / Remarks</label>
+                <textarea
+                  value={approvalActionComment}
+                  onChange={e => setApprovalActionComment(e.target.value)}
+                  rows={4}
+                  placeholder="Please explain the reason for this action..."
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 outline-none resize-none transition-all"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setApprovalActionModal({ open: false, requestId: null, action: null })}
+                  className="flex-1 py-3 text-xs font-bold text-slate-500 rounded-xl hover:bg-slate-100 transition-all">Cancel</button>
+                <button
+                  disabled={!approvalActionComment.trim() || actionLoading === approvalActionModal.requestId}
+                  onClick={async () => {
+                    const { requestId, action } = approvalActionModal;
+                    setApprovalActionModal({ open: false, requestId: null, action: null });
+                    await handleApprovalFlowAction(requestId, action, approvalActionComment.trim());
+                    setApprovalActionComment("");
+                  }}
+                  className={`flex-[2] py-3 text-xs font-bold text-white rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:grayscale ${approvalActionModal.action === "reverted" ? "bg-amber-500 hover:bg-amber-600" : "bg-rose-600 hover:bg-rose-700"}`}>
+                  {approvalActionModal.action === "reverted" ? "Confirm Revert" : "Confirm Reject"}
                 </button>
               </div>
             </div>

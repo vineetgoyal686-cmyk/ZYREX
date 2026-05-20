@@ -60,7 +60,7 @@ router.get("/:id", requireAuth, async (req, res) => {
 
 /* POST /api/designations — create */
 router.post("/", requireAuth, requireGlobalOrSuper, async (req, res) => {
-  const { name, description, app_permissions, profile_permissions } = req.body;
+  const { name, description, app_permissions, profile_permissions, project_access } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: "Name is required" });
 
   const admin = getAdminClient();
@@ -69,6 +69,7 @@ router.post("/", requireAuth, requireGlobalOrSuper, async (req, res) => {
     description:         description || null,
     app_permissions:     app_permissions     || [],
     profile_permissions: profile_permissions || {},
+    project_access:      project_access      || [],
     created_by_id:       req.user.id,
     created_by_name:     req.user.name,
   }).select().single();
@@ -79,12 +80,13 @@ router.post("/", requireAuth, requireGlobalOrSuper, async (req, res) => {
 
 /* PUT /api/designations/:id — update */
 router.put("/:id", requireAuth, requireGlobalOrSuper, async (req, res) => {
-  const { name, description, app_permissions, profile_permissions, is_active } = req.body;
+  const { name, description, app_permissions, profile_permissions, project_access, is_active } = req.body;
   const updates = { updated_at: new Date().toISOString() };
   if (name                !== undefined) updates.name                = name.trim();
   if (description         !== undefined) updates.description         = description;
   if (app_permissions     !== undefined) updates.app_permissions     = app_permissions;
   if (profile_permissions !== undefined) updates.profile_permissions = profile_permissions;
+  if (project_access      !== undefined) updates.project_access      = project_access;
   if (is_active           !== undefined) updates.is_active           = is_active;
 
   const admin = getAdminClient();
@@ -138,6 +140,16 @@ router.post("/:id/sync", requireAuth, requireGlobalOrSuper, async (req, res) => 
         can_revert:            p.can_revert            || false,
         can_cancel:            p.can_cancel            || false,
         can_manage_amend:      p.can_manage_amend      || false,
+        can_log:               p.can_log               || false,
+        can_trash:             p.can_trash             || false,
+        can_take_action:       p.can_take_action       || false,
+        can_submit:            p.can_submit            || false,
+        can_approve:           p.can_approve           || false,
+        can_request:           p.can_request           || false,
+        can_withdraw:          p.can_withdraw          || false,
+        order_overview_aging:  p.order_overview_aging  || false,
+        order_intake:          p.order_intake          || false,
+        order_payment:         p.order_payment         || false,
       });
     });
   });
@@ -180,6 +192,16 @@ router.post("/:id/apply/:userId", requireAuth, requireAdminOrAbove, async (req, 
     can_revert:            p.can_revert            || false,
     can_cancel:            p.can_cancel            || false,
     can_manage_amend:      p.can_manage_amend      || false,
+    can_log:               p.can_log               || false,
+    can_trash:             p.can_trash             || false,
+    can_take_action:       p.can_take_action       || false,
+    can_submit:            p.can_submit            || false,
+    can_approve:           p.can_approve           || false,
+    can_request:           p.can_request           || false,
+    can_withdraw:          p.can_withdraw          || false,
+    order_overview_aging:  p.order_overview_aging  || false,
+    order_intake:          p.order_intake          || false,
+    order_payment:         p.order_payment         || false,
   }));
 
   if (rows.length) {
