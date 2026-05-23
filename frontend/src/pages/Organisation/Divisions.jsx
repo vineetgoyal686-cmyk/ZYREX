@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Search, Edit2, Trash2, X, Loader2 } from "lucide-react";
 import { StatusBadge } from "./helpers";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const STORAGE_KEY = "bms_org_divisions";
 
@@ -9,7 +12,7 @@ const load = () => {
 };
 const save = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 
-const nextId = (arr) => {
+const nextDivId = (arr) => {
   const nums = arr.map(d => parseInt((d.div_id || "DIV-000").replace("DIV-", ""), 10)).filter(Boolean);
   return `DIV-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, "0")}`;
 };
@@ -60,20 +63,30 @@ function Modal({ item, onClose, onSaved }) {
 }
 
 export default function Divisions({ actionsRef, onChange }) {
-  const [divs, setDivs] = useState(load);
-  const [search, setSearch] = useState("");
-  const [modal, setModal] = useState(null);
+  const [divs, setDivs]         = useState(load);
+  const [search, setSearch]     = useState("");
+  const [modal, setModal]       = useState(null);
+  const [importing, setImporting] = useState(false);
+  const importRef = useRef(null);
 
   const persist = (data) => { setDivs(data); save(data); onChange?.(data); };
 
+  /* ── actionsRef wiring ── */
   useEffect(() => {
-    if (actionsRef) actionsRef.current = { openAdd: () => setModal("add") };
-    return () => { if (actionsRef) actionsRef.current = {}; };
+    if (!actionsRef) return;
+    actionsRef.current = {
+      openAdd:          () => setModal("add"),
+      exportExcel:      exportExcel,
+      exportPDF:        exportPDF,
+      downloadTemplate: downloadTemplate,
+      openUpload:       () => importRef.current?.click(),
+    };
+    return () => { actionsRef.current = {}; };
   });
 
   const handleSaved = (form) => {
     if (modal === "add") {
-      persist([...divs, { id: Date.now(), div_id: nextId(divs), name: form.name, status: form.status }]);
+      persist([...divs, { id: Date.now(), div_id: nextDivId(divs), name: form.name, status: form.status }]);
     } else {
       persist(divs.map(d => d.id === modal.id ? { ...d, ...form } : d));
     }
@@ -87,8 +100,104 @@ export default function Divisions({ actionsRef, onChange }) {
 
   const rows = divs.filter(d => d.name?.toLowerCase().includes(search.toLowerCase()));
 
+  /* ── Export Excel ── */
+  const exportExcel = () => {
+    const data = rows.map((d, i) => ({
+      "#":             i + 1,
+      "Div ID":        d.div_id || "",
+      "Division Name": d.name,
+      "Status":        d.status === "active" ? "Active" : "Inactive",
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws["!cols"] = [{ wch: 5 }, { wch: 12 }, { wch: 28 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Divisions");
+    XLSX.writeFile(wb, "divisions.xlsx");
+  };
+
+  /* ── Export PDF ── */
+  const exportPDF = () => {
+    const doc   = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.setTextColor(30, 41, 59);
+    doc.text("Divisions", 14, 16);
+    doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(100, 116, 139);
+    doc.text(`Total: ${rows.length}  |  ${new Date().toLocaleDateString("en-IN")}`, 14, 23);
+    doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.4); doc.line(14, 26, pageW - 14, 26);
+    autoTable(doc, {
+      startY: 30,
+      head: [["#", "Div ID", "Division Name", "Status"]],
+      body: rows.map((d, i) => [i + 1, d.div_id || "—", d.name, d.status === "active" ? "Active" : "Inactive"]),
+      styles: { fontSize: 8.5, cellPadding: 3, lineColor: [203, 213, 225], lineWidth: 0.3, textColor: [51, 65, 85] },
+      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: { 0: { halign: "center", cellWidth: 12 }, 3: { halign: "center", cellWidth: 24 } },
+      didDrawPage: (d) => {
+        doc.setFontSize(7); doc.setTextColor(148, 163, 184);
+        doc.text(`Page ${d.pageNumber}`, pageW - 14, doc.internal.pageSize.getHeight() - 8, { align: "right" });
+      },
+    });
+    doc.save("divisions.pdf");
+  };
+
+  /* ── Download Template ── */
+  const downloadTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Division Name", "Status"],
+      ["Engineering", "Active"],
+      ["", ""],
+      ["Valid status: Active / Inactive", ""],
+    ]);
+    ws["!cols"] = [{ wch: 28 }, { wch: 16 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Divisions");
+    XLSX.writeFile(wb, "divisions_template.xlsx");
+  };
+
+  /* ── Bulk Import ── */
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const rawRows  = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" });
+      const parsed   = rawRows
+        .map(r => ({
+          name:   String(r["Division Name"] || r["name"] || "").trim(),
+          status: String(r["Status"] || "active").toLowerCase().includes("inactive") ? "inactive" : "active",
+        }))
+        .filter(r => r.name);
+
+      if (!parsed.length) { alert("No valid rows found.\nMake sure column is: Division Name"); return; }
+
+      const updated = [...divs];
+      parsed.forEach(r => {
+        updated.push({ id: Date.now() + Math.random(), div_id: nextDivId(updated), name: r.name, status: r.status });
+      });
+      persist(updated);
+      alert(`${parsed.length} division(s) imported successfully.`);
+    } catch {
+      alert("Failed to read file. Please use the template format.");
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  };
+
   return (
     <>
+      {importing && (
+        <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center">
+          <div className="bg-white rounded px-10 py-8 shadow-2xl flex flex-col items-center gap-4">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+            <p className="text-slate-700 font-semibold text-sm">Importing divisions…</p>
+          </div>
+        </div>
+      )}
+
+      <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
+
       <div className="bg-white rounded border border-slate-200 overflow-hidden">
         <div className="flex items-center px-5 py-3.5 border-b border-slate-100">
           <div className="relative">
@@ -97,6 +206,7 @@ export default function Divisions({ actionsRef, onChange }) {
               className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded bg-slate-50 w-52 focus:outline-none focus:ring-1 focus:ring-blue-400" />
           </div>
         </div>
+
         <table className="w-full text-sm border-collapse">
           <thead>
             <tr className="text-[11px] uppercase tracking-wide text-slate-500" style={{ background: "rgb(243,243,245)" }}>
@@ -129,6 +239,7 @@ export default function Divisions({ actionsRef, onChange }) {
           </tbody>
         </table>
       </div>
+
       {modal && <Modal item={modal === "add" ? null : modal} onClose={() => setModal(null)} onSaved={handleSaved} />}
     </>
   );

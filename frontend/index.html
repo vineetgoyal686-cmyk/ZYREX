@@ -1,13 +1,1028 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zyhawk — Smart ERP. Powerful Results.</title>
+  <meta name="description" content="Zyhawk ERP — Manage your entire business with intelligence, automation and real-time insights." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.net.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.waves.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.halo.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.dots.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.globe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.rings.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.fog.min.js"></script>
+  <style>
+    * { scroll-behavior: smooth; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(34,211,238,0.3); border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(34,211,238,0.6); }
+
+    body { background: #020812; color: #ffffff; font-family: 'Inter', system-ui, sans-serif; }
+
+    /* Cursor radial glow */
+    .cursor-bg { --mx: 50%; --my: 50%; }
+    .cursor-bg::before {
+      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background:
+        radial-gradient(600px circle at var(--mx) var(--my), rgba(34,211,238,0.10), transparent 40%),
+        radial-gradient(900px circle at var(--mx) var(--my), rgba(20,184,166,0.06), transparent 55%);
+      transition: background 0.15s ease-out;
+    }
+
+    /* Grid overlay */
+    .grid-bg::after {
+      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image:
+        linear-gradient(rgba(34,211,238,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(34,211,238,0.04) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    @keyframes float    { 0%,100%{transform:translateY(0)}  50%{transform:translateY(-14px)} }
+    @keyframes orb      { 0%{transform:translate(0,0)}  50%{transform:translate(30px,-20px)}  100%{transform:translate(0,0)} }
+    @keyframes glow     { 0%,100%{box-shadow:0 0 0 0 rgba(34,211,238,0)}  50%{box-shadow:0 0 60px 10px rgba(34,211,238,0.15)} }
+    @keyframes fade-up  { from{opacity:0;transform:translateY(28px)}  to{opacity:1;transform:translateY(0)} }
+    @keyframes fade-in  { from{opacity:0}  to{opacity:1} }
+    @keyframes slide-in { from{opacity:0;transform:translateX(-20px)}  to{opacity:1;transform:translateX(0)} }
+    @keyframes counter  { from{opacity:0;transform:translateY(10px)}  to{opacity:1;transform:translateY(0)} }
+    @keyframes shimmer  { 0%{background-position:-200% center}  100%{background-position:200% center} }
+
+    .float   { animation: float 4.5s ease-in-out infinite; }
+    .orb     { animation: orb 12s ease-in-out infinite; }
+    .glow    { animation: glow 3.5s ease-in-out infinite; }
+    .fade-up { animation: fade-up .75s cubic-bezier(.2,.7,.2,1) both; }
+    .fade-in { animation: fade-in .9s ease both; }
+
+    .shimmer-text {
+      background: linear-gradient(90deg, #22d3ee, #2dd4bf, #22d3ee, #a78bfa, #22d3ee);
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: shimmer 4s linear infinite;
+    }
+
+    /* Glassmorphism card */
+    .glass {
+      background: rgba(6,17,31,0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(34,211,238,0.12);
+    }
+    .glass:hover {
+      border-color: rgba(34,211,238,0.35);
+      background: rgba(6,17,31,0.85);
+    }
+
+    /* Navbar blur */
+    .navbar-blur {
+      background: rgba(2,8,18,0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(34,211,238,0.08);
+    }
+
+    /* Gradient button */
+    .btn-primary {
+      background: linear-gradient(135deg, #0d9488, #22d3ee);
+      transition: all .3s ease;
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(34,211,238,0.3); }
+
+    /* Gradient border card */
+    .grad-border {
+      position: relative;
+    }
+    .grad-border::before {
+      content: ""; position: absolute; inset: -1px; border-radius: inherit;
+      background: linear-gradient(135deg, rgba(34,211,238,0.3), rgba(45,212,191,0.1), rgba(34,211,238,0.05));
+      z-index: -1;
+    }
+
+    /* Scroll reveal */
+    .reveal { opacity: 0; transform: translateY(30px); transition: opacity .7s ease, transform .7s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+
+    /* Mobile menu */
+    #mobile-menu { display: none; }
+    #mobile-menu.open { display: flex; }
+
+    /* Aurora blobs */
+    @keyframes auroraFloat1 { 0%,100%{transform:translate(0,0) scale(1)}   50%{transform:translate(80px,-50px) scale(1.12)} }
+    @keyframes auroraFloat2 { 0%,100%{transform:translate(0,0) scale(1)}   50%{transform:translate(-60px,40px) scale(1.18)} }
+    @keyframes auroraFloat3 { 0%,100%{transform:translate(0,0) scale(1)}   50%{transform:translate(50px,60px)  scale(0.92)} }
+    @keyframes auroraFloat4 { 0%,100%{transform:translate(0,0) scale(1)}   50%{transform:translate(-40px,-60px) scale(1.08)} }
+  </style>
+</head>
+<body class="cursor-bg text-white overflow-x-hidden">
+
+  <!-- ─── NAVBAR ─────────────────────────────────── -->
+  <nav class="navbar-blur fixed top-0 left-0 right-0 z-50">
+    <div class="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
+      <!-- Logo -->
+      <a href="#" class="flex items-center gap-2">
+        <img src="/Z.png" alt="Zyhawk" class="h-9 w-auto max-w-[130px] object-contain" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'" />
+        <span style="display:none" class="items-center gap-2">
+          <span class="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-white font-black text-sm">Z</span>
+          <span class="text-lg font-bold text-white">Zyhawk</span>
+        </span>
+      </a>
+
+      <!-- Desktop Nav -->
+      <div class="hidden md:flex items-center gap-8 text-sm text-slate-400">
+        <a href="#features"  class="hover:text-cyan-400 transition">Features</a>
+        <a href="#modules"   class="hover:text-cyan-400 transition">Modules</a>
+        <a href="#why"       class="hover:text-cyan-400 transition">Why Zyhawk</a>
+        <a onclick="openDemo()" href="#"   class="hover:text-cyan-400 transition">Contact</a>
+      </div>
+
+      <!-- CTA -->
+      <div class="flex items-center gap-3">
+
+        <!-- BG Style dropdown -->
+        <div class="relative hidden md:block" id="bg-dropdown-wrap">
+          <button onclick="toggleBgDropdown()" class="flex items-center gap-1.5 text-xs text-slate-500 hover:text-cyan-400 transition px-3 py-1.5 rounded-lg border border-slate-800 hover:border-cyan-500/30">
+            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+            <span id="bg-label">BG: NET</span>
+            <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div id="bg-dropdown" class="hidden absolute right-0 top-full mt-2 w-36 rounded-xl border border-cyan-500/15 overflow-hidden" style="background:rgba(4,12,24,0.97);backdrop-filter:blur(16px)">
+            <div class="py-1">
+              <button onclick="selectBg('NET')"      class="bg-opt w-full text-left px-4 py-2 text-xs text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/8 transition flex items-center justify-between">NET      <span class="bg-tick hidden text-cyan-400">✓</span></button>
+              <button onclick="selectBg('DOTS')"     class="bg-opt w-full text-left px-4 py-2 text-xs text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/8 transition flex items-center justify-between">DOTS     <span class="bg-tick hidden text-cyan-400">✓</span></button>
+              <button onclick="selectBg('WAVES')"    class="bg-opt w-full text-left px-4 py-2 text-xs text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/8 transition flex items-center justify-between">WAVES    <span class="bg-tick hidden text-cyan-400">✓</span></button>
+              <button onclick="selectBg('HALO')"     class="bg-opt w-full text-left px-4 py-2 text-xs text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/8 transition flex items-center justify-between">HALO     <span class="bg-tick hidden text-cyan-400">✓</span></button>
+              <button onclick="selectBg('GLOBE')"    class="bg-opt w-full text-left px-4 py-2 text-xs text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/8 transition flex items-center justify-between">GLOBE    <span class="bg-tick hidden text-cyan-400">✓</span></button>
+              <button onclick="selectBg('RINGS')"    class="bg-opt w-full text-left px-4 py-2 text-xs text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/8 transition flex items-center justify-between">RINGS    <span class="bg-tick hidden text-cyan-400">✓</span></button>
+              <div style="height:1px;background:rgba(34,211,238,0.08);margin:4px 0"></div>
+              <button onclick="selectBg('WAVES2')"   class="bg-opt w-full text-left px-4 py-2 text-xs text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/8 transition flex items-center justify-between">WAVES 2  <span class="bg-tick hidden text-cyan-400">✓</span></button>
+              <button onclick="selectBg('FOG')"      class="bg-opt w-full text-left px-4 py-2 text-xs text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/8 transition flex items-center justify-between">FOG      <span class="bg-tick hidden text-cyan-400">✓</span></button>
+              <div style="height:1px;background:rgba(34,211,238,0.08);margin:4px 0"></div>
+              <button onclick="selectBg('AURORA')"   class="bg-opt w-full text-left px-4 py-2 text-xs text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/8 transition flex items-center justify-between">AURORA   <span class="bg-tick hidden text-cyan-400">✓</span></button>
+              <button onclick="selectBg('DATAFLOW')" class="bg-opt w-full text-left px-4 py-2 text-xs text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/8 transition flex items-center justify-between">DATAFLOW <span class="bg-tick hidden text-cyan-400">✓</span></button>
+              <button onclick="selectBg('CIRCUIT')"  class="bg-opt w-full text-left px-4 py-2 text-xs text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/8 transition flex items-center justify-between">CIRCUIT  <span class="bg-tick hidden text-cyan-400">✓</span></button>
+              <button onclick="selectBg('MATRIX')"   class="bg-opt w-full text-left px-4 py-2 text-xs text-slate-300 hover:text-cyan-400 hover:bg-cyan-500/8 transition flex items-center justify-between">MATRIX   <span class="bg-tick hidden text-cyan-400">✓</span></button>
+            </div>
+          </div>
+        </div>
+
+        <a href="/app.html" class="hidden sm:inline-flex text-sm text-slate-400 hover:text-white transition px-4 py-2 rounded-lg border border-slate-700 hover:border-cyan-500/40">
+          Login
+        </a>
+        <a onclick="openDemo()" href="#" class="btn-primary text-sm font-semibold text-white px-4 py-2 rounded-lg">
+          Request Demo
+        </a>
+        <!-- Hamburger -->
+        <button id="hamburger" class="md:hidden p-2 text-slate-400 hover:text-white">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path id="ham-icon" stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Menu -->
+    <div id="mobile-menu" class="md:hidden flex-col px-5 pb-4 gap-3 text-sm text-slate-400 border-t border-slate-800">
+      <a href="#features" class="py-2 hover:text-cyan-400 transition">Features</a>
+      <a href="#modules"  class="py-2 hover:text-cyan-400 transition">Modules</a>
+      <a href="#why"      class="py-2 hover:text-cyan-400 transition">Why Zyhawk</a>
+      <a onclick="openDemo()" href="#"  class="py-2 hover:text-cyan-400 transition">Contact</a>
+    </div>
+  </nav>
+
+  <!-- ─── HERO ──────────────────────────────────── -->
+  <section class="relative min-h-screen flex items-center justify-center px-5 sm:px-8 pt-16 overflow-hidden" style="isolation:isolate">
+    <!-- Vanta NET background -->
+    <div id="vanta-hero" class="absolute inset-0 z-0"></div>
+    <!-- Center darkening overlay so text stays readable -->
+    <div class="absolute inset-0 z-0 pointer-events-none" style="background: radial-gradient(ellipse 60% 55% at 50% 50%, rgba(2,8,18,0.55) 0%, transparent 100%)"></div>
+
+    <div class="relative z-10 max-w-5xl mx-auto text-center">
+      <!-- Badge -->
+      <div class="fade-up inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/5 text-xs text-cyan-400 font-medium mb-8" style="animation-delay:.1s">
+        <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+        Enterprise Resource Planning Platform
+      </div>
+
+      <!-- Headline -->
+      <h1 class="fade-up text-5xl sm:text-6xl lg:text-7xl font-black leading-[1.05] tracking-tight mb-6" style="animation-delay:.2s">
+        Smart ERP.<br/>
+        <span class="shimmer-text">Powerful Results.</span>
+      </h1>
+
+      <p class="fade-up text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed mb-10" style="animation-delay:.35s">
+        Manage your entire business — from procurement to people — with intelligence, automation and real-time insights.
+      </p>
+
+      <!-- CTAs -->
+      <div class="fade-up flex flex-col sm:flex-row items-center justify-center gap-4" style="animation-delay:.5s">
+        <a onclick="openDemo()" href="#" class="btn-primary w-full sm:w-auto px-8 py-4 rounded-xl font-bold text-base text-white flex items-center justify-center gap-2">
+          Book a Live Demo
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5-5 5M6 12h12"/></svg>
+        </a>
+      </div>
+
+      <!-- Scroll hint -->
+      <div class="fade-in mt-20 flex flex-col items-center gap-2 text-slate-600 text-xs" style="animation-delay:1s">
+        <span>Scroll to explore</span>
+        <svg class="animate-bounce" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── DASHBOARD PREVIEW ───────────────────────── -->
+  <section class="relative z-10 py-16 px-5 sm:px-8 overflow-hidden">
+    <style>
+      .slide { position:absolute; inset:0; opacity:0; transition: opacity .8s ease; }
+      .slide.active { opacity:1; position:relative; }
+      .slide img { width:100%; display:block; }
+      .dot { width:8px; height:8px; border-radius:9999px; background:rgba(148,163,184,0.3); transition: all .3s ease; cursor:pointer; }
+      .dot.active { background:#22d3ee; width:24px; }
+    </style>
+
+    <div class="max-w-6xl mx-auto">
+
+      <!-- Label -->
+      <div class="text-center mb-10 reveal">
+        <span class="text-xs font-bold text-cyan-400 uppercase tracking-widest">Product Preview</span>
+        <h2 class="text-3xl sm:text-4xl font-black mt-3 mb-3">See it in action</h2>
+        <p class="text-slate-400 text-base max-w-lg mx-auto">Everything you need, in one clean interface. Real-time data, always at your fingertips.</p>
+      </div>
+
+      <!-- Browser frame mockup -->
+      <div class="reveal rounded-2xl overflow-hidden shadow-[0_0_80px_rgba(34,211,238,0.12)] border border-cyan-500/15" style="transition-delay:.1s">
+
+        <!-- Browser chrome bar -->
+        <div class="flex items-center gap-2 px-4 py-3" style="background:#0d1f2d; border-bottom:1px solid rgba(34,211,238,0.08)">
+          <span class="w-3 h-3 rounded-full bg-red-500/70"></span>
+          <span class="w-3 h-3 rounded-full bg-yellow-500/70"></span>
+          <span class="w-3 h-3 rounded-full bg-green-500/70"></span>
+          <div class="ml-3 flex-1 max-w-xs">
+            <div class="flex items-center gap-2 bg-slate-900/60 border border-slate-700/50 rounded px-3 py-1">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" class="text-slate-500 shrink-0"><rect x="3" y="11" width="18" height="11" rx="2"/><path stroke-linecap="round" d="M7 11V7a5 5 0 0110 0v4"/></svg>
+              <span id="preview-url" class="text-[11px] text-slate-500 truncate">app.zyhawk.com/dashboard</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Slides -->
+        <div id="preview-slider" class="relative overflow-hidden" style="background:#020812">
+          <div class="slide active" data-url="app.zyhawk.com/dashboard — Overview">
+            <img src="/dashboard.png" alt="Dashboard Overview" />
+          </div>
+          <div class="slide" data-url="app.zyhawk.com/dashboard — Aging">
+            <img src="/dashboard2.png" alt="Dashboard Aging" />
+          </div>
+
+          <!-- Bottom fade -->
+          <div class="absolute bottom-0 left-0 right-0 h-28 pointer-events-none z-10"
+               style="background:linear-gradient(to bottom, transparent, #020812)"></div>
+        </div>
+      </div>
+
+      <!-- Dots + labels -->
+      <div class="flex items-center justify-center gap-3 mt-6">
+        <button class="dot active" onclick="goSlide(0)"></button>
+        <button class="dot"        onclick="goSlide(1)"></button>
+      </div>
+      <div class="flex items-center justify-center gap-8 mt-3">
+        <span id="lbl-0" class="text-xs font-semibold text-cyan-400 transition-opacity">Overview</span>
+        <span id="lbl-1" class="text-xs text-slate-600 transition-opacity">Aging</span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ─── STATS ─────────────────────────────────── -->
+  <section class="relative z-10 py-16 px-5 sm:px-8 border-y border-slate-800/50">
+    <div class="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+      <div class="reveal">
+        <p class="text-4xl font-black text-cyan-400">50+</p>
+        <p class="text-sm text-slate-500 mt-1">Companies Onboarded</p>
+      </div>
+      <div class="reveal" style="transition-delay:.1s">
+        <p class="text-4xl font-black text-cyan-400">10k+</p>
+        <p class="text-sm text-slate-500 mt-1">Active Users</p>
+      </div>
+      <div class="reveal" style="transition-delay:.2s">
+        <p class="text-4xl font-black text-cyan-400">99.9%</p>
+        <p class="text-sm text-slate-500 mt-1">Uptime SLA</p>
+      </div>
+      <div class="reveal" style="transition-delay:.3s">
+        <p class="text-4xl font-black text-cyan-400">8+</p>
+        <p class="text-sm text-slate-500 mt-1">Core Modules</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── MODULES ───────────────────────────────── -->
+  <section id="modules" class="relative z-10 py-24 px-5 sm:px-8">
+    <div class="max-w-6xl mx-auto">
+
+      <div class="text-center mb-16 reveal">
+        <span class="text-xs font-bold text-cyan-400 uppercase tracking-widest">Modules</span>
+        <h2 class="text-4xl sm:text-5xl font-black mt-3 mb-4">Everything in one platform</h2>
+        <p class="text-slate-400 text-lg max-w-xl mx-auto">All your business operations — connected, synced and accessible in real time.</p>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+        <!-- Global Dashboard -->
+        <div class="reveal lg:col-span-2 group glass rounded-2xl p-6 cursor-default transition-all duration-300 hover:-translate-y-1 relative overflow-hidden">
+          <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-cyan-500 to-teal-400 opacity-60 group-hover:opacity-100 transition"></div>
+          <div class="w-11 h-11 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mb-4 group-hover:bg-cyan-500/20 transition">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-base mb-1.5">Global Dashboard</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Unified view of all orders, KPIs and aging across every site and entity — in real time.</p>
+          <div class="mt-4 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">Overview</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Aging Analysis</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Spend Tracking</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Entity-wise Reports</span>
+          </div>
+        </div>
+
+        <!-- Procurement -->
+        <div class="reveal lg:col-span-2 group glass rounded-2xl p-6 cursor-default transition-all duration-300 hover:-translate-y-1 relative overflow-hidden" style="transition-delay:.05s">
+          <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-teal-500 to-emerald-400 opacity-60 group-hover:opacity-100 transition"></div>
+          <div class="w-11 h-11 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 mb-4 group-hover:bg-teal-500/20 transition">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-base mb-1.5">Procurement</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">End-to-end purchase &amp; work order management with multi-level approvals, vendor tracking and spend control.</p>
+          <div class="mt-4 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/20">Purchase Orders</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Work Orders</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Vendor Management</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Approvals</span>
+          </div>
+        </div>
+
+        <!-- Inventory -->
+        <div class="reveal group glass rounded-2xl p-6 cursor-default transition-all duration-300 hover:-translate-y-1 relative overflow-hidden" style="transition-delay:.1s">
+          <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-violet-500 to-purple-400 opacity-60 group-hover:opacity-100 transition"></div>
+          <div class="w-11 h-11 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 mb-4 group-hover:bg-violet-500/20 transition">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-base mb-1.5">Inventory</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Item register, stock tracking and material management across all sites.</p>
+          <div class="mt-3 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-400 border border-violet-500/20">Item Register</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Stock Control</span>
+          </div>
+        </div>
+
+        <!-- Operations -->
+        <div class="reveal group glass rounded-2xl p-6 cursor-default transition-all duration-300 hover:-translate-y-1 relative overflow-hidden" style="transition-delay:.15s">
+          <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-amber-500 to-orange-400 opacity-60 group-hover:opacity-100 transition"></div>
+          <div class="w-11 h-11 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-4 group-hover:bg-amber-500/20 transition">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path stroke-linecap="round" d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-base mb-1.5">Operations</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Site-level operations management with project tracking and execution visibility.</p>
+          <div class="mt-3 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">Site Management</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Projects</span>
+          </div>
+        </div>
+
+        <!-- Finance -->
+        <div class="reveal group glass rounded-2xl p-6 cursor-default transition-all duration-300 hover:-translate-y-1 relative overflow-hidden" style="transition-delay:.2s">
+          <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-emerald-500 to-green-400 opacity-60 group-hover:opacity-100 transition"></div>
+          <div class="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4 group-hover:bg-emerald-500/20 transition">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-base mb-1.5">Finance</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Payment tracking, intake management and full financial visibility across entities.</p>
+          <div class="mt-3 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Payments</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Intake</span>
+          </div>
+        </div>
+
+        <!-- Organisation -->
+        <div class="reveal group glass rounded-2xl p-6 cursor-default transition-all duration-300 hover:-translate-y-1 relative overflow-hidden" style="transition-delay:.25s">
+          <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-sky-500 to-blue-400 opacity-60 group-hover:opacity-100 transition"></div>
+          <div class="w-11 h-11 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 mb-4 group-hover:bg-sky-500/20 transition">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-base mb-1.5">Organisation</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Manage your entire org structure — divisions, departments, teams, grades and designations.</p>
+          <div class="mt-3 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-400 border border-sky-500/20">Org Chart</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Master Data</span>
+          </div>
+        </div>
+
+        <!-- 3D View -->
+        <div class="reveal group glass rounded-2xl p-6 cursor-default transition-all duration-300 hover:-translate-y-1 relative overflow-hidden" style="transition-delay:.3s">
+          <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-pink-500 to-rose-400 opacity-60 group-hover:opacity-100 transition"></div>
+          <span class="absolute top-3 right-3 text-[10px] font-bold px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20">Unique</span>
+          <div class="w-11 h-11 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center text-pink-400 mb-4 group-hover:bg-pink-500/20 transition">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-base mb-1.5">3D View</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Visualise your project sites and structures in an interactive 3D environment.</p>
+          <div class="mt-3 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-400 border border-pink-500/20">3D Models</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Site View</span>
+          </div>
+        </div>
+
+        <!-- Audit -->
+        <div class="reveal group glass rounded-2xl p-6 cursor-default transition-all duration-300 hover:-translate-y-1 relative overflow-hidden" style="transition-delay:.35s">
+          <div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-rose-500 to-red-400 opacity-60 group-hover:opacity-100 transition"></div>
+          <div class="w-11 h-11 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 mb-4 group-hover:bg-rose-500/20 transition">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-base mb-1.5">Audit</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Complete audit trails, compliance tracking and activity logs across all modules.</p>
+          <div class="mt-3 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">Audit Trail</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Compliance</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── WHY ZYHAWK ────────────────────────────── -->
+  <section id="why" class="relative z-10 py-24 px-5 sm:px-8">
+    <!-- Background radial -->
+    <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(34,211,238,0.04),transparent_60%)]"></div>
+
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center mb-16 reveal">
+        <span class="text-xs font-bold text-cyan-400 uppercase tracking-widest">Why Zyhawk</span>
+        <h2 class="text-4xl sm:text-5xl font-black mt-3 mb-4">Built for the way you work</h2>
+        <p class="text-slate-400 text-lg max-w-xl mx-auto">No bloat. No complexity. Just the tools your team actually needs.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <div class="reveal glass rounded-2xl p-8 flex gap-5 hover:-translate-y-1 transition-transform duration-300">
+          <div class="shrink-0 w-11 h-11 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base mb-2">Real-time, always</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">Every action reflects instantly across all modules. No refresh needed — your team always sees the latest data.</p>
+          </div>
+        </div>
+
+        <div class="reveal glass rounded-2xl p-8 flex gap-5 hover:-translate-y-1 transition-transform duration-300" style="transition-delay:.08s">
+          <div class="shrink-0 w-11 h-11 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base mb-2">Role-based access control</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">Give every person exactly the access they need — nothing more. Built-in audit logs keep you compliant.</p>
+          </div>
+        </div>
+
+        <div class="reveal glass rounded-2xl p-8 flex gap-5 hover:-translate-y-1 transition-transform duration-300" style="transition-delay:.16s">
+          <div class="shrink-0 w-11 h-11 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path stroke-linecap="round" d="M8 21h8M12 17v4"/></svg>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base mb-2">Works on any device</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">Fully responsive — desktop, tablet or mobile. Your team stays productive wherever they are.</p>
+          </div>
+        </div>
+
+        <div class="reveal glass rounded-2xl p-8 flex gap-5 hover:-translate-y-1 transition-transform duration-300" style="transition-delay:.24s">
+          <div class="shrink-0 w-11 h-11 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/></svg>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base mb-2">Cloud-based, zero setup</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">No servers to manage. No installations. Access your ERP instantly from any browser, anywhere.</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── CTA BANNER ────────────────────────────── -->
+  <section id="features" class="relative z-10 py-20 px-5 sm:px-8">
+    <div class="max-w-4xl mx-auto reveal">
+      <div class="relative rounded-3xl overflow-hidden p-10 sm:p-16 text-center"
+           style="background: linear-gradient(135deg, #0d1f2d 0%, #061625 50%, #030d18 100%); border: 1px solid rgba(34,211,238,0.15)">
+        <!-- Glow orbs inside banner -->
+        <div class="pointer-events-none absolute -top-10 -right-10 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl"></div>
+        <div class="pointer-events-none absolute -bottom-10 -left-10 w-64 h-64 bg-teal-500/10 rounded-full blur-3xl"></div>
+
+        <span class="relative text-xs font-bold text-cyan-400 uppercase tracking-widest">Get Started Today</span>
+        <h2 class="relative text-3xl sm:text-4xl font-black mt-3 mb-4">Ready to transform your operations?</h2>
+        <p class="relative text-slate-400 text-base max-w-lg mx-auto mb-8">
+          Join companies already running smarter with Zyhawk ERP. Book a free demo — no commitment required.
+        </p>
+        <div class="relative flex flex-col sm:flex-row items-center justify-center gap-4">
+          <a onclick="openDemo()" href="#" class="btn-primary w-full sm:w-auto px-8 py-4 rounded-xl font-bold text-base text-white flex items-center justify-center gap-2">
+            Book a Free Demo
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5-5 5M6 12h12"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── DEMO MODAL ──────────────────────────────── -->
+  <div id="demo-modal" class="fixed inset-0 z-[100] hidden items-center justify-center p-4">
+    <!-- Backdrop -->
+    <div id="modal-backdrop" class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+
+    <!-- Modal box -->
+    <div class="relative z-10 w-full max-w-3xl rounded-2xl overflow-hidden shadow-2xl flex flex-col sm:flex-row"
+         style="animation: modal-pop .3s cubic-bezier(.2,.9,.3,1.1) both">
+      <style>
+        @keyframes modal-pop { from{opacity:0;transform:scale(.93) translateY(16px)} to{opacity:1;transform:scale(1) translateY(0)} }
+      </style>
+
+      <!-- Left — branded panel -->
+      <div class="relative flex flex-col justify-between p-8 sm:w-[42%] shrink-0 overflow-hidden"
+           style="background: linear-gradient(145deg, #061625 0%, #03101e 100%); border-right: 1px solid rgba(34,211,238,0.12)">
+        <!-- Glow -->
+        <div class="pointer-events-none absolute -top-16 -left-16 w-56 h-56 bg-cyan-500/10 rounded-full blur-3xl"></div>
+        <div class="pointer-events-none absolute -bottom-16 -right-8 w-48 h-48 bg-teal-500/10 rounded-full blur-3xl"></div>
+
+        <div class="relative z-10">
+          <img src="/Z.png" alt="Zyhawk" class="h-10 w-auto max-w-[140px] object-contain mb-8"
+               onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'"/>
+          <span style="display:none" class="mb-8 items-center gap-2">
+            <span class="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-white font-black">Z</span>
+            <span class="text-lg font-bold text-white">Zyhawk</span>
+          </span>
+          <h3 class="text-2xl font-black text-white leading-snug mb-3">Ready to see Zyhawk in action?</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Fill in your details and our team will set up a personalised demo within one business day.</p>
+        </div>
+
+        <div class="relative z-10 mt-8 flex flex-col gap-3">
+          <div class="flex items-center gap-2.5 text-sm text-slate-400">
+            <svg width="16" height="16" class="text-cyan-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M5 13l4 4L19 7"/></svg>
+            Free, no-commitment demo
+          </div>
+          <div class="flex items-center gap-2.5 text-sm text-slate-400">
+            <svg width="16" height="16" class="text-cyan-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M5 13l4 4L19 7"/></svg>
+            Tailored to your business
+          </div>
+          <div class="flex items-center gap-2.5 text-sm text-slate-400">
+            <svg width="16" height="16" class="text-cyan-400 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M5 13l4 4L19 7"/></svg>
+            Response within 24 hours
+          </div>
+        </div>
+      </div>
+
+      <!-- Right — form -->
+      <div class="flex-1 bg-[#07131f] p-8 overflow-y-auto max-h-[90vh] sm:max-h-none">
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-xl font-black text-white">Get a Demo</h2>
+          <button id="modal-close" class="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <form id="demo-form" class="flex flex-col gap-4">
+          <!-- First + Last name -->
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-1.5">First Name</label>
+              <input type="text" placeholder="Rahul" required
+                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 transition" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-1.5">Last Name</label>
+              <input type="text" placeholder="Sharma" required
+                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 transition" />
+            </div>
+          </div>
+
+          <!-- Company -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1.5">Company</label>
+            <input type="text" placeholder="Acme Corp" required
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 transition" />
+          </div>
+
+          <!-- Business Email -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1.5">Business Email</label>
+            <input type="email" placeholder="you@company.com" required
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 transition" />
+          </div>
+
+          <!-- Country + How can we help — same row -->
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-1.5">Country</label>
+              <input type="text" placeholder="India" required
+                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 transition" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-1.5">How can we help?</label>
+              <select required
+                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 transition appearance-none"
+                style="background-image:url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22 width%3D%2212%22 height%3D%2212%22 viewBox%3D%220 0 12 12%22%3E%3Cpath fill%3D%22%2394a3b8%22 d%3D%22M6 8L1 3h10z%22%2F%3E%3C%2Fsvg%3E'); background-repeat:no-repeat; background-position:right 0.75rem center">
+                <option value="" disabled selected>Select</option>
+                <option>Demo</option>
+                <option>Pricing</option>
+                <option>Partnership</option>
+                <option>Support</option>
+                <option>Other</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Message -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1.5">Message</label>
+            <textarea rows="3" placeholder="Tell us about your business and what you're looking for…"
+              class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/20 transition resize-none"></textarea>
+          </div>
+
+          <!-- Checkbox -->
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" required class="mt-0.5 w-4 h-4 accent-cyan-400 shrink-0" />
+            <span class="text-xs text-slate-400 leading-relaxed">
+              I agree to receive emails about Zyhawk products and services in accordance with our
+              <a href="#" class="text-cyan-400 hover:underline">Privacy Policy</a> and
+              <a href="#" class="text-cyan-400 hover:underline">Terms of Use</a>.
+            </span>
+          </label>
+
+          <!-- Submit -->
+          <button type="submit"
+            class="btn-primary w-full py-3 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 mt-1">
+            Submit Request
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/></svg>
+          </button>
+
+          <p id="demo-success" class="hidden text-center text-sm text-emerald-400 font-medium py-1">
+            ✓ Request received! We'll reach out within 24 hours.
+          </p>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── FOOTER ────────────────────────────────── -->
+  <footer class="relative z-10 border-t border-slate-800 py-12 px-5 sm:px-8" style="background:#040d1a">
+    <div class="max-w-6xl mx-auto">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-8">
+        <!-- Brand -->
+        <div class="flex flex-col items-center md:items-start gap-3">
+          <div class="flex items-center gap-2">
+            <img src="/Z.png" alt="Zyhawk" class="h-7 w-auto" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'" />
+            <span style="display:none" class="items-center gap-2">
+              <span class="w-7 h-7 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-white font-black text-xs">Z</span>
+              <span class="text-base font-bold text-white">Zyhawk</span>
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 max-w-[220px] text-center md:text-left">Smart ERP. Powerful Results. Built for modern businesses.</p>
+        </div>
+
+        <!-- Links -->
+        <div class="flex flex-col items-center md:items-start gap-4">
+          <p class="text-xs font-semibold text-slate-500 uppercase tracking-widest">Quick Links</p>
+          <div class="flex flex-wrap items-center justify-center md:justify-start gap-x-6 gap-y-2 text-sm text-slate-500">
+            <a href="#modules"  class="hover:text-cyan-400 transition">Features</a>
+            <a href="#why"      class="hover:text-cyan-400 transition">Why Zyhawk</a>
+            <a onclick="openDemo()" href="#"  class="hover:text-cyan-400 transition">Contact Us</a>
+          </div>
+          <div class="flex flex-wrap items-center justify-center md:justify-start gap-x-6 gap-y-2 text-sm text-slate-500">
+            <a href="#" class="hover:text-cyan-400 transition">Privacy Policy</a>
+            <a href="#" class="hover:text-cyan-400 transition">Terms of Use</a>
+            <a href="#" class="hover:text-cyan-400 transition">Support</a>
+          </div>
+        </div>
+
+        <!-- Socials -->
+        <div class="flex items-center gap-3">
+          <!-- LinkedIn -->
+          <a href="#" class="w-9 h-9 rounded-lg border border-slate-800 flex items-center justify-center text-slate-500 hover:text-sky-400 hover:border-sky-500/30 transition">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+          </a>
+          <!-- Instagram -->
+          <a href="#" class="w-9 h-9 rounded-lg border border-slate-800 flex items-center justify-center text-slate-500 hover:text-pink-400 hover:border-pink-500/30 transition">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+          </a>
+          <!-- Twitter/X -->
+          <a href="#" class="w-9 h-9 rounded-lg border border-slate-800 flex items-center justify-center text-slate-500 hover:text-white hover:border-slate-600 transition">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.737-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          </a>
+        </div>
+      </div>
+
+      <div class="mt-10 pt-6 border-t border-slate-800/40 text-center text-xs text-slate-600">
+        © 2026 Zyhawk. All rights reserved.
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Cursor glow
+    const body = document.querySelector('.cursor-bg');
+    document.addEventListener('mousemove', e => {
+      body.style.setProperty('--mx', e.clientX + 'px');
+      body.style.setProperty('--my', e.clientY + 'px');
+    });
+
+    // Mobile menu toggle
+    const hamburger = document.getElementById('hamburger');
+    const mobileMenu = document.getElementById('mobile-menu');
+    hamburger?.addEventListener('click', () => {
+      mobileMenu.classList.toggle('open');
+    });
+    // Close menu on link click
+    mobileMenu?.querySelectorAll('a').forEach(a => {
+      a.addEventListener('click', () => mobileMenu.classList.remove('open'));
+    });
+
+    // Scroll reveal
+    const reveals = document.querySelectorAll('.reveal');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); }
+      });
+    }, { threshold: 0.12 });
+    reveals.forEach(el => observer.observe(el));
+
+    // Demo modal
+    const modal    = document.getElementById('demo-modal');
+    const backdrop = document.getElementById('modal-backdrop');
+    const closeBtn = document.getElementById('modal-close');
+
+    function openDemo() {
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeDemo() {
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      document.body.style.overflow = '';
+    }
+
+    backdrop?.addEventListener('click', closeDemo);
+    closeBtn?.addEventListener('click', closeDemo);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDemo(); });
+
+    // Dashboard carousel
+    const slides   = document.querySelectorAll('.slide');
+    const dots     = document.querySelectorAll('.dot');
+    const urlEl    = document.getElementById('preview-url');
+    const labels   = [document.getElementById('lbl-0'), document.getElementById('lbl-1')];
+    let current    = 0;
+    let autoTimer;
+
+    function goSlide(n) {
+      slides[current].classList.remove('active');
+      dots[current].classList.remove('active');
+      labels[current].classList.remove('text-cyan-400');
+      labels[current].classList.add('text-slate-600');
+
+      current = n;
+      slides[current].classList.add('active');
+      dots[current].classList.add('active');
+      labels[current].classList.remove('text-slate-600');
+      labels[current].classList.add('text-cyan-400');
+      if (urlEl) urlEl.textContent = slides[current].dataset.url || '';
+
+      clearInterval(autoTimer);
+      autoTimer = setInterval(() => goSlide((current + 1) % slides.length), 4000);
+    }
+
+    autoTimer = setInterval(() => goSlide((current + 1) % slides.length), 4000);
+
+    document.getElementById('demo-form')?.addEventListener('submit', e => {
+      e.preventDefault();
+      document.getElementById('demo-success').classList.remove('hidden');
+      e.target.reset();
+      setTimeout(closeDemo, 2500);
+    });
+
+    // ── Background switcher ──────────────────────────
+    let vantaEffect = null;
+    let customCleanup = null;
+
+    const vantaConfigs = {
+      NET:   () => VANTA.NET({ el:"#vanta-hero", THREE, mouseControls:true, touchControls:true, gyroControls:false, color:0x22d3ee, backgroundColor:0x020812, points:8, maxDistance:20, spacing:16, showDots:true }),
+      WAVES: () => VANTA.WAVES({ el:"#vanta-hero", THREE, mouseControls:true, touchControls:true, gyroControls:false, color:0x020c18, shininess:40, waveHeight:18, waveSpeed:0.6, zoom:0.85 }),
+      HALO:  () => VANTA.HALO({ el:"#vanta-hero", mouseControls:true, touchControls:true, gyroControls:false, backgroundColor:0x020812, baseColor:0x0d9488, amplitudeFactor:1.5, size:1.8 }),
+      DOTS:  () => VANTA.DOTS({ el:"#vanta-hero", THREE, mouseControls:true, touchControls:true, gyroControls:false, color:0x22d3ee, color2:0x0d9488, backgroundColor:0x020812, size:3.5, spacing:28, showLines:false }),
+      GLOBE: () => VANTA.GLOBE({ el:"#vanta-hero", THREE, mouseControls:true, touchControls:true, gyroControls:false, color:0x22d3ee, color2:0x0d9488, backgroundColor:0x020812, size:1.2 }),
+      RINGS:    () => VANTA.RINGS({ el:"#vanta-hero", THREE, mouseControls:true, touchControls:true, gyroControls:false, backgroundColor:0x020812, color:0x22d3ee }),
+      WAVES2:   () => VANTA.WAVES({ el:"#vanta-hero", THREE, mouseControls:true, touchControls:true, gyroControls:false, color:0x22d3ee, backgroundColor:0x020812, shininess:60, waveHeight:20, waveSpeed:0.8, zoom:0.9 }),
+      FOG:      () => VANTA.FOG({ el:"#vanta-hero", mouseControls:true, touchControls:true, gyroControls:false, highlightColor:0x22d3ee, midtoneColor:0x0d9488, lowlightColor:0x020c1a, baseColor:0x020812, blurFactor:0.6, speed:1.2, zoom:1 })
+    };
+
+    function cleanupAll() {
+      try { if (vantaEffect) { vantaEffect.destroy(); } } catch(e) {}
+      vantaEffect = null;
+      try { if (customCleanup) customCleanup(); } catch(e) {}
+      customCleanup = null;
+      const h = document.getElementById('vanta-hero');
+      h.innerHTML = '';
+      h.removeAttribute('style');
+    }
+
+    // ── Aurora ──
+    function startAurora() {
+      const h = document.getElementById('vanta-hero');
+      h.style.background = '#020812';
+      h.innerHTML = `
+        <div style="position:absolute;inset:0;overflow:hidden;">
+          <div style="position:absolute;width:650px;height:650px;border-radius:50%;background:radial-gradient(circle,rgba(34,211,238,0.22) 0%,transparent 68%);top:-120px;left:-80px;animation:auroraFloat1 9s ease-in-out infinite;filter:blur(50px)"></div>
+          <div style="position:absolute;width:550px;height:550px;border-radius:50%;background:radial-gradient(circle,rgba(13,148,136,0.18) 0%,transparent 68%);top:40%;right:-60px;animation:auroraFloat2 11s ease-in-out infinite;filter:blur(55px)"></div>
+          <div style="position:absolute;width:450px;height:450px;border-radius:50%;background:radial-gradient(circle,rgba(99,102,241,0.14) 0%,transparent 68%);bottom:-40px;left:28%;animation:auroraFloat3 13s ease-in-out infinite;filter:blur(48px)"></div>
+          <div style="position:absolute;width:380px;height:380px;border-radius:50%;background:radial-gradient(circle,rgba(34,211,238,0.12) 0%,transparent 68%);top:25%;left:55%;animation:auroraFloat4 10s ease-in-out infinite;filter:blur(40px)"></div>
+        </div>`;
+      customCleanup = () => { h.innerHTML = ''; h.removeAttribute('style'); };
+    }
+
+    // ── Data Flow ──
+    function startDataFlow() {
+      const h = document.getElementById('vanta-hero');
+      const canvas = document.createElement('canvas');
+      canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
+      h.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      let W, H, particles = [], raf;
+      function resize() {
+        W = canvas.width  = h.offsetWidth;
+        H = canvas.height = h.offsetHeight;
+      }
+      resize();
+      window.addEventListener('resize', resize);
+      for (let i = 0; i < 80; i++) particles.push({
+        x: Math.random()*W, y: Math.random()*H,
+        vy: 0.4 + Math.random()*1.2,
+        vx: (Math.random()-0.5)*0.3,
+        r: 1 + Math.random()*2,
+        a: 0.2 + Math.random()*0.6,
+        trail: []
+      });
+      function draw() {
+        ctx.clearRect(0,0,W,H);
+        particles.forEach(p => {
+          p.trail.push({x:p.x, y:p.y});
+          if (p.trail.length > 18) p.trail.shift();
+          p.trail.forEach((pt,i) => {
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, p.r * (i/p.trail.length), 0, Math.PI*2);
+            ctx.fillStyle = `rgba(34,211,238,${p.a*(i/p.trail.length)*0.5})`;
+            ctx.fill();
+          });
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI*2);
+          ctx.fillStyle = `rgba(34,211,238,${p.a})`;
+          ctx.fill();
+          p.x += p.vx; p.y += p.vy;
+          if (p.y > H+10) { p.y = -10; p.x = Math.random()*W; p.trail = []; }
+        });
+        raf = requestAnimationFrame(draw);
+      }
+      draw();
+      customCleanup = () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); canvas.remove(); };
+    }
+
+    // ── Circuit Board ──
+    function startCircuit() {
+      const h = document.getElementById('vanta-hero');
+      const canvas = document.createElement('canvas');
+      canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
+      h.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      let W, H, raf;
+      const nodes = [], pulses = [];
+      function resize() {
+        W = canvas.width  = h.offsetWidth;
+        H = canvas.height = h.offsetHeight;
+        nodes.length = 0;
+        const cols = Math.floor(W/80), rows = Math.floor(H/80);
+        for (let r=0; r<=rows; r++) for (let c=0; c<=cols; c++)
+          if (Math.random()>0.45) nodes.push({x:c*80+Math.random()*20-10, y:r*80+Math.random()*20-10});
+      }
+      resize();
+      window.addEventListener('resize', resize);
+      function spawnPulse() {
+        if (nodes.length < 2) return;
+        const a = nodes[Math.floor(Math.random()*nodes.length)];
+        const b = nodes[Math.floor(Math.random()*nodes.length)];
+        pulses.push({ax:a.x,ay:a.y,bx:b.x,by:b.y,t:0,speed:0.008+Math.random()*0.012});
+      }
+      setInterval(spawnPulse, 400);
+      function draw() {
+        ctx.clearRect(0,0,W,H);
+        // static lines
+        ctx.strokeStyle = 'rgba(34,211,238,0.06)';
+        ctx.lineWidth = 1;
+        nodes.forEach((n,i) => nodes.slice(i+1).forEach(m => {
+          const d = Math.hypot(n.x-m.x,n.y-m.y);
+          if (d < 120) { ctx.beginPath(); ctx.moveTo(n.x,n.y); ctx.lineTo(m.x,m.y); ctx.stroke(); }
+        }));
+        // node dots
+        nodes.forEach(n => {
+          ctx.beginPath(); ctx.arc(n.x,n.y,2,0,Math.PI*2);
+          ctx.fillStyle='rgba(34,211,238,0.18)'; ctx.fill();
+        });
+        // pulses
+        for (let i = pulses.length-1; i>=0; i--) {
+          const p = pulses[i];
+          p.t += p.speed;
+          const px = p.ax + (p.bx-p.ax)*p.t;
+          const py = p.ay + (p.by-p.ay)*p.t;
+          ctx.beginPath(); ctx.arc(px,py,4,0,Math.PI*2);
+          ctx.fillStyle='rgba(34,211,238,0.9)'; ctx.fill();
+          ctx.beginPath(); ctx.arc(px,py,8,0,Math.PI*2);
+          ctx.fillStyle='rgba(34,211,238,0.2)'; ctx.fill();
+          if (p.t>=1) pulses.splice(i,1);
+        }
+        raf = requestAnimationFrame(draw);
+      }
+      draw();
+      customCleanup = () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); canvas.remove(); };
+    }
+
+    // ── Matrix Rain ──
+    function startMatrix() {
+      const h = document.getElementById('vanta-hero');
+      const canvas = document.createElement('canvas');
+      canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
+      h.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      let W, H, cols, drops, raf;
+      const chars = '01アイウエオカキクケコサシスセソタチツテトナニヌネノ'.split('');
+      function resize() {
+        W = canvas.width  = h.offsetWidth;
+        H = canvas.height = h.offsetHeight;
+        cols = Math.floor(W/16);
+        drops = Array(cols).fill(1);
+      }
+      resize();
+      window.addEventListener('resize', resize);
+      function draw() {
+        ctx.fillStyle = 'rgba(2,8,18,0.08)';
+        ctx.fillRect(0,0,W,H);
+        ctx.font = '13px monospace';
+        drops.forEach((y,i) => {
+          const ch = chars[Math.floor(Math.random()*chars.length)];
+          const progress = y/(H/16);
+          ctx.fillStyle = progress > 0.85 ? '#ffffff' : progress > 0.6 ? '#22d3ee' : 'rgba(34,211,238,0.5)';
+          ctx.fillText(ch, i*16, y*16);
+          if (y*16 > H && Math.random() > 0.975) drops[i] = 0;
+          drops[i]++;
+        });
+        raf = requestAnimationFrame(draw);
+      }
+      draw();
+      customCleanup = () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); canvas.remove(); };
+    }
+
+    const customEffects = { AURORA: startAurora, DATAFLOW: startDataFlow, CIRCUIT: startCircuit, MATRIX: startMatrix };
+
+    function selectBg(style) {
+      cleanupAll();
+      activeStyle = style;
+      if (vantaConfigs[style]) {
+        try { vantaEffect = vantaConfigs[style](); } catch(e) { console.warn('Vanta', style, 'failed:', e); }
+      } else if (customEffects[style]) {
+        customEffects[style]();
+      }
+      document.getElementById('bg-label').textContent = 'BG: ' + style;
+      document.querySelectorAll('.bg-opt .bg-tick').forEach(t => t.classList.add('hidden'));
+      document.querySelectorAll('.bg-opt').forEach(b => {
+        if (b.textContent.trim().startsWith(style)) b.querySelector('.bg-tick').classList.remove('hidden');
+      });
+      document.getElementById('bg-dropdown').classList.add('hidden');
+    }
+
+    function toggleBgDropdown() {
+      document.getElementById('bg-dropdown').classList.toggle('hidden');
+    }
+
+    document.addEventListener('click', e => {
+      if (!document.getElementById('bg-dropdown-wrap').contains(e.target)) {
+        document.getElementById('bg-dropdown').classList.add('hidden');
+      }
+    });
+
+    selectBg('NET');
+
+    // Show grid only when scrolled past hero
+    const heroSection = document.querySelector('section[style*="isolation"]');
+    new IntersectionObserver(([entry]) => {
+      document.body.classList.toggle('grid-bg', !entry.isIntersecting);
+    }, { threshold: 0.1 }).observe(heroSection);
+  </script>
+
+</body>
 </html>

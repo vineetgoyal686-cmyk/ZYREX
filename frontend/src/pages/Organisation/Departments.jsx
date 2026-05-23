@@ -8,7 +8,7 @@ import autoTable from "jspdf-autotable";
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
 
-const TEMPLATE_HEADERS = ["Department Name", "Department Head", "Status"];
+const TEMPLATE_HEADERS = ["Department Name", "Division", "Department Head", "Status"];
 
 function DeptModal({ dept, divisions, onClose, onSaved }) {
   const [form, setForm] = useState(
@@ -191,8 +191,11 @@ export default function Departments({ actionsRef }) {
 
   /* ── Download template ── */
   const downloadTemplate = () => {
+    const divisionNames = divisions.map(d => d.name).join(", ");
     const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS]);
-    ws["!cols"] = TEMPLATE_HEADERS.map(h => ({ wch: Math.max(14, h.length + 2) }));
+    ws["!cols"] = TEMPLATE_HEADERS.map(h => ({ wch: Math.max(20, h.length + 2) }));
+    // Add a hint row so user knows valid division names
+    XLSX.utils.sheet_add_aoa(ws, [[`e.g. HR Dept`, divisionNames ? `e.g. ${divisions[0]?.name || "Support"}` : "Support", "e.g. Pooja Sharma", "Active"]], { origin: "A2" });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Departments");
     XLSX.writeFile(wb, "departments_template.xlsx");
@@ -206,12 +209,19 @@ export default function Departments({ actionsRef }) {
     try {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
       const rawRows  = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" });
+      const divisionsList = (() => { try { return JSON.parse(localStorage.getItem("bms_org_divisions") || "[]"); } catch { return []; } })();
+
       const toImport = rawRows
-        .map(r => ({
-          name:   String(r["Department Name"] || r["name"] || "").trim(),
-          head:   String(r["Department Head"] || r["head"] || "").trim(),
-          status: String(r["Status"]          || r["status"] || "active").toLowerCase().includes("inactive") ? "inactive" : "active",
-        }))
+        .map(r => {
+          const divName = String(r["Division"] || r["division"] || "").trim();
+          const divMatch = divisionsList.find(d => d.name.toLowerCase() === divName.toLowerCase());
+          return {
+            name:        String(r["Department Name"] || r["name"] || "").trim(),
+            division_id: divMatch ? String(divMatch.id) : "",
+            head:        String(r["Department Head"] || r["head"] || "").trim(),
+            status:      String(r["Status"] || r["status"] || "active").toLowerCase().includes("inactive") ? "inactive" : "active",
+          };
+        })
         .filter(r => r.name);
 
       if (!toImport.length) { alert("No valid rows found in file"); return; }

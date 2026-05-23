@@ -4,7 +4,7 @@ import {
   ShieldUser, UserCog, User, Info, ChevronDown, Save,
 } from "lucide-react";
 
-const STORAGE_KEY = "zyrex_role_management_matrix_v1";
+const STORAGE_KEY = "zyhawk_role_management_matrix_v1";
 
 const ROLE_CARDS = [
   {

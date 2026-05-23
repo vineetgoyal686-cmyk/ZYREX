@@ -83,6 +83,7 @@ router.post("/login", async (req, res) => {
 
   res.json({
     token: data.session.access_token,
+    refresh_token: data.session.refresh_token,
     user: {
       id:                  profile.id,
       name:                profile.name,
@@ -97,6 +98,26 @@ router.post("/login", async (req, res) => {
       header_theme:        ui.header_theme             || null,
       profile_permissions: signedProfilePermissions,
     },
+  });
+});
+
+/* ─────────────────────────────────────────
+   POST /api/auth/refresh
+   Body: { refresh_token }
+───────────────────────────────────────── */
+router.post("/refresh", async (req, res) => {
+  const { refresh_token } = req.body;
+  if (!refresh_token) return res.status(400).json({ error: "Refresh token required" });
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.auth.refreshSession({ refresh_token });
+
+  if (error || !data?.session)
+    return res.status(401).json({ error: "Session expired. Please login again." });
+
+  res.json({
+    token: data.session.access_token,
+    refresh_token: data.session.refresh_token,
   });
 });
 

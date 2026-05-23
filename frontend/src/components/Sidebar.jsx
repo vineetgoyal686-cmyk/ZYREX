@@ -485,7 +485,7 @@ export default React.memo(function Sidebar({
               className={cx("flex items-center transition-all", collapsed ? "w-full justify-center hover:scale-110" : "pl-1")}
               title={collapsed ? "Expand Sidebar" : ""}
             >
-              <img src="/Z.png" alt="Zyrex ERP Solutions" className={cx("object-contain", collapsed ? "h-9 w-9" : "h-7 w-auto")} />
+              <img src="/Z.png" alt="Zyhawk ERP Solutions" className={cx("object-contain", collapsed ? "h-9 w-9" : "h-7 w-auto")} />
             </button>
             {!collapsed && !isMobile && (
               <button

@@ -244,7 +244,7 @@ function App() {
     setUserTabPermissions(null);
     setSelectedProject(null);
     setActiveTab("global_dashboard");
-    window.history.replaceState(null, "", window.location.pathname);
+    window.location.href = "/";
   };
 
   const handleProfileUpdate = (updatedUser) => {
@@ -394,7 +394,15 @@ function App() {
       case "procurement__orders": return <GlobalCreateOrder project={selectedProject} editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
       case "procurement__intake": return <IntakeList project={selectedProject} />;
       case "operations__staff_attendance": return <Attendance selectedProject={selectedProject} />;
-      case "finance__payment_request": return <PaymentRequest project={selectedProject} />;
+      case "finance__payment_request": return (
+        <div className="flex min-h-screen items-center justify-center p-4 md:p-10 bg-[#f8fafc]">
+          <div className="bg-white p-8 md:p-20 rounded-2xl md:rounded-[3rem] shadow-sm border border-slate-100 flex items-center justify-center w-full max-w-4xl">
+            <p className="text-slate-400 font-bold uppercase tracking-wider md:tracking-[0.3em] text-center text-sm md:text-base">
+              Payment Request — Coming Soon
+            </p>
+          </div>
+        </div>
+      );
       default:
         return (
           <div className="flex min-h-screen items-center justify-center text-slate-400 font-bold text-xl uppercase tracking-widest">

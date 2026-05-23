@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Search, Edit2, Trash2, X, Loader2, Users, ChevronDown, Check } from "lucide-react";
 import { StatusBadge } from "./helpers";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
 
 const SEL = "w-full border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M6%208L1%203h10z%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[right_0.75rem_center]";
-const INP = "w-full border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400";
-const LBL = "text-xs font-semibold text-slate-600 block mb-1";
+const INP  = "w-full border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400";
+const LBL  = "text-xs font-semibold text-slate-600 block mb-1";
 
 const ini = n => (n || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
 const COLORS = ["bg-blue-100 text-blue-700", "bg-violet-100 text-violet-700", "bg-emerald-100 text-emerald-700", "bg-amber-100 text-amber-700", "bg-rose-100 text-rose-700"];
@@ -24,9 +27,9 @@ function Avatar({ name, size = 24 }) {
 
 /* ── Multi-select dropdown for members ─────────── */
 function MemberSelect({ users, selected, onChange }) {
-  const [open, setOpen]   = useState(false);
-  const [q,    setQ]      = useState("");
-  const ref               = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [q, setQ]       = useState("");
+  const ref             = useRef(null);
 
   useEffect(() => {
     const h = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -81,14 +84,14 @@ function MemberSelect({ users, selected, onChange }) {
   );
 }
 
-/* ── Modal ──────────────────────────────────────── */
+/* ── Team Modal ─────────────────────────────────── */
 function TeamModal({ item, depts, users, onClose, onSaved }) {
   const [form, setForm] = useState(
     item
       ? { name: item.name, department_id: item.department_id || "", leader_id: item.leader_id || "", member_ids: item.member_ids || [], status: item.status || "active" }
       : { name: "", department_id: "", leader_id: "", member_ids: [], status: "active" }
   );
-  const [err,    setErr]    = useState("");
+  const [err, setErr]     = useState("");
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -172,6 +175,8 @@ export default function SubDepts({ actionsRef, onChange }) {
   const [deleting, setDeleting] = useState(null);
   const [search,   setSearch]   = useState("");
   const [modal,    setModal]    = useState(null);
+  const [importing, setImporting] = useState(false);
+  const importRef = useRef(null);
 
   const loadAll = async () => {
     setLoading(true);
@@ -190,14 +195,19 @@ export default function SubDepts({ actionsRef, onChange }) {
   };
 
   useEffect(() => { loadAll(); }, []);
+  useEffect(() => { onChange?.(teams); }, [teams]);
 
+  /* ── actionsRef wiring ── */
   useEffect(() => {
-    onChange?.(teams);
-  }, [teams]);
-
-  useEffect(() => {
-    if (actionsRef) actionsRef.current = { openAdd: () => setModal("add") };
-    return () => { if (actionsRef) actionsRef.current = {}; };
+    if (!actionsRef) return;
+    actionsRef.current = {
+      openAdd:          () => setModal("add"),
+      exportExcel:      exportExcel,
+      exportPDF:        exportPDF,
+      downloadTemplate: downloadTemplate,
+      openUpload:       () => importRef.current?.click(),
+    };
+    return () => { actionsRef.current = {}; };
   });
 
   const handleSaved = (team) => {
@@ -226,8 +236,128 @@ export default function SubDepts({ actionsRef, onChange }) {
     depts.find(d => d.id === t.department_id)?.name?.toLowerCase().includes(search.toLowerCase())
   );
 
+  /* ── Export Excel ── */
+  const exportExcel = () => {
+    const data = rows.map((t, i) => {
+      const dept    = depts.find(d => d.id === t.department_id);
+      const leader  = users.find(u => u.id === t.leader_id);
+      const members = (t.member_ids || []).length;
+      return {
+        "#":           i + 1,
+        "Team ID":     t.team_id || "",
+        "Team Name":   t.name,
+        "Department":  dept?.name || "",
+        "Team Leader": leader?.name || "",
+        "Members":     members,
+        "Status":      t.status === "active" ? "Active" : "Inactive",
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws["!cols"] = [{ wch: 5 }, { wch: 12 }, { wch: 26 }, { wch: 22 }, { wch: 22 }, { wch: 10 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Teams");
+    XLSX.writeFile(wb, "teams.xlsx");
+  };
+
+  /* ── Export PDF ── */
+  const exportPDF = () => {
+    const doc   = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.setTextColor(30, 41, 59);
+    doc.text("Teams", 14, 16);
+    doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(100, 116, 139);
+    doc.text(`Total: ${rows.length}  |  ${new Date().toLocaleDateString("en-IN")}`, 14, 23);
+    doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.4); doc.line(14, 26, pageW - 14, 26);
+    autoTable(doc, {
+      startY: 30,
+      head: [["#", "Team ID", "Team Name", "Department", "Team Leader", "Members", "Status"]],
+      body: rows.map((t, i) => {
+        const dept   = depts.find(d => d.id === t.department_id);
+        const leader = users.find(u => u.id === t.leader_id);
+        return [i + 1, t.team_id || "—", t.name, dept?.name || "—", leader?.name || "—", (t.member_ids || []).length, t.status === "active" ? "Active" : "Inactive"];
+      }),
+      styles: { fontSize: 8.5, cellPadding: 3, lineColor: [203, 213, 225], lineWidth: 0.3, textColor: [51, 65, 85] },
+      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: { 0: { halign: "center", cellWidth: 12 }, 5: { halign: "center", cellWidth: 20 }, 6: { halign: "center", cellWidth: 22 } },
+      didDrawPage: (d) => {
+        doc.setFontSize(7); doc.setTextColor(148, 163, 184);
+        doc.text(`Page ${d.pageNumber}`, pageW - 14, doc.internal.pageSize.getHeight() - 8, { align: "right" });
+      },
+    });
+    doc.save("teams.pdf");
+  };
+
+  /* ── Download Template ── */
+  const downloadTemplate = () => {
+    const deptNames = depts.map(d => d.name).join(", ") || "IT Department, HR Department";
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Team Name", "Department", "Status"],
+      ["Frontend Team", depts[0]?.name || "IT Department", "Active"],
+      ["", "", ""],
+      [`Valid status: Active / Inactive`, `Valid departments: ${deptNames}`, ""],
+    ]);
+    ws["!cols"] = [{ wch: 28 }, { wch: 28 }, { wch: 16 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Teams");
+    XLSX.writeFile(wb, "teams_template.xlsx");
+  };
+
+  /* ── Bulk Import ── */
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const rawRows  = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" });
+      const parsed   = rawRows
+        .map(r => {
+          const deptName = String(r["Department"] || r["department"] || "").trim();
+          const dept     = depts.find(d => d.name.toLowerCase() === deptName.toLowerCase());
+          return {
+            name:          String(r["Team Name"] || r["name"] || "").trim(),
+            department_id: dept?.id || null,
+            status:        String(r["Status"] || "active").toLowerCase().includes("inactive") ? "inactive" : "active",
+            member_ids:    [],
+          };
+        })
+        .filter(r => r.name && r.department_id);
+
+      if (!parsed.length) { alert("No valid rows found.\nMake sure columns are: Team Name, Department (must match existing), Status"); return; }
+
+      let imported = 0, failed = 0;
+      for (const row of parsed) {
+        const res = await fetch(`${API}/api/teams`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` },
+          body: JSON.stringify(row),
+        });
+        if (res.ok) imported++; else failed++;
+      }
+      await loadAll();
+      alert(`${imported} team(s) imported${failed ? `, ${failed} failed (check department names)` : ""}.`);
+    } catch {
+      alert("Failed to read file. Please use the template format.");
+    } finally {
+      setImporting(false);
+      e.target.value = "";
+    }
+  };
+
   return (
     <>
+      {importing && (
+        <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center">
+          <div className="bg-white rounded px-10 py-8 shadow-2xl flex flex-col items-center gap-4">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+            <p className="text-slate-700 font-semibold text-sm">Importing teams…</p>
+          </div>
+        </div>
+      )}
+
+      <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
+
       <div className="bg-white rounded border border-slate-200 overflow-hidden">
         <div className="flex items-center px-5 py-3.5 border-b border-slate-100">
           <div className="relative">
@@ -266,9 +396,7 @@ export default function SubDepts({ actionsRef, onChange }) {
               return (
                 <tr key={t.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
-                  <td className="px-4 py-3">
-                    <span className="text-slate-500 text-[13px]">{t.team_id || "—"}</span>
-                  </td>
+                  <td className="px-4 py-3"><span className="text-slate-500 text-[13px]">{t.team_id || "—"}</span></td>
                   <td className="px-4 py-3 font-semibold text-slate-800">{t.name}</td>
                   <td className="px-4 py-3 text-slate-600 text-[13px]">{dept?.name || <span className="text-slate-300">—</span>}</td>
                   <td className="px-4 py-3">

@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zyhawk — Smart ERP. Powerful Results.</title>
+  <meta name="description" content="Zyhawk ERP — Manage your entire business with intelligence, automation and real-time insights." />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { scroll-behavior: smooth; }
+    body { background: #020812; font-family: 'Inter', system-ui, sans-serif; }
+
+    /* Cursor radial glow */
+    .cursor-bg { --mx: 50%; --my: 50%; }
+    .cursor-bg::before {
+      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background:
+        radial-gradient(600px circle at var(--mx) var(--my), rgba(34,211,238,0.10), transparent 40%),
+        radial-gradient(900px circle at var(--mx) var(--my), rgba(20,184,166,0.06), transparent 55%);
+      transition: background 0.15s ease-out;
+    }
+
+    /* Grid overlay */
+    .grid-bg::after {
+      content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image:
+        linear-gradient(rgba(34,211,238,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(34,211,238,0.04) 1px, transparent 1px);
+      background-size: 48px 48px;
+    }
+
+    @keyframes float    { 0%,100%{transform:translateY(0)}  50%{transform:translateY(-14px)} }
+    @keyframes orb      { 0%{transform:translate(0,0)}  50%{transform:translate(30px,-20px)}  100%{transform:translate(0,0)} }
+    @keyframes glow     { 0%,100%{box-shadow:0 0 0 0 rgba(34,211,238,0)}  50%{box-shadow:0 0 60px 10px rgba(34,211,238,0.15)} }
+    @keyframes fade-up  { from{opacity:0;transform:translateY(28px)}  to{opacity:1;transform:translateY(0)} }
+    @keyframes fade-in  { from{opacity:0}  to{opacity:1} }
+    @keyframes slide-in { from{opacity:0;transform:translateX(-20px)}  to{opacity:1;transform:translateX(0)} }
+    @keyframes counter  { from{opacity:0;transform:translateY(10px)}  to{opacity:1;transform:translateY(0)} }
+    @keyframes shimmer  { 0%{background-position:-200% center}  100%{background-position:200% center} }
+
+    .float   { animation: float 4.5s ease-in-out infinite; }
+    .orb     { animation: orb 12s ease-in-out infinite; }
+    .glow    { animation: glow 3.5s ease-in-out infinite; }
+    .fade-up { animation: fade-up .75s cubic-bezier(.2,.7,.2,1) both; }
+    .fade-in { animation: fade-in .9s ease both; }
+
+    .shimmer-text {
+      background: linear-gradient(90deg, #22d3ee, #2dd4bf, #22d3ee, #a78bfa, #22d3ee);
+      background-size: 200% auto;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: shimmer 4s linear infinite;
+    }
+
+    /* Glassmorphism card */
+    .glass {
+      background: rgba(6,17,31,0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(34,211,238,0.12);
+    }
+    .glass:hover {
+      border-color: rgba(34,211,238,0.35);
+      background: rgba(6,17,31,0.85);
+    }
+
+    /* Navbar blur */
+    .navbar-blur {
+      background: rgba(2,8,18,0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(34,211,238,0.08);
+    }
+
+    /* Gradient button */
+    .btn-primary {
+      background: linear-gradient(135deg, #0d9488, #22d3ee);
+      transition: all .3s ease;
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(34,211,238,0.3); }
+
+    /* Gradient border card */
+    .grad-border {
+      position: relative;
+    }
+    .grad-border::before {
+      content: ""; position: absolute; inset: -1px; border-radius: inherit;
+      background: linear-gradient(135deg, rgba(34,211,238,0.3), rgba(45,212,191,0.1), rgba(34,211,238,0.05));
+      z-index: -1;
+    }
+
+    /* Scroll reveal */
+    .reveal { opacity: 0; transform: translateY(30px); transition: opacity .7s ease, transform .7s ease; }
+    .reveal.visible { opacity: 1; transform: translateY(0); }
+
+    /* Mobile menu */
+    #mobile-menu { display: none; }
+    #mobile-menu.open { display: flex; }
+  </style>
+</head>
+<body class="cursor-bg grid-bg text-white overflow-x-hidden">
+
+  <!-- ─── NAVBAR ─────────────────────────────────── -->
+  <nav class="navbar-blur fixed top-0 left-0 right-0 z-50">
+    <div class="max-w-7xl mx-auto px-5 sm:px-8 h-16 flex items-center justify-between">
+      <!-- Logo -->
+      <a href="#" class="flex items-center gap-2">
+        <img src="/logo.png" alt="Zyhawk" class="h-8 w-auto" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'" />
+        <span style="display:none" class="items-center gap-2">
+          <span class="w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-white font-black text-sm">Z</span>
+          <span class="text-lg font-bold text-white">Zyhawk</span>
+        </span>
+      </a>
+
+      <!-- Desktop Nav -->
+      <div class="hidden md:flex items-center gap-8 text-sm text-slate-400">
+        <a href="#features"  class="hover:text-cyan-400 transition">Features</a>
+        <a href="#modules"   class="hover:text-cyan-400 transition">Modules</a>
+        <a href="#why"       class="hover:text-cyan-400 transition">Why Zyhawk</a>
+        <a href="#contact"   class="hover:text-cyan-400 transition">Contact</a>
+      </div>
+
+      <!-- CTA -->
+      <div class="flex items-center gap-3">
+        <a href="/" class="hidden sm:inline-flex text-sm text-slate-400 hover:text-white transition px-4 py-2 rounded-lg border border-slate-700 hover:border-cyan-500/40">
+          Login
+        </a>
+        <a href="#contact" class="btn-primary text-sm font-semibold text-white px-4 py-2 rounded-lg">
+          Request Demo
+        </a>
+        <!-- Hamburger -->
+        <button id="hamburger" class="md:hidden p-2 text-slate-400 hover:text-white">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path id="ham-icon" stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile Menu -->
+    <div id="mobile-menu" class="md:hidden flex-col px-5 pb-4 gap-3 text-sm text-slate-400 border-t border-slate-800">
+      <a href="#features" class="py-2 hover:text-cyan-400 transition">Features</a>
+      <a href="#modules"  class="py-2 hover:text-cyan-400 transition">Modules</a>
+      <a href="#why"      class="py-2 hover:text-cyan-400 transition">Why Zyhawk</a>
+      <a href="#contact"  class="py-2 hover:text-cyan-400 transition">Contact</a>
+      <a href="/" class="py-2 text-cyan-400">Login to ERP →</a>
+    </div>
+  </nav>
+
+  <!-- ─── HERO ──────────────────────────────────── -->
+  <section class="relative min-h-screen flex items-center justify-center px-5 sm:px-8 pt-16 overflow-hidden">
+    <!-- Orbs -->
+    <div class="pointer-events-none absolute inset-0 z-0">
+      <div class="orb absolute top-20 left-10 h-96 w-96 rounded-full bg-cyan-500/8 blur-3xl"></div>
+      <div class="orb absolute bottom-20 right-10 h-80 w-80 rounded-full bg-teal-500/8 blur-3xl" style="animation-delay:4s"></div>
+      <div class="orb absolute top-1/2 left-1/2 -translate-x-1/2 h-72 w-72 rounded-full bg-sky-500/6 blur-3xl" style="animation-delay:8s"></div>
+    </div>
+
+    <div class="relative z-10 max-w-5xl mx-auto text-center">
+      <!-- Badge -->
+      <div class="fade-up inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-cyan-500/20 bg-cyan-500/5 text-xs text-cyan-400 font-medium mb-8" style="animation-delay:.1s">
+        <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+        Enterprise Resource Planning Platform
+      </div>
+
+      <!-- Headline -->
+      <h1 class="fade-up text-5xl sm:text-6xl lg:text-7xl font-black leading-[1.05] tracking-tight mb-6" style="animation-delay:.2s">
+        Smart ERP.<br/>
+        <span class="shimmer-text">Powerful Results.</span>
+      </h1>
+
+      <p class="fade-up text-lg sm:text-xl text-slate-400 max-w-2xl mx-auto leading-relaxed mb-10" style="animation-delay:.35s">
+        Manage your entire business — from procurement to people — with intelligence, automation and real-time insights.
+      </p>
+
+      <!-- CTAs -->
+      <div class="fade-up flex flex-col sm:flex-row items-center justify-center gap-4" style="animation-delay:.5s">
+        <a href="#contact" class="btn-primary w-full sm:w-auto px-8 py-4 rounded-xl font-bold text-base text-white flex items-center justify-center gap-2">
+          Request a Demo
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5-5 5M6 12h12"/></svg>
+        </a>
+        <a href="/" class="w-full sm:w-auto px-8 py-4 rounded-xl font-bold text-base text-slate-300 border border-slate-700 hover:border-cyan-500/40 hover:text-white transition flex items-center justify-center gap-2">
+          Login to ERP
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 3h6v6M10 14L21 3M9 3H3v18h18v-6"/></svg>
+        </a>
+      </div>
+
+      <!-- Scroll hint -->
+      <div class="fade-in mt-20 flex flex-col items-center gap-2 text-slate-600 text-xs" style="animation-delay:1s">
+        <span>Scroll to explore</span>
+        <svg class="animate-bounce" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── STATS ─────────────────────────────────── -->
+  <section class="relative z-10 py-16 px-5 sm:px-8 border-y border-slate-800/50">
+    <div class="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+      <div class="reveal">
+        <p class="text-4xl font-black text-cyan-400">50+</p>
+        <p class="text-sm text-slate-500 mt-1">Companies Onboarded</p>
+      </div>
+      <div class="reveal" style="transition-delay:.1s">
+        <p class="text-4xl font-black text-cyan-400">10k+</p>
+        <p class="text-sm text-slate-500 mt-1">Active Users</p>
+      </div>
+      <div class="reveal" style="transition-delay:.2s">
+        <p class="text-4xl font-black text-cyan-400">99.9%</p>
+        <p class="text-sm text-slate-500 mt-1">Uptime SLA</p>
+      </div>
+      <div class="reveal" style="transition-delay:.3s">
+        <p class="text-4xl font-black text-cyan-400">8+</p>
+        <p class="text-sm text-slate-500 mt-1">Core Modules</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── MODULES ───────────────────────────────── -->
+  <section id="modules" class="relative z-10 py-24 px-5 sm:px-8">
+    <div class="max-w-6xl mx-auto">
+      <!-- Section header -->
+      <div class="text-center mb-16 reveal">
+        <span class="text-xs font-bold text-cyan-400 uppercase tracking-widest">Modules</span>
+        <h2 class="text-4xl sm:text-5xl font-black mt-3 mb-4">Everything in one platform</h2>
+        <p class="text-slate-400 text-lg max-w-xl mx-auto">All your business operations connected, synced and accessible in real time.</p>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+
+        <!-- Organisation -->
+        <div class="reveal glass rounded-2xl p-6 group cursor-default transition-all duration-300 hover:-translate-y-1">
+          <div class="w-12 h-12 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mb-4 group-hover:bg-cyan-500/20 transition">
+            <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-lg mb-2">Organisation</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Manage divisions, departments, teams, grades and designations with a live org chart.</p>
+          <div class="mt-4 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Divisions</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Departments</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Org Chart</span>
+          </div>
+        </div>
+
+        <!-- HR & People -->
+        <div class="reveal glass rounded-2xl p-6 group cursor-default transition-all duration-300 hover:-translate-y-1" style="transition-delay:.05s">
+          <div class="w-12 h-12 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400 mb-4 group-hover:bg-violet-500/20 transition">
+            <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path stroke-linecap="round" d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-lg mb-2">HR & People</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Employee records, attendance, leaves, payroll and performance — all in one place.</p>
+          <div class="mt-4 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Employees</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Payroll</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Attendance</span>
+          </div>
+        </div>
+
+        <!-- Procurement -->
+        <div class="reveal glass rounded-2xl p-6 group cursor-default transition-all duration-300 hover:-translate-y-1" style="transition-delay:.1s">
+          <div class="w-12 h-12 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 mb-4 group-hover:bg-teal-500/20 transition">
+            <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-lg mb-2">Procurement</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Purchase orders, vendor management, approvals and spend tracking — streamlined end-to-end.</p>
+          <div class="mt-4 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Purchase Orders</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Vendors</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Approvals</span>
+          </div>
+        </div>
+
+        <!-- Finance -->
+        <div class="reveal glass rounded-2xl p-6 group cursor-default transition-all duration-300 hover:-translate-y-1" style="transition-delay:.15s">
+          <div class="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-4 group-hover:bg-emerald-500/20 transition">
+            <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-lg mb-2">Finance</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Budgets, invoices, expenses and financial reports. Full visibility into your company's money flow.</p>
+          <div class="mt-4 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Invoices</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Budgets</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Reports</span>
+          </div>
+        </div>
+
+        <!-- Analytics -->
+        <div class="reveal glass rounded-2xl p-6 group cursor-default transition-all duration-300 hover:-translate-y-1" style="transition-delay:.2s">
+          <div class="w-12 h-12 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 mb-4 group-hover:bg-sky-500/20 transition">
+            <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M3 3v18h18"/><path stroke-linecap="round" d="M18 9l-5 5-4-4-3 3"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-lg mb-2">Analytics</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Real-time dashboards and custom reports that turn raw data into business decisions.</p>
+          <div class="mt-4 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Dashboards</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Reports</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">KPIs</span>
+          </div>
+        </div>
+
+        <!-- Roles & Access -->
+        <div class="reveal glass rounded-2xl p-6 group cursor-default transition-all duration-300 hover:-translate-y-1" style="transition-delay:.25s">
+          <div class="w-12 h-12 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 mb-4 group-hover:bg-rose-500/20 transition">
+            <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path stroke-linecap="round" d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          </div>
+          <h3 class="font-bold text-white text-lg mb-2">Roles & Access</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Fine-grained permission control. Define what each role can see, create, edit or approve.</p>
+          <div class="mt-4 flex flex-wrap gap-1.5">
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">RBAC</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Permissions</span>
+            <span class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">Audit Logs</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── WHY ZYHAWK ────────────────────────────── -->
+  <section id="why" class="relative z-10 py-24 px-5 sm:px-8">
+    <!-- Background radial -->
+    <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(34,211,238,0.04),transparent_60%)]"></div>
+
+    <div class="max-w-6xl mx-auto">
+      <div class="text-center mb-16 reveal">
+        <span class="text-xs font-bold text-cyan-400 uppercase tracking-widest">Why Zyhawk</span>
+        <h2 class="text-4xl sm:text-5xl font-black mt-3 mb-4">Built for the way you work</h2>
+        <p class="text-slate-400 text-lg max-w-xl mx-auto">No bloat. No complexity. Just the tools your team actually needs.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <div class="reveal glass rounded-2xl p-8 flex gap-5 hover:-translate-y-1 transition-transform duration-300">
+          <div class="shrink-0 w-11 h-11 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base mb-2">Real-time, always</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">Every action reflects instantly across all modules. No refresh needed — your team always sees the latest data.</p>
+          </div>
+        </div>
+
+        <div class="reveal glass rounded-2xl p-8 flex gap-5 hover:-translate-y-1 transition-transform duration-300" style="transition-delay:.08s">
+          <div class="shrink-0 w-11 h-11 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base mb-2">Role-based access control</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">Give every person exactly the access they need — nothing more. Built-in audit logs keep you compliant.</p>
+          </div>
+        </div>
+
+        <div class="reveal glass rounded-2xl p-8 flex gap-5 hover:-translate-y-1 transition-transform duration-300" style="transition-delay:.16s">
+          <div class="shrink-0 w-11 h-11 rounded-xl bg-violet-500/10 border border-violet-500/20 flex items-center justify-center text-violet-400">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path stroke-linecap="round" d="M8 21h8M12 17v4"/></svg>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base mb-2">Works on any device</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">Fully responsive — desktop, tablet or mobile. Your team stays productive wherever they are.</p>
+          </div>
+        </div>
+
+        <div class="reveal glass rounded-2xl p-8 flex gap-5 hover:-translate-y-1 transition-transform duration-300" style="transition-delay:.24s">
+          <div class="shrink-0 w-11 h-11 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/></svg>
+          </div>
+          <div>
+            <h3 class="font-bold text-white text-base mb-2">Cloud-based, zero setup</h3>
+            <p class="text-slate-400 text-sm leading-relaxed">No servers to manage. No installations. Access your ERP instantly from any browser, anywhere.</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── CTA BANNER ────────────────────────────── -->
+  <section id="features" class="relative z-10 py-20 px-5 sm:px-8">
+    <div class="max-w-4xl mx-auto reveal">
+      <div class="relative rounded-3xl overflow-hidden p-10 sm:p-16 text-center"
+           style="background: linear-gradient(135deg, #0d1f2d 0%, #061625 50%, #030d18 100%); border: 1px solid rgba(34,211,238,0.15)">
+        <!-- Glow orbs inside banner -->
+        <div class="pointer-events-none absolute -top-10 -right-10 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl"></div>
+        <div class="pointer-events-none absolute -bottom-10 -left-10 w-64 h-64 bg-teal-500/10 rounded-full blur-3xl"></div>
+
+        <span class="relative text-xs font-bold text-cyan-400 uppercase tracking-widest">Get Started Today</span>
+        <h2 class="relative text-3xl sm:text-4xl font-black mt-3 mb-4">Ready to transform your operations?</h2>
+        <p class="relative text-slate-400 text-base max-w-lg mx-auto mb-8">
+          Join companies already running smarter with Zyhawk ERP. Book a free demo — no commitment required.
+        </p>
+        <div class="relative flex flex-col sm:flex-row items-center justify-center gap-4">
+          <a href="#contact" class="btn-primary w-full sm:w-auto px-8 py-4 rounded-xl font-bold text-base text-white flex items-center justify-center gap-2">
+            Book a Free Demo
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5-5 5M6 12h12"/></svg>
+          </a>
+          <a href="/" class="w-full sm:w-auto px-8 py-4 rounded-xl font-bold text-base text-slate-300 border border-slate-700 hover:border-cyan-400 hover:text-white transition">
+            Login to ERP
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── CONTACT ───────────────────────────────── -->
+  <section id="contact" class="relative z-10 py-24 px-5 sm:px-8">
+    <div class="max-w-3xl mx-auto reveal">
+      <div class="text-center mb-12">
+        <span class="text-xs font-bold text-cyan-400 uppercase tracking-widest">Contact</span>
+        <h2 class="text-4xl font-black mt-3 mb-3">Let's talk</h2>
+        <p class="text-slate-400">Fill in your details and our team will reach out within 24 hours.</p>
+      </div>
+
+      <div class="glass rounded-2xl p-8 sm:p-10">
+        <form id="contact-form" class="flex flex-col gap-5">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">Your Name</label>
+              <input type="text" placeholder="Rahul Sharma" required
+                class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 transition" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">Company</label>
+              <input type="text" placeholder="Acme Corp" required
+                class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 transition" />
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">Email Address</label>
+            <input type="email" placeholder="you@company.com" required
+              class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 transition" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wide">Message</label>
+            <textarea rows="4" placeholder="Tell us about your business and what you're looking for…" required
+              class="w-full bg-slate-900/50 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30 transition resize-none"></textarea>
+          </div>
+          <button type="submit"
+            class="btn-primary w-full py-4 rounded-xl font-bold text-base text-white flex items-center justify-center gap-2">
+            Send Message
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/></svg>
+          </button>
+          <p id="form-success" class="hidden text-center text-sm text-emerald-400 font-medium">
+            ✓ Message sent! We'll get back to you within 24 hours.
+          </p>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─── FOOTER ────────────────────────────────── -->
+  <footer class="relative z-10 border-t border-slate-800/60 py-12 px-5 sm:px-8">
+    <div class="max-w-6xl mx-auto">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-8">
+        <!-- Brand -->
+        <div class="flex flex-col items-center md:items-start gap-3">
+          <div class="flex items-center gap-2">
+            <img src="/logo.png" alt="Zyhawk" class="h-7 w-auto" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'" />
+            <span style="display:none" class="items-center gap-2">
+              <span class="w-7 h-7 rounded-lg bg-gradient-to-br from-teal-500 to-cyan-400 flex items-center justify-center text-white font-black text-xs">Z</span>
+              <span class="text-base font-bold text-white">Zyhawk</span>
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 max-w-[220px] text-center md:text-left">Smart ERP. Powerful Results. Built for modern businesses.</p>
+        </div>
+
+        <!-- Links -->
+        <div class="flex flex-wrap items-center justify-center gap-6 text-sm text-slate-500">
+          <a href="#modules"  class="hover:text-cyan-400 transition">Modules</a>
+          <a href="#why"      class="hover:text-cyan-400 transition">Why Zyhawk</a>
+          <a href="#contact"  class="hover:text-cyan-400 transition">Contact</a>
+          <a href="/" class="hover:text-cyan-400 transition">ERP Login</a>
+        </div>
+
+        <!-- Socials -->
+        <div class="flex items-center gap-3">
+          <!-- LinkedIn -->
+          <a href="#" class="w-9 h-9 rounded-lg border border-slate-800 flex items-center justify-center text-slate-500 hover:text-sky-400 hover:border-sky-500/30 transition">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+          </a>
+          <!-- Instagram -->
+          <a href="#" class="w-9 h-9 rounded-lg border border-slate-800 flex items-center justify-center text-slate-500 hover:text-pink-400 hover:border-pink-500/30 transition">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="20" rx="5"/><path d="M16 11.37A4 4 0 1112.63 8 4 4 0 0116 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+          </a>
+          <!-- Twitter/X -->
+          <a href="#" class="w-9 h-9 rounded-lg border border-slate-800 flex items-center justify-center text-slate-500 hover:text-white hover:border-slate-600 transition">
+            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.737-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          </a>
+        </div>
+      </div>
+
+      <div class="mt-10 pt-6 border-t border-slate-800/40 text-center text-xs text-slate-600">
+        © 2025 Zyhawk. All rights reserved.
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Cursor glow
+    const body = document.querySelector('.cursor-bg');
+    document.addEventListener('mousemove', e => {
+      body.style.setProperty('--mx', e.clientX + 'px');
+      body.style.setProperty('--my', e.clientY + 'px');
+    });
+
+    // Mobile menu toggle
+    const hamburger = document.getElementById('hamburger');
+    const mobileMenu = document.getElementById('mobile-menu');
+    hamburger?.addEventListener('click', () => {
+      mobileMenu.classList.toggle('open');
+    });
+    // Close menu on link click
+    mobileMenu?.querySelectorAll('a').forEach(a => {
+      a.addEventListener('click', () => mobileMenu.classList.remove('open'));
+    });
+
+    // Scroll reveal
+    const reveals = document.querySelectorAll('.reveal');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) { e.target.classList.add('visible'); observer.unobserve(e.target); }
+      });
+    }, { threshold: 0.12 });
+    reveals.forEach(el => observer.observe(el));
+
+    // Contact form fake submit (replace with real endpoint)
+    document.getElementById('contact-form')?.addEventListener('submit', e => {
+      e.preventDefault();
+      document.getElementById('form-success').classList.remove('hidden');
+      e.target.reset();
+    });
+  </script>
+</body>
+</html>

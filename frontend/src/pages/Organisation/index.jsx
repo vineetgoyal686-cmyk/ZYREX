@@ -3,7 +3,7 @@ import {
   Plus, LayoutGrid, GitBranch, Building2, Briefcase,
   MapPin, PanelLeftClose, PanelLeftOpen,
   Download, Upload, ChevronDown, FileSpreadsheet, FileText,
-  Layers, Network, UserSquare2, FolderTree, ArrowLeft,
+  Layers, Network, UserSquare2, FolderTree, ArrowLeft, Table2, BarChart2, ClipboardList,
 } from "lucide-react";
 import OrgOverview   from "./OrgOverview";
 import Departments   from "./Departments";
@@ -13,10 +13,12 @@ import Locations     from "./Locations";
 import Structure     from "./Structure";
 import Divisions     from "./Divisions";
 import SubDepts      from "./SubDepts";
-import ContactList   from "../Procurement/ContactList";
+import Grades        from "./Grades";
+import EmployeeList  from "./EmployeeList";
 import OrgList       from "./OrgList";
 import { loadDivisions } from "./Divisions";
 import { loadSubDepts   } from "./SubDepts";
+import { loadGrades     } from "./Grades";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -25,24 +27,26 @@ const NAV_SECTIONS = [
   {
     label: "Organisation",
     items: [
-      { id: "overview",   label: "Overview",   icon: LayoutGrid, hasAdd: false, hasExport: false },
-      { id: "structure",  label: "Structure",  icon: FolderTree, hasAdd: false, hasExport: false },
-      { id: "org_chart",  label: "Org Chart",  icon: GitBranch,  hasAdd: false, hasExport: false },
+      { id: "overview",   label: "Overview",   icon: LayoutGrid,    hasAdd: false, hasExport: false },
+      { id: "structure",  label: "Structure",  icon: FolderTree,    hasAdd: false, hasExport: false },
+      { id: "org_chart",  label: "Org Chart",  icon: GitBranch,     hasAdd: false, hasExport: false },
+      { id: "sop",        label: "SOP",        icon: ClipboardList, hasAdd: false, hasExport: false },
     ],
   },
   {
     label: "Master Data",
     items: [
-      { id: "divisions",       label: "Divisions",       icon: Layers,    hasAdd: true,  hasExport: false, btnLabel: "Add Division"       },
+      { id: "divisions",       label: "Divisions",       icon: Layers,    hasAdd: true,  hasExport: true,  btnLabel: "Add Division"       },
       { id: "departments",     label: "Departments",     icon: Building2, hasAdd: true,  hasExport: true,  btnLabel: "Add Department"     },
-      { id: "sub_departments", label: "Teams",            icon: Network,   hasAdd: true,  hasExport: false, btnLabel: "Add Team"           },
-      { id: "designations",    label: "Designations",    icon: Briefcase, hasAdd: true,  hasExport: false, btnLabel: "Add Designation"    },
+      { id: "sub_departments", label: "Teams",        icon: Network,   hasAdd: true, hasExport: true, btnLabel: "Add Team"        },
+      { id: "grades",          label: "Grades",       icon: BarChart2, hasAdd: true, hasExport: true, btnLabel: "Add Grade"       },
+      { id: "designations",    label: "Designations", icon: Briefcase, hasAdd: true, hasExport: true, btnLabel: "Add Designation" },
     ],
   },
   {
     label: "People",
     items: [
-      { id: "employees", label: "Employees", icon: UserSquare2, hasAdd: false, hasExport: false },
+      { id: "employees", label: "Employees", icon: UserSquare2, hasAdd: true,  hasExport: true,  btnLabel: "Add Employee" },
     ],
   },
   {
@@ -61,11 +65,14 @@ function OrgDetail({ org, onBack, currentUser }) {
   const [collapsed,  setCollapsed]  = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
-  const [tooltip,    setTooltip]    = useState(null); // { label, badge, y }
+  const [tooltip,    setTooltip]    = useState(null);
   const [divCount,    setDivCount]    = useState(() => loadDivisions().length);
   const [subCount,    setSubCount]    = useState(() => loadSubDepts().length);
+  const [lvlCount,    setLvlCount]    = useState(() => loadGrades().length);
   const [deptCount,   setDeptCount]   = useState(0);
   const [branchCount, setBranchCount] = useState(() => { try { return JSON.parse(localStorage.getItem("org_branches_v2") || "[]").length; } catch { return 0; } });
+  const [empView,  setEmpView]  = useState("card");
+  const [empCount, setEmpCount] = useState(null);
 
   const exportDropRef = useRef(null);
   const uploadDropRef = useRef(null);
@@ -91,10 +98,11 @@ function OrgDetail({ org, onBack, currentUser }) {
   }, []);
 
   const badges = {
-    divisions:       divCount     || null,
-    departments:     deptCount    || null,
-    sub_departments: subCount     || null,
-    locations:       branchCount  || null,
+    divisions:       divCount    || null,
+    departments:     deptCount   || null,
+    sub_departments: subCount    || null,
+    grades:          lvlCount    || null,
+    locations:       branchCount || null,
   };
 
   const renderContent = () => {
@@ -102,11 +110,19 @@ function OrgDetail({ org, onBack, currentUser }) {
       case "overview":        return <OrgOverview org={org} onNavigate={setActiveTab} />;
       case "structure":       return <Structure />;
       case "org_chart":       return <OrgChart    onNavigate={setActiveTab} />;
+      case "sop":             return (
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <ClipboardList size={48} className="text-slate-300 mb-4" />
+          <p className="text-slate-500 font-semibold text-base">SOP</p>
+          <p className="text-slate-400 text-sm mt-1">Standard Operating Procedures — coming soon</p>
+        </div>
+      );
       case "divisions":       return <Divisions   actionsRef={actionsRef} onChange={d => setDivCount(d.length)} />;
       case "departments":     return <Departments actionsRef={actionsRef} />;
       case "sub_departments": return <SubDepts    actionsRef={actionsRef} onChange={d => setSubCount(d.length)} />;
+      case "grades":          return <Grades      actionsRef={actionsRef} onChange={d => setLvlCount(d.length)} />;
       case "designations":    return <Designations actionsRef={actionsRef} />;
-      case "employees":       return <ContactList />;
+      case "employees":       return <EmployeeList actionsRef={actionsRef} view={empView} onViewChange={setEmpView} onCountChange={setEmpCount} />;
       case "locations":       return <Locations   actionsRef={actionsRef} />;
       default:                return null;
     }
@@ -203,9 +219,27 @@ function OrgDetail({ org, onBack, currentUser }) {
                 {badges[activeTab]} {(() => { const l = meta?.label?.toLowerCase() || ""; return badges[activeTab] !== 1 && !l.endsWith("s") ? l + "s" : l; })()}
               </span>
             )}
+            {activeTab === "employees" && empCount != null && (
+              <span className="text-[12px] text-slate-500 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded font-medium">
+                {empCount} {empCount === 1 ? "employee" : "employees"}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Table / Card toggle — employees only */}
+            {activeTab === "employees" && (
+              <div className="flex items-center border border-slate-200 rounded overflow-hidden">
+                <button onClick={() => setEmpView("table")}
+                  className={`px-3 py-2 text-xs flex items-center gap-1.5 transition-colors ${empView === "table" ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+                  <Table2 size={13} /> Table
+                </button>
+                <button onClick={() => setEmpView("card")}
+                  className={`px-3 py-2 text-xs flex items-center gap-1.5 transition-colors ${empView === "card" ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+                  <LayoutGrid size={13} /> Card
+                </button>
+              </div>
+            )}
             {meta?.hasExport && (
               <div className="relative" ref={exportDropRef}>
                 <button onClick={() => { setShowExport(v => !v); setShowUpload(false); }}
