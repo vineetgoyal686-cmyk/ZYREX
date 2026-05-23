@@ -46,27 +46,22 @@ router.post("/login", async (req, res) => {
 
   const admin = getAdminClient();
 
-  // 1. Database check: does this email exist in our profile table?
-  const { data: profile, error: profileErr } = await admin
-    .from("users")
-    .select("*")
-    .ilike("email", email) // Changed .eq to .ilike for case-insensitive match
-    .single();
+  // Run DB profile check and Supabase auth in parallel to save ~300-600ms
+  const [{ data: profile, error: profileErr }, { data, error: authError }] = await Promise.all([
+    admin.from("users").select("*").eq("email", email).single(),
+    admin.auth.signInWithPassword({ email, password }),
+  ]);
+
+  if (authError) {
+    return res.status(401).json({ error: "Invalid email or password" });
+  }
 
   if (profileErr || !profile) {
     return res.status(404).json({ error: "User does not exist" });
   }
 
-  // 2. Status check: is this profile active?
   if (!profile.is_active) {
     return res.status(403).json({ error: "You are blocked, contact to Administrator" });
-  }
-
-  // 3. Auth check: verify credentials via Supabase Auth
-  const { data, error: authError } = await admin.auth.signInWithPassword({ email, password });
-
-  if (authError) {
-    return res.status(401).json({ error: "Invalid email or password" });
   }
 
   const signedAvatarPromise = createSignedStorageUrl(admin, "avatars", profile.avatar);
