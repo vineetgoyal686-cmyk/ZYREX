@@ -1,16 +1,12 @@
 const express = require("express");
 const router  = express.Router();
-const { createClient } = require("@supabase/supabase-js");
 const {
   normalizeStoragePath,
   createSignedStorageUrl,
 } = require("../helpers/storageHelper");
-
-const getAdminClient = () => createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY,
-  { auth: { persistSession: false, autoRefreshToken: false } }
-);
+const admin = require("../helpers/supabaseHelper");
+const getAdminClient = () => admin;
+const { requireAuth } = require("../middleware/auth");
 
 const shortDbError = (error) => error?.message || error?.details || String(error || "Unknown database error");
 
@@ -18,37 +14,6 @@ const signAmendmentAttachment = async (admin, row = {}) => ({
   ...row,
   attachment_url: await createSignedStorageUrl(admin, "procurement-docs", row.attachment_url),
 });
-
-const extractUserId = (token) => {
-  try {
-    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
-    return payload.sub || null;
-  } catch { return null; }
-};
-
-// Loads the user profile and attaches it to req.user so downstream handlers
-// can check role / permission flags without re-querying.
-const requireAuth = async (req, res, next) => {
-  try {
-    const token = req.headers.authorization?.split(" ")[1];
-    if (!token) return res.status(401).json({ error: "Login required" });
-    const userId = extractUserId(token);
-    if (!userId) return res.status(401).json({ error: "Invalid token" });
-    const admin = getAdminClient();
-    const { data: profile, error } = await admin.from("users").select("*").eq("id", userId).single();
-    if (error) {
-      console.warn("amendments requireAuth DB error:", shortDbError(error));
-      return res.status(500).json({ error: `Auth lookup failed: ${error.message}` });
-    }
-    if (!profile || !profile.is_active) return res.status(403).json({ error: "Account inactive" });
-    req.user = profile;
-    req.userId = profile.id;
-    next();
-  } catch (err) {
-    console.error("amendments requireAuth threw:", err);
-    res.status(500).json({ error: `Auth middleware crashed: ${err.message}` });
-  }
-};
 
 // Generate the next free amendment number.
 // "BITL/B-47/PO/2026-27/3"  → tries 3A, 3B, 3C ... — picks first unused
@@ -258,7 +223,7 @@ router.get("/requests", requireAuth, async (req, res) => {
     const vendorIds  = [...new Set((orders || []).map(o => o.vendor_id).filter(Boolean))];
 
     const [sitesRes, companiesRes, vendorsRes] = await Promise.all([
-      siteIds.length    ? admin.schema("procurement").from("sites").select("id, site_code, site_name").in("id", siteIds)             : Promise.resolve({ data: [] }),
+      siteIds.length    ? admin.from("projects").select("id, project_code, project_name").in("id", siteIds)                         : Promise.resolve({ data: [] }),
       companyIds.length ? admin.schema("procurement").from("companies").select("id, company_code, company_name").in("id", companyIds) : Promise.resolve({ data: [] }),
       vendorIds.length  ? admin.schema("procurement").from("vendors").select("id, vendor_name").in("id", vendorIds)                  : Promise.resolve({ data: [] }),
     ]);
@@ -271,8 +236,8 @@ router.get("/requests", requireAuth, async (req, res) => {
       const snap = o.snapshot || {};
       return {
         ...o,
-        site_code:     snap.site?.siteCode       || siteMap[o.site_id]?.site_code       || null,
-        site_name:     snap.site?.siteName       || siteMap[o.site_id]?.site_name       || null,
+        site_code:     snap.site?.siteCode       || siteMap[o.site_id]?.project_code    || null,
+        site_name:     snap.site?.siteName       || siteMap[o.site_id]?.project_name    || null,
         company_code:  snap.company?.companyCode || companyMap[o.company_id]?.company_code || null,
         company_name:  snap.company?.companyName || companyMap[o.company_id]?.company_name || null,
         vendor_name:   snap.vendor?.vendorName   || vendorMap[o.vendor_id]?.vendor_name  || null,

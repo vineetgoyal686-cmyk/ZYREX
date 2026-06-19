@@ -128,9 +128,9 @@ export default function CreateIntake() {
   const [intakePreview, setPreview] = useState(null); // next intake number
 
   useEffect(() => {
-    fetch(`${API}/api/procurement/sites`)
+    fetch(`${API}/api/projects`)
       .then(r => r.json())
-      .then(d => setSites(d.sites || []))
+      .then(d => setSites(d.projects || []))
       .catch(() => {});
   }, []);
 
@@ -159,13 +159,14 @@ export default function CreateIntake() {
   const handleSiteChange = (e) => {
     const id   = e.target.value;
     const site = sites.find(s => s.id === id);
-    setForm(f => ({ ...f, site_id: id, site_name: site?.siteName || "" }));
+    setForm(f => ({ ...f, site_id: id, site_name: site?.projectName || "" }));
   };
 
   const handleSubmit = async (status) => {
     if (!form.name.trim()) return showToast("Intake name is required", "error");
-    if (!form.site_id)     return showToast("Please select a site", "error");
+    if (!form.site_id)     return showToast("Please select a project", "error");
     if (items.every(it => !it.product_name.trim())) return showToast("Add at least one item", "error");
+    if (status === "submitted" && !intakePreview) return showToast("Serialization not configured for this site. Contact admin (Settings → Serialization).", "error");
 
     setSaving(status);
     try {
@@ -237,7 +238,7 @@ export default function CreateIntake() {
   }
 
   return (
-    <div className="p-4 md:p-6 w-full">
+    <div className="p-4 md:p-6 w-full min-h-screen bg-slate-200">
       {toast && <Toast msg={toast.msg} type={toast.type} />}
 
       {/* Header */}
@@ -246,8 +247,8 @@ export default function CreateIntake() {
           <PackagePlus size={18} className="text-indigo-600" />
         </div>
         <div>
-          <h1 className="text-lg font-bold text-slate-800">Create Intake</h1>
-          <p className="text-xs text-slate-400">Raise a material purchase requisition</p>
+          <h1 className="text-xl font-black text-black border-b-2 border-black pb-0.5 inline-block">Create Intake</h1>
+          <p className="text-xs text-slate-500 mt-0.5">Raise a material purchase requisition</p>
         </div>
       </div>
 
@@ -306,11 +307,11 @@ export default function CreateIntake() {
 
           {/* Site */}
           <div>
-            <label className={lbl}>Site <span className="text-red-400 normal-case font-normal">*</span></label>
+            <label className={lbl}>Project <span className="text-red-400 normal-case font-normal">*</span></label>
             <div className="relative">
               <select className={`${inp} appearance-none pr-8`} value={form.site_id} onChange={handleSiteChange}>
-                <option value="">Select site…</option>
-                {sites.map(s => <option key={s.id} value={s.id}>{s.siteName}{s.siteCode ? ` (${s.siteCode})` : ""}</option>)}
+                <option value="">Select project…</option>
+                {sites.map(s => <option key={s.id} value={s.id}>{s.projectName}{s.projectCode ? ` (${s.projectCode})` : ""}</option>)}
               </select>
               <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>

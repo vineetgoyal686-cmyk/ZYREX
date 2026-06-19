@@ -1,31 +1,8 @@
 const express = require("express");
 const router  = express.Router();
-const { createClient } = require("@supabase/supabase-js");
-
-const getAdminClient = () => createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY,
-  { auth: { persistSession: false, autoRefreshToken: false } }
-);
-
-const extractUserId = (token) => {
-  try {
-    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
-    return payload.sub || null;
-  } catch { return null; }
-};
-
-const requireAuth = async (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Login required" });
-  const userId = extractUserId(token);
-  if (!userId) return res.status(401).json({ error: "Invalid token" });
-  const admin = getAdminClient();
-  const { data: profile } = await admin.from("users").select("*").eq("id", userId).single();
-  if (!profile || !profile.is_active) return res.status(403).json({ error: "Account inactive" });
-  req.user = profile;
-  next();
-};
+const admin = require("../helpers/supabaseHelper");
+const getAdminClient = () => admin;
+const { requireAuth } = require("../middleware/auth");
 
 /* Auto-generate next dept_id e.g. DEPT-001 */
 const generateDeptId = async (admin) => {

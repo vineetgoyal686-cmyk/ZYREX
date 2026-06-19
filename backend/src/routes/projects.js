@@ -34,7 +34,7 @@ router.get("/", async (_req, res) => {
       state:       r.state        || "",
       pincode:     r.pincode      || "",
       address:     r.address      || "",
-      logoUrl:     await createSignedStorageUrl(supabase, "procurement-images", r.logo_url),
+      logoUrl:     r.logo_url ? await createSignedStorageUrl(supabase, "procurement-images", r.logo_url).catch(() => "") : "",
       isActive:    r.is_active !== false,
     })));
     res.json({ projects });

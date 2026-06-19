@@ -8,13 +8,15 @@ const {
   createSignedStorageUrl,
 } = require("../helpers/storageHelper");
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+const INTAKE_BUCKET = "Intake Docs";
 
 /* ─── Upload attachment to Supabase Storage ─── */
 const uploadFile = async (file, folder) => {
   if (!file) return null;
   const path = `intakes/${folder}/${Date.now()}_${file.originalname}`;
-  const storagePath = await uploadStorageFile(supabase, "procurement-images", path, file.buffer, file.mimetype);
+  const storagePath = await uploadStorageFile(supabase, INTAKE_BUCKET, path, file.buffer, file.mimetype);
   return { url: storagePath, storage_path: storagePath, name: file.originalname, type: file.mimetype };
 };
 
@@ -23,11 +25,11 @@ const withSignedAttachmentUrls = async (intake) => ({
   intake_items: await Promise.all((intake.intake_items || []).map(async item => ({
     ...item,
     attachments: await Promise.all((Array.isArray(item.attachments) ? item.attachments : []).map(async att => {
-      const storagePath = normalizeStoragePath(att.storage_path || att.url, "procurement-images");
+      const storagePath = normalizeStoragePath(att.storage_path || att.url, INTAKE_BUCKET);
       return {
         ...att,
         storage_path: storagePath,
-        url: await createSignedStorageUrl(supabase, "procurement-images", storagePath),
+        url: await createSignedStorageUrl(supabase, INTAKE_BUCKET, storagePath),
       };
     })),
   }))),
@@ -49,30 +51,89 @@ router.get("/serialization", async (_req, res) => {
   }
 });
 
+/* helper — write to audit_logs without blocking the response */
+const writeAuditLog = (entityId, entityName, action, userId, userName, changes) => {
+  const payload = {
+    entity_type: "serialization",
+    entity_id:   String(entityId),
+    entity_name: entityName || null,
+    action,
+    user_id:   userId   || null,
+    user_name: userName || null,
+    changes:   changes  || null,
+  };
+  supabase.schema("procurement").from("audit_logs").insert(payload)
+    .then(({ error }) => {
+      if (error) console.error("[AuditLog] FAILED:", error.message, "|", error.details, "|", error.hint);
+      else console.log("[AuditLog] OK —", action, entityName);
+    });
+};
+
 /* POST /api/intakes/serialization — upsert config for a site+docType */
 router.post("/serialization", async (req, res) => {
   try {
-    const { doc_type = "intake", site_id, site_name, prefix, pad_length = 2, createdById, createdByName } = req.body;
+    const { doc_type = "intake", site_id, site_name, prefix, pad_length = 2, current_number,
+            createdById, createdByName, updatedById, updatedByName } = req.body;
     if (!site_id || !prefix) return res.status(400).json({ error: "site_id and prefix required" });
 
-    // Check if exists
     const { data: existing } = await supabase
-      .schema("store").from("serialization").select("id").eq("doc_type", doc_type).eq("site_id", site_id).single();
+      .schema("store").from("serialization").select("*").eq("doc_type", doc_type).eq("site_id", site_id).single();
 
     if (existing) {
-      const { error } = await supabase.from("serialization")
-        .update({ prefix, pad_length, site_name })
-        .eq("id", existing.id);
+      const updates = { prefix, pad_length, site_name, updated_at: new Date().toISOString() };
+      if (current_number !== undefined) updates.current_number = parseInt(current_number) || 0;
+      if (updatedById)   updates.updated_by_id   = updatedById;
+      if (updatedByName) updates.updated_by_name = updatedByName;
+      const { error } = await supabase.schema("store").from("serialization").update(updates).eq("id", existing.id);
       if (error) throw error;
+
+      const changes = {};
+      if (existing.prefix !== prefix) changes.prefix = { from: existing.prefix, to: prefix };
+      if (existing.pad_length !== pad_length) changes.pad_length = { from: existing.pad_length, to: pad_length };
+      if (current_number !== undefined && existing.current_number !== parseInt(current_number))
+        changes.current_number = { from: existing.current_number, to: parseInt(current_number) || 0 };
+      writeAuditLog(existing.id, site_name, "Updated", updatedById, updatedByName, Object.keys(changes).length ? changes : null);
     } else {
-      const { error } = await supabase.from("serialization")
-        .insert({ 
-          doc_type, site_id, site_name, prefix, pad_length, current_number: 0,
+      const { data: inserted, error } = await supabase.schema("store").from("serialization")
+        .insert({
+          doc_type, site_id, site_name, prefix, pad_length,
+          current_number: parseInt(current_number) || 0,
           created_by_id: createdById || null,
           created_by_name: createdByName || null,
-        });
+        }).select().single();
       if (error) throw error;
+      writeAuditLog(inserted.id, site_name, "Created", createdById, createdByName, { prefix, pad_length });
     }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* GET /api/intakes/serialization/logs/:id — fetch audit log for one config */
+router.get("/serialization/logs/:id", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .schema("procurement").from("audit_logs")
+      .select("*")
+      .eq("entity_type", "serialization")
+      .eq("entity_id", req.params.id)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    res.json({ logs: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* DELETE /api/intakes/serialization/:id — remove a serialization config */
+router.delete("/serialization/:id", async (req, res) => {
+  try {
+    const { site_name, deletedByName, deletedById } = req.body || {};
+    const { error } = await supabase
+      .schema("store").from("serialization").delete().eq("id", req.params.id);
+    if (error) throw error;
+    writeAuditLog(req.params.id, site_name, "Deleted", deletedById, deletedByName, null);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -178,17 +239,19 @@ router.post("/", intakeUpload, async (req, res) => {
         .schema("store").from("serialization").select("*")
         .eq("doc_type", "intake").eq("site_id", intake.site_id).single();
 
-      if (serial) {
-        const next   = serial.current_number + 1;
-        const padded = String(next).padStart(serial.pad_length, "0");
-        intakeNumber = `${serial.prefix}${padded}`;
-        await supabase.from("serialization")
-          .update({ current_number: next }).eq("id", serial.id);
+      if (!serial) {
+        return res.status(400).json({ error: "Serialization not configured for this site. Contact admin to set it up in Settings → Serialization." });
       }
+
+      const next   = serial.current_number + 1;
+      const padded = String(next).padStart(serial.pad_length, "0");
+      intakeNumber = `${serial.prefix}${padded}`;
+      await supabase.schema("store").from("serialization")
+        .update({ current_number: next }).eq("id", serial.id);
     }
 
     // Insert intake header
-    const { data: created, error: intakeErr } = await supabase.from("intakes").insert({
+    const { data: created, error: intakeErr } = await supabase.schema("store").from("intakes").insert({
       intake_number:  intakeNumber,
       name:           intake.name           || "",
       requisition_by: intake.requisition_by || "",
@@ -249,11 +312,11 @@ router.patch("/:id/submit", async (req, res) => {
         const next   = serial.current_number + 1;
         const padded = String(next).padStart(serial.pad_length, "0");
         intakeNumber = `${serial.prefix}${padded}`;
-        await supabase.from("serialization").update({ current_number: next }).eq("id", serial.id);
+        await supabase.schema("store").from("serialization").update({ current_number: next }).eq("id", serial.id);
       }
     }
 
-    const { error } = await supabase.from("intakes")
+    const { error } = await supabase.schema("store").from("intakes")
       .update({ status: "submitted", intake_number: intakeNumber, updated_at: new Date().toISOString() })
       .eq("id", req.params.id);
     if (error) throw error;
@@ -267,7 +330,7 @@ router.patch("/:id/submit", async (req, res) => {
 router.patch("/:id/approve", async (req, res) => {
   try {
     const { approved_by } = req.body;
-    const { error } = await supabase.from("intakes")
+    const { error } = await supabase.schema("store").from("intakes")
       .update({ status: "approved", approved_by: approved_by || "", approved_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq("id", req.params.id);
     if (error) throw error;
@@ -279,7 +342,7 @@ router.patch("/:id/approve", async (req, res) => {
 router.patch("/:id/reject", async (req, res) => {
   try {
     const { reject_reason, rejected_by } = req.body;
-    const { error } = await supabase.from("intakes")
+    const { error } = await supabase.schema("store").from("intakes")
       .update({ status: "rejected", reject_reason: reject_reason || "", approved_by: rejected_by || "", updated_at: new Date().toISOString() })
       .eq("id", req.params.id);
     if (error) throw error;
@@ -291,7 +354,7 @@ router.patch("/:id/reject", async (req, res) => {
 router.patch("/:id/assign", async (req, res) => {
   try {
     const { assigned_to_id, assigned_to_name, assigned_by_name } = req.body;
-    const { error } = await supabase.from("intakes")
+    const { error } = await supabase.schema("store").from("intakes")
       .update({ status: "in_review", assigned_to_id, assigned_to_name, assigned_by_name, updated_at: new Date().toISOString() })
       .eq("id", req.params.id);
     if (error) throw error;
@@ -302,7 +365,7 @@ router.patch("/:id/assign", async (req, res) => {
 /* PATCH /api/intakes/:id/start-working */
 router.patch("/:id/start-working", async (req, res) => {
   try {
-    const { error } = await supabase.from("intakes")
+    const { error } = await supabase.schema("store").from("intakes")
       .update({ status: "working", updated_at: new Date().toISOString() })
       .eq("id", req.params.id);
     if (error) throw error;
@@ -313,7 +376,7 @@ router.patch("/:id/start-working", async (req, res) => {
 /* DELETE /api/intakes/:id */
 router.delete("/:id", async (req, res) => {
   try {
-    const { error } = await supabase.from("intakes").delete().eq("id", req.params.id);
+    const { error } = await supabase.schema("store").from("intakes").delete().eq("id", req.params.id);
     if (error) throw error;
     res.json({ success: true });
   } catch (err) {

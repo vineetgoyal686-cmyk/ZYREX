@@ -4,19 +4,34 @@ import {
   GripVertical, AlertCircle, Check, ChevronLeft, Settings2, Users,
 } from "lucide-react";
 import api from "../../../utils/api";
-import { SiteDetailPanel } from "../../Procurement/SiteList";
 import { CompanyDetailPanel } from "../../Procurement/CompanyList";
 import { CategoryDetailPanel } from "../../Procurement/CategoryList";
 
 const MODULES = [
-  { key: "order", label: "Order" },
+  { key: "order",  label: "Order"  },
+  { key: "intake", label: "Intake" },
 ];
 
+const CONDITION_FIELDS_BY_MODULE = {
+  order: [
+    { value: "price",          label: "Price"          },
+    { value: "category",       label: "Category"       },
+    { value: "billing_entity", label: "Billing Entity" },
+    { value: "site",           label: "Site"           },
+  ],
+  intake: [
+    { value: "priority",    label: "Priority"              },
+    { value: "intake_type", label: "Intake Type"           },
+    { value: "category",    label: "Category"              },
+    { value: "site",        label: "Site"                  },
+    { value: "raised_qty",  label: "Raised Qty (any item)" },
+  ],
+};
+
+// kept for detail/overview rendering which references CONDITION_FIELDS
 const CONDITION_FIELDS = [
-  { value: "price",          label: "Price" },
-  { value: "category",       label: "Category" },
-  { value: "billing_entity", label: "Billing Entity" },
-  { value: "site",           label: "Site" },
+  ...CONDITION_FIELDS_BY_MODULE.order,
+  ...CONDITION_FIELDS_BY_MODULE.intake.filter(f => !["price","billing_entity"].includes(f.value)),
 ];
 
 const CONDITION_OPS = [
@@ -274,12 +289,15 @@ function LevelCard({ level, levelIdx, allUsers, designations, onChange, onRemove
    EDIT / CREATE FORM
 ══════════════════════════════════════════════ */
 function ConditionValueInput({ field, value, valueLabel, onChange }) {
-  const [search, setSearch]   = useState("");
-  const [open, setOpen]       = useState(false);
-  const [items, setItems]     = useState([]);
-  const [loading, setLoading] = useState(false);
+  // ALL hooks must be at the top — no early returns before this
+  const [search, setSearch]     = useState("");
+  const [open, setOpen]         = useState(false);
+  const [items, setItems]       = useState([]);
+  const [loading, setLoading]   = useState(false);
   const [viewItem, setViewItem] = useState(null);
   const ref = useRef(null);
+
+  const isLookupField = ["category", "billing_entity", "site"].includes(field);
 
   useEffect(() => {
     const handleClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -288,15 +306,48 @@ function ConditionValueInput({ field, value, valueLabel, onChange }) {
   }, []);
 
   useEffect(() => {
-    if (field === "price") return;
+    if (!isLookupField) return;
     setLoading(true);
-    const ep = field === "category" ? "/api/procurement/categories" : field === "billing_entity" ? "/api/procurement/companies" : "/api/procurement/sites";
+    const ep = field === "category" ? "/api/procurement/categories" : field === "billing_entity" ? "/api/procurement/companies" : "/api/projects";
     api.get(ep).then(({ data }) => {
       if (field === "category")            setItems(data.categories || []);
       else if (field === "billing_entity") setItems(data.companies  || []);
-      else                                 setItems(data.sites      || []);
+      else                                 setItems(data.projects   || []);
     }).catch(() => {}).finally(() => setLoading(false));
   }, [field]);
+
+  // ── Static/simple fields (after hooks) ──
+  if (field === "priority") {
+    return (
+      <div className="relative flex-1">
+        <select value={value} onChange={e => onChange(e.target.value, e.target.value)}
+          className="w-full appearance-none border border-slate-300 rounded-sm text-[12px] pl-2.5 pr-7 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-400 bg-white">
+          <option value="">Select priority</option>
+          {["Low","Medium","High","Urgent"].map(p => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center"><ChevronDown size={12} className="text-slate-400" /></div>
+      </div>
+    );
+  }
+  if (field === "intake_type") {
+    return (
+      <div className="relative flex-1">
+        <select value={value} onChange={e => onChange(e.target.value, e.target.value)}
+          className="w-full appearance-none border border-slate-300 rounded-sm text-[12px] pl-2.5 pr-7 py-1.5 text-slate-800 focus:outline-none focus:border-indigo-400 bg-white">
+          <option value="">Select type</option>
+          <option value="Supply">Supply</option>
+          <option value="Services">Services</option>
+        </select>
+        <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center"><ChevronDown size={12} className="text-slate-400" /></div>
+      </div>
+    );
+  }
+  if (field === "raised_qty") {
+    return (
+      <Input type="number" min="0" className="flex-1" value={value}
+        onChange={e => onChange(e.target.value)} placeholder="Enter quantity" />
+    );
+  }
 
   if (field === "price") {
     return (
@@ -311,7 +362,7 @@ function ConditionValueInput({ field, value, valueLabel, onChange }) {
     const q = search.toLowerCase();
     if (field === "category")       return (item.categoryName || "").toLowerCase().includes(q) || (item.categoryCode || "").toLowerCase().includes(q);
     if (field === "billing_entity") return (item.companyName  || "").toLowerCase().includes(q) || (item.companyCode  || "").toLowerCase().includes(q);
-    return (item.siteName || "").toLowerCase().includes(q) || (item.siteCode || "").toLowerCase().includes(q);
+    return (item.projectName || "").toLowerCase().includes(q) || (item.projectCode || "").toLowerCase().includes(q);
   });
 
   const getLabel = (id) => {
@@ -319,14 +370,14 @@ function ConditionValueInput({ field, value, valueLabel, onChange }) {
     if (!item) return "";
     if (field === "category")       return `${item.categoryName} (${item.categoryCode})`;
     if (field === "billing_entity") return `${item.companyName} (${item.companyCode})`;
-    return `${item.siteName} (${item.siteCode})`;
+    return `${item.projectName} (${item.projectCode})`;
   };
 
-  const placeholder = field === "category" ? "Select category" : field === "billing_entity" ? "Select entity" : "Select site";
+  const placeholder = field === "category" ? "Select category" : field === "billing_entity" ? "Select entity" : "Select project";
 
   const handleSelectFromPanel = (item) => {
     const id = String(item.id);
-    const lbl = field === "category" ? item.categoryName : field === "billing_entity" ? item.companyName : `${item.siteName} (${item.siteCode})`;
+    const lbl = field === "category" ? item.categoryName : field === "billing_entity" ? item.companyName : `${item.projectName} (${item.projectCode})`;
     onChange(id, lbl);
     setViewItem(null);
     setOpen(false);
@@ -366,7 +417,7 @@ function ConditionValueInput({ field, value, valueLabel, onChange }) {
                 } else if (field === "billing_entity") {
                   line1 = item.companyName; line2 = `Code: ${item.companyCode}${item.gstin ? ` · GSTIN: ${item.gstin}` : ""}`;
                 } else {
-                  line1 = `${item.siteName} (${item.siteCode})`; line2 = [item.city, item.state].filter(Boolean).join(", ");
+                  line1 = `${item.projectName} (${item.projectCode})`; line2 = [item.city, item.state].filter(Boolean).join(", ");
                 }
                 return (
                   <div key={id} className={`flex items-center border-b border-slate-50 last:border-0 ${sel ? "bg-indigo-50" : "hover:bg-slate-50"} transition-colors`}>
@@ -397,7 +448,17 @@ function ConditionValueInput({ field, value, valueLabel, onChange }) {
         <CompanyDetailPanel company={viewItem} onClose={() => setViewItem(null)} onSelect={handleSelectFromPanel} />
       )}
       {viewItem && field === "site" && (
-        <SiteDetailPanel site={viewItem} onClose={() => setViewItem(null)} onSelect={handleSelectFromPanel} />
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setViewItem(null)}>
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <p className="text-base font-black text-slate-800 mb-1">{viewItem.projectName}</p>
+            {viewItem.projectCode && <p className="text-xs font-mono text-slate-400 mb-3">{viewItem.projectCode}</p>}
+            {viewItem.city && <p className="text-sm text-slate-500">{[viewItem.city, viewItem.state].filter(Boolean).join(", ")}</p>}
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => { handleSelectFromPanel(viewItem); setViewItem(null); }} className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">Select</button>
+              <button onClick={() => setViewItem(null)} className="px-4 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Close</button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
@@ -410,9 +471,12 @@ function FlowForm({ flow, module, allUsers, designations, onSave, onBack, saving
   );
   const [selDept, setSelDept] = useState("");
 
+  const conditionFields = CONDITION_FIELDS_BY_MODULE[module] || CONDITION_FIELDS_BY_MODULE.order;
+  const defaultCondField = conditionFields[0]?.value || "price";
+
   const setField = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const addCondition = () => setField("conditions", [...form.conditions, { _id: uid(), field: "price", operator: "greater_than", value: "" }]);
+  const addCondition = () => setField("conditions", [...form.conditions, { _id: uid(), field: defaultCondField, operator: "greater_than", value: "" }]);
   const removeCondition = (idx) => setField("conditions", form.conditions.filter((_, i) => i !== idx));
   const updateCondition = (idx, patch) => setField("conditions", form.conditions.map((c, i) => i === idx ? { ...c, ...patch } : c));
 
@@ -472,24 +536,26 @@ function FlowForm({ flow, module, allUsers, designations, onSave, onBack, saving
               </Select>
             </div>
           </div>
-          <div>
-            <Label>Self Approve Below Amount (₹)</Label>
-            <div className="relative">
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">₹</span>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={form.self_approve_below ? Number(form.self_approve_below).toLocaleString("en-IN") : ""}
-                onChange={e => {
-                  const raw = e.target.value.replace(/[^0-9]/g, "");
-                  setField("self_approve_below", raw);
-                }}
-                placeholder="e.g. 10,000 (leave blank to disable)"
-                className="w-full border border-slate-300 rounded-sm text-[12px] pl-6 pr-2.5 py-1.5 text-slate-800
-                  focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 bg-white"
-              />
+          {module !== "intake" && (
+            <div>
+              <Label>Self Approve Below Amount (₹)</Label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[12px] text-slate-400">₹</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={form.self_approve_below ? Number(form.self_approve_below).toLocaleString("en-IN") : ""}
+                  onChange={e => {
+                    const raw = e.target.value.replace(/[^0-9]/g, "");
+                    setField("self_approve_below", raw);
+                  }}
+                  placeholder="e.g. 10,000 (leave blank to disable)"
+                  className="w-full border border-slate-300 rounded-sm text-[12px] pl-6 pr-2.5 py-1.5 text-slate-800
+                    focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 bg-white"
+                />
+              </div>
             </div>
-          </div>
+          )}
           <div>
             <Label>Description</Label>
             <textarea value={form.description} onChange={e => setField("description", e.target.value)}
@@ -529,13 +595,14 @@ function FlowForm({ flow, module, allUsers, designations, onSave, onBack, saving
             )}
             {form.conditions.map((c, idx) => {
               const isLookup = ["category", "billing_entity", "site"].includes(c.field);
+              const isStaticSelect = ["priority", "intake_type"].includes(c.field);
               return (
                 <div key={c._id || idx} className="grid items-center gap-2" style={{ gridTemplateColumns: "140px 160px 1fr 30px" }}>
                   <Select value={c.field}
-                    onChange={e => updateCondition(idx, { field: e.target.value, value: "", value_label: "", operator: ["category","billing_entity","site"].includes(e.target.value) ? "is_equal_to" : "greater_than" })}>
-                    {CONDITION_FIELDS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                    onChange={e => updateCondition(idx, { field: e.target.value, value: "", value_label: "", operator: ["category","billing_entity","site","priority","intake_type"].includes(e.target.value) ? "is_equal_to" : "greater_than" })}>
+                    {conditionFields.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                   </Select>
-                  {isLookup ? (
+                  {(isLookup || isStaticSelect) ? (
                     <div className="border border-slate-200 rounded-sm text-[12px] px-2.5 py-1.5 text-slate-400 bg-slate-50 select-none">
                       is equal to
                     </div>
@@ -744,19 +811,22 @@ export default function ApprovalFlow({ showToast }) {
   const [allUsers, setAllUsers]         = useState([]);
   const [designations, setDesignations] = useState([]);
 
-  const fetchFlows = useCallback(async () => {
+  const fetchFlows = useCallback(async (module, tab) => {
     setLoading(true);
+    setFlows([]);
+    setAllFlows([]);
     try {
-      const [moduleRes, allRes] = await Promise.all([
-        api.get(`/api/approval-flows?module=${activeModule}`),
-        api.get(`/api/approval-flows`),
-      ]);
-      setFlows(moduleRes.data.flows || []);
-      setAllFlows(allRes.data.flows || []);
+      if (tab === "overview") {
+        const { data } = await api.get("/api/approval-flows");
+        setAllFlows(data.flows || []);
+      } else {
+        const { data } = await api.get(`/api/approval-flows?module=${module}`);
+        setFlows(data.flows || []);
+      }
     } catch { /* silent */ } finally { setLoading(false); }
-  }, [activeModule]);
+  }, []);
 
-  useEffect(() => { fetchFlows(); }, [fetchFlows]);
+  useEffect(() => { fetchFlows(activeModule, activeTab); }, [activeModule, activeTab, fetchFlows]);
 
   useEffect(() => {
     api.get("/api/users").then(r => setAllUsers((r.data.users || []).filter(u => u.is_active !== false))).catch(() => {});
@@ -773,7 +843,7 @@ export default function ApprovalFlow({ showToast }) {
         await api.post("/api/approval-flows", { ...form, module: activeModule });
         showToast?.("Flow created successfully");
       }
-      await fetchFlows();
+      await fetchFlows(activeModule, activeTab);
       setView("list"); setSelected(null);
     } catch (err) {
       showToast?.(err.response?.data?.error || "Failed to save flow", "error");
@@ -785,7 +855,7 @@ export default function ApprovalFlow({ showToast }) {
     try {
       await api.delete(`/api/approval-flows/${id}`);
       showToast?.("Flow deleted");
-      fetchFlows();
+      fetchFlows(activeModule, activeTab);
     } catch { showToast?.("Failed to delete", "error"); }
   };
 
@@ -831,13 +901,13 @@ export default function ApprovalFlow({ showToast }) {
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200 px-6">
-        <button type="button" onClick={() => setActiveTab("overview")}
+        <button type="button" onClick={() => { setActiveTab("overview"); setFlows([]); }}
           className={`px-5 py-3 text-[13px] font-semibold border-b-2 -mb-px transition-colors
             ${activeTab === "overview" ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"}`}>
           Overview
         </button>
         {MODULES.map(m => (
-          <button key={m.key} type="button" onClick={() => { setActiveTab(m.key); setActiveModule(m.key); }}
+          <button key={m.key} type="button" onClick={() => { setActiveTab(m.key); setActiveModule(m.key); setFlows([]); }}
             className={`px-5 py-3 text-[13px] font-semibold border-b-2 -mb-px transition-colors
               ${activeTab === m.key ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"}`}>
             {m.label}

@@ -1,32 +1,9 @@
 const express = require("express");
 const router  = express.Router();
-const { createClient } = require("@supabase/supabase-js");
 const { broadcast } = require("../sse");
-
-const getAdminClient = () => createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY,
-  { auth: { persistSession: false, autoRefreshToken: false } }
-);
-
-const extractUserId = (token) => {
-  try {
-    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
-    return payload.sub || null;
-  } catch { return null; }
-};
-
-const requireAuth = async (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Login required" });
-  const userId = extractUserId(token);
-  if (!userId) return res.status(401).json({ error: "Invalid token" });
-  const admin = getAdminClient();
-  const { data: profile } = await admin.from("users").select("*").eq("id", userId).single();
-  if (!profile || !profile.is_active) return res.status(403).json({ error: "Account inactive" });
-  req.user = profile;
-  next();
-};
+const admin = require("../helpers/supabaseHelper");
+const getAdminClient = () => admin;
+const { requireAuth } = require("../middleware/auth");
 
 const requireAdminOrAbove = (req, res, next) => {
   if (!["global_admin", "super_admin", "admin"].includes(req.user.role))
@@ -60,9 +37,22 @@ function checkConditions(flow, document) {
 
 function getDocField(doc, field) {
   if (!doc) return null;
+  // Intake document (has intake_items)
+  if (doc.intake_items !== undefined) {
+    const maxRaisedQty = Math.max(0, ...(doc.intake_items || []).map(i => parseFloat(i.raised_qty) || 0));
+    const map = {
+      priority:    doc.priority,
+      intake_type: doc.intake_type,
+      category:    doc.category,
+      site:        doc.site_id,
+      raised_qty:  maxRaisedQty,
+    };
+    return map[field] ?? null;
+  }
+  // Order document
   const map = {
     price:          doc.grand_total ?? doc.totals?.grandTotal ?? doc.totals?.grand_total,
-    category:       doc.category_id,
+    category:       doc.category_id ?? doc.snapshot?.categoryId ?? doc.snapshot?.category?.id,
     billing_entity: doc.company_id,
     site:           doc.site_id,
   };
@@ -117,7 +107,7 @@ router.get("/pending-for-me", requireAuth, async (req, res) => {
   let orderMap = {};
   if (orderIds.length > 0) {
     const { data: orders, error: ordErr } = await admin.schema("procurement").from("purchase_orders")
-      .select("id, order_number, status, totals, snapshot, sites(site_code), companies(company_code), vendors(id, vendor_name), made_by")
+      .select("id, order_number, status, totals, snapshot, site_id, companies(company_code), vendors(id, vendor_name), made_by")
       .in("id", orderIds);
     if (ordErr) console.error("[pending-for-me] orders fetch error:", ordErr);
 
@@ -263,6 +253,10 @@ router.post("/submit", requireAuth, async (req, res) => {
       const { data } = await admin.schema("procurement").from("purchase_orders")
         .select("*").eq("id", document_id).single();
       document = data;
+    } else if (module === "intake") {
+      const { data } = await admin.schema("store").from("intakes")
+        .select("*, intake_items(*)").eq("id", document_id).single();
+      document = data;
     }
 
     // Find first matching flow
@@ -277,16 +271,16 @@ router.post("/submit", requireAuth, async (req, res) => {
       return res.json({ skip: true, skip_reason: "no_match", message: "No matching flow found for this order's conditions" });
     }
 
-    // Self-approve check
-    const grandTotal = parseFloat(document?.grand_total ?? document?.totals?.grand_total ?? 0);
-    if (matchedFlow.self_approve_below && grandTotal < parseFloat(matchedFlow.self_approve_below)) {
-      if (module === "order") {
+    // Self-approve check (order only — intake has no price threshold)
+    if (module === "order") {
+      const grandTotal = parseFloat(document?.grand_total ?? document?.totals?.grand_total ?? 0);
+      if (matchedFlow.self_approve_below && grandTotal < parseFloat(matchedFlow.self_approve_below)) {
         await admin.schema("procurement").from("purchase_orders")
           .update({ status: "Pending Issue", updated_at: new Date().toISOString() }).eq("id", document_id);
         await addOrderActivityLog(admin, document_id, "Auto-Approved (Below Threshold)", userName);
         broadcast({ type: "order_updated", status: "Pending Issue" });
+        return res.json({ skip: true, auto_approved: true });
       }
-      return res.json({ skip: true, auto_approved: true });
     }
 
     // Cancel any old pending request
@@ -303,12 +297,15 @@ router.post("/submit", requireAuth, async (req, res) => {
     }).select().single();
     if (error) return res.status(500).json({ error: error.message });
 
-    // Update order status
+    // Update document status
     if (module === "order") {
       await admin.schema("procurement").from("purchase_orders")
         .update({ status: "Pending Approval", updated_at: new Date().toISOString() }).eq("id", document_id);
       await addOrderActivityLog(admin, document_id, "Submitted for Approval", userName);
       broadcast({ type: "order_updated", status: "Pending Approval" });
+    } else if (module === "intake") {
+      // intake stays "submitted" — that IS the pending approval state
+      broadcast({ type: "intake_updated", document_id, status: "submitted" });
     }
 
     res.json({ success: true, request });
@@ -386,6 +383,19 @@ router.post("/action", requireAuth, async (req, res) => {
         .update({ status: docStatus, updated_at: new Date().toISOString() }).eq("id", request.document_id);
       await addOrderActivityLog(admin, request.document_id, logAction, userName, comments);
       broadcast({ type: "order_updated", status: docStatus });
+    } else if (request.module === "intake") {
+      const intakeStatusMap = {
+        "Pending Issue": "approved",   // final approval → approved
+        "Pending Approval": "submitted", // mid-level → still submitted
+        "Rejected": "rejected",
+        "Review": "draft",              // reverted → back to draft
+      };
+      const intakeStatus = intakeStatusMap[docStatus] || "submitted";
+      const patch = { status: intakeStatus, updated_at: new Date().toISOString() };
+      if (intakeStatus === "approved") { patch.approved_by = userName; patch.approved_at = new Date().toISOString(); }
+      if (intakeStatus === "rejected") { patch.reject_reason = comments || ""; }
+      await admin.schema("store").from("intakes").update(patch).eq("id", request.document_id);
+      broadcast({ type: "intake_updated", document_id: request.document_id, status: intakeStatus });
     }
 
     res.json({ success: true, newStatus, docStatus });
@@ -421,6 +431,10 @@ router.post("/withdraw/:document_id", requireAuth, async (req, res) => {
         .update({ status: "Review", updated_at: new Date().toISOString() }).eq("id", document_id);
       await addOrderActivityLog(admin, document_id, "Approval Withdrawn — Returned to Review", userName);
       broadcast({ type: "order_updated", status: "Review" });
+    } else if (request.module === "intake") {
+      await admin.schema("store").from("intakes")
+        .update({ status: "draft", updated_at: new Date().toISOString() }).eq("id", document_id);
+      broadcast({ type: "intake_updated", document_id, status: "draft" });
     }
 
     res.json({ success: true, status: "Review" });

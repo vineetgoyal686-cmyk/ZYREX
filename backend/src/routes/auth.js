@@ -7,17 +7,15 @@ const {
   createSignedStorageUrl,
   removeStorageFile,
 } = require("../helpers/storageHelper");
+const { bustUserCache } = require("../middleware/auth");
 
-// Fresh admin client for DB queries after signInWithPassword
-// (shared client ka session signInWithPassword se pollute ho jaata hai)
+// Separate client only for signInWithPassword — avoids auth state on shared singleton
 const getAdminClient = () => createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY,
   { auth: { persistSession: false, autoRefreshToken: false } }
 );
 
-// JWT tokens expire after 1 hour — for internal routes we decode the sub
-// without verifying expiry, then confirm user exists in our DB.
 const extractUserId = (token) => {
   try {
     const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
@@ -28,8 +26,7 @@ const extractUserId = (token) => {
 const getUserFromToken = async (token) => {
   const userId = extractUserId(token);
   if (!userId) return null;
-  const admin = getAdminClient();
-  const { data } = await admin.from("users").select("*").eq("id", userId).single();
+  const { data } = await supabase.from("users").select("*").eq("id", userId).single();
   return data || null;
 };
 

@@ -90,7 +90,7 @@ const makeHistoryListOrder = (order, history) => {
 const loadHistoryOrder = async (historyId) => {
   const { data: orders, error } = await supabase.schema("procurement")
     .from("purchase_orders")
-    .select("*, sites(*), companies(*), vendors(*), contact_person:contacts(*)");
+    .select("*, companies(*), vendors(*), contact_person:contacts(*)");
   if (error) throw error;
 
   for (const order of orders || []) {
@@ -124,7 +124,7 @@ const appendStatusHistorySnapshot = async ({ orderId, action, comments = "", act
   const [orderRes, itemRes] = await Promise.all([
     supabase.schema("procurement")
       .from("purchase_orders")
-      .select("*, sites(*), companies(*), vendors(*), contact_person:contacts(*)")
+      .select("*, companies(*), vendors(*), contact_person:contacts(*)")
       .eq("id", orderId)
       .single(),
     supabase.schema("procurement")
@@ -392,8 +392,8 @@ router.get("/next-number", async (req, res) => {
     const fy        = getFinancialYear();
 
     // 1. Get Site Code
-    const { data: site } = await supabase.schema("procurement").from("sites").select("site_code").eq("id", siteId).single();
-    const sCode = site?.site_code || "SITE";
+    const { data: site } = await supabase.from("projects").select("project_code").eq("id", siteId).single();
+    const sCode = site?.project_code || "SITE";
 
     // 2. Get serialization settings for this site + FY + kind
     let { data: settings } = await supabase.schema("procurement")
@@ -422,10 +422,24 @@ router.get("/next-number", async (req, res) => {
    ORDER SERIALIZATION CONFIG (Admin)
    ════════════════════════════════════ */
 
+const writeOrderAuditLog = (entityId, entityName, action, userId, userName, changes) => {
+  supabase.schema("procurement").from("audit_logs").insert({
+    entity_type: "order_serialization",
+    entity_id:   String(entityId),
+    entity_name: entityName || null,
+    action,
+    user_id:   userId   || null,
+    user_name: userName || null,
+    changes:   changes  || null,
+  }).then(({ error }) => {
+    if (error) console.error("[OrderAuditLog] FAILED:", error.message);
+  });
+};
+
 router.get("/serialization", async (req, res) => {
   try {
     const { data, error } = await supabase.schema("procurement")
-      .from("serialization_settings").select("*, sites(site_name, site_code)");
+      .from("serialization_settings").select("*");
     if (error) throw error;
     res.json({ configs: data || [] });
   } catch (err) {
@@ -433,24 +447,49 @@ router.get("/serialization", async (req, res) => {
   }
 });
 
+router.get("/serialization/logs/:id", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .schema("procurement").from("audit_logs")
+      .select("*")
+      .eq("entity_type", "order_serialization")
+      .eq("entity_id", req.params.id)
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    res.json({ logs: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post("/serialization", async (req, res) => {
   try {
-    const { site_id, current_number, financial_year, order_kind } = req.body;
+    const { site_id, current_number, financial_year, order_kind,
+            site_name, createdById, createdByName, updatedById, updatedByName } = req.body;
     if (!site_id || !financial_year || !order_kind) {
       return res.status(400).json({ error: "site_id, financial_year, and order_kind required" });
     }
     const kind = order_kind === "Supply" ? "Supply" : "SITC";
 
     const { data: existing } = await supabase.schema("procurement")
-      .from("serialization_settings").select("id")
+      .from("serialization_settings").select("*")
       .eq("site_id", site_id).eq("financial_year", financial_year).eq("order_kind", kind).maybeSingle();
 
     if (existing) {
       await supabase.schema("procurement").from("serialization_settings")
         .update({ current_number }).eq("id", existing.id);
+      const changes = {};
+      if (existing.current_number !== parseInt(current_number))
+        changes.current_number = { from: existing.current_number, to: parseInt(current_number) || 0 };
+      writeOrderAuditLog(existing.id, site_name, "Updated", updatedById, updatedByName,
+        Object.keys(changes).length ? changes : null);
     } else {
-      await supabase.schema("procurement").from("serialization_settings")
-        .insert({ site_id, financial_year, current_number, order_kind: kind });
+      const { data: inserted, error } = await supabase.schema("procurement").from("serialization_settings")
+        .insert({ site_id, financial_year, current_number, order_kind: kind })
+        .select().single();
+      if (error) throw error;
+      writeOrderAuditLog(inserted.id, site_name, "Created", createdById, createdByName,
+        { financial_year, order_kind: kind, current_number: parseInt(current_number) || 0 });
     }
 
     res.json({ success: true });
@@ -461,9 +500,11 @@ router.post("/serialization", async (req, res) => {
 
 router.delete("/serialization/:id", async (req, res) => {
   try {
+    const { site_name, deletedById, deletedByName } = req.body || {};
     const { error } = await supabase.schema("procurement")
       .from("serialization_settings").delete().eq("id", req.params.id);
     if (error) throw error;
+    writeOrderAuditLog(req.params.id, site_name, "Deleted", deletedById, deletedByName, null);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -507,7 +548,7 @@ router.get("/", async (req, res) => {
   try {
     const { data, error } = await supabase.schema("procurement")
       .from("purchase_orders")
-      .select("*, companies(*), sites(*), vendors(*)")
+      .select("*, companies(*), vendors(*)")
       .neq("status", "Deleted")
       .order("created_at", { ascending: false });
     
@@ -609,7 +650,7 @@ router.get("/master/vendor-data", async (_req, res) => {
     const [ordersRes, vendorsRes] = await Promise.all([
       supabase.schema("procurement")
         .from("purchase_orders")
-        .select("id, order_number, order_type, status, totals, vendor_id, site_id, snapshot, created_at, date_of_creation, sites(site_code, city, state), companies(company_code), vendors(id, vendor_code, vendor_name, email, mobile, bank_city, bank_state, address, company_codes)")
+        .select("id, order_number, order_type, status, totals, vendor_id, site_id, snapshot, created_at, date_of_creation, companies(company_code), vendors(id, vendor_code, vendor_name, email, mobile, bank_city, bank_state, address, company_codes)")
         .in("status", ["Issued", "Amended"])
         .order("created_at", { ascending: false }),
       supabase.schema("procurement")
@@ -673,7 +714,7 @@ router.get("/master/vendor-data", async (_req, res) => {
         ).map(c => String(c || "").trim()).filter(Boolean),
         state: vendor.bank_state || vendor.state || site.state || "",
         city: vendor.bank_city || vendor.city || site.city || "",
-        siteCode: site.site_code || site.siteCode || "",
+        siteCode: site.site_code || site.siteCode || site.project_code || site.projectCode || "",
         orderType: order.order_type || "",
         orderNo: order.order_number || "",
         item: uniqueItems.join(", "),
@@ -726,7 +767,7 @@ router.get("/trash", async (req, res) => {
   try {
     const { data, error } = await supabase.schema("procurement")
       .from("purchase_orders")
-      .select("*, companies(*), sites(*), vendors(*)")
+      .select("*, companies(*), vendors(*)")
       .eq("status", "Deleted")
       .order("updated_at", { ascending: false });
     if (error) throw error;
@@ -897,7 +938,7 @@ router.get("/:id", async (req, res) => {
 
     const { data: order, error: orderErr } = await supabase.schema("procurement")
       .from("purchase_orders")
-      .select("*, sites(*), companies(*), vendors(*), contact_person:contacts(*)")
+      .select("*, companies(*), vendors(*), contact_person:contacts(*)")
       .eq("id", req.params.id)
       .single();
     if (orderErr) throw orderErr;
@@ -935,7 +976,7 @@ router.post("/bulk-import", async (req, res) => {
     // Preload masters
     const [{ data: companies }, { data: sites }, { data: vendors }, { data: clauses }, { data: clauseVersions }, { data: contacts }, { data: users }] = await Promise.all([
       supabase.schema("procurement").from("companies").select("*"),
-      supabase.schema("procurement").from("sites").select("*"),
+      supabase.from("projects").select("*"),
       supabase.schema("procurement").from("vendors").select("*"),
       supabase.schema("procurement").from("clauses").select("*"),
       supabase.schema("procurement").from("clause_versions").select("*"),
@@ -943,7 +984,7 @@ router.post("/bulk-import", async (req, res) => {
       supabase.from("users").select("id, name, email, designation, profile_permissions"),
     ]);
     const companyByCode = new Map((companies || []).map(c => [String(c.company_code || "").toUpperCase().trim(), c]));
-    const siteByCode    = new Map((sites || []).map(s => [String(s.site_code || "").toUpperCase().trim(), s]));
+    const siteByCode    = new Map((sites || []).map(s => [String(s.project_code || "").toUpperCase().trim(), s]));
     const vendorByCode  = new Map((vendors || []).map(v => [String(v.vendor_code || "").toUpperCase().trim(), v]));
     const vendorByPan   = new Map((vendors || []).filter(v => v.pan).map(v => [String(v.pan).toUpperCase().trim(), v]));
     const clauseByCode  = new Map((clauses  || []).map(c => [String(c.code || "").toUpperCase().trim(), c]));
@@ -1034,19 +1075,29 @@ router.post("/bulk-import", async (req, res) => {
     };
     const num = (v) => { const n = Number(v); return isNaN(n) ? 0 : n; };
 
-    // Group rows by order key (PO/WO number, or row index fallback)
+    // Group rows by order key — blank WO No. inherits the last seen key (fill-down)
     const groups = new Map();
+    let lastKey = null;
     rows.forEach((r, i) => {
       const rowNo = i + 2;
-      const key = String(pick(r, ["Purchase Order No.", "Work Order No.", "Order No", "Order Number"]) || `__row_${i}`).trim();
-      if (!groups.has(key)) groups.set(key, { key, headRow: r, headRowNo: rowNo, items: [] });
+      const rawKey = String(pick(r, ["Purchase Order No.", "Work Order No.", "Order No", "Order Number"]) || "").trim();
+      const key = rawKey || lastKey || `__row_${i}`;
+      if (rawKey) lastKey = rawKey;
+      if (!groups.has(key)) groups.set(key, { key, headRowNo: rowNo, items: [] });
       groups.get(key).items.push({ r, rowNo });
     });
 
     const results = { inserted: 0, failed: [], orders: [] };
 
     for (const group of groups.values()) {
-      const h = group.headRow;
+      // Merge all rows: pick first non-empty value per column — user can fill order-level
+      // fields in any row (or all rows), not just the first one.
+      const h = {};
+      for (const { r } of group.items) {
+        for (const [k, v] of Object.entries(r)) {
+          if (!(k in h) && v !== undefined && v !== null && String(v).trim() !== "") h[k] = v;
+        }
+      }
       const headRowNo = group.headRowNo;
       try {
         const compCode = String(pick(h, ["Company Code"])).toUpperCase().trim();
@@ -1135,8 +1186,8 @@ router.post("/bulk-import", async (req, res) => {
 
         // Build site snapshot
         const siteSnap = {
-          siteCode: site.site_code,
-          siteName: site.site_name || "",
+          siteCode: site.project_code || site.site_code || "",
+          siteName: site.project_name || site.site_name || "",
           city: site.city || "",
           state: site.state || "",
           siteAddress: site.site_address || "",
@@ -1207,9 +1258,12 @@ router.post("/bulk-import", async (req, res) => {
         }
 
         // Final items — strip temp fields, flatten points to storage format
+        // material_name stored directly (bulk import has no item_id FK).
+        // description gets the spec points; if none, falls back to item name
+        // so display code (row.items?.material_name || row.description) still works.
         const itemRows = consolidated.map(it => ({
-          material_name: it.material_name,
-          description:   pointsToStorage(it._descPoints),
+          material_name: it.material_name || "",
+          description:   pointsToStorage(it._descPoints) || "",
           model_number:  it.model_number,
           make:          it.make,
           unit:          it.unit,
@@ -1290,10 +1344,8 @@ router.post("/bulk-import", async (req, res) => {
           notes:         (() => {
             const notesText = String(pick(h, ["Order Notes"]) || "").trim();
             if (!notesText) return null;
-            // If contains comma or newline, split into points array; else keep as text
-            if (notesText.includes(',') || notesText.includes('\n') || notesText.includes('\r')) {
-              return notesText.split(/[,\r\n]+/).map(x => x.trim()).filter(Boolean);
-            }
+            const pts = notesText.split(/[,\r\n]+/).map(x => x.trim()).filter(Boolean);
+            if (pts.length > 1) return `<ol>${pts.map(p => `<li>${p}</li>`).join("")}</ol>`;
             return notesText;
           })(),
           terms_conditions: tcSelection.points,
@@ -1527,9 +1579,12 @@ router.put("/:id", upload.fields([
 
       const { data: curr } = await supabase.schema("procurement")
         .from("purchase_orders")
-        .select("order_number, order_type, site_id, sites(site_code), companies(company_code)")
+        .select("order_number, order_type, site_id, companies(company_code)")
         .eq("id", req.params.id)
         .single();
+      const { data: currProject } = curr?.site_id
+        ? await supabase.from("projects").select("project_code").eq("id", curr.site_id).single()
+        : { data: null };
 
       // Only generate a new number if the current one is a draft ID (PO-N / WO-N / PENDING-).
       // If it's already a final number (like .../1A from an amendment), keep it.
@@ -1561,7 +1616,7 @@ router.put("/:id", upload.fields([
             const nextSerial = (serialObj.current_number || 0) + 1;
             const typeCode  = (curr.order_type === 'Supply') ? 'PO' : 'WO';
             const compCode  = curr.companies?.company_code || 'CO';
-            const siteCode  = curr.sites?.site_code || 'SITE';
+            const siteCode  = currProject?.project_code || 'SITE';
             mainData.order_number = `${compCode}/${siteCode}/${typeCode}/${fy}/${nextSerial}`;
 
             await supabase.schema("procurement")
@@ -1687,7 +1742,7 @@ const loadOrderForRender = async (orderId) => {
   const [orderRes, itemRes] = await Promise.all([
     supabase.schema("procurement")
       .from("purchase_orders")
-      .select("*, sites(*), companies(*), vendors(*), contact_person:contacts(*)")
+      .select("*, companies(*), vendors(*), contact_person:contacts(*)")
       .eq("id", orderId)
       .single(),
     supabase.schema("procurement")
@@ -1929,7 +1984,7 @@ router.delete("/:id", async (req, res) => {
    Categories: quotations, comparative, vendor-docs, other, vendor-acceptance
    ════════════════════════════════════ */
 
-const POST_DOC_CATEGORIES = ["quotations", "comparative", "vendor-docs", "other", "vendor-acceptance"];
+const POST_DOC_CATEGORIES = ["quotations", "comparative", "vendor-docs", "other", "vendor-acceptance", "signed-copy", "vendor-invoice"];
 
 /* ─────────────────────────────────────────
    POST /api/orders/upload
@@ -2035,6 +2090,575 @@ router.delete("/:id/post-documents/:docId", async (req, res) => {
 });
 
 /* ─────────────────────────────────────────
+   SIGNED COPY  (vendor accepted copy — max 1 doc)
+   POST   /api/orders/:id/signed-copy   → upload or replace
+   DELETE /api/orders/:id/signed-copy   → delete
+───────────────────────────────────────── */
+router.post("/:id/signed-copy", upload.single("file"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!req.file) return res.status(400).json({ error: "File is required" });
+
+    const { data: order, error: ordErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("order_number, post_documents")
+      .eq("id", id).single();
+    if (ordErr) throw ordErr;
+
+    const existingArr = Array.isArray(order.post_documents) ? order.post_documents : [];
+
+    // Delete old signed copy from storage (best-effort)
+    const old = existingArr.find(d => d.category === "signed-copy");
+    if (old?.storage_path) {
+      await supabase.storage.from("procurement-docs").remove([old.storage_path])
+        .catch(e => console.warn("Signed-copy storage delete warning:", e.message));
+    }
+
+    const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const storagePath = `orders/${order.order_number || id}/signed-copy/${Date.now()}_${safeName}`;
+    const url = await uploadToStorage("procurement-docs", storagePath, req.file.buffer, req.file.mimetype);
+
+    const newDoc = {
+      id: `signed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      category: "signed-copy",
+      url,
+      storage_path: storagePath,
+      name: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+      uploaded_at: new Date().toISOString(),
+    };
+
+    const nextArr = [...existingArr.filter(d => d.category !== "signed-copy"), newDoc];
+    const { error: updErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .update({ post_documents: nextArr })
+      .eq("id", id);
+    if (updErr) throw updErr;
+
+    res.json({ success: true, document: newDoc });
+  } catch (err) {
+    console.error("Signed-copy upload error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/:id/signed-copy", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: order, error: ordErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("post_documents")
+      .eq("id", id).single();
+    if (ordErr) throw ordErr;
+
+    const arr = Array.isArray(order.post_documents) ? order.post_documents : [];
+    const target = arr.find(d => d.category === "signed-copy");
+    if (!target) return res.status(404).json({ error: "No signed copy found" });
+
+    if (target.storage_path) {
+      await supabase.storage.from("procurement-docs").remove([target.storage_path])
+        .catch(e => console.warn("Signed-copy storage delete warning:", e.message));
+    }
+
+    const next = arr.filter(d => d.category !== "signed-copy");
+    const { error: updErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .update({ post_documents: next })
+      .eq("id", id);
+    if (updErr) throw updErr;
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Signed-copy delete error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ─────────────────────────────────────────
+   Vendor Invoices  (structured invoice entries stored in vendor_invoices JSONB)
+   GET    /api/orders/:id/vendor-invoices
+   POST   /api/orders/:id/vendor-invoices
+   DELETE /api/orders/:id/vendor-invoices/:invoiceId
+───────────────────────────────────────── */
+
+async function appendAuditLog(orderId, entries) {
+  const { data: order } = await supabase.schema("procurement")
+    .from("purchase_orders").select("invoice_audit_log").eq("id", orderId).single();
+  const current = Array.isArray(order?.invoice_audit_log) ? order.invoice_audit_log : [];
+  await supabase.schema("procurement")
+    .from("purchase_orders")
+    .update({ invoice_audit_log: [...current, ...entries] })
+    .eq("id", orderId);
+}
+
+/* GET global audit log */
+router.get("/:id/invoice-audit-log", async (req, res) => {
+  try {
+    const { data: order, error } = await supabase.schema("procurement")
+      .from("purchase_orders").select("invoice_audit_log").eq("id", req.params.id).single();
+    if (error) throw error;
+    res.json({ log: Array.isArray(order.invoice_audit_log) ? order.invoice_audit_log : [] });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/* DELETE all entries for one invoice from audit log */
+router.delete("/:id/invoice-audit-log/invoice/:invoiceId", async (req, res) => {
+  try {
+    const { id, invoiceId } = req.params;
+    const { data: order, error } = await supabase.schema("procurement")
+      .from("purchase_orders").select("invoice_audit_log").eq("id", id).single();
+    if (error) throw error;
+    const current = Array.isArray(order.invoice_audit_log) ? order.invoice_audit_log : [];
+    const filtered = current.filter(e => e.invoice_id !== invoiceId);
+    const { error: updErr } = await supabase.schema("procurement")
+      .from("purchase_orders").update({ invoice_audit_log: filtered }).eq("id", id);
+    if (updErr) throw updErr;
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+/* DELETE entire audit log */
+router.delete("/:id/invoice-audit-log", async (req, res) => {
+  try {
+    const { error } = await supabase.schema("procurement")
+      .from("purchase_orders").update({ invoice_audit_log: [] }).eq("id", req.params.id);
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.get("/:id/vendor-invoices", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data: order, error } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("vendor_invoices")
+      .eq("id", id)
+      .single();
+    if (error) throw error;
+    const invoices = Array.isArray(order.vendor_invoices) ? order.vendor_invoices : [];
+    const signed = await Promise.all(invoices.map(async inv => ({
+      ...inv,
+      docs: await Promise.all((inv.docs || []).map(async d => ({
+        ...d,
+        url: await signOrderDocUrl(d.storage_path || d.url),
+      }))),
+    })));
+    res.json({ invoices: signed });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/:id/vendor-invoices", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { invoice_no, invoice_date, amount, items, remarks, created_by } = req.body;
+
+    const { data: order, error: ordErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("vendor_invoices")
+      .eq("id", id)
+      .single();
+    if (ordErr) throw ordErr;
+
+    const now = new Date().toISOString();
+    const byUser = String(created_by || "Unknown");
+    const newInvoice = {
+      id: `inv_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
+      invoice_no: String(invoice_no || "").trim(),
+      invoice_date: invoice_date || null,
+      amount: Number(amount) || 0,
+      remarks: String(remarks || "").trim(),
+      items: Array.isArray(items) ? items : [],
+      docs: [],
+      created_by: byUser,
+      created_at: now,
+      log: [{ action: "Invoice Created", user: byUser, at: now }],
+    };
+
+    const existing = Array.isArray(order.vendor_invoices) ? order.vendor_invoices : [];
+    const { error: updErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .update({ vendor_invoices: [...existing, newInvoice] })
+      .eq("id", id);
+    if (updErr) throw updErr;
+
+    await appendAuditLog(id, [{ invoice_id: newInvoice.id, invoice_no: newInvoice.invoice_no, action: "Invoice Created", user: byUser, at: now }]);
+
+    res.json({ success: true, invoice: newInvoice });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk import — accepts array of invoice objects
+router.post("/:id/vendor-invoices/bulk", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { invoices: incoming } = req.body;
+    if (!Array.isArray(incoming) || incoming.length === 0)
+      return res.status(400).json({ error: "No invoices provided" });
+
+    const { data: order, error: ordErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("vendor_invoices")
+      .eq("id", id)
+      .single();
+    if (ordErr) throw ordErr;
+
+    const newInvoices = incoming.map(inv => ({
+      id: `inv_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
+      invoice_no: String(inv.invoice_no || "").trim(),
+      invoice_date: inv.invoice_date || null,
+      remarks: String(inv.remarks || "").trim(),
+      items: Array.isArray(inv.items) ? inv.items : [],
+      docs: [],
+      created_at: new Date().toISOString(),
+    }));
+
+    const existing = Array.isArray(order.vendor_invoices) ? order.vendor_invoices : [];
+    const { error: updErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .update({ vendor_invoices: [...existing, ...newInvoices] })
+      .eq("id", id);
+    if (updErr) throw updErr;
+
+    res.json({ success: true, count: newInvoices.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete("/:id/vendor-invoices/:invoiceId", async (req, res) => {
+  try {
+    const { id, invoiceId } = req.params;
+    const byUser = String(req.body?.deleted_by || req.query?.deleted_by || "Unknown");
+    const { data: order, error: ordErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("vendor_invoices")
+      .eq("id", id)
+      .single();
+    if (ordErr) throw ordErr;
+
+    const arr = Array.isArray(order.vendor_invoices) ? order.vendor_invoices : [];
+    const target = arr.find(inv => inv.id === invoiceId);
+    const { error: updErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .update({ vendor_invoices: arr.filter(inv => inv.id !== invoiceId) })
+      .eq("id", id);
+    if (updErr) throw updErr;
+
+    if (target) {
+      const now = new Date().toISOString();
+      const preserved = (target.log || []).map(e => ({ ...e, invoice_id: invoiceId, invoice_no: target.invoice_no }));
+      await appendAuditLog(id, [...preserved, { invoice_id: invoiceId, invoice_no: target.invoice_no, action: "Permanently Deleted", user: byUser, at: now }]);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update (edit) a vendor invoice
+router.put("/:id/vendor-invoices/:invoiceId", async (req, res) => {
+  try {
+    const { id, invoiceId } = req.params;
+    const { invoice_no, invoice_date, remarks, items, updated_by, amount, trashed, charges } = req.body;
+
+    const { data: order, error: ordErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("vendor_invoices")
+      .eq("id", id)
+      .single();
+    if (ordErr) throw ordErr;
+
+    const now = new Date().toISOString();
+    const byUser = String(updated_by || "Unknown");
+    const arr = Array.isArray(order.vendor_invoices) ? order.vendor_invoices : [];
+    const updated = arr.map(inv => {
+      if (inv.id !== invoiceId) return inv;
+      // trashed-only update (no log entry needed for trash/restore)
+      if (trashed !== undefined && invoice_no === undefined) {
+        return { ...inv, trashed: Boolean(trashed), trashed_at: trashed ? now : null };
+      }
+      const changes = [];
+      const newNo = String(invoice_no || inv.invoice_no || "").trim();
+      if (invoice_no !== undefined && newNo !== String(inv.invoice_no || "").trim())
+        changes.push(`Invoice No: "${inv.invoice_no}" → "${newNo}"`);
+      if (invoice_date !== undefined && invoice_date !== inv.invoice_date)
+        changes.push(`Date: ${inv.invoice_date || '—'} → ${invoice_date || '—'}`);
+      if (amount !== undefined && Number(amount) !== Number(inv.amount || 0))
+        changes.push(`Amount: ${inv.amount || 0} → ${Number(amount)}`);
+      if (Array.isArray(items) && JSON.stringify(items) !== JSON.stringify(inv.items || []))
+        changes.push(`Items updated (${items.length} line item${items.length !== 1 ? 's' : ''})`);
+      const action = changes.length > 0 ? `Updated — ${changes.join(', ')}` : 'Details updated';
+      const logEntry = { action, user: byUser, at: now };
+      return { ...inv,
+        invoice_no: newNo,
+        invoice_date: invoice_date !== undefined ? invoice_date : inv.invoice_date,
+        amount: amount !== undefined ? Number(amount) : inv.amount,
+        remarks: String(remarks !== undefined ? remarks : (inv.remarks || "")),
+        items: Array.isArray(items) ? items : inv.items,
+        charges: Array.isArray(charges) ? charges : (inv.charges || []),
+        log: [...(inv.log || []), logEntry],
+      };
+    });
+
+    const { data: updData, error: updErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .update({ vendor_invoices: updated })
+      .eq("id", id)
+      .select("vendor_invoices");
+    if (updErr) throw updErr;
+    const savedInv = (updData?.[0]?.vendor_invoices || []).find(i => i.id === invoiceId);
+    if (savedInv && invoice_no !== undefined) {
+      const logEntry = savedInv.log?.[savedInv.log.length - 1];
+      if (logEntry) await appendAuditLog(id, [{ invoice_id: invoiceId, invoice_no: savedInv.invoice_no, action: logEntry.action, user: byUser, at: now }]);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Dedicated trash/restore endpoint
+router.post("/:id/vendor-invoices/:invoiceId/trash", async (req, res) => {
+  try {
+    const { id, invoiceId } = req.params;
+    const trash = req.body.trashed !== false;
+
+    const { data: order, error: readErr } = await supabase
+      .schema("procurement").from("purchase_orders")
+      .select("vendor_invoices").eq("id", id).single();
+    if (readErr) return res.status(404).json({ error: "Order not found" });
+
+    const arr = Array.isArray(order.vendor_invoices) ? order.vendor_invoices : [];
+    let found = false;
+    const now = new Date().toISOString();
+    const byUser = String(req.body.by || "Unknown");
+    const updated = arr.map(inv => {
+      if (inv.id !== invoiceId) return inv;
+      found = true;
+      const action = trash ? "Moved to Trash" : "Restored from Trash";
+      const logEntry = { action, user: byUser, at: now };
+      return { ...inv, trashed: trash, log: [...(inv.log || []), logEntry] };
+    });
+    if (!found) return res.status(404).json({ error: "Invoice not found" });
+
+    const { error: writeErr } = await supabase
+      .schema("procurement").from("purchase_orders")
+      .update({ vendor_invoices: updated }).eq("id", id);
+    if (writeErr) return res.status(500).json({ error: writeErr.message });
+
+    const affectedInv = updated.find(i => i.id === invoiceId);
+    const action = trash ? "Moved to Trash" : "Restored from Trash";
+    await appendAuditLog(id, [{ invoice_id: invoiceId, invoice_no: affectedInv?.invoice_no || invoiceId, action, user: byUser, at: now }]);
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Soft-patch invoice fields (e.g. trashed: true)
+router.patch("/:id/vendor-invoices/:invoiceId", async (req, res) => {
+  try {
+    const { id, invoiceId } = req.params;
+    const patches = req.body;
+
+    // Read current order
+    const { data: order, error: ordErr } = await supabase
+      .schema("procurement").from("purchase_orders")
+      .select("id, vendor_invoices").eq("id", id).single();
+    if (ordErr) return res.status(404).json({ error: "Order not found: " + ordErr.message });
+
+    const arr = Array.isArray(order.vendor_invoices) ? order.vendor_invoices : [];
+    const targetIdx = arr.findIndex(inv => inv.id === invoiceId);
+    if (targetIdx === -1) return res.status(404).json({ error: `Invoice ${invoiceId} not found in order ${id}` });
+
+    const updated = arr.map((inv, i) => i === targetIdx ? { ...inv, ...patches } : inv);
+
+    const { error: updErr } = await supabase
+      .schema("procurement").from("purchase_orders")
+      .update({ vendor_invoices: updated }).eq("id", id);
+    if (updErr) return res.status(500).json({ error: "Update failed: " + updErr.message });
+
+    res.json({ success: true, invoiceId, patches });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk permanent delete invoices (from trash)
+router.delete("/:id/vendor-invoices", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { invoiceIds, deleted_by } = req.body;
+    const byUser = String(deleted_by || "Unknown");
+    if (!Array.isArray(invoiceIds) || !invoiceIds.length)
+      return res.status(400).json({ error: "invoiceIds required" });
+    const { data: order, error: ordErr } = await supabase.schema("procurement")
+      .from("purchase_orders").select("vendor_invoices").eq("id", id).single();
+    if (ordErr) throw ordErr;
+    const arr = Array.isArray(order.vendor_invoices) ? order.vendor_invoices : [];
+    const toDelete = arr.filter(inv => invoiceIds.includes(inv.id));
+    await Promise.allSettled(toDelete.flatMap(inv =>
+      (inv.docs || []).map(async d => {
+        const path = d.storage_path || normalizeStoragePath(d.url, "procurement-docs");
+        if (path) await removeStorageFile(supabase, "procurement-docs", path);
+      })
+    ));
+    const updated = arr.filter(inv => !invoiceIds.includes(inv.id));
+    const { error: updErr } = await supabase.schema("procurement")
+      .from("purchase_orders").update({ vendor_invoices: updated }).eq("id", id);
+    if (updErr) throw updErr;
+
+    const now = new Date().toISOString();
+    const auditEntries = toDelete.flatMap(inv => [
+      ...(inv.log || []).map(e => ({ ...e, invoice_id: inv.id, invoice_no: inv.invoice_no })),
+      { invoice_id: inv.id, invoice_no: inv.invoice_no, action: "Permanently Deleted", user: byUser, at: now },
+    ]);
+    if (auditEntries.length > 0) await appendAuditLog(id, auditEntries);
+
+    res.json({ success: true, deleted: toDelete.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Bill Docs per invoice
+router.post("/:id/vendor-invoices/:invoiceId/docs", upload.single("file"), async (req, res) => {
+  try {
+    const { id, invoiceId } = req.params;
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: "No file provided" });
+
+    const { data: order, error: ordErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("vendor_invoices, order_number")
+      .eq("id", id)
+      .single();
+    if (ordErr) throw ordErr;
+
+    const arr = Array.isArray(order.vendor_invoices) ? order.vendor_invoices : [];
+    const invIdx = arr.findIndex(inv => inv.id === invoiceId);
+    if (invIdx === -1) return res.status(404).json({ error: "Invoice not found" });
+
+    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const storagePath = `orders/${order.order_number || id}/vendor-invoices/${invoiceId}/${Date.now()}_${safeName}`;
+    await uploadToStorage("procurement-docs", storagePath, file.buffer, file.mimetype);
+
+    const newDoc = {
+      id: `doc_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`,
+      name: file.originalname,
+      storage_path: storagePath,
+      size: file.size,
+      doc_type: req.body.doc_type || 'invoice',
+      uploaded_at: new Date().toISOString(),
+    };
+
+    const logEntry = { action: `Document uploaded: ${file.originalname}`, user: String(req.body.uploaded_by || "Unknown"), at: newDoc.uploaded_at };
+    const updated = arr.map((inv, i) => i === invIdx
+      ? { ...inv, docs: [...(inv.docs || []), newDoc], log: [...(inv.log || []), logEntry] }
+      : inv
+    );
+
+    const { error: updErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .update({ vendor_invoices: updated })
+      .eq("id", id);
+    if (updErr) throw updErr;
+
+    res.json({ success: true, doc: newDoc });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Soft-trash a doc (mark trashed: true without deleting from storage)
+router.patch("/:id/vendor-invoices/:invoiceId/docs/:docId", async (req, res) => {
+  try {
+    const { id, invoiceId, docId } = req.params;
+    const patches = req.body;
+    const { data: order, error: ordErr } = await supabase.schema("procurement")
+      .from("purchase_orders").select("vendor_invoices").eq("id", id).single();
+    if (ordErr) throw ordErr;
+    const arr = Array.isArray(order.vendor_invoices) ? order.vendor_invoices : [];
+    const updated = arr.map(inv => inv.id === invoiceId
+      ? { ...inv, docs: (inv.docs || []).map(d => d.id === docId ? { ...d, ...patches } : d) }
+      : inv
+    );
+    const { error: updErr } = await supabase.schema("procurement")
+      .from("purchase_orders").update({ vendor_invoices: updated }).eq("id", id);
+    if (updErr) throw updErr;
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Bulk permanent delete (empty trash / delete selected)
+router.delete("/:id/vendor-invoices/:invoiceId/docs", async (req, res) => {
+  try {
+    const { id, invoiceId } = req.params;
+    const { docIds } = req.body;
+    if (!Array.isArray(docIds) || !docIds.length) return res.status(400).json({ error: "docIds required" });
+    const { data: order, error: ordErr } = await supabase.schema("procurement")
+      .from("purchase_orders").select("vendor_invoices").eq("id", id).single();
+    if (ordErr) throw ordErr;
+    const arr = Array.isArray(order.vendor_invoices) ? order.vendor_invoices : [];
+    const inv = arr.find(inv => inv.id === invoiceId);
+    const toDelete = (inv?.docs || []).filter(d => docIds.includes(d.id));
+    await Promise.allSettled(toDelete.map(async d => {
+      const path = d.storage_path || normalizeStoragePath(d.url, "procurement-docs");
+      if (path) await removeStorageFile(supabase, "procurement-docs", path);
+    }));
+    const updated = arr.map(inv => inv.id === invoiceId
+      ? { ...inv, docs: (inv.docs || []).filter(d => !docIds.includes(d.id)) }
+      : inv
+    );
+    const { error: updErr } = await supabase.schema("procurement")
+      .from("purchase_orders").update({ vendor_invoices: updated }).eq("id", id);
+    if (updErr) throw updErr;
+    res.json({ success: true, deleted: toDelete.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.delete("/:id/vendor-invoices/:invoiceId/docs/:docId", async (req, res) => {
+  try {
+    const { id, invoiceId, docId } = req.params;
+    const { data: order, error: ordErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("vendor_invoices")
+      .eq("id", id)
+      .single();
+    if (ordErr) throw ordErr;
+
+    const arr = Array.isArray(order.vendor_invoices) ? order.vendor_invoices : [];
+    const inv = arr.find(inv => inv.id === invoiceId);
+    const doc = (inv?.docs || []).find(d => d.id === docId);
+    if (doc) {
+      const path = doc.storage_path || normalizeStoragePath(doc.url, "procurement-docs");
+      if (path) await removeStorageFile(supabase, "procurement-docs", path);
+    }
+
+    const updated = arr.map(inv => inv.id === invoiceId
+      ? { ...inv, docs: (inv.docs || []).filter(d => d.id !== docId) }
+      : inv
+    );
+
+    const { error: updErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .update({ vendor_invoices: updated })
+      .eq("id", id);
+    if (updErr) throw updErr;
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ─────────────────────────────────────────
    POST /api/orders/:id/issue-action
    Issue handler acts on a "Pending Issue" order: issue | revert | reject
 ───────────────────────────────────────── */
@@ -2066,7 +2690,7 @@ router.post("/:id/issue-action", async (req, res) => {
     }
 
     const { data: order } = await supabase.schema("procurement").from("purchase_orders")
-      .select("status, snapshot, totals, order_number, order_type, site_id, sites(site_code), companies(company_code)")
+      .select("status, snapshot, totals, order_number, order_type, site_id, companies(company_code)")
       .eq("id", req.params.id).single();
     if (!order || !["Pending Issue", "To Issue"].includes(order.status)) {
       return res.status(400).json({ error: "Order is not in Pending Issue state" });
@@ -2121,7 +2745,10 @@ router.post("/:id/issue-action", async (req, res) => {
             const nextSerial = (serialObj.current_number || 0) + 1;
             const typeCode  = order.order_type === "Supply" ? "PO" : "WO";
             const compCode  = order.companies?.company_code || "CO";
-            const siteCode  = order.sites?.site_code || "SITE";
+            const { data: issueProject } = order.site_id
+              ? await supabase.from("projects").select("project_code").eq("id", order.site_id).single()
+              : { data: null };
+            const siteCode  = issueProject?.project_code || order.snapshot?.site?.siteCode || "SITE";
             updatePayload.order_number = `${compCode}/${siteCode}/${typeCode}/${fy}/${nextSerial}`;
             await supabase.schema("procurement").from("serialization_settings")
               .update({ current_number: nextSerial }).eq("id", serialObj.id);

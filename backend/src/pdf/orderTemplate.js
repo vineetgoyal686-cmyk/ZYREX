@@ -10,166 +10,137 @@ const {
 } = require("./helpers");
 
 const css = `
-  /* Add consistent gap below the repeated PDF header on pages 2+ */
   @page { size: A4; margin: 31mm 10mm 22mm 10mm; }
-  /* Keep page 1 slightly tighter */
   @page :first { margin-top: 27mm; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; color: #000; font-family: "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  body { font-size: 10px; line-height: 1.35; }
+  html, body { margin: 0; padding: 0; color: #000; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-size: 11px; line-height: 1.6; }
   :root { --box-line: 1px solid #444; }
 
   .page { position: relative; padding-top: 18px; }
   .page + .page { page-break-before: always; }
   .annexure-page { page-break-before: always; break-before: page; }
   .annexure-title {
-    display: block; text-align: center; font-size: 18px; font-weight: 900;
+    display: block; text-align: center; font-size: 18px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 3px; margin: 0 0 14px 0;
     padding-bottom: 8px; border-bottom: 2px solid #000;
   }
-  .annexure-content { font-size: 11.5px; line-height: 1.55; text-align: justify; }
+  .annexure-content { font-size: 12px; line-height: 1.65; text-align: justify; }
   .annexure-content p { margin: 0 0 6px 0; }
   .annexure-content ol { margin: 0 0 6px 0; padding-left: 26px; list-style: decimal; }
   .annexure-content ol ol { list-style-type: lower-alpha; }
   .annexure-content ol ol ol { list-style-type: lower-roman; }
   .annexure-content ul { margin: 0 0 6px 0; padding-left: 26px; list-style: disc; }
-  .annexure-content li { margin-bottom: 3px; }
+  .annexure-content li { margin-bottom: 4px; }
   .annexure-content img { max-width: 100%; height: auto; }
 
   table.meta { width: 100%; border-collapse: collapse; border: var(--box-line); margin: -2mm 0 0; }
-  table.meta td { border: var(--box-line); padding: 4px 6px; vertical-align: middle; width: 50%; }
-  table.meta .label { font-size: 9px; font-weight: 900; text-transform: uppercase; display: inline-block; min-width: 110px; margin-right: 15px; }
-  table.meta .value { font-size: 10.5px; font-weight: 700; }
+  table.meta td { border: var(--box-line); padding: 5px 7px; vertical-align: middle; width: 50%; }
+  table.meta .label { font-size: 12.5px; font-weight: 700; text-transform: none; display: inline-block; min-width: 100px; margin-right: 10px; }
+  table.meta .value { font-size: 13px; font-weight: 500; }
 
   .details-wrap { display: flex; border: var(--box-line); border-top: 0; margin-bottom: 0; }
-  .details-col { flex: 1; padding: 8px 10px; }
+  .details-col { flex: 1; padding: 9px 11px; }
   .details-col + .details-col { border-left: var(--box-line); }
   .details-tab {
     clip-path: polygon(0 0, 100% 0, 85% 100%, 0 100%);
-    background: #000; color: #fff; padding: 3px 22px 3px 8px;
-    font-weight: 700; font-size: 9px; text-transform: uppercase;
-    display: inline-block; margin-bottom: 6px;
+    background: #000000 !important; color: #ffffff !important; padding: 3px 22px 3px 8px;
+    font-weight: 800; font-size: 10px; text-transform: uppercase;
+    -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
+    display: inline-block; margin-bottom: 7px;
   }
-  .party-name { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
-  .card { margin-bottom: 6px; }
-  .card-title { font-size: 8.5px; font-weight: 700; text-transform: uppercase; margin-bottom: 3px; }
-  .card-text { font-size: 9.5px; font-weight: 500; }
-  .kv { display: grid; grid-template-columns: 70px 1fr; gap: 3px; font-size: 9px; margin-bottom: 2px; }
-  .kv-label { font-weight: 700; text-transform: uppercase; font-size: 8px; }
+  .party-name { font-size: 13px; font-weight: 700; margin-bottom: 7px; }
+  .card { margin-bottom: 7px; }
+  .card-title { display: inline-block; font-size: 9px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; border-bottom: 1.5px solid #999; padding-bottom: 1px; }
+  .card-text { font-size: 10.5px; font-weight: 400; }
+  .kv { display: grid; grid-template-columns: 75px 1fr; gap: 3px; font-size: 9.5px; margin-bottom: 2px; }
+  .kv-label { font-weight: 700; text-transform: uppercase; font-size: 9px; }
   .kv-value { font-weight: 400; }
   .kv-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 12px; }
 
   .subject-bar {
     border: var(--box-line); border-top: 0; background: #d4d4d8;
     padding: 6px 14px; text-align: center; margin: 0 0 8px 0;
-    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
+    font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
   }
   .subject-bar .lbl { margin-right: 8px; }
 
-  table.items { width: 100%; border-collapse: collapse; border: 0; font-size: 10px; }
+  table.items { width: 100%; border-collapse: collapse; border: 0; font-size: 11px; }
   table.items thead { background: #d4d4d8; display: table-header-group; }
   table.items thead .page-gap th {
-    padding: 0;
-    height: 0;
-    border-left: 0;
-    border-right: 0;
-    border-top: 0;
-    border-bottom: 0;
-    background: #fff;
+    padding: 0; height: 0; border-left: 0; border-right: 0;
+    border-top: 0; border-bottom: 0; background: #fff;
   }
-  table.items th, table.items td { border: var(--box-line); padding: 5px 6px; vertical-align: top; }
-  table.items td.item-desc { padding: 8px 8px; }
-  table.items tr.item-row > td { padding-top: 8px; }
-  table.items th { font-size: 9.5px; font-weight: 700; text-transform: uppercase; text-align: center; }
+  table.items th, table.items td { border: var(--box-line); padding: 6px 7px; vertical-align: top; }
+  table.items td.item-desc { padding: 8px 9px; }
+  table.items tr.item-row > td { padding-top: 9px; }
+  table.items th { font-size: 10px; font-weight: 700; text-transform: uppercase; text-align: center; }
   table.items .r { text-align: right; white-space: nowrap; }
   table.items .c { text-align: center; white-space: nowrap; }
-  table.items .item-name { font-weight: 700; text-transform: uppercase; font-size: 11.5px; margin-bottom: 4px; }
-  table.items td.merge-first {
-    /* hide the first inner row line to simulate merge */
-    border-bottom: 0;
-  }
-  table.items td.merge-fill {
-    border-top: 0;
-    border-bottom: 0;
-    visibility: hidden;
-  }
-  table.items td.merge-last {
-    border-top: 0;
-    /* keep bottom border on the last merged row */
-    visibility: hidden;
-  }
+  table.items .item-name { font-weight: 700; text-transform: uppercase; font-size: 12.5px; margin-bottom: 4px; }
+  table.items .item-name-plain { font-weight: 400; font-size: 11px; }
+  table.items td.merge-first { border-bottom: 0; }
+  table.items td.merge-fill { border-top: 0; border-bottom: 0; visibility: hidden; }
+  table.items td.merge-last { border-top: 0; visibility: hidden; }
   table.items .item-desc { text-align: justify; }
   table.items tfoot { display: table-footer-group; }
-  table.items tfoot td {
-    padding: 0;
-    height: 0;
-    line-height: 0;
-    border: 0;
-    border-top: var(--box-line);
-    background: #fff;
-  }
-  table.items td.merge-fill .item-name,
-  table.items td.merge-last .item-name { display: none; }
+  table.items tfoot td { padding: 0; height: 0; line-height: 0; border: 0; border-top: var(--box-line); background: #fff; }
+  table.items td.merge-fill .item-name, table.items td.merge-last .item-name,
+  table.items td.merge-fill .item-name-plain, table.items td.merge-last .item-name-plain { display: none; }
   table.items .item-desc p, table.items .item-desc div { margin: 0 0 2px 0; }
   table.items .item-desc ul { margin: 2px 0; padding-left: 14px; list-style: disc; }
   table.items .item-desc ol { margin: 2px 0; padding-left: 14px; list-style: decimal; }
-  table.items .meta-row { font-size: 9px; margin-top: 2px; }
+  table.items .meta-row { font-size: 9.5px; margin-top: 2px; }
   table.items .meta-row b { font-weight: 700; }
   table.items .amount-col { background: #fafafa; font-weight: 700; }
   tr.item-row { page-break-inside: auto; break-inside: auto; }
   .point-label {
-    display: inline-block;
-    font-size: 8.5px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: #000;
-    margin: 0 0 4px 0;
-    padding-bottom: 1.5px;
-    border-bottom: 1px solid #000;
+    display: inline-block; font-size: 9px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.12em; color: #000;
+    margin: 0 0 4px 0; padding-bottom: 1.5px; border-bottom: 1px solid #000;
   }
   .desc-block + .desc-block { margin-top: 6px; }
 
-  .totals-wrap { display: flex; justify-content: space-between; gap: 14px; border: var(--box-line); padding: 8px 10px; margin-bottom: 8px; page-break-inside: avoid; break-inside: avoid-page; }
-  .words-box { flex: 1; background: #e4e4e7; padding: 8px 10px; }
-  .words-box .words-label { font-size: 8px; font-weight: 700; text-transform: uppercase; margin-bottom: 2px; }
-  .words-box .words-text { font-size: 10.5px; font-weight: 700; }
-  .totals-box { width: 240px; }
-  .totals-row { display: flex; justify-content: space-between; padding: 4px 10px; border-bottom: 1px solid #e2e8f0; font-size: 9.5px; }
+  .totals-wrap { display: flex; justify-content: space-between; gap: 14px; border: var(--box-line); padding: 9px 11px; margin-bottom: 8px; page-break-inside: avoid; break-inside: avoid-page; }
+  .words-box { flex: 1; background: #e4e4e7; padding: 9px 11px; }
+  .words-box .words-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #444; margin-bottom: 4px; }
+  .words-box .words-text { font-size: 14px; font-weight: 700; }
+  .totals-box { width: 250px; }
+  .totals-row { display: flex; justify-content: space-between; padding: 5px 10px; border-bottom: 1px solid #e2e8f0; font-size: 10.5px; }
   .totals-row .lbl { font-weight: 700; text-transform: uppercase; }
   .totals-row .val { font-weight: 700; }
-  .totals-row.grand { background: #e4e4e7; border-bottom: 3px solid #000; padding: 6px 10px; }
-  .totals-row.grand .lbl { font-size: 10.5px; }
-  .totals-row.grand .val { font-size: 12px; }
+  .totals-row.grand { background: #e4e4e7; border-bottom: 3px solid #000; padding: 7px 10px; }
+  .totals-row.grand .lbl { font-size: 11.5px; }
+  .totals-row.grand .val { font-size: 13px; }
   .totals-row.discount { color: #b91c1c; }
 
   .section { margin-top: 10px; }
   .section-title {
-    clip-path: polygon(0 0, 100% 0, 85% 100%, 0 100%);
-    background: #000; color: #fff; padding: 3px 22px 3px 8px;
-    font-weight: 700; font-size: 10px; text-transform: uppercase;
     display: inline-block; margin-bottom: 6px; page-break-inside: avoid;
+    font-weight: 800; font-size: 11px; text-transform: uppercase; color: #000;
+    border-bottom: 2.5px solid #000; padding-bottom: 2px;
   }
-  .section .content { font-size: 11.5px; line-height: 1.45; text-align: justify; }
-  .section .content ol { margin: 0 0 5px 0; padding-left: 28px; list-style: decimal; }
+  .section .content { font-size: 12.5px; line-height: 1.7; text-align: justify; }
+  .section .content ol { margin: 0 0 6px 0; padding-left: 28px; list-style: decimal; }
   .section .content ol ol { list-style-type: lower-alpha; }
   .section .content ol ol ol { list-style-type: lower-roman; }
-  .section .content ul { margin: 0 0 5px 0; padding-left: 28px; list-style: disc; }
-  .section .content li { margin-bottom: 2px; }
+  .section .content ul { margin: 0 0 6px 0; padding-left: 28px; list-style: disc; }
+  .section .content li { margin-bottom: 4px; }
+  .section .content > ol > li { margin-bottom: 10px; }
   .section .content p { margin: 0 0 4px 0; }
-  .section .content b, .section .content strong { font-weight: 800; }
+  .section .content b, .section .content strong { font-weight: 700; }
 
   .signatures { margin-top: 24px; padding-left: 8mm; display: flex; justify-content: space-between; gap: 70px; page-break-inside: avoid; break-inside: avoid-page; align-items: flex-start; }
   .sig-side { flex: 1; min-width: 0; }
   .sig-side.right { display: flex; flex-direction: column; align-items: flex-end; }
   .sig-box { width: 100%; max-width: 400px; }
-  .sig-top { font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 18px; }
+  .sig-top { font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 18px; }
   .sig-area { position: relative; height: 110px; margin-bottom: 12px; }
   .sig-stamp { position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 90px; width: auto; object-fit: contain; opacity: 0.75; }
   .sig-sign { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); height: 70px; width: auto; object-fit: contain; z-index: 2; }
-  .sig-italic { font-size: 11px; font-weight: 700; color: #111827; font-style: italic; margin-bottom: 8px; }
-  .sig-kv { font-size: 10.5px; line-height: 1.55; }
-  .sig-kv b { font-weight: 800; color: #111827; }
+  .sig-italic { font-size: 12px; font-weight: 600; color: #111827; font-style: italic; margin-bottom: 8px; }
+  .sig-kv { font-size: 11px; line-height: 1.6; }
+  .sig-kv b { font-weight: 700; color: #111827; }
 `;
 
 const renderMetaGrid = (order, site) => {
@@ -224,7 +195,7 @@ const renderVendorCard = (vend) => `
       </div>
     </div>
     <div class="card">
-      <div class="card-title">Contact</div>
+      <div class="card-title">Contact Detail</div>
       <div class="kv"><span class="kv-label">Person:</span><span class="kv-value">${escapeHtml(vend.contact_person || vend.contactPerson || "N/A")}</span></div>
       <div class="kv"><span class="kv-label">Phone:</span><span class="kv-value">${escapeHtml(vend.mobile || vend.phone || "N/A")}</span></div>
       <div class="kv"><span class="kv-label">Email:</span><span class="kv-value">${escapeHtml(vend.email || "N/A")}</span></div>
@@ -278,20 +249,23 @@ const renderCompanyCard = (comp, site, contacts, billingProfile) => `
 const renderItemsTable = (order, items) => {
   const isSupply = order.order_type === "Supply";
   const totals = order.totals || {};
-  const showDiscount = totals.discount_mode === "line";
   const grouped = groupItems(items);
   const allRows = grouped.flatMap((g) => g.rows);
+  const showDiscount = totals.discount_mode === "line" && allRows.some((i) => Number(i.discount_pct) > 0);
+  const showGst = allRows.some((i) => Number(i.tax_pct) > 0);
   const showRemarks = allRows.some((i) => i.remarks) && totals.showRemarks !== false;
+  const extraCols = (showDiscount ? 1 : 0) + (showGst ? 1 : 0);
   const colCount = showRemarks
-    ? (showDiscount ? (isSupply ? 9 : 8) : (isSupply ? 8 : 7))
-    : (showDiscount ? (isSupply ? 8 : 7) : (isSupply ? 7 : 6));
+    ? ((isSupply ? 6 : 5) + extraCols + 1)
+    : ((isSupply ? 5 : 4) + extraCols + 1);
 
   let rowsHtml = "";
   grouped.forEach((group) => {
     const rowSpan = group.rows.length || 0;
     let groupRowsHtml = "";
     group.rows.forEach((it, idx) => {
-      const rawDesc = it.description || it.specification || it.items?.description;
+      const rawDescRaw = it.description || it.specification || it.items?.description;
+      const rawDesc = (rawDescRaw === "--" || rawDescRaw === "---") ? "" : rawDescRaw;
       const descParts = parseDescription(rawDesc);
       const showPointLabel = !isSupply && rowSpan > 1;
       const descHtml = descParts
@@ -312,18 +286,24 @@ const renderItemsTable = (order, items) => {
 
       const srCell = `<td class="c${mergeClass}">${idx === 0 ? String(group.srNo).padStart(2, "0") : ""}</td>`;
 
+      const hasDesc = descHtml.trim() !== "";
+      const groupHasAnyDesc = group.rows.some(r => {
+        const rd = r.description || r.specification || r.items?.description;
+        return rd && rd !== "--" && rd !== "---" && String(rd).trim() !== "";
+      });
+
       const itemNameCell = isSupply
-        ? `<td class="${mergeClass.trim()}" style="vertical-align: top;">${idx === 0 ? `<div class="item-name">${escapeHtml(group.itemName)}</div>` : ""}</td>`
+        ? `<td class="${mergeClass.trim()}" style="vertical-align: top;">${idx === 0 ? `<div class="${groupHasAnyDesc ? "item-name" : "item-name-plain"}">${escapeHtml(group.itemName)}</div>` : ""}</td>`
         : "";
 
       const descCell = isSupply
-        ? `<td class="item-desc">${descHtml || "--"}
+        ? `<td class="item-desc">${descHtml}
             ${it.model_number ? `<div class="meta-row"><b>Model No.:</b> ${escapeHtml(it.model_number)}</div>` : ""}
             ${brandText ? `<div class="meta-row"><b>Brand:</b> ${escapeHtml(brandText)}</div>` : ""}
            </td>`
         : `<td class="item-desc">
-            ${idx === 0 ? `<div class="item-name">${escapeHtml(group.itemName)}</div>` : ""}
-            ${descHtml || "--"}
+            ${idx === 0 ? `<div class="${groupHasAnyDesc ? "item-name" : "item-name-plain"}">${escapeHtml(group.itemName)}</div>` : ""}
+            ${descHtml}
             ${it.model_number ? `<div class="meta-row"><b>Model No.:</b> ${escapeHtml(it.model_number)}</div>` : ""}
             ${brandText ? `<div class="meta-row"><b>Brand:</b> ${escapeHtml(brandText)}</div>` : ""}
            </td>`;
@@ -339,7 +319,7 @@ const renderItemsTable = (order, items) => {
         <td class="c"${offsetStyle}>${escapeHtml(String(it.qty ?? "--"))}</td>
         <td class="r"${offsetStyle}>₹ ${formatINR(it.unit_rate)}</td>
         ${showDiscount ? `<td class="c"${offsetStyle}>${escapeHtml(String(it.discount_pct || 0))}%</td>` : ""}
-        <td class="c"${offsetStyle}>${escapeHtml(String(it.tax_pct || 0))}%</td>
+        ${showGst ? `<td class="c"${offsetStyle}>${escapeHtml(String(it.tax_pct || 0))}%</td>` : ""}
         <td class="r amount-col"${offsetStyle}>₹ ${formatINR(it.amount)}</td>
         ${showRemarks ? `<td${offsetStyle}>${escapeHtml(it.remarks || "--")}</td>` : ""}
       </tr>`;
@@ -362,7 +342,7 @@ const renderItemsTable = (order, items) => {
           <th style="width:48px">Qty</th>
           <th style="width:66px">Rate</th>
           ${showDiscount ? '<th style="width:44px">Disc%</th>' : ""}
-          <th style="width:44px">GST%</th>
+          ${showGst ? '<th style="width:44px">GST%</th>' : ""}
           <th style="width:86px">Amount</th>
           ${showRemarks ? '<th style="width:90px">Remarks</th>' : ""}
         </tr>

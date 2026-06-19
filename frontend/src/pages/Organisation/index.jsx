@@ -16,6 +16,7 @@ import SubDepts      from "./SubDepts";
 import Grades        from "./Grades";
 import EmployeeList  from "./EmployeeList";
 import OrgList       from "./OrgList";
+import SOPTab        from "../Settings/tabs/SOP";
 import { loadDivisions } from "./Divisions";
 import { loadSubDepts   } from "./SubDepts";
 import { loadGrades     } from "./Grades";
@@ -74,6 +75,12 @@ function OrgDetail({ org, onBack, currentUser }) {
   const [empView,  setEmpView]  = useState("card");
   const [empCount, setEmpCount] = useState(null);
 
+  const [toast, setToast] = useState(null);
+  const showToast = (msg, type = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   const exportDropRef = useRef(null);
   const uploadDropRef = useRef(null);
   const actionsRef    = useRef({});
@@ -110,13 +117,7 @@ function OrgDetail({ org, onBack, currentUser }) {
       case "overview":        return <OrgOverview org={org} onNavigate={setActiveTab} />;
       case "structure":       return <Structure />;
       case "org_chart":       return <OrgChart    onNavigate={setActiveTab} />;
-      case "sop":             return (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <ClipboardList size={48} className="text-slate-300 mb-4" />
-          <p className="text-slate-500 font-semibold text-base">SOP</p>
-          <p className="text-slate-400 text-sm mt-1">Standard Operating Procedures — coming soon</p>
-        </div>
-      );
+      case "sop":             return <SOPTab showToast={showToast} />;
       case "divisions":       return <Divisions   actionsRef={actionsRef} onChange={d => setDivCount(d.length)} />;
       case "departments":     return <Departments actionsRef={actionsRef} />;
       case "sub_departments": return <SubDepts    actionsRef={actionsRef} onChange={d => setSubCount(d.length)} />;
@@ -130,6 +131,13 @@ function OrgDetail({ org, onBack, currentUser }) {
 
   return (
     <div className="flex w-full min-w-0 flex-1">
+
+      {/* Toast notification */}
+      {toast && (
+        <div className={`fixed bottom-5 right-5 z-[9999] px-4 py-2.5 rounded shadow-lg text-white text-sm font-semibold transition-all ${toast.type === "error" ? "bg-rose-500" : "bg-emerald-500"}`}>
+          {toast.msg}
+        </div>
+      )}
 
       {/* Fixed tooltip for collapsed sidebar */}
       {collapsed && tooltip && (

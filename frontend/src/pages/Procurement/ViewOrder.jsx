@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { ArrowLeft, Search, Building2, User, Landmark, MapPin, Receipt, ShieldQuestion, FileText, CheckCircle2, Phone, Mail, FileDown, Download, Eye, X, Upload, Trash2, FileCheck, Lock, ShoppingCart, Package, GitMerge, Calendar, Undo2 } from "lucide-react";
+import { ArrowLeft, Search, Building2, User, Landmark, MapPin, Receipt, ShieldQuestion, FileText, CheckCircle2, Phone, Mail, FileDown, Download, Eye, X, Upload, Trash2, FileCheck, Lock, ShoppingCart, Package, GitMerge, Calendar, Undo2, Folder, Plus, Clock, Pencil, ChevronDown } from "lucide-react";
 import { getCachedOrderDetails, preloadOrderDetails, seedOrderDetails } from "./orderDetailsCache";
+import { normalizeOrderSite } from "../../utils/orderSite";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -881,9 +882,11 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     ? (getVal(order.vendors) || snap.vendor || {})
     : (snap.vendor || getVal(order.vendors) || {});
 
-  const site = isKacha
-    ? (getVal(order.sites) || snap.site || {})
-    : (snap.site || getVal(order.sites) || {});
+  const site = normalizeOrderSite(
+    isKacha
+      ? (getVal(order.sites) || snap.site || {})
+      : (snap.site || getVal(order.sites) || {})
+  );
 
   const liveContact = getVal(order.contact_person);
   const contacts = isKacha
@@ -943,7 +946,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   const issuerName = isIssuedLike ? (issuerNameRaw || FALLBACK) : FALLBACK;
   const issuerDesignationRaw = (issuer?.designation && issuer.designation.trim()) || "";
   const issuerDesignation = isIssuedLike ? (issuerDesignationRaw || null) : null;
-  const TABS = ["Order Details", "Approvals", "Log", "Order Documents", "PDF View", "Goods receipts", "Vendor Invoices", "Payments"];
+  const TABS = ["Order Details", "Approvals", "Log", "Order Documents", "PDF View", "Vendor Invoices", "Payments"];
   const detailLabelCls = "text-[11px] font-medium text-slate-400 mb-0.5";
   const detailValueCls = "text-[13px] font-semibold text-slate-950 leading-snug";
   const cardTitleCls = "text-[14px] font-semibold text-slate-950 mb-3 flex items-center gap-2";
@@ -1599,7 +1602,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                 </div>
                 <div className="mt-3 flex w-full items-center gap-4 bg-indigo-50/50 px-5 py-2.5 rounded-r-xl border-l-4 border-[#1b3e8a] shadow-sm">
                   <span className="text-[10px] font-black text-[#1b3e8a] uppercase tracking-[0.2em] shrink-0">Subject :</span>
-                  <span className="text-[13px] font-bold text-slate-700 uppercase tracking-tight leading-none">{order.subject || FALLBACK}</span>
+                  <span className="text-[13px] font-semibold text-slate-700">{order.subject || FALLBACK}</span>
                 </div>
               </div>
             );
@@ -1864,6 +1867,14 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                 <p className="text-[13px] text-slate-500 mb-4">Code: {comp.companyCode || comp.company_code}</p>
               )}
               <div className="space-y-3">
+                {(site.siteName || site.siteCode) && (
+                  <div>
+                    <p className={bodyLabelCls}>Site</p>
+                    <p className={bodyValueCls}>
+                      {[site.siteName, site.siteCode && `(${site.siteCode})`].filter(Boolean).join(" ")}
+                    </p>
+                  </div>
+                )}
                 <div><p className={bodyLabelCls}>Site Address</p><p className={bodyValueCls}>{site.siteAddress || site.site_address || 'N/A'}</p></div>
                 <div>
                   <p className={`${bodyLabelCls} mt-2 flex items-center gap-1.5`}>
@@ -1966,7 +1977,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                             <div className="space-y-1">
                               {(() => {
                                 const desc = it.description || it.specification || it.items?.description;
-                                if (!desc) return <span className="text-slate-300 font-bold">---</span>;
+                                if (!desc || desc === "--") return <span className="text-slate-300 font-bold">---</span>;
                                 let points = [];
                                 try { points = typeof desc === 'string' && (desc.startsWith('[') || desc.startsWith('{')) ? JSON.parse(desc) : (Array.isArray(desc) ? desc : [desc]); } catch (e) { points = [desc]; }
                                 return points.map((p, i) => (
@@ -1999,7 +2010,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                           <div className="space-y-1 whitespace-normal">
                             {(() => {
                               const desc = it.description || it.specification || it.items?.description;
-                              if (!desc) return null;
+                              if (!desc || desc === "--") return null;
                               let points = [];
                               try { points = typeof desc === 'string' && (desc.startsWith('[') || desc.startsWith('{')) ? JSON.parse(desc) : (Array.isArray(desc) ? desc : [desc]); } catch (e) { points = [desc]; }
                               return points.map((p, i) => (
@@ -2926,6 +2937,17 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
         />
       )}
 
+      {activeTab === "Vendor Invoices" && (
+        <VendorInvoicesTab
+          order={order}
+          orderId={orderId}
+          isGlobalAdmin={isGlobalAdmin}
+          thisUser={thisUser}
+          onRefresh={fetchOrderDetails}
+          showToast={showToast}
+        />
+      )}
+
       {activeTab === "PDF View" && (
         <div className="bg-slate-200">
           <div className="px-4 py-3 flex justify-end print:hidden">
@@ -3230,6 +3252,136 @@ const POST_CATEGORIES = [
   { key: "vendor-acceptance", label: "Vendor Acceptance" },
 ];
 
+const SignedCopySection = ({ order, orderId, canUpload, onRefresh, showToast }) => {
+  const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const fileInputRef = useRef();
+
+  const signedDoc = (Array.isArray(order.post_documents) ? order.post_documents : [])
+    .find(d => d.category === "signed-copy") || null;
+
+  const handleUpload = async (file) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${API}/api/orders/${orderId}/signed-copy`, { method: "POST", body: fd });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Upload failed");
+      showToast("Signed copy uploaded");
+      onRefresh();
+    } catch (err) {
+      showToast(err.message || "Upload failed", "error");
+    }
+    setUploading(false);
+  };
+
+  const handleDelete = async () => {
+    if (!confirm("Delete signed copy?")) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`${API}/api/orders/${orderId}/signed-copy`, { method: "DELETE" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Delete failed");
+      showToast("Signed copy deleted");
+      onRefresh();
+    } catch (err) {
+      showToast(err.message || "Delete failed", "error");
+    }
+    setDeleting(false);
+  };
+
+  const isPdf = (doc) => /\.pdf(\?|$)/i.test(doc.name) || /\.pdf(\?|$)/i.test(doc.url || "");
+
+  return (
+    <section className="bg-white rounded-lg border border-slate-200">
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={(e) => { handleUpload(e.target.files?.[0]); e.target.value = ""; }}
+      />
+
+      <div className="px-5 py-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+            <FileCheck size={18} />
+          </div>
+          <div>
+            <h2 className="text-[14px] font-semibold text-slate-900">Order Accepted Copy</h2>
+            <p className="text-[11px] text-slate-400 mt-0.5">Vendor accepted copy · 1 document only</p>
+          </div>
+        </div>
+        {canUpload && !signedDoc && (
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 text-slate-700 text-[12px] font-semibold rounded-lg hover:bg-slate-50 transition-all disabled:opacity-60"
+          >
+            <Plus size={13} /> {uploading ? "Uploading…" : "Add"}
+          </button>
+        )}
+      </div>
+
+      <div className="px-5 pb-5">
+        {!signedDoc ? (
+          <div className="py-10 flex flex-col items-center gap-2 border border-dashed border-slate-200 rounded-md bg-slate-50/40">
+            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 mb-1">
+              <Lock size={18} />
+            </div>
+            <p className="text-[13px] font-semibold text-slate-600">No signed copy uploaded yet</p>
+            <p className="text-[11px] text-slate-400">
+              {canUpload ? "Upload the vendor accepted signed copy" : "Upload unlocks once the order is issued"}
+            </p>
+            {canUpload && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="mt-2 flex items-center gap-1.5 px-4 py-2 border border-slate-300 text-slate-700 text-[12px] font-semibold rounded-lg hover:bg-slate-50 transition-all disabled:opacity-60"
+              >
+                <Plus size={13} /> {uploading ? "Uploading…" : "Upload now"}
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50">
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${isPdf(signedDoc) ? "bg-red-50 text-red-500" : "bg-blue-50 text-blue-500"}`}>
+              <FileText size={18} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13px] font-semibold text-slate-800 truncate">{signedDoc.name}</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                {signedDoc.size ? `${Math.round(signedDoc.size / 1024)} kb` : ""}
+                {signedDoc.size && signedDoc.uploaded_at ? " · " : ""}
+                {signedDoc.uploaded_at ? new Date(signedDoc.uploaded_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : ""}
+              </p>
+            </div>
+            <div className="flex items-center gap-1">
+              <a href={signedDoc.url} target="_blank" rel="noreferrer" className="p-1.5 text-slate-400 hover:text-slate-700 transition-all" title="View">
+                <Eye size={15} />
+              </a>
+              <a href={signedDoc.url} download={signedDoc.name} className="p-1.5 text-slate-400 hover:text-slate-700 transition-all" title="Download">
+                <Download size={15} />
+              </a>
+              {canUpload && (
+                <>
+                  <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="p-1.5 text-slate-400 hover:text-slate-700 transition-all disabled:opacity-60" title="Replace">
+                    <Upload size={15} />
+                  </button>
+                  <button onClick={handleDelete} disabled={deleting} className="p-1.5 text-slate-400 hover:text-red-500 transition-all disabled:opacity-60" title="Delete">
+                    <Trash2 size={15} />
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};
+
 const PRE_CATEGORIES = [
   { key: "quotations", label: "Quotations" },
   { key: "comparative", label: "Comparative Sheet" },
@@ -3358,118 +3510,156 @@ const OrderDocumentsTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
   };
 
   const isIssued = order.status === "Issued";
-  const canUpload = isGlobalAdmin || isIssued || ["Pending Issue", "Reverted", "Recalled"].includes(order.status);
+  const canUpload = isGlobalAdmin || isIssued;
 
   const totalPreDocs = Object.values(preDocsByCategory).reduce((n, a) => n + a.length, 0);
   const totalPostDocs = Object.values(postDocsByCategory).reduce((n, a) => n + a.length, 0);
 
+  const signedDoc = (Array.isArray(order.post_documents) ? order.post_documents : [])
+    .find(d => d.category === "signed-copy") || null;
+
   return (
-    <div className="px-14 py-5 max-w-[1400px] space-y-5">
-      {/* ── PRE-PO SECTION (top) ── */}
+    <div className="px-10 py-6 max-w-[1100px] space-y-5">
+      {/* ── SUMMARY BAR ── */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-[#f7f6f3] rounded-xl px-4 py-3.5">
+          <p className="text-[11px] font-medium text-slate-500 mb-1.5">Pre-order documents</p>
+          <p className="text-2xl font-bold text-slate-900">{totalPreDocs}</p>
+        </div>
+        <div className="bg-[#f7f6f3] rounded-xl px-4 py-3.5">
+          <p className="text-[11px] font-medium text-slate-500 mb-1.5">Post-order documents</p>
+          <p className="text-2xl font-bold text-slate-900">{totalPostDocs}</p>
+        </div>
+        <div className="bg-[#f7f6f3] rounded-xl px-4 py-3.5">
+          <p className="text-[11px] font-medium text-slate-500 mb-1.5">Order accepted copy</p>
+          {signedDoc ? (
+            <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-700">
+              <CheckCircle2 size={14} /> Uploaded
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-amber-700">
+              <Clock size={14} /> Pending
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── PRE-PO SECTION ── */}
       <DocSection
-        icon={<FileText size={18} />}
-        iconBg="bg-purple-50 text-purple-600"
-        title="Pre-Order Documents"
-        subtitle={`Total - ${totalPreDocs}`}
+        title="Pre-order documents"
+        totalDocs={totalPreDocs}
         categories={PRE_CATEGORIES}
         docsByCategory={preDocsByCategory}
         activeTab={preTab}
         setActiveTab={setPreTab}
-        accent="purple"
         readOnly
-        isImage={isImage}
         formatBytes={formatBytes}
       />
 
-      {/* ── POST-PO SECTION (below) ── */}
+      {/* ── POST-PO SECTION ── */}
       <DocSection
-        icon={<FileCheck size={18} />}
-        iconBg="bg-emerald-50 text-emerald-600"
-        title="Post-Order Documents"
-        subtitle={`Total - ${totalPostDocs}`}
+        title="Post-order documents"
+        totalDocs={totalPostDocs}
         categories={POST_CATEGORIES}
         docsByCategory={postDocsByCategory}
         activeTab={postTab}
         setActiveTab={setPostTab}
-        accent="emerald"
         canUpload={canUpload}
         onUploadClick={handleUploadClick}
         onDelete={handleDelete}
         uploading={uploading}
-        isImage={isImage}
         formatBytes={formatBytes}
       />
       <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
+
+      {/* ── VENDOR SIGNED COPY (last) ── */}
+      <SignedCopySection
+        order={order}
+        orderId={orderId}
+        canUpload={canUpload}
+        onRefresh={onRefresh}
+        showToast={showToast}
+      />
     </div>
   );
 };
 
 const DocSection = ({
-  icon, iconBg, title, subtitle, categories, docsByCategory,
-  activeTab, setActiveTab, accent, readOnly = false,
+  title, totalDocs, categories, docsByCategory,
+  activeTab, setActiveTab, readOnly = false,
   canUpload = false, onUploadClick, onDelete, uploading = false,
-  isImage, formatBytes,
+  formatBytes,
 }) => {
-  const accentMap = {
-    emerald: { activeBg: "bg-white shadow-sm", activeText: "text-slate-800", border: "border-slate-200" },
-    purple: { activeBg: "bg-white shadow-sm", activeText: "text-slate-800", border: "border-slate-200" },
-  };
-  const a = accentMap[accent] || accentMap.purple;
   const docs = docsByCategory[activeTab] || [];
+  const activeLabel = categories.find(c => c.key === activeTab)?.label || "";
+
+  const handleDownloadAll = () => {
+    docs.forEach((doc, i) => {
+      setTimeout(() => {
+        const a = document.createElement("a");
+        a.href = doc.url;
+        a.download = doc.name;
+        a.target = "_blank";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }, i * 400);
+    });
+  };
 
   return (
-    <section className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+    <section className="bg-white rounded-lg border border-slate-200">
       {/* Header */}
-      <div className="px-5 py-4 flex items-center gap-3">
-        <div className={`w-9 h-9 rounded-lg ${iconBg} flex items-center justify-center shrink-0`}>
-          {icon}
+      <div className="px-5 py-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+            <Folder size={18} />
+          </div>
+          <div>
+            <h2 className="text-[14px] font-semibold text-slate-900">{title}</h2>
+            <p className="text-[11px] text-slate-400 mt-0.5">{totalDocs} files total</p>
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-[15px] font-bold text-slate-800">{title}</h2>
-          <p className="text-[11px] font-semibold text-slate-500 mt-0.5">{subtitle}</p>
-        </div>
-        {!readOnly && canUpload && (
-          <button onClick={onUploadClick} disabled={uploading}
-            className={`px-3.5 py-1.5 bg-${accent}-600 hover:bg-${accent}-700 text-white text-[11px] font-bold rounded-lg shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-60`}
-            style={{ background: uploading ? "#94a3b8" : (accent === "emerald" ? "#059669" : "#7c3aed") }}>
-            <Upload size={12} /> {uploading ? "Uploading…" : "Upload"}
+        {totalDocs > 0 && (
+          <button onClick={handleDownloadAll}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 text-[12px] font-semibold rounded-md hover:bg-slate-50 transition-all">
+            <Download size={13} /> Download All
           </button>
         )}
       </div>
 
-      {/* Tab Pills */}
-      <div className="px-4 pb-3">
-        <div className="bg-slate-50 rounded-xl p-1 flex items-center gap-1 overflow-x-auto">
-          {categories.map(cat => {
-            const count = docsByCategory[cat.key]?.length || 0;
-            const active = activeTab === cat.key;
-            return (
-              <button key={cat.key} onClick={() => setActiveTab(cat.key)}
-                className={`flex-1 px-3 py-2 text-[12px] font-semibold rounded-lg flex items-center justify-center gap-1.5 whitespace-nowrap transition-all
-                  ${active ? a.activeBg + ' ' + a.activeText : "text-slate-500 hover:text-slate-700"}`}>
-                <FileText size={12} className={active ? "" : "opacity-60"} />
-                {cat.label}
-                <span className={`text-[10px] ${active ? "text-slate-500" : "text-slate-400"}`}>({count})</span>
-              </button>
-            );
-          })}
-        </div>
+      {/* Tabs */}
+      <div className="px-5 pb-4 flex gap-2 overflow-x-auto border-b border-slate-100">
+        {categories.map(cat => {
+          const count = docsByCategory[cat.key]?.length || 0;
+          const active = activeTab === cat.key;
+          return (
+            <button key={cat.key} onClick={() => setActiveTab(cat.key)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-semibold rounded-md whitespace-nowrap transition-all
+                ${active ? "bg-slate-900 text-white" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"}`}>
+              {cat.label}
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"}`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Cards */}
-      <div className="px-5 pb-5">
+      {/* File grid */}
+      <div className="px-5 pb-5 pt-4">
         {docs.length === 0 ? (
-          <div className="py-10 text-center text-slate-400 text-[11px] border border-dashed border-slate-200 rounded-xl bg-slate-50/30">
+          <div className="py-8 text-center border border-dashed border-slate-200 rounded-md bg-slate-50/40">
             {!readOnly && canUpload ? (
-              <>
+              <div className="flex flex-col items-center gap-2">
+                <p className="text-[12px] text-slate-500">No {activeLabel.toLowerCase()} uploaded yet</p>
                 <button onClick={onUploadClick} disabled={uploading}
-                  className="mx-auto px-4 py-2 border border-emerald-300 text-emerald-700 text-[11px] font-bold rounded-lg hover:bg-emerald-50 transition-all flex items-center gap-2 disabled:opacity-60">
-                  <Upload size={12} /> {uploading ? "Uploading…" : "Upload Document"}
+                  className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-300 text-slate-700 text-[12px] font-semibold rounded-md hover:bg-slate-50 transition-all disabled:opacity-60">
+                  <Plus size={13} /> Add document
                 </button>
-                <p className="mt-2">No {categories.find(c => c.key === activeTab)?.label.toLowerCase()} uploaded yet</p>
-              </>
+              </div>
             ) : (
-              <p>No {categories.find(c => c.key === activeTab)?.label.toLowerCase()} captured</p>
+              <p className="text-[12px] text-slate-400">No {activeLabel.toLowerCase()} captured</p>
             )}
           </div>
         ) : (
@@ -3478,9 +3668,7 @@ const DocSection = ({
               <DocCard key={d.id} doc={d}
                 readOnly={readOnly}
                 onDelete={!readOnly && onDelete ? () => onDelete(d.id) : null}
-                isImage={isImage}
                 formatBytes={formatBytes}
-                accent={accent}
               />
             ))}
           </div>
@@ -3490,45 +3678,1568 @@ const DocSection = ({
   );
 };
 
-const DocCard = ({ doc, readOnly = false, onDelete, isImage, formatBytes, accent = "purple" }) => {
-  const img = isImage(doc.name, doc.url);
+const DocCard = ({ doc, readOnly = false, onDelete, formatBytes }) => {
   const isPdf = /\.pdf(\?|$)/i.test(doc.name) || /\.pdf(\?|$)/i.test(doc.url || "");
+  const isImg = /\.(png|jpe?g|gif|webp|svg)(\?|$)/i.test(doc.name) || /\.(png|jpe?g|gif|webp|svg)/i.test(doc.url || "");
+  const sizeStr = formatBytes ? formatBytes(doc.size) : (doc.size ? `${Math.round(doc.size / 1024)} kb` : "");
+  const dateStr = doc.uploaded_at
+    ? new Date(doc.uploaded_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+    : "";
+
   return (
-    <div className="group bg-slate-50 border border-slate-200 rounded-xl overflow-hidden hover:shadow-md hover:border-slate-300 transition-all">
-      <a href={doc.url} target="_blank" rel="noreferrer" className="relative block aspect-[4/3] bg-slate-50 overflow-hidden group/link">
-        {img ? (
-          <img src={doc.url} alt={doc.name} className="w-full h-full object-cover group-hover/link:scale-110 transition-transform duration-500" />
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-sm ${isPdf ? 'bg-rose-50 text-rose-500' : 'bg-blue-50 text-blue-500'}`}>
-              {isPdf ? <FileText size={28} /> : <FileCheck size={28} />}
-            </div>
-            {isPdf && <span className="text-[9px] font-black uppercase tracking-widest text-rose-400/70">PDF Document</span>}
-          </div>
-        )}
-        <div className="absolute inset-0 bg-slate-900/0 group-hover/link:bg-slate-900/5 transition-colors flex items-center justify-center">
-          <div className="opacity-0 group-hover/link:opacity-100 translate-y-2 group-hover/link:translate-y-0 transition-all">
-            <Eye size={20} className="text-slate-700" />
-          </div>
-        </div>
-      </a>
-      <div className="px-2.5 py-2 flex items-center justify-between gap-1 bg-white border-t border-slate-100">
-        <span className={`text-[10px] font-semibold truncate ${accent === "emerald" ? "text-emerald-700" : "text-purple-700"}`} title={doc.name}>
-          {doc.name}
-        </span>
-        <div className="flex items-center gap-0.5 shrink-0">
-          <a href={doc.url} download={doc.name} className="p-1 text-slate-400 hover:text-slate-700 transition-all" title="Download">
-            <Download size={12} />
-          </a>
-          {!readOnly && onDelete && (
-            <button onClick={onDelete} className="p-1 text-slate-400 hover:text-rose-600 transition-all opacity-0 group-hover:opacity-100" title="Delete">
-              <Trash2 size={12} />
-            </button>
+    <div className="group bg-white border border-slate-200 rounded-md overflow-hidden hover:shadow-sm hover:border-slate-300 transition-all">
+      {/* Thumbnail */}
+      <div className="relative h-24 bg-slate-50 overflow-hidden">
+        <a href={doc.url} target="_blank" rel="noreferrer" className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+          {isImg ? (
+            <img src={doc.url} alt={doc.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+          ) : (
+            <>
+              <div className={`w-9 h-9 rounded-md flex items-center justify-center ${isPdf ? "bg-red-50 text-red-500" : "bg-slate-100 text-slate-500"}`}>
+                <FileText size={20} />
+              </div>
+              {isPdf && <span className="text-[8px] font-bold uppercase tracking-widest text-red-400/80">PDF</span>}
+            </>
           )}
-        </div>
+        </a>
+        {/* Download button — top right inside box */}
+        <a
+          href={doc.url}
+          download={doc.name}
+          onClick={e => e.stopPropagation()}
+          className="absolute top-1.5 right-1.5 p-1 bg-white/90 border border-slate-200 rounded text-slate-500 hover:text-slate-800 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
+          title="Download"
+        >
+          <Download size={12} />
+        </a>
+      </div>
+      {/* Footer */}
+      <div className="px-2.5 py-2 bg-white border-t border-slate-100">
+        <p className="text-[11px] font-semibold text-slate-700 truncate" title={doc.name}>{doc.name}</p>
+        {(sizeStr || dateStr) && (
+          <p className="text-[10px] text-slate-400 mt-0.5">{[sizeStr, dateStr].filter(Boolean).join(" · ")}</p>
+        )}
+        {!readOnly && onDelete && (
+          <button onClick={onDelete} className="mt-1 p-1 text-slate-400 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100" title="Delete">
+            <Trash2 size={12} />
+          </button>
+        )}
       </div>
     </div>
   );
 };
+
+
+/* ─────────────────────────────────────────
+   VendorInvoicesTab
+───────────────────────────────────────── */
+const VendorInvoicesTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh, showToast }) => {
+  const [invoices, setInvoices]         = useState([]);
+  const [loadingInv, setLoadingInv]     = useState(true);
+  const [page, setPage]                 = useState('list'); // 'list' | 'detail' | 'trash'
+  const [selectedInv, setSelectedInv]   = useState(null);
+  const [addModal, setAddModal]         = useState(false);
+  const [billDocsInvId, setBillDocsInvId] = useState(null);
+  const [uploadingBillDoc, setUploadingBillDoc] = useState(false);
+  const [saving, setSaving]             = useState(false);
+  const [importing, setImporting]       = useState(false);
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [confirmDlg, setConfirmDlg]     = useState(null);
+  const [invTrashSel, setInvTrashSel]   = useState(new Set());
+  const [editingItems, setEditingItems]     = useState(false);
+  const [detailItems, setDetailItems]       = useState([]);
+  const [detailCharges, setDetailCharges]   = useState([]);
+  const [chargesMenuOpen, setChargesMenuOpen] = useState(false);
+  const [savingCharges, setSavingCharges]   = useState(false);
+  const [editInvModal, setEditInvModal] = useState(null); // invoice to edit
+  const [editInvForm, setEditInvForm]   = useState({ invoice_no: '', invoice_date: '', amount: '' });
+  const [logModal, setLogModal]         = useState(null);
+  const [globalLogPanel, setGlobalLogPanel] = useState(false);
+  const [globalLogs, setGlobalLogs]     = useState([]);
+  const [loadingGlobalLog, setLoadingGlobalLog] = useState(false);
+  const [moreOpen, setMoreOpen]         = useState(false);
+  const moreRef                         = useRef(null);
+  const [docsPanel, setDocsPanel]       = useState(false);
+  const [docTrashOpen, setDocTrashOpen] = useState(false);
+
+  const [editUploadingInvoice, setEditUploadingInvoice] = useState(false);
+  const [editUploadingEway, setEditUploadingEway]       = useState(false);
+
+  const pendingFileInputRef    = useRef();
+  const pendingInvoiceInputRef = useRef();
+  const pendingEwayInputRef    = useRef();
+  const billDocInputRef        = useRef();
+  const excelInputRef          = useRef();
+  const itemExcelInputRef      = useRef();
+  const editInvoiceInputRef    = useRef();
+  const editEwayInputRef       = useRef();
+  const detailEwayInputRef     = useRef();
+
+  const blankItem = () => ({ item: '', hsn: '', unit: '', qty: '', rate: '', gst_pct: '', remarks: '' });
+  const [addForm, setAddForm] = useState({ invoice_no: '', invoice_date: '', amount: '' });
+
+  const isIssued = order.status === 'Issued';
+  const canEdit  = isGlobalAdmin || isIssued;
+
+  const fmtDate  = (d) => d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  const fmtAmt   = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  const fmtBytes = (b) => { if (!b) return ''; if (b < 1048576) return `${(b/1024).toFixed(1)} KB`; return `${(b/1048576).toFixed(1)} MB`; };
+
+  const fetchInvoices = async () => {
+    try {
+      const res  = await fetch(`${API}/api/orders/${orderId}/vendor-invoices`);
+      const data = await res.json();
+      const list = Array.isArray(data.invoices) ? data.invoices : [];
+      setInvoices(list);
+      if (selectedInv) {
+        const updated = list.find(inv => inv.id === selectedInv.id);
+        if (updated) { setSelectedInv(updated); setDetailCharges(updated.charges || []); }
+      }
+    } catch(err) {
+      console.error('[fetchInvoices] error:', err);
+    } finally { setLoadingInv(false); }
+  };
+
+  const fetchGlobalLog = async () => {
+    setLoadingGlobalLog(true);
+    try {
+      const res  = await fetch(`${API}/api/orders/${orderId}/invoice-audit-log`);
+      const data = await res.json();
+      setGlobalLogs(Array.isArray(data.log) ? data.log : []);
+    } catch(err) { console.error(err); }
+    setLoadingGlobalLog(false);
+  };
+  useEffect(() => { fetchInvoices(); }, [orderId]);
+
+  const activeInvoices  = invoices.filter(inv => !inv.trashed);
+  const trashedInvoices = invoices.filter(inv => inv.trashed);
+  const totalAmount     = activeInvoices.reduce((s, inv) => s + (Number(inv.amount) || 0), 0);
+
+  // ── Add invoice ──
+  const handleAddSave = async (andAddDetail = false) => {
+    if (!addForm.invoice_no.trim()) { showToast('Invoice number required', 'error'); return; }
+    if (!addForm.invoice_date)      { showToast('Invoice date required', 'error'); return; }
+    setSaving(true);
+    try {
+      const res  = await fetch(`${API}/api/orders/${orderId}/vendor-invoices`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_no: addForm.invoice_no.trim(), invoice_date: addForm.invoice_date, amount: addForm.amount, items: [], remarks: '', created_by: thisUser?.name || thisUser?.full_name || thisUser?.email || 'Unknown' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      const newInv = data.invoice;
+      for (const pf of pendingFiles) {
+        const fd = new FormData();
+        fd.append('file', pf.file);
+        fd.append('doc_type', pf.doc_type || 'invoice');
+        fd.append('uploaded_by', thisUser?.name || thisUser?.full_name || thisUser?.email || 'Unknown');
+        await fetch(`${API}/api/orders/${orderId}/vendor-invoices/${newInv.id}/docs`, { method: 'POST', body: fd });
+      }
+      showToast('Invoice added');
+      setAddModal(false);
+      setAddForm({ invoice_no: '', invoice_date: '', amount: '' });
+      setPendingFiles([]);
+      await fetchInvoices();
+      if (andAddDetail) {
+        setSelectedInv(newInv);
+        setDetailItems([blankItem()]);
+        setEditingItems(true);
+        setPage('detail');
+      }
+    } catch (err) { showToast(err.message, 'error'); }
+    setSaving(false);
+  };
+
+  // ── Soft-delete invoice (move to trash) ──
+  const handleSoftDeleteInv = async (invoiceId) => {
+    try {
+      const res = await fetch(`${API}/api/orders/${orderId}/vendor-invoices/${invoiceId}/trash`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trashed: true, by: thisUser?.name || thisUser?.full_name || thisUser?.email || 'Unknown' }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed'); }
+      setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, trashed: true } : inv));
+      if (selectedInv?.id === invoiceId) { setPage('list'); setSelectedInv(null); }
+    } catch (err) { showToast(err.message, 'error'); }
+  };
+
+  // ── Permanent delete invoices from trash ──
+  const handlePermanentDeleteInvoices = (invoiceIds) => {
+    setConfirmDlg({ msg: `Permanently delete ${invoiceIds.length} invoice${invoiceIds.length !== 1 ? 's' : ''}?`, onOk: async () => {
+      try {
+        const res = await fetch(`${API}/api/orders/${orderId}/vendor-invoices`, {
+          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invoiceIds, deleted_by: thisUser?.name || thisUser?.full_name || thisUser?.email || 'Unknown' }),
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error);
+        showToast(`${d.deleted} invoice${d.deleted !== 1 ? 's' : ''} deleted`);
+        setInvTrashSel(new Set());
+        fetchInvoices();
+      } catch (err) { showToast(err.message, 'error'); }
+    }});
+  };
+
+  // ── Restore invoice from trash ──
+  const handleRestoreInv = async (invoiceId) => {
+    try {
+      const res = await fetch(`${API}/api/orders/${orderId}/vendor-invoices/${invoiceId}/trash`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trashed: false, by: thisUser?.name || thisUser?.full_name || thisUser?.email || 'Unknown' }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed'); }
+      setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, trashed: false } : inv));
+      showToast('Invoice restored');
+    } catch (err) { showToast(err.message, 'error'); }
+  };
+
+  // ── Bill Docs ──
+  const handleUploadBillDoc = async (file, invId, docType = 'invoice') => {
+    const targetId = invId || billDocsInvId;
+    if (!file || !targetId) return;
+    if (!invId) setUploadingBillDoc(true);
+    else if (docType === 'invoice') setEditUploadingInvoice(true);
+    else setEditUploadingEway(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('doc_type', docType);
+      fd.append('uploaded_by', thisUser?.name || thisUser?.full_name || thisUser?.email || 'Unknown');
+      const res = await fetch(`${API}/api/orders/${orderId}/vendor-invoices/${targetId}/docs`, { method: 'POST', body: fd });
+      const d   = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      fetchInvoices();
+    } catch (err) { showToast(err.message, 'error'); }
+    if (!invId) setUploadingBillDoc(false);
+    else if (docType === 'invoice') setEditUploadingInvoice(false);
+    else setEditUploadingEway(false);
+  };
+
+  const handleSoftDeleteDoc = async (invoiceId, docId) => {
+    try {
+      const res = await fetch(`${API}/api/orders/${orderId}/vendor-invoices/${invoiceId}/docs/${docId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trashed: true, trashed_at: new Date().toISOString() }),
+      });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed'); }
+      setInvoices(prev => prev.map(inv => inv.id !== invoiceId ? inv : {
+        ...inv, docs: (inv.docs || []).map(d => d.id === docId ? { ...d, trashed: true } : d)
+      }));
+    } catch (err) { showToast(err.message, 'error'); }
+  };
+
+  const handlePermanentDeleteDocs = (invoiceId, docIds) => {
+    setConfirmDlg({ msg: `Permanently delete ${docIds.length} file${docIds.length !== 1 ? 's' : ''}?`, onOk: async () => {
+      try {
+        const res = await fetch(`${API}/api/orders/${orderId}/vendor-invoices/${invoiceId}/docs`, {
+          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ docIds }),
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error);
+        showToast(`${d.deleted} file${d.deleted !== 1 ? 's' : ''} deleted permanently`);
+        fetchInvoices();
+      } catch (err) { showToast(err.message, 'error'); }
+    }});
+  };
+
+  // ── Detail items ──
+  const calcRow = (it) => {
+    const qty = Number(it.qty) || 0, rate = Number(it.rate) || 0, gst_pct = Number(it.gst_pct) || 0;
+    const gst_amount = (qty * rate * gst_pct) / 100;
+    return { gst_amount, net_amount: qty * rate + gst_amount };
+  };
+  const addDetailRow    = () => setDetailItems(r => [...r, blankItem()]);
+  const removeDetailRow = (i) => setDetailItems(r => r.filter((_, idx) => idx !== i));
+  const updateDetail    = (i, k, v) => setDetailItems(r => r.map((it, idx) => idx === i ? { ...it, [k]: v } : it));
+
+  const openDetailPage = (inv) => {
+    setSelectedInv(inv);
+    const items = (inv.items || []);
+    setDetailItems(items.length > 0
+      ? items.map(it => ({ item: it.item || '', hsn: it.hsn || '', unit: it.unit || '', qty: String(it.qty || ''), rate: String(it.rate || ''), gst_pct: String(it.gst_pct || ''), remarks: it.remarks || '' }))
+      : []);
+    setDetailCharges(inv.charges || []);
+    setEditingItems(false);
+    setBillDocsInvId(null);
+    setPage('detail');
+  };
+
+  const handleSaveDetail = async () => {
+    if (!selectedInv) return;
+    setSaving(true);
+    try {
+      const items = detailItems.map((it, idx) => {
+        const { gst_amount, net_amount } = calcRow(it);
+        return { sno: idx + 1, item: it.item, hsn: it.hsn, unit: it.unit, qty: Number(it.qty) || 0, rate: Number(it.rate) || 0, gst_pct: Number(it.gst_pct) || 0, gst_amount, net_amount, remarks: it.remarks };
+      });
+      const res = await fetch(`${API}/api/orders/${orderId}/vendor-invoices/${selectedInv.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_no: selectedInv.invoice_no, invoice_date: selectedInv.invoice_date, amount: selectedInv.amount, remarks: selectedInv.remarks || '', items, updated_by: thisUser?.name || thisUser?.full_name || thisUser?.email || 'Unknown' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      showToast('Details saved');
+      setEditingItems(false);
+      await fetchInvoices();
+    } catch (err) { showToast(err.message, 'error'); }
+    setSaving(false);
+  };
+
+  const handleSaveCharges = async () => {
+    if (!selectedInv) return;
+    setSavingCharges(true);
+    try {
+      const res = await fetch(`${API}/api/orders/${orderId}/vendor-invoices/${selectedInv.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_no: selectedInv.invoice_no, invoice_date: selectedInv.invoice_date, amount: selectedInv.amount, charges: detailCharges, updated_by: thisUser?.name || thisUser?.full_name || thisUser?.email || 'Unknown' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      showToast('Charges saved');
+      await fetchInvoices();
+    } catch (err) { showToast(err.message, 'error'); }
+    setSavingCharges(false);
+  };
+
+  // ── Edit invoice header (No, Date, Amount) ──
+  const handleEditInvoiceSave = async () => {
+    if (!editInvModal) return;
+    if (!editInvForm.invoice_no.trim()) { showToast('Invoice number required', 'error'); return; }
+    setSaving(true);
+    try {
+      const inv = editInvModal;
+      const res = await fetch(`${API}/api/orders/${orderId}/vendor-invoices/${inv.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_no: editInvForm.invoice_no.trim(), invoice_date: editInvForm.invoice_date, amount: editInvForm.amount, remarks: inv.remarks || '', updated_by: thisUser?.name || thisUser?.full_name || thisUser?.email || 'Unknown' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      showToast('Invoice updated');
+      setEditInvModal(null);
+      fetchInvoices();
+    } catch (err) { showToast(err.message, 'error'); }
+    setSaving(false);
+  };
+
+  // ── Excel (main page — full invoice import) ──
+  const downloadInvoiceTemplate = async () => {
+    const XLSX = await import('xlsx');
+    const rows = [
+      ['Invoice No', 'Invoice Date', 'Amount', 'Remarks', 'Item', 'HSN Code', 'Unit', 'Qty', 'Rate', 'GST %'],
+      ['INV-001', '2024-01-15', '50000', 'First delivery', 'Cement Bag 50kg', '252329', 'BAG', 100, 450, 18],
+      ['INV-001', '2024-01-15', '', '', 'Sand (cubic ft)', '250290', 'CFT', 50, 800, 5],
+      ['INV-002', '2024-01-20', '35000', '', 'Steel Rod 12mm', '721310', 'KG', 500, 70, 18],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [14, 14, 12, 22, 22, 12, 8, 8, 10, 8].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Invoices');
+    XLSX.writeFile(wb, 'vendor_invoice_template.xlsx');
+  };
+
+  const handleExcelImport = async (file) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const XLSX = await import('xlsx');
+      const buf  = await file.arrayBuffer();
+      const wb   = XLSX.read(buf, { type: 'array', cellDates: true });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      const parseDate = (d) => { if (d instanceof Date) return d.toISOString().slice(0,10); return String(d||'').slice(0,10); };
+      const grouped = {};
+      const order_ = [];
+      for (const row of rows) {
+        const no = String(row['Invoice No'] || '').trim();
+        if (!no) continue;
+        if (!grouped[no]) {
+          grouped[no] = { invoice_no: no, invoice_date: parseDate(row['Invoice Date']), amount: String(row['Amount'] || ''), remarks: String(row['Remarks'] || '').trim(), items: [] };
+          order_.push(no);
+        }
+        const itemName = String(row['Item'] || '').trim();
+        if (itemName) {
+          const qty = Number(row['Qty']) || 0, rate = Number(row['Rate']) || 0, gst_pct = Number(row['GST %']) || 0;
+          const gst_amount = (qty * rate * gst_pct) / 100;
+          grouped[no].items.push({ item: itemName, hsn: String(row['HSN Code']||'').trim(), unit: String(row['Unit']||'').trim(), qty, rate, gst_pct, gst_amount, net_amount: qty * rate + gst_amount, remarks: '' });
+        }
+      }
+      const list = order_.map(no => grouped[no]);
+      if (!list.length) throw new Error('No valid rows found');
+      const res  = await fetch(`${API}/api/orders/${orderId}/vendor-invoices/bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invoices: list }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      showToast(`${data.count} invoice${data.count !== 1 ? 's' : ''} imported`);
+      fetchInvoices();
+    } catch (err) { showToast(err.message, 'error'); }
+    setImporting(false);
+  };
+
+  // ── Excel (detail page — import line items into selected invoice) ──
+  const downloadItemTemplate = async () => {
+    const XLSX = await import('xlsx');
+    const rows = [
+      ['Item', 'HSN Code', 'Unit', 'Qty', 'Rate', 'GST %', 'Remarks'],
+      ['Cement Bag 50kg', '252329', 'BAG', 100, 450, 18, ''],
+      ['Steel Rod 12mm', '721310', 'KG', 500, 70, 18, ''],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [22, 12, 8, 8, 10, 8, 20].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Items');
+    XLSX.writeFile(wb, 'invoice_items_template.xlsx');
+  };
+
+  const handleItemExcelImport = async (file) => {
+    if (!file || !selectedInv) return;
+    try {
+      const XLSX = await import('xlsx');
+      const buf  = await file.arrayBuffer();
+      const wb   = XLSX.read(buf, { type: 'array' });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      const newItems = rows.map(row => {
+        const itemName = String(row['Item'] || '').trim();
+        if (!itemName) return null;
+        const qty = Number(row['Qty']) || 0, rate = Number(row['Rate']) || 0, gst_pct = Number(row['GST %']) || 0;
+        const gst_amount = (qty * rate * gst_pct) / 100;
+        return { item: itemName, hsn: String(row['HSN Code']||'').trim(), unit: String(row['Unit']||'').trim(), qty: String(qty), rate: String(rate), gst_pct: String(gst_pct), remarks: String(row['Remarks']||'').trim() };
+      }).filter(Boolean);
+      if (!newItems.length) throw new Error('No valid rows found');
+      setDetailItems(prev => [...prev, ...newItems]);
+      setEditingItems(true);
+      showToast(`${newItems.length} item${newItems.length !== 1 ? 's' : ''} imported`);
+    } catch (err) { showToast(err.message, 'error'); }
+  };
+
+  // Bill Docs for detail page
+  const detailBillDocsInv = selectedInv ? (invoices.find(inv => inv.id === selectedInv.id) || selectedInv) : null;
+
+  // ══════════════════════════════════════════
+  //  RENDER
+  // ══════════════════════════════════════════
+
+  // ── DETAIL PAGE ──
+  if (page === 'detail' && selectedInv) {
+    const inv = invoices.find(i => i.id === selectedInv.id) || selectedInv;
+    const activeDocs  = (inv.docs || []).filter(d => !d.trashed);
+    const trashedDocs = (inv.docs || []).filter(d => d.trashed);
+
+    return (
+      <div className="px-6 py-5 w-full">
+
+        {/* Back */}
+        <button onClick={() => { setPage('list'); setSelectedInv(null); setEditingItems(false); setDocsPanel(false); }}
+          className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-400 hover:text-slate-700 mb-4 transition-colors">
+          <ArrowLeft size={13} /> Back to Invoices
+        </button>
+
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between pb-4 mb-5 border-b border-slate-100">
+          <div>
+            <h2 className="text-[20px] font-bold text-slate-900">{inv.invoice_no}</h2>
+            <p className="text-[12px] text-slate-400 mt-0.5">{fmtDate(inv.invoice_date)} · {fmtAmt(inv.amount)}</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {/* Docs button */}
+            <button onClick={() => { setBillDocsInvId(inv.id); setDocsPanel(true); }}
+              className="relative flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 text-[12px] font-semibold rounded-lg hover:bg-slate-50">
+              <FileText size={12} /> Docs
+              {activeDocs.length > 0 && (
+                <span className="ml-0.5 bg-blue-100 text-blue-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{activeDocs.length}</span>
+              )}
+            </button>
+            {canEdit && (
+              <>
+                <input ref={itemExcelInputRef} type="file" accept=".xlsx,.xls" className="hidden"
+                  onChange={e => { handleItemExcelImport(e.target.files?.[0]); e.target.value = ''; }} />
+                {editingItems ? (
+                  <>
+                    <button onClick={() => { setEditingItems(false); const items = inv.items || []; setDetailItems(items.map(it => ({ item: it.item||'', hsn: it.hsn||'', unit: it.unit||'', qty: String(it.qty||''), rate: String(it.rate||''), gst_pct: String(it.gst_pct||''), remarks: it.remarks||'' }))); }}
+                      className="px-3 py-1.5 border border-slate-200 text-slate-600 text-[12px] font-semibold rounded-lg hover:bg-slate-50">Cancel</button>
+                    <button onClick={handleSaveDetail} disabled={saving}
+                      className="flex items-center gap-1.5 px-4 py-1.5 bg-slate-900 text-white text-[12px] font-semibold rounded-lg hover:bg-slate-800 disabled:opacity-60">
+                      {saving ? 'Saving…' : 'Save Details'}
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => { const items = inv.items || []; setDetailItems(items.length > 0 ? items.map(it => ({ item: it.item||'', hsn: it.hsn||'', unit: it.unit||'', qty: String(it.qty||''), rate: String(it.rate||''), gst_pct: String(it.gst_pct||''), remarks: it.remarks||'' })) : [blankItem()]); setEditingItems(true); }}
+                    className="flex items-center gap-1.5 px-4 py-1.5 bg-slate-900 text-white text-[12px] font-semibold rounded-lg hover:bg-slate-800">
+                    <Pencil size={12} /> {(inv.items || []).length > 0 ? 'Edit Details' : 'Add Detail'}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* ── Items table ── */}
+        <div className="bg-white rounded-md border border-slate-200 overflow-hidden">
+          {editingItems ? (
+            <>
+              <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-widest">Line Items</span>
+                <button onClick={addDetailRow} className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 border border-slate-200 px-2.5 py-1 rounded-md hover:bg-slate-50">
+                  <Plus size={12} /> Add Row
+                </button>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12px]">
+                  <thead className="bg-slate-50 border-b border-slate-200">
+                    <tr>
+                      {['S.No','Item','HSN','Unit','Qty','Rate (₹)','GST %','GST Amt','Net Amt','Remarks',''].map((h,i) => (
+                        <th key={i} className={`px-2 py-2.5 text-[11px] font-semibold text-slate-500 border-r border-slate-100 last:border-r-0 ${i===0||i===4||i===5||i===6||i===7||i===8 ? 'text-center' : 'text-left'}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {detailItems.map((it, i) => {
+                      const { gst_amount, net_amount } = calcRow(it);
+                      return (
+                        <tr key={i}>
+                          <td className="px-2 py-1.5 text-center text-slate-400 border-r border-slate-100 w-10">{i+1}</td>
+                          <td className="px-2 py-1.5 border-r border-slate-100 min-w-[130px]"><input value={it.item} onChange={e => updateDetail(i,'item',e.target.value)} placeholder="Item" className="w-full px-2 py-1 border border-slate-200 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-slate-300" /></td>
+                          <td className="px-2 py-1.5 border-r border-slate-100 w-24"><input value={it.hsn} onChange={e => updateDetail(i,'hsn',e.target.value)} placeholder="HSN" className="w-full px-2 py-1 border border-slate-200 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-slate-300" /></td>
+                          <td className="px-2 py-1.5 border-r border-slate-100 w-20"><input value={it.unit} onChange={e => updateDetail(i,'unit',e.target.value)} placeholder="Unit" className="w-full px-2 py-1 border border-slate-200 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-slate-300" /></td>
+                          <td className="px-2 py-1.5 border-r border-slate-100 w-20"><input type="text" inputMode="decimal" value={it.qty} onChange={e => updateDetail(i,'qty',e.target.value.replace(/[^0-9.]/g,''))} placeholder="0" className="w-full px-2 py-1 border border-slate-200 rounded text-[12px] text-right focus:outline-none focus:ring-1 focus:ring-slate-300" /></td>
+                          <td className="px-2 py-1.5 border-r border-slate-100 w-28"><input type="text" inputMode="decimal" value={it.rate} onChange={e => updateDetail(i,'rate',e.target.value.replace(/[^0-9.]/g,''))} placeholder="0" className="w-full px-2 py-1 border border-slate-200 rounded text-[12px] text-right focus:outline-none focus:ring-1 focus:ring-slate-300" /></td>
+                          <td className="px-2 py-1.5 border-r border-slate-100 w-20"><input type="text" inputMode="decimal" value={it.gst_pct} onChange={e => updateDetail(i,'gst_pct',e.target.value.replace(/[^0-9.]/g,''))} placeholder="0" className="w-full px-2 py-1 border border-slate-200 rounded text-[12px] text-right focus:outline-none focus:ring-1 focus:ring-slate-300" /></td>
+                          <td className="px-2 py-1.5 text-right text-slate-500 border-r border-slate-100 w-28">₹{gst_amount.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                          <td className="px-2 py-1.5 text-right font-semibold text-slate-800 border-r border-slate-100 w-28">₹{net_amount.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                          <td className="px-2 py-1.5 border-r border-slate-100 min-w-[110px]"><input value={it.remarks} onChange={e => updateDetail(i,'remarks',e.target.value)} placeholder="Note" className="w-full px-2 py-1 border border-slate-200 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-slate-300" /></td>
+                          <td className="px-2 py-1.5 text-center w-8">{detailItems.length > 1 && <button onClick={() => removeDetailRow(i)} className="p-1 text-slate-300 hover:text-red-500"><X size={12} /></button>}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : (inv.items || []).length === 0 ? (
+            <div className="py-14 text-center">
+              <p className="text-[13px] font-semibold text-slate-300">No line items added yet</p>
+              {canEdit && (
+                <button onClick={() => { setDetailItems([blankItem()]); setEditingItems(true); }}
+                  className="mt-3 flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 text-[12px] font-semibold rounded-lg hover:bg-slate-50 mx-auto">
+                  <Plus size={12} /> Add Detail
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    {['S.No','Item','HSN Code','Unit','Qty','Rate','GST %','GST Amount','Net Amount','Remarks'].map((h,i) => (
+                      <th key={h} className={`px-3 py-2.5 text-[11px] font-semibold text-slate-500 border-r border-slate-100 last:border-r-0 whitespace-nowrap ${['Qty','Rate','GST %','GST Amount','Net Amount'].includes(h) ? 'text-right' : i===0 ? 'text-center' : 'text-left'}`}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {inv.items.map((it, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50/50">
+                      <td className="px-3 py-2.5 text-center text-slate-400 border-r border-slate-100">{idx+1}</td>
+                      <td className="px-3 py-2.5 font-medium text-slate-800 border-r border-slate-100">{it.item || '—'}</td>
+                      <td className="px-3 py-2.5 text-slate-500 border-r border-slate-100">{it.hsn || '—'}</td>
+                      <td className="px-3 py-2.5 text-slate-500 border-r border-slate-100">{it.unit || '—'}</td>
+                      <td className="px-3 py-2.5 text-right text-slate-700 border-r border-slate-100">{it.qty}</td>
+                      <td className="px-3 py-2.5 text-right text-slate-700 border-r border-slate-100">₹{Number(it.rate||0).toLocaleString('en-IN')}</td>
+                      <td className="px-3 py-2.5 text-right text-slate-500 border-r border-slate-100">{it.gst_pct}%</td>
+                      <td className="px-3 py-2.5 text-right text-slate-700 border-r border-slate-100">₹{Number(it.gst_amount||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                      <td className="px-3 py-2.5 text-right font-semibold text-slate-800 border-r border-slate-100">₹{Number(it.net_amount||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+                      <td className="px-3 py-2.5 text-slate-400">{it.remarks || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* ── Calculation Box ── */}
+        {(() => {
+          const items = editingItems ? detailItems : (selectedInv?.items || []);
+          const baseTotal = items.reduce((s, it) => s + (Number(it.qty)||0) * (Number(it.rate)||0), 0);
+          const gstTotal  = items.reduce((s, it) => {
+            const b = (Number(it.qty)||0)*(Number(it.rate)||0);
+            return s + b * ((Number(it.gst_pct)||Number(it.gst_amount && it.qty && it.rate ? (it.gst_amount/(it.qty*it.rate)*100) : 0))||0)/100;
+          }, 0);
+          const gstSum = items.reduce((s, it) => s + (Number(it.gst_amount)||0), 0);
+          const chargesTotal = detailCharges.reduce((s, c) => c.type === 'deduction' ? s - (Number(c.amount)||0) : s + (Number(c.amount)||0), 0);
+          const grandTotal = baseTotal + gstSum + chargesTotal;
+
+          const CHARGE_OPTIONS = [
+            { label: 'Freight Charge', type: 'addition' },
+            { label: 'Labour Charge', type: 'addition' },
+            { label: 'Discount',      type: 'deduction' },
+          ];
+          const addedTypes = detailCharges.map(c => c.label);
+          const available  = CHARGE_OPTIONS.filter(o => !addedTypes.includes(o.label));
+
+          return (
+            <div className="mt-4 flex justify-end">
+              <div className="w-full max-w-sm bg-white border border-slate-200 rounded-md overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Summary</span>
+                  {canEdit && available.length > 0 && (
+                    <div className="relative">
+                      <button onClick={() => setChargesMenuOpen(o => !o)}
+                        className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 px-2 py-1 rounded hover:bg-white">
+                        <Plus size={10} /> Add Charge <ChevronDown size={10} className={`transition-transform ${chargesMenuOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                      {chargesMenuOpen && (
+                        <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-slate-200 rounded shadow-lg z-20">
+                          {available.map(opt => (
+                            <button key={opt.label} onClick={() => {
+                              setDetailCharges(c => [...c, { id: `ch_${Date.now()}`, label: opt.label, type: opt.type, amount: '' }]);
+                              setChargesMenuOpen(false);
+                            }} className="w-full text-left px-3 py-2 text-[12px] text-slate-700 hover:bg-slate-50">
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Rows */}
+                <div className="px-4 py-2 space-y-0">
+                  {/* Subtotal */}
+                  <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                    <span className="text-[12px] text-slate-500">Subtotal (Base)</span>
+                    <span className="text-[12px] font-medium text-slate-800">₹{baseTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  {/* GST */}
+                  <div className="flex justify-between items-center py-2 border-b border-slate-100">
+                    <span className="text-[12px] text-slate-500">GST Amount</span>
+                    <span className="text-[12px] font-medium text-slate-800">₹{gstSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  {/* Flexible charges */}
+                  {detailCharges.map((c, i) => (
+                    <div key={c.id} className="flex items-center gap-2 py-2 border-b border-slate-100">
+                      <span className={`text-[12px] flex-1 ${c.type === 'deduction' ? 'text-red-500' : 'text-slate-600'}`}>
+                        {c.label} {c.type === 'deduction' ? '(–)' : '(+)'}
+                      </span>
+                      {canEdit ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-[12px] text-slate-400">₹</span>
+                          <input
+                            type="text" inputMode="decimal" value={c.amount}
+                            onChange={e => setDetailCharges(prev => prev.map((ch, idx) => idx === i ? { ...ch, amount: e.target.value.replace(/[^0-9.]/g,'') } : ch))}
+                            className="w-24 px-2 py-0.5 border border-slate-200 rounded text-[12px] text-right focus:outline-none focus:ring-1 focus:ring-slate-300"
+                            placeholder="0.00"
+                          />
+                          <button onClick={() => setDetailCharges(prev => prev.filter((_, idx) => idx !== i))}
+                            className="p-0.5 text-slate-300 hover:text-red-500 rounded"><X size={12} /></button>
+                        </div>
+                      ) : (
+                        <span className={`text-[12px] font-medium ${c.type === 'deduction' ? 'text-red-500' : 'text-slate-800'}`}>
+                          {c.type === 'deduction' ? '–' : '+'}₹{Number(c.amount||0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Total */}
+                <div className="flex justify-between items-center px-4 py-3 bg-slate-900">
+                  <span className="text-[12px] font-bold text-white">Total Value</span>
+                  <span className="text-[14px] font-bold text-white">₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                </div>
+
+                {/* Save charges button */}
+                {canEdit && detailCharges.length > 0 && (
+                  <div className="flex justify-end px-4 py-2.5 border-t border-slate-100 bg-slate-50">
+                    <button onClick={handleSaveCharges} disabled={savingCharges}
+                      className="px-3 py-1.5 bg-slate-800 text-white text-[11px] font-semibold rounded hover:bg-slate-700 disabled:opacity-60">
+                      {savingCharges ? 'Saving…' : 'Save Charges'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── Confirm Dialog ── */}
+        {confirmDlg && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-xs mx-4 overflow-hidden">
+              <div className="px-5 py-5">
+                <p className="text-[14px] font-semibold text-slate-800">{confirmDlg.msg}</p>
+                <p className="text-[12px] text-slate-400 mt-1">This action cannot be undone.</p>
+              </div>
+              <div className="px-5 pb-4 flex justify-end gap-2">
+                <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 text-[12px] font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>
+                <button onClick={() => { setConfirmDlg(null); confirmDlg.onOk(); }} className="px-4 py-2 text-[12px] font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600">Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Docs Side Panel ── */}
+        {docsPanel && (
+          <div className="fixed inset-0 z-[250] flex justify-end" onClick={() => { setDocsPanel(false); setDocTrashOpen(false); }}>
+            <div className="bg-white w-80 h-full shadow-2xl flex flex-col border-l border-slate-200" onClick={e => e.stopPropagation()}>
+              {/* Panel header */}
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
+                <div>
+                  <p className="text-[13px] font-bold text-slate-900">Bill Documents</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{activeDocs.length} file{activeDocs.length !== 1 ? 's' : ''}</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {trashedDocs.length > 0 && (
+                    <button onClick={() => setDocTrashOpen(o => !o)}
+                      className={`relative flex items-center gap-1 px-2 py-1.5 text-[11px] font-semibold rounded-lg border transition-colors
+                        ${docTrashOpen ? 'border-orange-200 bg-orange-50 text-orange-500' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                      <Trash2 size={11} />
+                      <span>{trashedDocs.length}</span>
+                    </button>
+                  )}
+                  {canEdit && (
+                    <button onClick={() => { setBillDocsInvId(inv.id); billDocInputRef.current?.click(); }} disabled={uploadingBillDoc}
+                      className="flex items-center gap-1 px-2.5 py-1.5 border border-slate-200 text-slate-600 text-[11px] font-semibold rounded-lg hover:bg-slate-50 disabled:opacity-60">
+                      <Plus size={11} /> {uploadingBillDoc ? 'Uploading…' : 'Upload'}
+                    </button>
+                  )}
+                  <button onClick={() => { setDocsPanel(false); setDocTrashOpen(false); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100"><X size={15} /></button>
+                </div>
+              </div>
+              <input ref={billDocInputRef} type="file" multiple accept="application/pdf,image/*" className="hidden"
+                onChange={async e => { const files = Array.from(e.target.files || []); e.target.value = ''; for (const f of files) await handleUploadBillDoc(f, inv.id, 'invoice'); }} />
+              <input ref={detailEwayInputRef} type="file" multiple accept="application/pdf,image/*" className="hidden"
+                onChange={async e => { const files = Array.from(e.target.files || []); e.target.value = ''; for (const f of files) await handleUploadBillDoc(f, inv.id, 'eway'); }} />
+
+              {docTrashOpen ? (
+                <div className="flex-1 overflow-y-auto p-4 space-y-1.5">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Trash ({trashedDocs.length})</span>
+                    <button onClick={() => handlePermanentDeleteDocs(inv.id, trashedDocs.map(d => d.id))}
+                      className="text-[11px] font-semibold text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50">Empty</button>
+                  </div>
+                  {trashedDocs.map(d => (
+                    <div key={d.id} className="flex items-center gap-2.5 px-3 py-2 rounded border border-slate-100 bg-slate-50">
+                      <FileText size={12} className="text-slate-300 shrink-0" />
+                      <p className="flex-1 text-[11px] text-slate-400 truncate">{d.name}</p>
+                      <button onClick={() => { fetch(`${API}/api/orders/${orderId}/vendor-invoices/${inv.id}/docs/${d.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: false }) }).then(() => fetchInvoices()); }}
+                        className="p-1 text-slate-300 hover:text-green-500 rounded"><Undo2 size={11} /></button>
+                      <button onClick={() => handlePermanentDeleteDocs(inv.id, [d.id])} className="p-1 text-slate-300 hover:text-red-500 rounded"><Trash2 size={11} /></button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto">
+                  {/* Invoice Docs section */}
+                  {(() => {
+                    const invDocs  = activeDocs.filter(d => !d.doc_type || d.doc_type === 'invoice');
+                    const ewayDocs = activeDocs.filter(d => d.doc_type === 'eway');
+                    return (
+                      <>
+                        <div className="border-b border-slate-100">
+                          <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50">
+                            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Invoice Docs</span>
+                            <button onClick={() => billDocInputRef.current?.click()} disabled={uploadingBillDoc}
+                              className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50">
+                              <Plus size={10} /> Add
+                            </button>
+                          </div>
+                          <div className="px-4 py-2 space-y-1.5 min-h-[36px]">
+                            {invDocs.length === 0 ? (
+                              <p className="text-[11px] text-slate-400 py-1">No invoice docs</p>
+                            ) : invDocs.map(d => {
+                              const isPdf = /\.pdf(\?|$)/i.test(d.name || '');
+                              return (
+                                <div key={d.id} className="flex items-center gap-2 py-1">
+                                  <div className={`w-6 h-6 rounded shrink-0 flex items-center justify-center ${isPdf ? 'bg-red-50 text-red-400' : 'bg-slate-100 text-slate-400'}`}>
+                                    <FileText size={11} />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[11px] font-medium text-slate-700 truncate">{d.name}</p>
+                                    <p className="text-[10px] text-slate-400">{fmtBytes(d.size)}</p>
+                                  </div>
+                                  <a href={d.url} target="_blank" rel="noreferrer" className="p-1 text-slate-400 hover:text-slate-700 rounded"><Eye size={11} /></a>
+                                  <a href={d.url} download={d.name} className="p-1 text-slate-400 hover:text-slate-700 rounded"><Download size={11} /></a>
+                                  <button onClick={() => handleSoftDeleteDoc(inv.id, d.id)} className="p-1 text-slate-400 hover:text-orange-500 rounded"><Trash2 size={11} /></button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-100">
+                            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">E-way Bill</span>
+                            <button onClick={() => detailEwayInputRef.current?.click()} disabled={editUploadingEway}
+                              className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50">
+                              <Plus size={10} /> Add
+                            </button>
+                          </div>
+                          <div className="px-4 py-2 space-y-1.5 min-h-[36px]">
+                            {ewayDocs.length === 0 ? (
+                              <p className="text-[11px] text-slate-400 py-1">No E-way bill docs</p>
+                            ) : ewayDocs.map(d => {
+                              const isPdf = /\.pdf(\?|$)/i.test(d.name || '');
+                              return (
+                                <div key={d.id} className="flex items-center gap-2 py-1">
+                                  <div className={`w-6 h-6 rounded shrink-0 flex items-center justify-center ${isPdf ? 'bg-red-50 text-red-400' : 'bg-slate-100 text-slate-400'}`}>
+                                    <FileText size={11} />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[11px] font-medium text-slate-700 truncate">{d.name}</p>
+                                    <p className="text-[10px] text-slate-400">{fmtBytes(d.size)}</p>
+                                  </div>
+                                  <a href={d.url} target="_blank" rel="noreferrer" className="p-1 text-slate-400 hover:text-slate-700 rounded"><Eye size={11} /></a>
+                                  <a href={d.url} download={d.name} className="p-1 text-slate-400 hover:text-slate-700 rounded"><Download size={11} /></a>
+                                  <button onClick={() => handleSoftDeleteDoc(inv.id, d.id)} className="p-1 text-slate-400 hover:text-orange-500 rounded"><Trash2 size={11} /></button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── TRASH PAGE ──
+  if (page === 'trash') {
+    const selAll = trashedInvoices.length > 0 && trashedInvoices.every(inv => invTrashSel.has(inv.id));
+    const toggleSel = (id) => setInvTrashSel(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    const toggleAll = () => setInvTrashSel(selAll ? new Set() : new Set(trashedInvoices.map(inv => inv.id)));
+    return (
+      <div className="px-8 py-5 max-w-[860px]">
+        <button onClick={() => { setPage('list'); setInvTrashSel(new Set()); }}
+          className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-400 hover:text-slate-700 mb-5 transition-colors">
+          <ArrowLeft size={14} /> Back to Invoices
+        </button>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-[14px] font-bold text-slate-900">Trash <span className="text-slate-400 font-normal">({trashedInvoices.length})</span></h2>
+          <div className="flex gap-2">
+            {invTrashSel.size > 0 && (
+              <button onClick={() => handlePermanentDeleteInvoices([...invTrashSel])}
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-red-200 text-red-500 text-[12px] font-semibold rounded-lg hover:bg-red-50">
+                <Trash2 size={12} /> Delete ({invTrashSel.size})
+              </button>
+            )}
+            {trashedInvoices.length > 0 && (
+              <button onClick={() => handlePermanentDeleteInvoices(trashedInvoices.map(inv => inv.id))}
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 text-[12px] font-semibold rounded-lg hover:bg-slate-50">
+                Empty Trash
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          {trashedInvoices.length === 0 ? (
+            <div className="py-14 text-center text-[12px] text-slate-300">Trash is empty</div>
+          ) : (
+            <table className="w-full text-[12px]">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="px-4 py-2.5 w-10">
+                    <input type="checkbox" checked={selAll} onChange={toggleAll} className="w-3.5 h-3.5 accent-red-500 cursor-pointer" />
+                  </th>
+                  <th className="px-4 py-2.5 text-left font-semibold text-slate-500">Invoice No</th>
+                  <th className="px-4 py-2.5 text-left font-semibold text-slate-500">Invoice Date</th>
+                  <th className="px-4 py-2.5 text-right font-semibold text-slate-500">Amount</th>
+                  <th className="px-4 py-2.5 text-center font-semibold text-slate-500 w-32">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trashedInvoices.map(inv => (
+                  <tr key={inv.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
+                    <td className="px-4 py-2.5 text-center">
+                      <input type="checkbox" checked={invTrashSel.has(inv.id)} onChange={() => toggleSel(inv.id)} className="w-3.5 h-3.5 accent-red-500 cursor-pointer" />
+                    </td>
+                    <td className="px-4 py-2.5 text-slate-500 line-through">{inv.invoice_no}</td>
+                    <td className="px-4 py-2.5 text-slate-400">{fmtDate(inv.invoice_date)}</td>
+                    <td className="px-4 py-2.5 text-right text-slate-400">{fmtAmt(inv.amount)}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex items-center justify-center gap-2">
+                        <button onClick={() => handleRestoreInv(inv.id)}
+                          className="text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 border border-slate-200 rounded hover:bg-slate-50">
+                          Restore
+                        </button>
+                        <button onClick={() => handlePermanentDeleteInvoices([inv.id])}
+                          className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded transition-all">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        {confirmDlg && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+            <div className="bg-white rounded-xl shadow-xl w-full max-w-xs mx-4 overflow-hidden">
+              <div className="px-5 py-5">
+                <p className="text-[14px] font-semibold text-slate-800">{confirmDlg.msg}</p>
+                <p className="text-[12px] text-slate-400 mt-1">Yeh action undo nahi hogi.</p>
+              </div>
+              <div className="px-5 pb-4 flex justify-end gap-2">
+                <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 text-[12px] font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>
+                <button onClick={() => { setConfirmDlg(null); confirmDlg.onOk(); }} className="px-4 py-2 text-[12px] font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600">Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── LIST PAGE ──
+  return (
+    <div className="px-6 py-5 w-full">
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between mb-5 pb-4 border-b border-slate-100">
+        <h2 className="text-[16px] font-bold text-slate-900">Vendor Invoices</h2>
+        <div className="flex items-center gap-2">
+          <input ref={excelInputRef} type="file" accept=".xlsx,.xls" className="hidden"
+            onChange={e => { handleExcelImport(e.target.files?.[0]); e.target.value = ''; }} />
+          {/* More dropdown */}
+          <div className="relative" ref={moreRef}>
+            <button onClick={() => setMoreOpen(o => !o)}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 text-[12px] font-semibold rounded-lg hover:bg-slate-50">
+              More <ChevronDown size={12} className={`transition-transform ${moreOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {moreOpen && (
+              <div className="absolute right-0 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-50 overflow-hidden"
+                onMouseLeave={() => setMoreOpen(false)}>
+                <button onClick={() => { downloadInvoiceTemplate(); setMoreOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                  <Download size={13} className="text-slate-400" /> Template
+                </button>
+                <button onClick={() => { excelInputRef.current?.click(); setMoreOpen(false); }} disabled={importing}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-60">
+                  <Upload size={13} className="text-slate-400" /> {importing ? 'Importing…' : 'Import Excel'}
+                </button>
+                <div className="border-t border-slate-100" />
+                <button onClick={() => { setPage('trash'); setMoreOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                  <Trash2 size={13} className="text-slate-400" /> Trash
+                  {trashedInvoices.length > 0 && (
+                    <span className="ml-auto px-1.5 py-0.5 text-[9px] font-semibold text-slate-500 border border-slate-300 rounded-full">
+                      {trashedInvoices.length}
+                    </span>
+                  )}
+                </button>
+                <button onClick={() => { fetchGlobalLog(); setGlobalLogPanel(true); setMoreOpen(false); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[12px] font-medium text-slate-700 hover:bg-slate-50 transition-colors">
+                  <Clock size={13} className="text-slate-400" /> Log
+                </button>
+              </div>
+            )}
+          </div>
+          {canEdit && (
+            <button onClick={() => setAddModal(true)}
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-slate-900 text-white text-[12px] font-semibold rounded-lg hover:bg-slate-800">
+              <Plus size={13} /> Add Invoice
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Analytics ── */}
+      <div className="flex gap-4 mb-5">
+        <div className="bg-[#f7f6f3] rounded-md px-6 py-3 w-48">
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Total Invoices</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{loadingInv ? '—' : activeInvoices.length}</p>
+        </div>
+        <div className="bg-[#f7f6f3] rounded-md px-6 py-3 w-56">
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Total Amount</p>
+          <p className="text-2xl font-bold text-slate-900 mt-1">{loadingInv ? '—' : fmtAmt(totalAmount)}</p>
+        </div>
+      </div>
+
+      {/* ── Table ── */}
+      <div className="bg-white rounded-md border border-slate-200 overflow-hidden shadow-sm">
+        {loadingInv ? (
+          <div className="py-16 text-center text-[12px] text-slate-400">Loading…</div>
+        ) : activeInvoices.length === 0 ? (
+          <div className="py-16 text-center text-[13px] text-slate-300 select-none">No invoices added yet</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  {['S.No','Invoice No','Invoice Date','Amount','Bill Docs','Added By','Date Added','Actions'].map((h,i) => (
+                    <th key={h} className={`px-4 py-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wide border-r border-slate-100 last:border-r-0 ${i===0||i===3||i===4 ? 'text-center' : i===7 ? 'text-center' : 'text-left'}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {activeInvoices.map((inv, idx) => {
+                  const docsCount = (inv.docs || []).filter(d => !d.trashed).length;
+                  return (
+                    <tr key={inv.id} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="px-4 py-3 text-center text-slate-400 font-medium border-r border-slate-100 w-12">{idx + 1}</td>
+                      <td className="px-4 py-3 border-r border-slate-100">
+                        <button onClick={() => openDetailPage(inv)}
+                          className="font-semibold text-blue-600 hover:text-blue-700 hover:underline text-left transition-colors">
+                          {inv.invoice_no}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 border-r border-slate-100 whitespace-nowrap">{fmtDate(inv.invoice_date)}</td>
+                      <td className="px-4 py-3 text-center font-semibold text-slate-800 border-r border-slate-100">{fmtAmt(inv.amount)}</td>
+                      <td className="px-4 py-3 text-center border-r border-slate-100">
+                        <button onClick={() => { setBillDocsInvId(inv.id); setDocsPanel(true); }}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold transition-colors
+                            ${docsCount > 0 ? 'bg-blue-50 text-blue-600 hover:bg-blue-100 cursor-pointer' : 'bg-slate-50 text-slate-400 hover:bg-slate-100 cursor-pointer'}`}>
+                          <FileText size={10} /> {docsCount > 0 ? docsCount : '—'}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 border-r border-slate-100">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold flex items-center justify-center shrink-0">
+                            {(inv.created_by || '?').charAt(0).toUpperCase()}
+                          </span>
+                          <span className="truncate max-w-[100px]">{inv.created_by || '—'}</span>
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 border-r border-slate-100 whitespace-nowrap">{fmtDate(inv.created_at)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-1">
+                          {canEdit && (
+                            <button onClick={() => { setEditInvModal(inv); setEditInvForm({ invoice_no: inv.invoice_no, invoice_date: inv.invoice_date?.slice(0,10) || '', amount: String(inv.amount || '') }); }}
+                              title="Edit" className="p-1.5 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-md transition-all">
+                              <Pencil size={13} />
+                            </button>
+                          )}
+                          <button onClick={() => setLogModal(inv)} title="Activity Log"
+                            className="p-1.5 text-slate-400 hover:text-violet-500 hover:bg-violet-50 rounded-md transition-all">
+                            <Clock size={13} />
+                          </button>
+                          <button onClick={() => handleSoftDeleteInv(inv.id)} title="Move to Trash"
+                            className="p-1.5 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-md transition-all">
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Confirm Dialog ── */}
+      {confirmDlg && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-xs mx-4 overflow-hidden">
+            <div className="px-5 py-5">
+              <p className="text-[14px] font-semibold text-slate-800">{confirmDlg.msg}</p>
+              <p className="text-[12px] text-slate-400 mt-1">This action cannot be undone.</p>
+            </div>
+            <div className="px-5 pb-4 flex justify-end gap-2">
+              <button onClick={() => setConfirmDlg(null)} className="px-4 py-2 text-[12px] font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>
+              <button onClick={() => { setConfirmDlg(null); confirmDlg.onOk(); }} className="px-4 py-2 text-[12px] font-semibold text-white bg-red-500 rounded-lg hover:bg-red-600">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit Invoice Modal ── */}
+      {editInvModal && (() => {
+        const currentInv = invoices.find(i => i.id === editInvModal.id) || editInvModal;
+        const activeDocs = (currentInv.docs || []).filter(d => !d.trashed);
+        const invoiceDocs = activeDocs.filter(d => !d.doc_type || d.doc_type === 'invoice');
+        const ewayDocs    = activeDocs.filter(d => d.doc_type === 'eway');
+        return (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
+                <h2 className="text-[14px] font-bold text-slate-900">Edit Invoice</h2>
+                <button onClick={() => setEditInvModal(null)} className="p-1.5 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100"><X size={16} /></button>
+              </div>
+              <div className="px-5 py-4 space-y-3.5 overflow-y-auto">
+                {/* Basic fields */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">Invoice No *</label>
+                    <input value={editInvForm.invoice_no} onChange={e => setEditInvForm(f => ({ ...f, invoice_no: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">Invoice Date</label>
+                    <input type="date" value={editInvForm.invoice_date} onChange={e => setEditInvForm(f => ({ ...f, invoice_date: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-slate-300" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">Amount (₹)</label>
+                    <input type="text" inputMode="decimal" value={editInvForm.amount} onChange={e => setEditInvForm(f => ({ ...f, amount: e.target.value.replace(/[^0-9.]/g,'') }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-slate-300" />
+                  </div>
+                </div>
+
+                {/* Invoice Documents */}
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+                    <span className="text-[11px] font-semibold text-slate-600">Invoice Documents</span>
+                    <input ref={editInvoiceInputRef} type="file" accept="application/pdf,image/*" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadBillDoc(f, editInvModal.id, 'invoice'); e.target.value=''; }} />
+                    <button onClick={() => editInvoiceInputRef.current?.click()} disabled={editUploadingInvoice}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50">
+                      <Upload size={11} /> {editUploadingInvoice ? 'Uploading…' : 'Upload'}
+                    </button>
+                  </div>
+                  <div className="px-3 py-2 space-y-1.5 min-h-[36px]">
+                    {invoiceDocs.length === 0 ? (
+                      <p className="text-[11px] text-slate-400 py-1">No invoice documents</p>
+                    ) : invoiceDocs.map(d => (
+                      <div key={d.id} className="flex items-center gap-2">
+                        <FileText size={12} className="text-slate-400 shrink-0" />
+                        <span className="flex-1 text-[11px] text-slate-600 truncate">{d.name}</span>
+                        <button onClick={() => window.open(d.url, '_blank')} className="p-1 text-slate-400 hover:text-blue-500 rounded"><Eye size={11} /></button>
+                        <button onClick={() => handleSoftDeleteDoc(editInvModal.id, d.id)} className="p-1 text-slate-400 hover:text-red-500 rounded"><Trash2 size={11} /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* E-way Bill */}
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+                    <span className="text-[11px] font-semibold text-slate-600">E-way Bill</span>
+                    <input ref={editEwayInputRef} type="file" accept="application/pdf,image/*" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleUploadBillDoc(f, editInvModal.id, 'eway'); e.target.value=''; }} />
+                    <button onClick={() => editEwayInputRef.current?.click()} disabled={editUploadingEway}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50">
+                      <Upload size={11} /> {editUploadingEway ? 'Uploading…' : 'Upload'}
+                    </button>
+                  </div>
+                  <div className="px-3 py-2 space-y-1.5 min-h-[36px]">
+                    {ewayDocs.length === 0 ? (
+                      <p className="text-[11px] text-slate-400 py-1">No E-way bill uploaded</p>
+                    ) : ewayDocs.map(d => (
+                      <div key={d.id} className="flex items-center gap-2">
+                        <FileText size={12} className="text-slate-400 shrink-0" />
+                        <span className="flex-1 text-[11px] text-slate-600 truncate">{d.name}</span>
+                        <button onClick={() => window.open(d.url, '_blank')} className="p-1 text-slate-400 hover:text-blue-500 rounded"><Eye size={11} /></button>
+                        <button onClick={() => handleSoftDeleteDoc(editInvModal.id, d.id)} className="p-1 text-slate-400 hover:text-red-500 rounded"><Trash2 size={11} /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="px-5 py-3.5 border-t border-slate-100 flex justify-end gap-2 shrink-0">
+                <button onClick={() => setEditInvModal(null)} className="px-4 py-2 text-[12px] font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">Cancel</button>
+                <button onClick={handleEditInvoiceSave} disabled={saving} className="px-4 py-2 text-[12px] font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-60">
+                  {saving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Log Side Panel ── */}
+      {logModal && (() => {
+        const logs = [...(logModal.log || [])];
+        const getIcon = (action = '') => {
+          const a = action.toLowerCase();
+          if (a.includes('created'))          return { icon: <Plus size={10} />,      bg: 'bg-green-100 text-green-600' };
+          if (a.includes('trash'))            return { icon: <Trash2 size={10} />,    bg: 'bg-orange-100 text-orange-500' };
+          if (a.includes('restored'))         return { icon: <Undo2 size={10} />,     bg: 'bg-blue-100 text-blue-500' };
+          if (a.includes('document'))         return { icon: <FileText size={10} />,  bg: 'bg-violet-100 text-violet-500' };
+          if (a.includes('updated') || a.includes('details')) return { icon: <Pencil size={10} />, bg: 'bg-slate-100 text-slate-500' };
+          if (a.includes('deleted'))          return { icon: <X size={10} />,         bg: 'bg-red-100 text-red-500' };
+          return { icon: <Clock size={10} />, bg: 'bg-slate-100 text-slate-400' };
+        };
+        return (
+          <div className="fixed inset-0 z-[200] flex justify-end" onClick={() => setLogModal(null)}>
+            <div className="bg-white w-80 h-full shadow-2xl flex flex-col border-l border-slate-200" onClick={e => e.stopPropagation()}>
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
+                <div>
+                  <p className="text-[13px] font-bold text-slate-900">Activity Log</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{logModal.invoice_no} · {logs.length} entr{logs.length === 1 ? 'y' : 'ies'}</p>
+                </div>
+                <button onClick={() => setLogModal(null)} className="p-1.5 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100"><X size={15} /></button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-5 py-4">
+                {logs.length === 0 ? (
+                  <p className="text-[12px] text-slate-400 text-center py-10">No activity recorded</p>
+                ) : (
+                  <div className="relative">
+                    {/* vertical line */}
+                    <div className="absolute left-[13px] top-4 bottom-4 w-px bg-slate-100" />
+                    <div className="space-y-0">
+                      {logs.map((entry, i) => {
+                        const { icon, bg } = getIcon(entry.action);
+                        const isLast = i === logs.length - 1;
+                        return (
+                          <div key={i} className={`flex gap-3 ${isLast ? '' : 'pb-5'}`}>
+                            <div className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center z-10 ${bg}`}>
+                              {icon}
+                            </div>
+                            <div className="flex-1 pt-0.5">
+                              <p className="text-[12px] font-semibold text-slate-800">{entry.action}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                <span className="text-[11px] font-medium text-slate-600">{entry.user || '—'}</span>
+                                {entry.at && (
+                                  <>
+                                    <span className="text-slate-300 text-[10px]">·</span>
+                                    <span className="text-[11px] text-slate-400">
+                                      {new Date(entry.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Global Invoice Audit Log Panel ── */}
+      {globalLogPanel && (() => {
+        const getIcon = (action = '') => {
+          const a = action.toLowerCase();
+          if (a.includes('created'))     return { icon: <Plus size={10} />,     bg: 'bg-green-100 text-green-600' };
+          if (a.includes('permanently')) return { icon: <X size={10} />,        bg: 'bg-red-100 text-red-500' };
+          if (a.includes('trash'))       return { icon: <Trash2 size={10} />,   bg: 'bg-orange-100 text-orange-500' };
+          if (a.includes('restored'))    return { icon: <Undo2 size={10} />,    bg: 'bg-blue-100 text-blue-500' };
+          if (a.includes('document'))    return { icon: <FileText size={10} />, bg: 'bg-violet-100 text-violet-500' };
+          if (a.includes('updated') || a.includes('details')) return { icon: <Pencil size={10} />, bg: 'bg-slate-100 text-slate-500' };
+          return { icon: <Clock size={10} />, bg: 'bg-slate-100 text-slate-400' };
+        };
+
+        // Group by invoice_id, preserve order of first appearance
+        const groups = [];
+        const seen = {};
+        globalLogs.forEach(entry => {
+          const key = entry.invoice_id || entry.invoice_no || '?';
+          if (!seen[key]) { seen[key] = { invoice_no: entry.invoice_no || key, invoice_id: key, entries: [] }; groups.push(seen[key]); }
+          seen[key].entries.push(entry);
+        });
+
+        const clearInvoiceLog = async (invoiceId) => {
+          await fetch(`${API}/api/orders/${orderId}/invoice-audit-log/invoice/${invoiceId}`, { method: 'DELETE' });
+          fetchGlobalLog();
+        };
+        const clearAllLog = async () => {
+          await fetch(`${API}/api/orders/${orderId}/invoice-audit-log`, { method: 'DELETE' });
+          setGlobalLogs([]);
+        };
+
+        return (
+          <div className="fixed inset-0 z-[200] flex justify-end" onClick={() => setGlobalLogPanel(false)}>
+            <div className="bg-white w-[460px] h-full shadow-2xl flex flex-col border-l border-slate-200" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between shrink-0">
+                <div>
+                  <p className="text-[13px] font-bold text-slate-900">Invoice Activity Log</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{globalLogs.length} total entr{globalLogs.length === 1 ? 'y' : 'ies'} · {groups.length} invoice{groups.length !== 1 ? 's' : ''}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {globalLogs.length > 0 && (
+                    <button onClick={clearAllLog}
+                      className="flex items-center gap-1 text-[11px] font-semibold text-red-400 hover:text-red-600 border border-red-200 hover:border-red-300 px-2.5 py-1 rounded-lg hover:bg-red-50">
+                      <Trash2 size={11} /> Clear All
+                    </button>
+                  )}
+                  <button onClick={() => setGlobalLogPanel(false)} className="p-1.5 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100"><X size={15} /></button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                {loadingGlobalLog ? (
+                  <p className="text-[12px] text-slate-400 text-center py-10">Loading…</p>
+                ) : groups.length === 0 ? (
+                  <p className="text-[12px] text-slate-400 text-center py-10">No activity yet</p>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {groups.map((group) => (
+                      <div key={group.invoice_id}>
+                        {/* Invoice section header */}
+                        <div className="flex items-center justify-between px-5 py-2.5 bg-slate-50 sticky top-0 z-10">
+                          <span className="text-[12px] font-bold text-indigo-600">{group.invoice_no}</span>
+                          <button onClick={() => clearInvoiceLog(group.invoice_id)}
+                            className="text-[10px] font-semibold text-slate-400 hover:text-red-500 px-2 py-0.5 rounded hover:bg-red-50 border border-transparent hover:border-red-200">
+                            Empty
+                          </button>
+                        </div>
+                        {/* Timeline entries */}
+                        <div className="px-5 py-3 relative">
+                          <div className="absolute left-[29px] top-3 bottom-3 w-px bg-slate-100" />
+                          <div className="space-y-0">
+                            {group.entries.map((entry, i) => {
+                              const { icon, bg } = getIcon(entry.action);
+                              const isLast = i === group.entries.length - 1;
+                              return (
+                                <div key={i} className={`flex gap-3 items-start ${isLast ? '' : 'pb-4'}`}>
+                                  {/* Number badge */}
+                                  <div className="flex flex-col items-center shrink-0 w-8">
+                                    <div className={`w-7 h-7 rounded-full flex items-center justify-center z-10 ${bg}`}>{icon}</div>
+                                    <span className="text-[9px] text-slate-300 font-medium mt-0.5">{i + 1}</span>
+                                  </div>
+                                  <div className="flex-1 pt-0.5">
+                                    <p className="text-[12px] font-semibold text-slate-800">{entry.action}</p>
+                                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                      <span className="text-[11px] font-medium text-slate-600">{entry.user || '—'}</span>
+                                      {entry.at && (
+                                        <>
+                                          <span className="text-slate-300 text-[10px]">·</span>
+                                          <span className="text-[11px] text-slate-400">
+                                            {new Date(entry.at).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Add Invoice Modal ── */}
+      {addModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-lg shadow-2xl w-full max-w-lg flex flex-col overflow-hidden max-h-[90vh]">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <h2 className="text-[14px] font-bold text-slate-900">Add Invoice</h2>
+              <button onClick={() => { setAddModal(false); setAddForm({ invoice_no: '', invoice_date: '', amount: '' }); setPendingFiles([]); }}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100"><X size={16} /></button>
+            </div>
+            <div className="px-5 py-4 space-y-3.5 overflow-y-auto">
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">Invoice No *</label>
+                  <input value={addForm.invoice_no} onChange={e => setAddForm(f => ({ ...f, invoice_no: e.target.value }))}
+                    placeholder="e.g. INV-001"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-[13px] focus:outline-none focus:ring-2 focus:ring-slate-300" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">Invoice Date *</label>
+                  <input type="date" value={addForm.invoice_date} onChange={e => setAddForm(f => ({ ...f, invoice_date: e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-[13px] focus:outline-none focus:ring-2 focus:ring-slate-300" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-1.5">Amount (₹)</label>
+                  <input type="text" inputMode="decimal" value={addForm.amount} onChange={e => setAddForm(f => ({ ...f, amount: e.target.value.replace(/[^0-9.]/g,'') }))}
+                    placeholder="0.00"
+                    className="w-full px-3 py-2 border border-slate-200 rounded-md text-[13px] focus:outline-none focus:ring-2 focus:ring-slate-300" />
+                </div>
+              </div>
+              {/* Invoice Docs */}
+              <div className="border border-slate-200 rounded-md overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+                  <span className="text-[11px] font-semibold text-slate-600">Invoice Docs</span>
+                  <input ref={pendingInvoiceInputRef} type="file" accept="application/pdf,image/*" multiple className="hidden"
+                    onChange={e => { const files = Array.from(e.target.files || []); if (files.length) setPendingFiles(p => [...p, ...files.map(f => ({ file: f, doc_type: 'invoice' }))]); e.target.value = ''; }} />
+                  <button onClick={() => pendingInvoiceInputRef.current?.click()}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded hover:bg-slate-100">
+                    <Plus size={11} /> Add
+                  </button>
+                </div>
+                <div className="px-3 py-2 space-y-1.5 min-h-[32px]">
+                  {pendingFiles.filter(pf => pf.doc_type === 'invoice').length === 0 ? (
+                    <p className="text-[11px] text-slate-400 py-0.5">No invoice docs added</p>
+                  ) : pendingFiles.map((pf, i) => pf.doc_type !== 'invoice' ? null : (
+                    <div key={i} className="flex items-center gap-2">
+                      <FileText size={12} className="text-slate-400 shrink-0" />
+                      <span className="flex-1 text-[11px] text-slate-700 truncate">{pf.file.name}</span>
+                      <button onClick={() => setPendingFiles(f => f.filter((_,idx) => idx !== i))} className="p-0.5 text-slate-400 hover:text-red-500"><X size={11} /></button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* E-way Bill Docs */}
+              <div className="border border-slate-200 rounded-md overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+                  <span className="text-[11px] font-semibold text-slate-600">E-way Bill</span>
+                  <input ref={pendingEwayInputRef} type="file" accept="application/pdf,image/*" multiple className="hidden"
+                    onChange={e => { const files = Array.from(e.target.files || []); if (files.length) setPendingFiles(p => [...p, ...files.map(f => ({ file: f, doc_type: 'eway' }))]); e.target.value = ''; }} />
+                  <button onClick={() => pendingEwayInputRef.current?.click()}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded hover:bg-slate-100">
+                    <Plus size={11} /> Add
+                  </button>
+                </div>
+                <div className="px-3 py-2 space-y-1.5 min-h-[32px]">
+                  {pendingFiles.filter(pf => pf.doc_type === 'eway').length === 0 ? (
+                    <p className="text-[11px] text-slate-400 py-0.5">No E-way bill added</p>
+                  ) : pendingFiles.map((pf, i) => pf.doc_type !== 'eway' ? null : (
+                    <div key={i} className="flex items-center gap-2">
+                      <FileText size={12} className="text-slate-400 shrink-0" />
+                      <span className="flex-1 text-[11px] text-slate-700 truncate">{pf.file.name}</span>
+                      <button onClick={() => setPendingFiles(f => f.filter((_,idx) => idx !== i))} className="p-0.5 text-slate-400 hover:text-red-500"><X size={11} /></button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="px-5 py-3.5 border-t border-slate-100 flex items-center justify-between">
+              <button onClick={() => { setAddModal(false); setAddForm({ invoice_no: '', invoice_date: '', amount: '' }); setPendingFiles([]); }}
+                className="px-4 py-2 text-[12px] font-semibold text-slate-600 border border-slate-200 rounded-md hover:bg-slate-50">Cancel</button>
+              <div className="flex gap-2">
+                <button onClick={() => handleAddSave(false)} disabled={saving}
+                  className="px-4 py-2 text-[12px] font-semibold text-slate-700 border border-slate-200 rounded-md hover:bg-slate-50 disabled:opacity-60">
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+                <button onClick={() => handleAddSave(true)} disabled={saving}
+                  className="px-4 py-2 text-[12px] font-semibold text-white bg-slate-900 rounded-md hover:bg-slate-800 disabled:opacity-60">
+                  {saving ? 'Saving…' : 'Save & Add Details'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Docs Side Panel (list page) ── */}
+      {docsPanel && (() => {
+        const panelInv = invoices.find(i => i.id === billDocsInvId);
+        if (!panelInv) return null;
+        const allDocs     = panelInv.docs || [];
+        const panelActive = allDocs.filter(d => !d.trashed);
+        const panelTrashed= allDocs.filter(d => d.trashed);
+        const invDocs  = panelActive.filter(d => !d.doc_type || d.doc_type === 'invoice');
+        const ewayDocs = panelActive.filter(d => d.doc_type === 'eway');
+        return (
+          <div className="fixed inset-0 z-[250] flex justify-end" onClick={() => { setDocsPanel(false); setDocTrashOpen(false); }}>
+            <div className="bg-white w-80 h-full shadow-2xl flex flex-col border-l border-slate-200" onClick={e => e.stopPropagation()}>
+              <div className="px-4 py-3.5 border-b border-slate-100 flex items-center justify-between shrink-0">
+                <div>
+                  <p className="text-[13px] font-bold text-slate-900">Bill Documents</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">{panelInv.invoice_no}</p>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {panelTrashed.length > 0 && (
+                    <button onClick={() => setDocTrashOpen(o => !o)}
+                      className={`flex items-center gap-1 px-2 py-1.5 text-[11px] font-semibold rounded border transition-colors
+                        ${docTrashOpen ? 'border-orange-200 bg-orange-50 text-orange-500' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                      <Trash2 size={11} /> {panelTrashed.length}
+                    </button>
+                  )}
+                  <button onClick={() => { setDocsPanel(false); setDocTrashOpen(false); }} className="p-1.5 text-slate-400 hover:text-slate-700 rounded hover:bg-slate-100"><X size={15} /></button>
+                </div>
+              </div>
+
+              {docTrashOpen ? (
+                <div className="flex-1 overflow-y-auto p-4 space-y-1.5">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Trash ({panelTrashed.length})</p>
+                  {panelTrashed.map(d => (
+                    <div key={d.id} className="flex items-center gap-2.5 px-3 py-2 rounded border border-slate-100 bg-slate-50">
+                      <FileText size={12} className="text-slate-300 shrink-0" />
+                      <p className="flex-1 text-[11px] text-slate-400 truncate">{d.name}</p>
+                      <button onClick={() => fetch(`${API}/api/orders/${orderId}/vendor-invoices/${panelInv.id}/docs/${d.id}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ trashed: false }) }).then(() => fetchInvoices())}
+                        className="p-1 text-slate-300 hover:text-green-500 rounded" title="Restore"><Undo2 size={11} /></button>
+                      <button onClick={() => handlePermanentDeleteDocs(panelInv.id, [d.id])} className="p-1 text-slate-300 hover:text-red-500 rounded"><Trash2 size={11} /></button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto">
+                  {/* Invoice Docs section */}
+                  <div className="border-b border-slate-100">
+                    <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50">
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Invoice Docs</span>
+                      <input ref={billDocInputRef} type="file" accept="application/pdf,image/*" multiple className="hidden"
+                        onChange={async e => { const files = Array.from(e.target.files||[]); e.target.value=''; for (const f of files) await handleUploadBillDoc(f, panelInv.id, 'invoice'); }} />
+                      <button onClick={() => billDocInputRef.current?.click()} disabled={uploadingBillDoc}
+                        className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50">
+                        <Plus size={10} /> Add
+                      </button>
+                    </div>
+                    <div className="px-4 py-2 space-y-1.5 min-h-[36px]">
+                      {invDocs.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 py-1">No invoice docs</p>
+                      ) : invDocs.map(d => {
+                        const isPdf = /\.pdf(\?|$)/i.test(d.name||'');
+                        return (
+                          <div key={d.id} className="flex items-center gap-2 py-1">
+                            <div className={`w-6 h-6 rounded shrink-0 flex items-center justify-center ${isPdf ? 'bg-red-50 text-red-400' : 'bg-slate-100 text-slate-400'}`}>
+                              <FileText size={11} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-medium text-slate-700 truncate">{d.name}</p>
+                              <p className="text-[10px] text-slate-400">{fmtBytes(d.size)}</p>
+                            </div>
+                            <a href={d.url} target="_blank" rel="noreferrer" className="p-1 text-slate-400 hover:text-slate-700 rounded"><Eye size={11} /></a>
+                            <a href={d.url} download={d.name} className="p-1 text-slate-400 hover:text-slate-700 rounded"><Download size={11} /></a>
+                            <button onClick={() => handleSoftDeleteDoc(panelInv.id, d.id)} className="p-1 text-slate-400 hover:text-orange-500 rounded"><Trash2 size={11} /></button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* E-way Bill section */}
+                  <div>
+                    <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-100">
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">E-way Bill</span>
+                      <input ref={editEwayInputRef} type="file" accept="application/pdf,image/*" multiple className="hidden"
+                        onChange={async e => { const files = Array.from(e.target.files||[]); e.target.value=''; for (const f of files) await handleUploadBillDoc(f, panelInv.id, 'eway'); }} />
+                      <button onClick={() => editEwayInputRef.current?.click()} disabled={editUploadingEway}
+                        className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50">
+                        <Plus size={10} /> Add
+                      </button>
+                    </div>
+                    <div className="px-4 py-2 space-y-1.5 min-h-[36px]">
+                      {ewayDocs.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 py-1">No E-way bill docs</p>
+                      ) : ewayDocs.map(d => {
+                        const isPdf = /\.pdf(\?|$)/i.test(d.name||'');
+                        return (
+                          <div key={d.id} className="flex items-center gap-2 py-1">
+                            <div className={`w-6 h-6 rounded shrink-0 flex items-center justify-center ${isPdf ? 'bg-red-50 text-red-400' : 'bg-slate-100 text-slate-400'}`}>
+                              <FileText size={11} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-medium text-slate-700 truncate">{d.name}</p>
+                              <p className="text-[10px] text-slate-400">{fmtBytes(d.size)}</p>
+                            </div>
+                            <a href={d.url} target="_blank" rel="noreferrer" className="p-1 text-slate-400 hover:text-slate-700 rounded"><Eye size={11} /></a>
+                            <a href={d.url} download={d.name} className="p-1 text-slate-400 hover:text-slate-700 rounded"><Download size={11} /></a>
+                            <button onClick={() => handleSoftDeleteDoc(panelInv.id, d.id)} className="p-1 text-slate-400 hover:text-orange-500 rounded"><Trash2 size={11} /></button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+};
+
+
+
+
 
 export default ViewOrder;

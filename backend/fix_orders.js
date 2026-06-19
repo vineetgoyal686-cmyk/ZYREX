@@ -28,7 +28,7 @@ async function repair() {
 
   // 2. Fetch Master Data for Mapping
   const { data: companies } = await supabase.schema("procurement").from("companies").select("id, company_name, company_code");
-  const { data: sites } = await supabase.schema("procurement").from("sites").select("id, site_name, site_code");
+  const { data: sites } = await supabase.from("projects").select("id, project_name, project_code");
   const { data: vendors } = await supabase.schema("procurement").from("vendors").select("id, vendor_name");
 
   for (const order of orders) {

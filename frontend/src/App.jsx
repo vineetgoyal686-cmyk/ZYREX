@@ -68,7 +68,7 @@ import VendorList from "./pages/Procurement/VendorList";
 import TermCondition from "./pages/Procurement/clauses/TermCondition";
 import PaymentTerms from "./pages/Procurement/clauses/PaymentTerms";
 import GovernmentLaws from "./pages/Procurement/clauses/GovernmentLaws";
-import SiteList from "./pages/Procurement/SiteList";
+
 import UOMList from "./pages/Procurement/UOMList";
 import CategoryList from "./pages/Procurement/CategoryList";
 import AnnexureMaster from "./pages/Procurement/clauses/AnnexureMaster";
@@ -120,7 +120,7 @@ function App() {
     "create__intake","create__order","master_data__orders","profile",
     "proc_setup__item_list","proc_setup__vendor_list",
     "proc_setup__term_condition","proc_setup__payment_terms","proc_setup__government_laws",
-    "proc_setup__site_list","proc_setup__uom","proc_setup__category_list",
+    "proc_setup__uom","proc_setup__category_list",
     "proc_setup__annexure","approvals__config",
     "master_data","master_data__vendor","master_data__clauses",
     "master_data__products","master_data__orders","master_data__intakes","audit",
@@ -319,7 +319,7 @@ function App() {
     if (activeTab === "proc_setup__term_condition") return <TermCondition />;
     if (activeTab === "proc_setup__payment_terms") return <PaymentTerms />;
     if (activeTab === "proc_setup__government_laws") return <GovernmentLaws />;
-    if (activeTab === "proc_setup__site_list") return <SiteList />;
+
     if (activeTab === "proc_setup__uom") return <UOMList />;
     if (activeTab === "proc_setup__category_list") return <CategoryList />;
     if (activeTab === "proc_setup__annexure") return <AnnexureMaster />;
@@ -329,7 +329,7 @@ function App() {
     if (activeTab === "master_data" || activeTab === "master_data__vendor") return <MasterData view="vendor" />;
     if (activeTab === "master_data__clauses") return <ClauseMasterData />;
     
-    if (activeTab === "master_data__products" || activeTab === "master_data__orders" || activeTab === "master_data__intakes") {
+    if (activeTab === "master_data__products" || activeTab === "master_data__orders") {
       return (
         <div className="flex min-h-screen items-center justify-center p-4 md:p-10 bg-[#f8fafc]">
           <div className="bg-white p-8 md:p-20 rounded-2xl md:rounded-[3rem] shadow-sm border border-slate-100 flex items-center justify-center w-full max-w-4xl">
@@ -340,6 +340,7 @@ function App() {
         </div>
       );
     }
+    if (activeTab === "master_data__intakes") return <IntakeList />;
 
     if (activeTab === "master_data") {
       return (
@@ -479,7 +480,9 @@ function App() {
               ? "pt-0 px-0 pb-4 bg-[#f0f2f5]"
               : activeTab === "organisation"
                 ? "pt-0 px-0 pb-0"
-                : "pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4"}
+                : (activeTab === "create__order" || activeTab === "procurement__orders" || activeTab === "master_data__orders" || activeTab === "procurement__intake" || activeTab === "master_data__intakes" || activeTab === "create__intake")
+                  ? "pt-0 px-0 pb-0 bg-[#f0f2f5]"
+                  : "pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4"}
         `}>
           {renderPage()}
         </main>

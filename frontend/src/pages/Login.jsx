@@ -77,10 +77,8 @@ const Login = ({ onLogin }) => {
       const { data } = await api.post("/api/auth/login", { email, password });
       localStorage.setItem("bms_token", data.token);
       localStorage.setItem("bms_user", JSON.stringify(data.user));
-      if (rememberMe && data.refresh_token) {
+      if (data.refresh_token) {
         localStorage.setItem("bms_refresh_token", data.refresh_token);
-      } else {
-        localStorage.removeItem("bms_refresh_token");
       }
       onLogin(data.user);
     } catch (err) {

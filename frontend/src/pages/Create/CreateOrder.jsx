@@ -2,11 +2,14 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag, Activity, Calendar } from "lucide-react";
 import * as XLSX from "xlsx";
-import { FullSiteModal, FullCompanyModal, FullVendorModal, FullViewSiteModal, FullViewCompanyModal, FullViewVendorModal, FullContactModal, FullViewContactModal, FullClauseModal } from "./FullMasterModals";
+import { FullCompanyModal, FullVendorModal, FullViewSiteModal, FullViewCompanyModal, FullViewVendorModal, FullContactModal, FullViewContactModal, FullClauseModal } from "./FullMasterModals";
+import ProjectFormModal from "../../components/ProjectFormModal";
+import ProjectSelect from "../../components/ProjectSelect";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 import ViewOrder from "../Procurement/ViewOrder";
 import { preloadOrderDetails, seedOrderDetails } from "../Procurement/orderDetailsCache";
+import { normalizeOrderSite, getOrderSiteCode } from "../../utils/orderSite";
 
 const QUILL_MODULES = {
   toolbar: [
@@ -247,7 +250,7 @@ const amountToWords = (amount) => {
 };
 
 const FIELD_LABEL_CLASS = "block text-[15px] font-semibold text-slate-950 mb-2 tracking-normal";
-const FIELD_BASE_CLASS = "w-full border border-slate-300 rounded-md px-4 text-[15px] font-normal outline-none transition-colors bg-white text-slate-950 placeholder:text-slate-400 focus:border-slate-400 focus:ring-0";
+const FIELD_BASE_CLASS = "w-full border border-slate-300 rounded px-4 text-[15px] font-normal outline-none transition-colors bg-white text-slate-950 placeholder:text-slate-400 focus:border-slate-400 focus:ring-0";
 const FIELD_READONLY_CLASS = "bg-[#f7f7f7] text-slate-500 cursor-not-allowed";
 
 const Input = ({ label, value: propValue, onChange, placeholder, type = "text", required, mono, span2, readOnly, disabled, className, multiline, rows = 4 }) => {
@@ -629,10 +632,10 @@ const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "
       </div>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded-md shadow-lg flex flex-col overflow-hidden min-w-[240px]">
+        <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded shadow-lg flex flex-col overflow-hidden min-w-[240px]">
           <div className="p-2 border-b border-slate-100 bg-white">
             <input type="text" autoFocus value={search} onChange={e => setSearch(e.target.value)}
-              className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-md outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50/50 shadow-sm"
+              className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50/50 shadow-sm"
               placeholder="Search here..." />
           </div>
           <div className="overflow-y-auto max-h-56 w-full scrollbar-thin">
@@ -882,7 +885,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   // Auto-select site based on project prop
   useEffect(() => {
     if (project && sites.length > 0) {
-      const match = sites.find(s => s.siteCode === project);
+      const match = sites.find(s => s.projectCode === project);
       if (match) {
         setHeader(h => ({ ...h, siteId: match.id }));
         setSiteDetails(match || null);
@@ -983,7 +986,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         siteId: order.site_id,
         companyId: order.company_id,
         vendorId: order.vendor_id,
-        categoryId: order.category_id || "",
+        categoryId: order.category_id || order.snapshot?.categoryId || order.snapshot?.category?.id || "",
         contactPersonIds: (order.snapshot?.contacts && order.snapshot.contacts.length > 0)
           ? order.snapshot.contacts.map(c => c.id)
           : [order.contact_person_id].filter(Boolean),
@@ -1097,7 +1100,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     // setLoading is handled by caller or kept here for fresh loads
     try {
       const [sRes, cRes, vRes, coRes, iRes, clRes, catRes] = await Promise.all([
-        fetch(`${API}/api/procurement/sites`),
+        fetch(`${API}/api/projects`),
         fetch(`${API}/api/procurement/companies`),
         fetch(`${API}/api/procurement/vendors`),
         fetch(`${API}/api/procurement/contacts`),
@@ -1105,7 +1108,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         fetch(`${API}/api/procurement/clauses`),
         fetch(`${API}/api/procurement/categories`),
       ]);
-      const s = await sRes.json(); setSites(s.sites || []);
+      const s = await sRes.json(); setSites(s.projects || []);
       const c = await cRes.json(); setCompanies(c.companies || []);
       const v = await vRes.json(); setVendors(v.vendors || []);
       const co = await coRes.json(); setContacts(co.contacts || []);
@@ -1133,7 +1136,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     const s = sites.find(x => x.id === header.siteId);
     const type = header.orderType === "Supply" ? "PO" : "WO";
 
-    return `${c?.companyCode || "COMP"} / ${s?.siteCode || "SITE"} / ${type}`;
+    return `${c?.companyCode || "COMP"} / ${s?.projectCode || "SITE"} / ${type}`;
   }, [header.orderNumber, header.siteId, header.companyId, header.orderType, companies, sites]);
 
 
@@ -1508,7 +1511,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         : null;
 
     const snapshot = {
-      site: currentSite,
+      site: normalizeOrderSite(currentSite),
       company: currentCompany,
       vendor: vendorDetails || vendors.find(v => v.id === header.vendorId),
       contacts: contacts.filter(c => header.contactPersonIds.includes(c.id)),
@@ -1706,7 +1709,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   if (loading && sites.length === 0 && companies.length === 0) return <div className="p-6 text-slate-400 text-center py-20 flex items-center justify-center flex-col gap-4"><Loader2 size={30} className="animate-spin text-indigo-500" /> <p>Loading master data...</p></div>;
 
   return (
-    <div className="p-4 md:p-6 w-full max-w-none mx-0 pb-32">
+    <div className="px-4 w-full max-w-none mx-0 pb-32">
       <style>{SCROLLBAR_STYLE}</style>
       {calcModalOpen && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -1866,29 +1869,16 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         </div>
       )}
 
-      <div className="flex items-center justify-between mb-6 bg-white p-5 rounded-lg border border-slate-100 shadow-sm">
-        <div className="flex items-center gap-4">
-          <div className="h-12 w-12 bg-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-100">
-            <FileSpreadsheet size={22} className="text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl font-black text-slate-800 tracking-tight">
-              {project ? `${project} Order Data` : "Order Master Data"}
-            </h1>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-pulse"></span>
-              {project ? "Project Specific Order Logs" : "Global Order Management System"}
-            </p>
-          </div>
-        </div>
+      <div className="sticky top-0 z-20 flex items-center justify-between bg-white px-4 sm:px-6 py-4 border-b border-slate-200 shadow-sm -mx-4 mb-6">
+        <h1 className="text-xl font-black text-slate-800 tracking-tight">Create Order</h1>
         <div className="flex items-center gap-3">
-          <button onClick={onCancel} className="px-4 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-all text-sm">Cancel</button>
+          <button onClick={onCancel} className="px-4 py-2.5 rounded border border-slate-200 text-slate-600 font-medium hover:bg-slate-50 transition-all text-sm">Cancel</button>
           <button onClick={() => handleSave("Draft")} disabled={saving}
-            className="px-5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-100 transition-all disabled:opacity-50 text-sm">
+            className="px-5 py-2.5 rounded border border-slate-200 bg-slate-50 text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-100 transition-all disabled:opacity-50 text-sm">
             <Save size={16} /> {saving ? "..." : "Save as Draft"}
           </button>
           <button onClick={() => handleSave("Review")} disabled={saving || !header.companyId || !header.siteId || !header.vendorId || !header.categoryId || !header.subject || !header.orderName || !header.refNumber}
-            className="px-6 py-2.5 rounded-lg bg-indigo-600 text-white font-semibold flex items-center gap-2 hover:bg-indigo-700 shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50 text-sm">
+            className="px-6 py-2.5 rounded bg-indigo-600 text-white font-semibold flex items-center gap-2 hover:bg-indigo-700 shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50 text-sm">
             <Check size={16} /> {saving ? "..." : "Submit for Review"}
           </button>
         </div>
@@ -1897,10 +1887,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       <div className="flex flex-col gap-6">
 
         {/* TOP SECTION - Settings & Details */}
-        <div className="grid grid-cols-1 gap-6">
-          <div className="bg-white rounded-lg border border-slate-100 p-5 shadow-sm space-y-5">
-            <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2">Order Setup</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="flex flex-col gap-4">
+          <div className="bg-white rounded p-5 shadow-sm space-y-5">
+            <h2 className="inline-flex items-center text-[11px] font-black uppercase tracking-widest text-slate-600 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded">Order Setup</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-7">
               <Input label={header.orderType === "Supply" ? "PO Name" : "WO Name"}
                 value={header.orderName} onChange={e => setHeader(h => ({ ...h, orderName: e.target.value }))}
                 placeholder={header.orderType === "Supply" ? "Enter PO Name..." : "Enter WO Name..."} required />
@@ -1911,10 +1901,18 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                 placeholder="Will be assigned upon issuance"
                 readOnly mono
               />
-              <Select label="Select Site" value={header.siteId} onChange={handleSiteChange} options={sites} valueKey="id" labelKey="siteName" subLabelKey="siteCode" required
+              <ProjectSelect
+                label="Select Project"
+                required
+                variant="order"
+                value={header.siteId}
+                onChange={handleSiteChange}
+                options={sites}
+                placeholder="Select project…"
                 disabled={!!project || lockRecallIdentityFields}
-                onAdd={() => setActionModal({ type: "addSite" })} addLabel="Add New Site"
-                onView={(s) => setActionModal({ type: "viewSite", data: s })} />
+                onAdd={() => setActionModal({ type: "addSite" })}
+                onView={(s) => setActionModal({ type: "viewSite", data: s })}
+              />
               <Select label="Select Company" value={header.companyId} onChange={handleCompanyChange} options={companies} valueKey="id" labelKey="companyName" subLabelKey="companyCode" required
                 disabled={lockRecallIdentityFields}
                 onAdd={() => setActionModal({ type: "addCompany" })} addLabel="Add New Company" onView={(c) => setActionModal({ type: "viewCompany", data: c })} />
@@ -1928,13 +1926,12 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
           </div>
 
           {/* ── Billing Detail & GST (auto from site state + entity profiles) ── */}
-          <div className="bg-white rounded-lg border border-slate-100 p-5 shadow-sm">
-            <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2 mb-4">
-              <div className="w-5 h-5 bg-emerald-50 rounded-md flex items-center justify-center"><Landmark size={12} className="text-emerald-600" /></div>
+          <div className="bg-white rounded p-5 shadow-sm">
+            <h2 className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-widest text-slate-600 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded mb-4">
               Billing Detail &amp; GST
               {siteDetails?.state && (
-                <span className="ml-auto text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                  State: {siteDetails.state}
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 normal-case tracking-normal">
+                  {siteDetails.state}
                 </span>
               )}
             </h2>
@@ -1974,11 +1971,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
             )}
           </div>
 
-          <div className="bg-white rounded-lg border border-slate-100 p-5 shadow-sm space-y-6">
-            <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2 mb-4">
-              <div className="w-5 h-5 bg-indigo-50 rounded-md flex items-center justify-center"><FileText size={12} className="text-indigo-600" /></div>
-              Order Meta
-            </h2>
+          <div className="bg-white rounded p-5 shadow-sm space-y-6">
+            <h2 className="inline-flex items-center text-[11px] font-black uppercase tracking-widest text-slate-600 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded">Order Meta</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="col-span-full">
                 <Input label="Subject" value={header.subject} onChange={e => setHeader(h => ({ ...h, subject: e.target.value }))} placeholder="Enter full order subject (e.g. Supply of IT Equipment for Varanasi Site)..."
@@ -2004,11 +1998,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
             </div>
           </div>
 
-          <div className="bg-white rounded-md border border-slate-100 p-5 shadow-sm space-y-6">
-            <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
-              <div className="w-5 h-5 bg-indigo-50 rounded-md flex items-center justify-center"><FilePlus size={12} className="text-indigo-600" /></div>
-              Order Documentation
-            </h2>
+          <div className="bg-white rounded p-5 shadow-sm space-y-6">
+            <h2 className="inline-flex items-center text-[11px] font-black uppercase tracking-widest text-slate-600 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded">Order Documentation</h2>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {/* QUOTATIONS */}
               <div className="bg-slate-100/60 p-4 rounded-md border border-slate-100">
@@ -2074,8 +2065,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         <div className="w-full space-y-6 min-w-0 flex-1">
 
           {/* ITEMS TABLE */}
-          <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col border-b-0">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-white">
+          <div className="bg-white rounded p-5 shadow-sm flex flex-col gap-4">
+            <div className="pb-4 border-b border-slate-100 flex items-center justify-between">
               <h2 className="text-base font-black text-slate-800 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-xl shadow-indigo-100">
                   <FileText size={20} strokeWidth={2.5} />
@@ -2156,7 +2147,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
               </div>
             </div>
 
-            <div className="px-5 pb-5">
+            <div>
               <div className="relative isolate w-full premium-scroll border border-slate-200 rounded bg-white overflow-x-auto overflow-y-hidden">
                 <table className="create-order-items-table w-full text-xs table-fixed col-lines" style={{ minWidth: '100%', tableLayout: 'fixed' }}>
                   <thead>
@@ -2895,7 +2886,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
             {/* Footer: Add Item + Summary */}
             {/* Footer: Add Item + Summary Card */}
-            <div className="p-6 flex flex-col md:flex-row justify-between items-start gap-8 bg-slate-50/30">
+            <div className="flex flex-col md:flex-row justify-between items-start gap-8 pt-2 border-t border-slate-100">
               {/* Add Item Button Area */}
               <div className="pt-0 md:pt-1">
                 <button onClick={addItem}
@@ -3002,17 +2993,9 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
           </div>
 
           {/* ── ORDER NOTES (RICH TEXT) ── */}
-          <div className="bg-white rounded-lg border border-slate-100 shadow-sm overflow-hidden mb-6">
-            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
-                <FileText size={16} className="text-amber-600" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-700">Order Notes</h3>
-                <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider mt-0.5">Custom instructions, delivery notes, or additional details</p>
-              </div>
-            </div>
-            <div className="p-5">
+          <div className="bg-white rounded p-5 shadow-sm">
+            <h2 className="inline-flex items-center text-[11px] font-black uppercase tracking-widest text-slate-600 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded mb-4">Order Notes</h2>
+            <div>
               <div className="quill-notes-container">
                 <style>{`
                   .quill-notes-container .ql-container {
@@ -3058,8 +3041,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
           </div>
 
           {/* CLAUSES */}
-          <div className="bg-white rounded-lg border border-slate-100 p-5 shadow-sm space-y-4">
-            <h2 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2"><ShieldCheck size={16} className="text-slate-400" /> Order Clauses & Terms</h2>
+          <div className="bg-white rounded p-5 shadow-sm space-y-4">
+            <h2 className="inline-flex items-center text-[11px] font-black uppercase tracking-widest text-slate-600 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded">Order Clauses & Terms</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {renderClauses("Terms & Conditions", "TC", tcPoints, setTcPoints)}
               {renderClauses("Payment Terms", "PAY", payPoints, setPayPoints)}
@@ -3096,11 +3079,34 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       </div>
 
       {/* Master Data Interactivity Modals */}
-      {actionModal.type === "addSite" && <FullSiteModal allContacts={contacts} onClose={() => setActionModal({ type: null })} onSuccess={(id) => { fetchMasterData(); setHeader(h => ({ ...h, siteId: id })); handleSiteChange({ target: { value: id } }); }} />}
+      {actionModal.type === "addSite" && (
+        <ProjectFormModal
+          onClose={() => setActionModal({ type: null })}
+          onError={msg => showToast(msg, "error")}
+          onSuccess={async (id) => {
+            await fetchMasterData();
+            setHeader(h => ({ ...h, siteId: id }));
+            handleSiteChange({ target: { value: id } });
+            setActionModal({ type: null });
+            showToast("Project added!");
+          }}
+        />
+      )}
       {actionModal.type === "addCompany" && <FullCompanyModal onClose={() => setActionModal({ type: null })} onSuccess={(id) => { fetchMasterData(); setHeader(h => ({ ...h, companyId: id })); handleCompanyChange({ target: { value: id } }); }} />}
       {actionModal.type === "addVendor" && <FullVendorModal onClose={() => setActionModal({ type: null })} onSuccess={(id) => { fetchMasterData(); setHeader(h => ({ ...h, vendorId: id })); handleVendorChange({ target: { value: id } }); }} />}
 
-      {actionModal.type === "editSite" && <FullSiteModal allContacts={contacts} editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => fetchMasterData()} />}
+      {actionModal.type === "editSite" && (
+        <ProjectFormModal
+          editData={actionModal.data}
+          onClose={() => setActionModal({ type: null })}
+          onError={msg => showToast(msg, "error")}
+          onSuccess={async () => {
+            await fetchMasterData();
+            setActionModal({ type: null });
+            showToast("Project updated!");
+          }}
+        />
+      )}
       {actionModal.type === "editCompany" && <FullCompanyModal editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => fetchMasterData()} />}
       {actionModal.type === "editVendor" && <FullVendorModal editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => fetchMasterData()} />}
 
@@ -3261,6 +3267,390 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   );
 }
 
+const ORDER_LIST_FILTER_SHELL =
+  "relative flex h-9 items-center rounded-md border border-slate-300 bg-white shadow-sm transition-colors hover:border-slate-400 focus-within:border-slate-400";
+const ORDER_LIST_FILTER_CONTROL =
+  "w-full h-full min-w-0 appearance-none border-0 bg-transparent text-[12px] font-normal text-slate-700 outline-none cursor-pointer";
+
+function OrderMultiFilter({ label, options, selected, onChange, icon: Icon, minWidth = 100 }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) { setQuery(""); return; }
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const toggle = (val) => onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val]);
+  const visible = query ? options.filter(o => String(o).toLowerCase().includes(query.toLowerCase())) : options;
+
+  return (
+    <div ref={ref} className="relative" style={{ minWidth }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`inline-flex h-9 w-full items-center gap-1.5 rounded-md border px-3 text-[12px] font-medium shadow-sm transition-colors ${
+          selected.length ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-600 hover:border-slate-400"
+        }`}
+      >
+        {Icon && <Icon size={12} className="shrink-0 opacity-70" />}
+        <span className="truncate flex-1 text-left">
+          {selected.length === 1 ? selected[0] : selected.length > 1 ? `${label} (${selected.length})` : label}
+        </span>
+        {selected.length > 0 && (
+          <span className="grid h-4 min-w-4 place-items-center rounded-full bg-indigo-600 px-1 text-[9px] font-black text-white">{selected.length}</span>
+        )}
+        <ChevronDown size={11} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-md border border-slate-200 bg-white shadow-xl overflow-hidden">
+          <div className="border-b border-slate-100 px-2 py-1.5">
+            <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2">
+              <Search size={12} className="text-slate-400 shrink-0" />
+              <input
+                autoFocus
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search..."
+                className="h-7 w-full bg-transparent text-[11px] outline-none placeholder:text-slate-400"
+              />
+            </div>
+          </div>
+          <div className="max-h-52 overflow-y-auto py-1">
+            {visible.length === 0 ? (
+              <p className="px-3 py-3 text-center text-[11px] text-slate-400">No options</p>
+            ) : visible.map(opt => {
+              const checked = selected.includes(opt);
+              return (
+                <button key={opt} onClick={() => toggle(opt)}
+                  className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] transition-colors ${checked ? "bg-indigo-50 text-indigo-700" : "text-slate-700 hover:bg-slate-50"}`}
+                >
+                  <span className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded border transition-colors ${checked ? "border-indigo-600 bg-indigo-600" : "border-slate-300 bg-white"}`}>
+                    {checked && <Check size={9} strokeWidth={3} className="text-white" />}
+                  </span>
+                  <span className="truncate">{opt}</span>
+                </button>
+              );
+            })}
+          </div>
+          {selected.length > 0 && (
+            <div className="flex items-center justify-between border-t border-slate-100 px-3 py-1.5">
+              <span className="text-[10px] font-semibold text-slate-400">{selected.length} selected</span>
+              <button onClick={() => onChange([])} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800">Clear</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const DR_PRESETS = [
+  { val: "today",       label: "Today" },
+  { val: "yesterday",   label: "Yesterday" },
+  { val: "this_week",   label: "This Week" },
+  { val: "last_week",   label: "Last Week" },
+  { val: "past_2_week", label: "Past 2 Week" },
+  { val: "this_month",  label: "This Month" },
+  { val: "last_month",  label: "Last Month" },
+  { val: "this_year",   label: "This Year" },
+  { val: "last_year",   label: "Last Year" },
+  { val: "all",         label: "All" },
+];
+const DR_MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DR_DAYS   = ["Mo","Tu","We","Th","Fr","Sa","Su"];
+
+function drToStr(d) {
+  if (!d) return "";
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+function drPresetRange(val) {
+  const t = new Date(); t.setHours(0,0,0,0);
+  switch (val) {
+    case "today":       return [new Date(t), new Date(t)];
+    case "yesterday":   { const d=new Date(t); d.setDate(d.getDate()-1); return [d,d]; }
+    case "this_week":   { const day=t.getDay(), diff=day===0?-6:1-day, f=new Date(t); f.setDate(t.getDate()+diff); return [f,new Date(t)]; }
+    case "last_week":   { const day=t.getDay(), diff=day===0?-6:1-day, m=new Date(t); m.setDate(t.getDate()+diff); const lm=new Date(m); lm.setDate(m.getDate()-7); const ls=new Date(m); ls.setDate(m.getDate()-1); return [lm,ls]; }
+    case "past_2_week": { const f=new Date(t); f.setDate(t.getDate()-14); return [f,new Date(t)]; }
+    case "this_month":  return [new Date(t.getFullYear(),t.getMonth(),1), new Date(t)];
+    case "last_month":  return [new Date(t.getFullYear(),t.getMonth()-1,1), new Date(t.getFullYear(),t.getMonth(),0)];
+    case "this_year":   return [new Date(t.getFullYear(),0,1), new Date(t)];
+    case "last_year":   return [new Date(t.getFullYear()-1,0,1), new Date(t.getFullYear()-1,11,31)];
+    default:            return [null,null];
+  }
+}
+
+function DateRangeFilter({ dateRange, setDateRange, customFrom, setCustomFrom, customTo, setCustomTo, minDate, maxDate }) {
+  const [open,         setOpen]         = useState(false);
+  const [popPos,       setPopPos]       = useState({ top: 0, right: 0 });
+  const [activePreset, setActivePreset] = useState("all");
+  const [rangeFrom,    setRangeFrom]    = useState(null);
+  const [rangeTo,      setRangeTo]      = useState(null);
+  const [hoverDate,    setHoverDate]    = useState(null);
+  const [selecting,    setSelecting]    = useState(false);
+  const [calBase,      setCalBase]      = useState(() => { const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-1); return d; });
+  const btnRef  = useRef(null);
+  const popRef  = useRef(null);
+
+  const maxMs = useMemo(() => {
+    const d = maxDate ? new Date(maxDate) : new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }, [maxDate]);
+
+  const minMs = useMemo(() => {
+    if (!minDate) return null;
+    const d = new Date(minDate);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  }, [minDate]);
+
+  const clampDay = (d) => {
+    if (!d) return null;
+    const t = new Date(d);
+    t.setHours(0, 0, 0, 0);
+    let ms = t.getTime();
+    if (minMs != null && ms < minMs) ms = minMs;
+    if (ms > maxMs) ms = maxMs;
+    return new Date(ms);
+  };
+
+  const clampRange = (f, t) => {
+    let from = clampDay(f);
+    let to = clampDay(t);
+    if (from && to && from.getTime() > to.getTime()) to = new Date(from);
+    return [from, to];
+  };
+
+  const isSelectable = (ms) => ms <= maxMs && (minMs == null || ms >= minMs);
+
+  const leftMonthMs = new Date(calBase.getFullYear(), calBase.getMonth(), 1).getTime();
+  const canGoPrev = minMs == null || leftMonthMs > new Date(new Date(minMs).getFullYear(), new Date(minMs).getMonth(), 1).getTime();
+
+  const handleToggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPopPos({ top: r.bottom + 6, right: window.innerWidth - r.right });
+    }
+    setOpen(o => !o);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => {
+      if (btnRef.current?.contains(e.target) || popRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  const handlePreset = (p) => {
+    setActivePreset(p); setSelecting(false);
+    const [f, t] = clampRange(...drPresetRange(p));
+    setRangeFrom(f); setRangeTo(t);
+    // Navigate calendar so range is visible
+    if (p === "all") {
+      const d = new Date(); d.setDate(1); d.setMonth(d.getMonth()-1); setCalBase(d);
+    } else if (f) {
+      setCalBase(new Date(f.getFullYear(), f.getMonth(), 1));
+    }
+  };
+
+  const handleDateClick = (date) => {
+    if (!isSelectable(date.getTime())) return;
+    setActivePreset("custom");
+    if (!selecting || !rangeFrom) { setRangeFrom(date); setRangeTo(null); setSelecting(true); }
+    else {
+      if (date < rangeFrom) { setRangeTo(rangeFrom); setRangeFrom(date); }
+      else { setRangeTo(date); }
+      setSelecting(false);
+    }
+  };
+
+  const handleApply = () => {
+    if (activePreset === "all") { setDateRange("all"); setCustomFrom(""); setCustomTo(""); }
+    else {
+      const [from, to] = clampRange(rangeFrom, rangeTo || rangeFrom);
+      setDateRange("custom");
+      setCustomFrom(drToStr(from));
+      setCustomTo(drToStr(to));
+    }
+    setOpen(false);
+  };
+
+  const handleClear = () => { setActivePreset("all"); setRangeFrom(null); setRangeTo(null); setSelecting(false); };
+
+  const leftM  = { y: calBase.getFullYear(), m: calBase.getMonth() };
+  const rBase  = new Date(calBase.getFullYear(), calBase.getMonth()+1, 1);
+  const rightM = { y: rBase.getFullYear(), m: rBase.getMonth() };
+
+  const renderCells = (year, month) => {
+    const dim      = new Date(year, month+1, 0).getDate();
+    const prevDim  = new Date(year, month, 0).getDate();
+    const firstDay = new Date(year, month, 1).getDay();
+    const offset   = firstDay === 0 ? 6 : firstDay - 1;
+    const effectiveTo = selecting ? hoverDate : rangeTo;
+    const lo = rangeFrom && effectiveTo ? (rangeFrom <= effectiveTo ? rangeFrom : effectiveTo) : null;
+    const hi = rangeFrom && effectiveTo ? (rangeFrom <= effectiveTo ? effectiveTo : rangeFrom) : null;
+
+    const makeCell = (d, date, isGhost) => {
+      if (isGhost) return (
+        <div key={`g${d}`} className="flex h-8 items-center justify-center text-[11px] text-slate-300 select-none">{d}</div>
+      );
+      const ms = date.getTime();
+      if (!isSelectable(ms)) {
+        return (
+          <div key={d} className="flex h-8 items-center justify-center text-[11px] text-slate-300 select-none">{d}</div>
+        );
+      }
+      const isStart    = rangeFrom && ms === rangeFrom.getTime();
+      const isEnd      = effectiveTo && ms === effectiveTo.getTime();
+      const inRange    = lo && hi && date > lo && date < hi;
+      const isSelected = isStart || isEnd || inRange;
+      const isToday    = ms === maxMs;
+      return (
+        <div key={d} className="flex h-8 items-center justify-center">
+          <button
+            type="button"
+            onClick={() => handleDateClick(date)}
+            onMouseEnter={() => selecting && isSelectable(date.getTime()) && setHoverDate(date)}
+            onMouseLeave={() => selecting && setHoverDate(null)}
+            className={[
+              "flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full text-[12px] leading-none transition-colors",
+              isStart || isEnd ? "bg-[#300E4E] text-white font-semibold" : "",
+              inRange ? "bg-violet-100 text-[#300E4E] font-medium" : "",
+              !isSelected ? "text-slate-700 hover:bg-slate-100" : "",
+              isToday && !isSelected ? "ring-1 ring-[#300E4E]/40" : "",
+            ].filter(Boolean).join(" ")}
+          >{d}</button>
+        </div>
+      );
+    };
+
+    const cells = [];
+    // Previous month ghost dates
+    for (let i = offset - 1; i >= 0; i--) cells.push(makeCell(prevDim - i, null, true));
+    // Current month dates
+    for (let d = 1; d <= dim; d++) cells.push(makeCell(d, new Date(year, month, d), false));
+    // Next month ghost dates (fill to complete row)
+    const total = offset + dim;
+    const trailing = total % 7 === 0 ? 0 : 7 - (total % 7);
+    for (let d = 1; d <= trailing; d++) cells.push(makeCell(d, null, true));
+    return cells;
+  };
+
+  const isActive = dateRange !== "all";
+  const btnLabel = isActive
+    ? (dateRange === "custom" && customFrom
+        ? `${customFrom}${customTo ? " – "+customTo : ""}`
+        : DR_PRESETS.find(p => p.val === activePreset)?.label || "Date")
+    : "Pick a date range";
+
+  const drCalGridStyle = { gridTemplateColumns: "repeat(7, 32px)", columnGap: 3, rowGap: 3 };
+
+  const renderMonthPane = (year, month, nav) => (
+    <div className="w-[242px] shrink-0">
+      <div className="mb-1 flex h-7 w-full items-center justify-between">
+        {nav === "left" ? (
+          <button type="button" disabled={!canGoPrev}
+            onClick={() => canGoPrev && setCalBase(new Date(calBase.getFullYear(), calBase.getMonth() - 1, 1))}
+            className={`flex h-6 w-6 items-center justify-center rounded text-slate-500 ${canGoPrev ? "hover:bg-slate-100" : "opacity-30 cursor-not-allowed"}`}>
+            <ChevronRight size={13} className="rotate-180" />
+          </button>
+        ) : <span className="h-6 w-6" />}
+        <span className="text-[12px] font-semibold text-slate-800">{DR_MONTHS[month]} {year}</span>
+        {nav === "right" ? (
+          <button type="button" onClick={() => setCalBase(new Date(calBase.getFullYear(), calBase.getMonth() + 1, 1))}
+            className="flex h-6 w-6 items-center justify-center rounded hover:bg-slate-100 text-slate-500">
+            <ChevronRight size={13} />
+          </button>
+        ) : <span className="h-6 w-6" />}
+      </div>
+      <div className="mb-0.5 grid" style={drCalGridStyle}>
+        {DR_DAYS.map(d => (
+          <div key={d} className="flex h-6 items-center justify-center text-[10px] font-medium text-slate-400">{d}</div>
+        ))}
+      </div>
+      <div className="grid" style={drCalGridStyle}>{renderCells(year, month)}</div>
+    </div>
+  );
+
+  const popup = open && createPortal(
+    <div ref={popRef} className="flex w-max rounded-sm border border-slate-200 bg-white shadow-lg"
+      style={{ position: "fixed", top: popPos.top, right: popPos.right, zIndex: 9999 }}
+    >
+          {/* Preset list */}
+          <div className="w-[108px] shrink-0 border-r border-slate-100 py-2 flex flex-col">
+            {DR_PRESETS.map(p => (
+              <button key={p.val} type="button" onClick={() => handlePreset(p.val)}
+                className={`px-2.5 py-1 text-left text-[12px] font-medium transition-colors ${
+                  activePreset === p.val ? "bg-violet-200/80 text-[#300E4E] font-semibold" : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >{p.label}</button>
+            ))}
+          </div>
+
+          {/* Dual calendar + footer */}
+          <div className="flex shrink-0 flex-col px-3 pt-2 pb-0">
+            <div className="flex items-start gap-3">
+              {renderMonthPane(leftM.y, leftM.m, "left")}
+              <div className="w-px shrink-0 self-stretch bg-slate-100" />
+              {renderMonthPane(rightM.y, rightM.m, "right")}
+            </div>
+
+            <div className="mt-2 flex items-center justify-end gap-2 border-t border-slate-200 pt-1.5 pb-2">
+              <button type="button" onClick={handleClear} className="flex items-center gap-1 px-1 py-0.5 text-[12px] font-medium text-slate-500 hover:text-slate-700 rounded hover:bg-slate-50">
+                <X size={12} strokeWidth={2} />
+                Clear
+              </button>
+              <button type="button" onClick={handleApply} className="flex h-7 items-center gap-1 rounded-md bg-[#300E4E] px-3 text-[12px] font-semibold text-white hover:opacity-90">
+                <CalendarDays size={12} />
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>,
+    document.body
+  );
+
+  return (
+    <div ref={btnRef} className="relative" style={{ minWidth: 140 }}>
+      <button type="button" onClick={handleToggle}
+        className={`inline-flex h-9 w-full items-center gap-1.5 rounded-lg border px-2.5 text-[12px] font-medium transition-colors ${
+          isActive ? "border-violet-300 bg-violet-50 text-violet-800" : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+        }`}
+      >
+        <CalendarDays size={14} className={`shrink-0 ${isActive ? "text-violet-700" : "text-slate-400"}`} />
+        <span className={`truncate flex-1 text-left ${!isActive ? "text-slate-400" : ""}`}>{btnLabel}</span>
+        <ChevronDown size={12} className={`shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {popup}
+    </div>
+  );
+}
+
+/** Grand total for list table + analytics (matches Total Value column). */
+const getOrderGrandTotal = (o) => {
+  let totalVal = Number(o.totals?.grandTotal || 0);
+  if (totalVal === 0) {
+    const its = o.order_items || o.snapshot?.items || [];
+    if (its.length > 0) {
+      const sub = its.reduce((s, it) => s + (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0), 0);
+      const gst = its.reduce((s, it) => {
+        const base = Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0;
+        return s + (base * (Number(it.tax_pct) || 0) / 100);
+      }, 0);
+      totalVal = sub + gst;
+    }
+  }
+  return totalVal > 0 ? totalVal : 0;
+};
+
 // ============== ORDER LIST COMPONENT ==============
 function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const [currentUser, setCurrentUser] = useState(() => {
@@ -3318,6 +3708,12 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const [pdfPreviewNonce, setPdfPreviewNonce] = useState(0);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
+
+  // Export modal
+  const [showExport, setShowExport] = useState(false);
+  const [exportScope, setExportScope] = useState("current"); // "current" | "all"
+  const [exportFrom, setExportFrom] = useState("");
+  const [exportTo, setExportTo] = useState("");
 
   // Bulk import / export
   const [showBulk, setShowBulk] = useState(false);
@@ -3484,11 +3880,12 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   };
 
   // Filters
-  const [filterSite, setFilterSite] = useState("");
-  const [filterCompany, setFilterCompany] = useState("");
-  const [filterType, setFilterType] = useState("");
-  const [filterMadeBy, setFilterMadeBy] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
+  const [filterSite, setFilterSite] = useState([]);
+  const [filterCompany, setFilterCompany] = useState([]);
+  const [filterType, setFilterType] = useState([]);
+  const [filterMadeBy, setFilterMadeBy] = useState([]);
+  const [filterVendor, setFilterVendor] = useState([]);
+  const [filterStatus, setFilterStatus] = useState([]);
   const [dateRange, setDateRange] = useState("all"); // all | this_year | last_year | custom
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
@@ -3804,24 +4201,45 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       cursorY += 25;
 
       /* ── NOTES ── */
-      const notesText = (order.notes || "").replace(/<[^>]+>/g, "").trim();
+      // Normalize notes: may be plain HTML, JSON array string, or JS array
+      const resolveNotesPoints = (raw) => {
+        if (!raw) return [];
+        if (Array.isArray(raw)) return raw.map(String).filter(Boolean);
+        if (typeof raw === "string" && raw.trim().startsWith("[")) {
+          try { const a = JSON.parse(raw); if (Array.isArray(a)) return a.map(String).filter(Boolean); } catch {}
+        }
+        return null; // plain HTML / text — handle separately
+      };
+      const notesPoints = resolveNotesPoints(order.notes);
+      const notesHtml = notesPoints
+        ? null
+        : (typeof order.notes === "string" ? order.notes : "");
+      const notesText = notesPoints
+        ? notesPoints.join(" ")
+        : (notesHtml || "").replace(/<[^>]+>/g, "").trim();
+
       if (notesText) {
         if (cursorY > pageHeight - 60) { doc.addPage(); cursorY = 20; }
         doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("ORDER NOTES:", 15, cursorY);
         cursorY += 6;
         doc.setFont("helvetica", "normal"); doc.setFontSize(9);
 
-        // Basic HTML to text conversion for PDF
-        const cleanNotes = normalizeRichTextHtml(order.notes)
-          .replace(/<br\s*\/?>/gi, "\n")
-          .replace(/<\/p>/gi, "\n")
-          .replace(/<li>/gi, "• ")
-          .replace(/<\/li>/gi, "\n")
-          .replace(/<[^>]+>/g, ""); // strip remaining tags
-
-        const noteLines = doc.splitTextToSize(cleanNotes.trim(), 180);
-        doc.text(noteLines, 15, cursorY);
-        cursorY += (noteLines.length * 5) + 8;
+        if (notesPoints) {
+          notesPoints.forEach((pt, i) => {
+            const lines = doc.splitTextToSize(`${i + 1}. ${pt}`, 180);
+            doc.text(lines, 15, cursorY);
+            cursorY += (lines.length * 5) + 2;
+          });
+          cursorY += 6;
+        } else {
+          const cleanNotes = normalizeRichTextHtml(notesHtml)
+            .replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n")
+            .replace(/<li>/gi, "• ").replace(/<\/li>/gi, "\n")
+            .replace(/<[^>]+>/g, "");
+          const noteLines = doc.splitTextToSize(cleanNotes.trim(), 180);
+          doc.text(noteLines, 15, cursorY);
+          cursorY += (noteLines.length * 5) + 8;
+        }
       }
 
       /* ── CLAUSES ── */
@@ -3905,14 +4323,25 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     setPdfDownloading(false);
   };
 
-  const handleExport = () => {
-    const rows = filtered.map(o => {
+  const doExport = () => {
+    let data = exportScope === "current" ? filtered : orders;
+    if (exportFrom || exportTo) {
+      const from = exportFrom ? new Date(exportFrom) : null;
+      const to = exportTo ? new Date(exportTo + "T23:59:59") : null;
+      data = data.filter(o => {
+        const d = new Date(o.date_of_creation || o.created_at);
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+        return true;
+      });
+    }
+    const rows = data.map(o => {
       const snap = o.snapshot || {};
       const t = o.totals || {};
       const taxable = (Number(t.subtotal) || 0) - (Number(t.totalDiscountAmt) || 0);
       return {
         "Company Code": snap.company?.companyCode || o.companies?.company_code || "",
-        "Site Code": snap.site?.siteCode || o.sites?.site_code || "",
+        "Site Code": snap.site?.siteCode || "",
         "Order No": o.order_number || "DRAFT",
         "Order Type": o.order_type || "",
         "Vendor Name": snap.vendor?.vendorName || o.vendors?.vendor_name || "",
@@ -3930,7 +4359,15 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Orders");
     XLSX.writeFile(wb, `orders_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    showToast("Export downloaded");
+    showToast(`${rows.length} orders exported`);
+    setShowExport(false);
+  };
+
+  const handleExport = () => {
+    setExportScope("current");
+    setExportFrom("");
+    setExportTo("");
+    setShowExport(true);
   };
 
   const downloadBulkTemplate = () => {
@@ -4118,7 +4555,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     setBulkSaving(false);
   };
 
-  const getSiteCodeForOrder = (o) => o.snapshot?.site?.siteCode || o.sites?.site_code || "";
+  const getSiteCodeForOrder = (o) => getOrderSiteCode(o);
   const projectScoped = (o) => !project || getSiteCodeForOrder(o) === project;
 
   const getTabCount = (tabName) => {
@@ -4135,11 +4572,13 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
 
   // Build unique option lists for filter dropdowns
   const getCompanyCode = (o) => o.snapshot?.company?.companyCode || o.companies?.company_code || "";
-  const getSiteCode = (o) => o.snapshot?.site?.siteCode || o.sites?.site_code || "";
+  const getSiteCode = (o) => getOrderSiteCode(o);
+  const getVendorName = (o) => o.snapshot?.vendor?.vendorName || o.vendors?.vendor_name || "";
   const optionOrders = activeTab === "Trash" ? trashedOrders : orders;
   const scopedOptionOrders = optionOrders.filter(projectScoped);
   const siteOptions = Array.from(new Set(scopedOptionOrders.map(getSiteCode).filter(Boolean))).sort();
   const companyOptions = Array.from(new Set(scopedOptionOrders.map(getCompanyCode).filter(Boolean))).sort();
+  const vendorOptions = Array.from(new Set(scopedOptionOrders.map(getVendorName).filter(Boolean))).sort();
   const madeByOptions = Array.from(new Set(scopedOptionOrders.map(o => o.made_by).filter(Boolean))).sort();
 
   // Date range helpers
@@ -4156,8 +4595,8 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     const snap = o.snapshot || {};
     const blob = [o.order_number, o.subject, o.vendors?.vendor_name, snap.vendor?.vendorName,
     o.companies?.company_code, o.companies?.company_name, snap.company?.companyCode,
-    snap.company?.companyName, o.sites?.site_code, o.sites?.site_name,
-    snap.site?.siteCode, snap.site?.siteName, o.made_by, o.order_type
+    snap.company?.companyName, snap.site?.siteCode, snap.site?.siteName,
+    o.made_by, o.order_type
     ].filter(Boolean).join(" ").toLowerCase();
     return !ms || blob.includes(ms);
   };
@@ -4179,10 +4618,11 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       }
       return projectScoped(o)
         && searchMatch(o, search.toLowerCase())
-        && (!filterSite || getSiteCode(o) === filterSite)
-        && (!filterCompany || getCompanyCode(o) === filterCompany)
-        && (!filterType || o.order_type === filterType)
-        && (!filterMadeBy || o.made_by === filterMadeBy)
+        && (!filterSite.length || filterSite.includes(getSiteCode(o)))
+        && (!filterCompany.length || filterCompany.includes(getCompanyCode(o)))
+        && (!filterType.length || filterType.includes(o.order_type))
+        && (!filterMadeBy.length || filterMadeBy.includes(o.made_by))
+        && (!filterVendor.length || filterVendor.includes(getVendorName(o)))
         && matchDate;
     })
     : orders.filter(o => {
@@ -4197,8 +4637,6 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         o.companies?.company_name,
         snap.company?.companyCode,
         snap.company?.companyName,
-        o.sites?.site_code,
-        o.sites?.site_name,
         snap.site?.siteCode,
         snap.site?.siteName,
         o.made_by,
@@ -4216,11 +4654,12 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
               : activeTab === "Amend Request"
                 ? ["Amendment Request", "Amend Request"].includes(o.status)
                 : o.status === activeTab;
-      const matchSite = !filterSite || getSiteCode(o) === filterSite;
-      const matchCompany = !filterCompany || getCompanyCode(o) === filterCompany;
-      const matchType = !filterType || o.order_type === filterType;
-      const matchMadeBy = !filterMadeBy || o.made_by === filterMadeBy;
-      const matchStatus = activeTab !== "All" || !filterStatus || o.status === filterStatus;
+      const matchSite = !filterSite.length || filterSite.includes(getSiteCode(o));
+      const matchCompany = !filterCompany.length || filterCompany.includes(getCompanyCode(o));
+      const matchType = !filterType.length || filterType.includes(o.order_type);
+      const matchMadeBy = !filterMadeBy.length || filterMadeBy.includes(o.made_by);
+      const matchVendor = !filterVendor.length || filterVendor.includes(getVendorName(o));
+      const matchStatus = activeTab !== "All" || !filterStatus.length || filterStatus.includes(o.status);
 
       let matchDate = true;
       if (dateRange !== "all") {
@@ -4237,14 +4676,31 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       }
 
       const matchProject = !project || getSiteCode(o) === project;
-      return matchProject && matchSearch && matchTab && matchSite && matchCompany && matchType && matchMadeBy && matchStatus && matchDate;
+      return matchProject && matchSearch && matchTab && matchSite && matchCompany && matchType && matchMadeBy && matchVendor && matchStatus && matchDate;
     });
 
   const clearFilters = () => {
-    setFilterSite(""); setFilterCompany(""); setFilterType(""); setFilterMadeBy(""); setFilterStatus("");
+    setFilterSite([]); setFilterCompany([]); setFilterType([]); setFilterMadeBy([]); setFilterVendor([]); setFilterStatus([]);
     setDateRange("all"); setCustomFrom(""); setCustomTo("");
   };
-  const hasActiveFilters = filterSite || filterCompany || filterType || filterMadeBy || filterStatus || dateRange !== "all";
+  const hasActiveFilters = filterSite.length || filterCompany.length || filterType.length || filterMadeBy.length || filterVendor.length || filterStatus.length || dateRange !== "all";
+
+  // Earliest order date — enable minDate on DateRangeFilter when production data is loaded.
+  const orderDateBounds = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let earliest = null;
+    for (const o of [...orders, ...trashedOrders]) {
+      const raw = o.date_of_creation || o.created_at;
+      if (!raw) continue;
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) continue;
+      d.setHours(0, 0, 0, 0);
+      if (!earliest || d.getTime() < earliest.getTime()) earliest = d;
+    }
+    return { minDate: earliest, maxDate: today };
+  }, [orders, trashedOrders]);
+  const orderFilterMinDate = null; // later: orderDateBounds.minDate
 
   const stats = useMemo(() => {
     const po = filtered.filter(o => o.order_type === "Supply");
@@ -4257,10 +4713,12 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       return computed > 0 ? computed : (Number(t.taxableAmount) || 0);
     };
     const sumTaxable = (arr) => arr.reduce((acc, o) => acc + taxableOf(o), 0);
+    const totalOrderValue = filtered.reduce((acc, o) => acc + getOrderGrandTotal(o), 0);
     return {
       total: filtered.length,
       poCount: po.length, poValue: sumTaxable(po),
       woCount: wo.length, woValue: sumTaxable(wo),
+      totalOrderValue,
     };
   }, [filtered]);
   const tableLoading = activeTab === "Trash" ? trashLoading : loading;
@@ -4268,7 +4726,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   return (
     <>
       <style>{SCROLLBAR_STYLE}</style>
-      <div className="p-0 sm:p-2 lg:p-3 w-full pb-10">
+      <div className="w-full pb-10">
         {toast && (
           <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-lg
           ${toast.type === "error" ? "bg-red-50 text-red-700 border border-red-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
@@ -4311,9 +4769,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         )}
 
         {/* Header */}
-        <div className="flex items-center justify-between mb-4 bg-white p-4 px-6 rounded-2xl border border-slate-100 shadow-sm">
+        <div className="sticky top-0 z-30 flex items-center justify-between bg-white px-5 py-4 border-b border-slate-200 shadow-sm">
           <div className="flex items-center gap-4">
-            <div className="h-12 w-12 bg-[#6366f1] rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-100">
+            <div className="h-12 w-12 bg-[#6366f1] rounded flex items-center justify-center shadow-md shadow-indigo-100">
               <FileSpreadsheet size={24} className="text-white" />
             </div>
             <div>
@@ -4327,19 +4785,60 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
           </div>
           <div className="flex items-center gap-3">
             <button onClick={handleExport}
-              className="h-10 px-5 rounded-xl bg-white border border-slate-200 text-slate-700 font-bold flex items-center gap-2 hover:bg-slate-50 transition-all text-xs shadow-sm">
+              className="h-10 px-5 rounded border border-slate-200 bg-white text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-50 transition-all text-sm">
               <Download size={14} className="text-slate-400" /> Export
             </button>
             <button onClick={() => { setShowBulk(true); setBulkRows([]); setBulkFileName(""); setBulkResult(null); }}
-              className="h-10 px-5 rounded-xl bg-white border border-slate-200 text-slate-700 font-bold flex items-center gap-2 hover:bg-slate-50 transition-all text-xs shadow-sm">
+              className="h-10 px-5 rounded border border-slate-200 bg-slate-50 text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-100 transition-all text-sm">
               <Upload size={14} className="text-slate-400" /> Bulk Upload
             </button>
             <button onClick={onCreateClick}
-              className="h-10 px-6 rounded-xl bg-[#4f46e5] text-white font-bold flex items-center gap-2 hover:bg-[#4338ca] transition-all text-xs shadow-lg shadow-indigo-100">
+              className="h-10 px-6 rounded bg-indigo-600 text-white font-semibold flex items-center gap-2 hover:bg-indigo-700 transition-all text-sm shadow-md shadow-indigo-600/20">
               <Plus size={16} /> Create Order
             </button>
           </div>
         </div>
+
+        {/* Export Modal */}
+        {showExport && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                <h2 className="text-base font-bold text-slate-800">Export Orders</h2>
+                <button onClick={() => setShowExport(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+              </div>
+              <div className="px-6 py-5 space-y-5">
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">What to export</p>
+                  <div className="flex flex-col gap-2">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="radio" name="exportScope" value="current" checked={exportScope === "current"} onChange={() => setExportScope("current")} className="accent-indigo-600" />
+                      <span className="text-sm text-slate-700">Current view <span className="text-slate-400">({filtered.length} orders, filters applied)</span></span>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input type="radio" name="exportScope" value="all" checked={exportScope === "all"} onChange={() => setExportScope("all")} className="accent-indigo-600" />
+                      <span className="text-sm text-slate-700">All orders <span className="text-slate-400">({orders.length} total)</span></span>
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Date range <span className="font-normal normal-case text-slate-400">(optional)</span></p>
+                  <div className="flex items-center gap-2">
+                    <input type="date" value={exportFrom} onChange={e => setExportFrom(e.target.value)} className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                    <span className="text-slate-400 text-sm">to</span>
+                    <input type="date" value={exportTo} onChange={e => setExportTo(e.target.value)} className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+                  </div>
+                </div>
+              </div>
+              <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+                <button onClick={() => setShowExport(false)} className="px-4 py-2 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 border border-slate-200">Cancel</button>
+                <button onClick={doExport} className="px-5 py-2 rounded-lg text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 flex items-center gap-2">
+                  <Download size={14} /> Export Excel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Bulk Upload Modal */}
         {showBulk && (
@@ -4373,25 +4872,26 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                 </div>
 
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 text-xs text-amber-800">
-                  <p className="font-bold mb-1">Instructions:</p>
-                  <ul className="list-disc pl-5 space-y-0.5">
-                    <li>Download the template, fill it, then upload</li>
-                    <li><b>One row = one item.</b> Same <i>{bulkKind} No.</i> in multiple rows = one order with multiple items</li>
-                    <li>Order-level fields (Vendor, Company, Status, Totals, Clauses) only needed in the <b>first row</b> of each order</li>
-                    <li><b>Company Code</b> and <b>Site Code</b> must already exist in master data</li>
-                    <li>Excel values <b>override</b> master data and are <b>frozen</b> in the order (later master edits won't affect imported orders)</li>
-                    <li>If Excel cell is blank, data is picked from master (Company / Site / Vendor tab)</li>
-                    <li><b>Vendor Bank Details</b> (Bank Name, IFSC, Account No) can be set per-order in Excel — blank picks from vendor master</li>
-                    {bulkKind === "Work Order" ? (
-                      <li><b>Multi-point description</b>: in the <i>Description</i> cell, press <kbd>Alt + Enter</kbd> after each point to add a new line. Multiple lines = multiple points for that item. Model No & Brand Name are optional</li>
-                    ) : (
-                      <li>Item columns: <b>Specification</b>, <b>Model No</b>, <b>Brand Name</b> (leave blank if not applicable)</li>
-                    )}
-                    <li><b>Status</b>: Draft / Review / Pending Issue / Issued / Rejected / Reverted / Recalled / Cancelled. Default = Issued</li>
-                    <li>Orders with status Issued get an auto-assigned {bulkKind === "Purchase Order" ? "PO" : "WO"} number if not provided</li>
-                    <li>Non-Issued orders will continue normal workflow from that stage</li>
-                    <li>Clauses accept multiple items separated by newline or <code>;</code></li>
-                  </ul>
+                  <p className="font-bold mb-2">How to fill the template:</p>
+                  <div className="space-y-2">
+                    <div>
+                      <p className="font-semibold mb-0.5">Fill once per order (any row):</p>
+                      <p className="text-amber-700">{bulkKind} No., Site Code, Company Code, Vendor Code / PAN, Status, Subject</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold mb-0.5">Fill in every item row:</p>
+                      <p className="text-amber-700">Item Name, Qty, Unit, Rate — one row per item</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold mb-0.5">Rules:</p>
+                      <ul className="list-disc pl-4 space-y-0.5 text-amber-700">
+                        <li>Same {bulkKind} No. = same order. Leave it blank in item rows — auto-groups under last order</li>
+                        <li>Site Code &amp; Company Code must exist in master data</li>
+                        <li>Status default = <b>Issued</b>. Other options: Draft, Review, Pending Issue</li>
+                        <li>{bulkKind} No. left blank on Issued orders = auto-assigned number</li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
 
                 <button onClick={downloadBulkTemplate}
@@ -4442,15 +4942,16 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
           </div>
         )}
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 px-4 py-4 border-b border-slate-200 bg-slate-100">
           {[
             { label: "Total Orders", val: stats.total, icon: ShoppingBag, color: "text-[#4f46e5] bg-[#eef2ff]" },
             { label: "Total PO", val: stats.poCount, sub: `₹ ${stats.poValue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: FileText, color: "text-[#2563eb] bg-[#eff6ff]" },
             { label: "Total WO", val: stats.woCount, sub: `₹ ${stats.woValue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: Box, color: "text-[#0891b2] bg-[#ecfeff]" },
             { label: "Taxable Value", val: `₹ ${(stats.poValue + stats.woValue).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: IndianRupee, color: "text-[#9333ea] bg-[#faf5ff]" },
+            { label: "Total Order Value", val: `₹ ${stats.totalOrderValue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: ShoppingCart, color: "text-emerald-600 bg-emerald-50" },
           ].map((s, i) => (
-            <div key={i} className="bg-white p-3.5 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)] flex items-center gap-3.5">
-              <div className={`w-11 h-11 rounded-[14px] ${s.color} flex items-center justify-center shrink-0`}>
+            <div key={i} className="bg-white p-3.5 rounded shadow-sm flex items-center gap-3.5">
+              <div className={`w-11 h-11 rounded ${s.color} flex items-center justify-center shrink-0`}>
                 <s.icon size={20} strokeWidth={2} />
               </div>
               <div className="min-w-0">
@@ -4464,7 +4965,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
           ))}
         </div>
 
-        <div className="bg-white rounded-none shadow-sm border border-slate-200">
+        <div className="bg-white shadow-sm border-t border-slate-200">
 
           <div className="flex px-5 pt-4 pb-0 border-b border-slate-100 bg-white gap-8 overflow-visible relative">
             {PRIMARY_TABS.map(t => {
@@ -4487,7 +4988,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
               <div className="flex items-center">
                 <button
                   onClick={() => setShowMoreTabs(!showMoreTabs)}
-                  className={`text-[13px] font-bold transition-all whitespace-nowrap flex items-center gap-2.5 px-3 py-1.5 rounded-lg
+                  className={`text-[13px] font-bold transition-all whitespace-nowrap flex items-center gap-2.5 px-3 py-1.5 rounded
                   ${MORE_TABS.includes(activeTab) ? "text-[#4f46e5] bg-indigo-50/50" : "text-slate-400 hover:text-slate-600 hover:bg-slate-50"}`}>
                   {MORE_TABS.includes(activeTab) ? activeTab : "More"}
                   <ChevronDown size={14} className={`transition-transform ${showMoreTabs ? "rotate-180" : ""}`} />
@@ -4514,7 +5015,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
               {showMoreTabs && (
                 <>
                   <div className="fixed inset-0 z-[60]" onClick={() => setShowMoreTabs(false)}></div>
-                  <div className="absolute top-[100%] right-0 mt-1 w-52 bg-white border border-slate-200 shadow-2xl rounded-xl py-2 z-[70] animate-in fade-in zoom-in-95 duration-150 origin-top-right">
+                  <div className="absolute top-[100%] right-0 mt-1 w-52 bg-white border border-slate-200 shadow-lg rounded py-2 z-[70] animate-in fade-in zoom-in-95 duration-150 origin-top-right">
                     <div className="px-4 py-1.5 mb-1 border-b border-slate-50">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Status</span>
                     </div>
@@ -4552,59 +5053,44 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
           <div className="px-5 py-3 border-b border-slate-100 bg-[#f8fafc]/50 flex flex-col gap-3">
             <div className="flex items-center flex-wrap gap-2">
               {/* Search */}
-              <div className="relative flex-1 min-w-[180px] max-w-[260px]">
+              <div className={`${ORDER_LIST_FILTER_SHELL} flex-1 min-w-[180px] max-w-[260px] pl-8 pr-3`}>
                 <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
                   placeholder="Search PO, subject, vendor..."
-                  className="w-full pl-8 pr-3 py-2 border border-slate-200 rounded-full text-[12px] outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 bg-white shadow-sm" />
+                  className={`${ORDER_LIST_FILTER_CONTROL} placeholder:text-slate-400`}
+                />
               </div>
 
               {/* Filters */}
               <div className="flex items-center gap-2 ml-auto flex-wrap">
                 {[
-                  { val: filterCompany, set: setFilterCompany, placeholder: "Entity", opts: companyOptions, min: 110, icon: Building2 },
-                  !project && { val: filterSite, set: setFilterSite, placeholder: "Sites", opts: siteOptions, min: 100, icon: MapPin },
-                  { val: filterType, set: setFilterType, placeholder: "Type", opts: ["Supply", "SITC", "ITC"], min: 100, icon: Tag },
-                  activeTab === "All" && { val: filterStatus, set: setFilterStatus, placeholder: "Status", opts: ["Draft", "Review", "Pending Issue", "Amend Request", "Amended", "Issued", "Rejected", "Cancelled"], min: 110, icon: CheckCircle2 },
-                  { val: filterMadeBy, set: setFilterMadeBy, placeholder: "Users", opts: madeByOptions, min: 105, icon: User }
+                  { selected: filterCompany, set: setFilterCompany, label: "Entity", opts: companyOptions, min: 110, icon: Building2 },
+                  !project && { selected: filterSite, set: setFilterSite, label: "Sites", opts: siteOptions, min: 100, icon: MapPin },
+                  { selected: filterVendor, set: setFilterVendor, label: "Vendor", opts: vendorOptions, min: 115, icon: Truck },
+                  { selected: filterType, set: setFilterType, label: "Type", opts: ["Supply", "SITC", "ITC"], min: 100, icon: Tag },
+                  activeTab === "All" && { selected: filterStatus, set: setFilterStatus, label: "Status", opts: ["Draft", "Review", "Pending Issue", "Amend Request", "Amended", "Issued", "Rejected", "Cancelled"], min: 115, icon: CheckCircle2 },
+                  { selected: filterMadeBy, set: setFilterMadeBy, label: "Users", opts: madeByOptions, min: 105, icon: User }
                 ].filter(Boolean).map((f, i) => (
-                  <div key={i} className="relative" style={{ minWidth: f.min }}>
-                    <f.icon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                    <select value={f.val} onChange={e => f.set(e.target.value)}
-                      className="appearance-none w-full pl-7 pr-7 py-2 border border-slate-200 rounded-[12px] text-[11px] font-bold text-slate-600 bg-white outline-none focus:border-indigo-400 cursor-pointer shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)] hover:border-slate-300 transition-all">
-                      <option value="">{f.placeholder}</option>
-                      {f.opts.map(o => <option key={o} value={o}>{o}</option>)}
-                    </select>
-                    <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  </div>
+                  <OrderMultiFilter key={i} label={f.label} options={f.opts} selected={f.selected} onChange={f.set} icon={f.icon} minWidth={f.min} />
                 ))}
 
-                <div className="relative" style={{ minWidth: 105 }}>
-                  <CalendarDays size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
-                  <select value={dateRange} onChange={e => setDateRange(e.target.value)}
-                    className="appearance-none w-full pl-7 pr-7 py-2 border border-slate-200 rounded-[12px] text-[11px] font-bold text-slate-600 bg-white outline-none focus:border-indigo-400 cursor-pointer shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)] hover:border-slate-300 transition-all">
-                    <option value="all">All Time</option>
-                    <option value="this_year">This Year</option>
-                    <option value="last_year">Last Year</option>
-                    <option value="custom">Custom</option>
-                  </select>
-                  <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
+                <DateRangeFilter
+                  dateRange={dateRange} setDateRange={setDateRange}
+                  customFrom={customFrom} setCustomFrom={setCustomFrom}
+                  customTo={customTo} setCustomTo={setCustomTo}
+                  minDate={orderFilterMinDate}
+                  maxDate={orderDateBounds.maxDate}
+                />
               </div>
 
-              {dateRange === "custom" && (
-                <>
-                  <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-                    className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 bg-white outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-50" />
-                  <span className="text-xs text-slate-400">to</span>
-                  <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-                    className="px-2 py-1.5 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 bg-white outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-50" />
-                </>
-              )}
-
               {hasActiveFilters && (
-                <button onClick={clearFilters}
-                  className="px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
+                <button
+                  onClick={clearFilters}
+                  className="inline-flex h-9 items-center px-3 text-xs font-semibold text-slate-600 border border-slate-300 bg-slate-50 hover:bg-slate-100 rounded-md transition-all"
+                >
                   Clear
                 </button>
               )}
@@ -4662,7 +5148,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                   filtered.map(o => {
                     const snap = o.snapshot || {};
                     const cCode = snap.company?.companyCode || o.companies?.company_code || "-";
-                    const sCode = snap.site?.siteCode || o.sites?.site_code || "-";
+                    const sCode = getOrderSiteCode(o) || "-";
                     const vName = snap.vendor?.vendorName || o.vendors?.vendor_name || "-";
 
                     const typeCode = o.order_type === "Supply" ? "PO" : "WO";
@@ -4760,19 +5246,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                         </td>
                         <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-700 text-[13.5px] font-medium text-right whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">
                           {(() => {
-                            let totalVal = Number(o.totals?.grandTotal || 0);
-                            // Fallback: calculate from items or snapshot if totals missing
-                            if (totalVal === 0) {
-                              const its = o.order_items || o.snapshot?.items || [];
-                              if (its.length > 0) {
-                                const sub = its.reduce((s, it) => s + (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0), 0);
-                                const gst = its.reduce((s, it) => {
-                                  const base = Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0;
-                                  return s + (base * (Number(it.tax_pct) || 0) / 100);
-                                }, 0);
-                                totalVal = sub + gst;
-                              }
-                            }
+                            const totalVal = getOrderGrandTotal(o);
                             return totalVal > 0
                               ? `₹ ${totalVal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                               : <span className="text-slate-300 font-normal">-</span>;

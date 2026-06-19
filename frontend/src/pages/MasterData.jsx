@@ -594,7 +594,7 @@ export default function MasterData({ view = "vendor" }) {
               <Field label="Site Code">
                 <select value={form.siteCode} onChange={e => setForm(f => ({ ...f, siteCode: e.target.value }))} className="field-input">
                   <option value="">Select site</option>
-                  {[...new Set(orders.map(o => o.sites?.site_code || o.snapshot?.site?.siteCode).filter(Boolean))].map(code => <option key={code} value={code}>{code}</option>)}
+                  {[...new Set(orders.map(o => o.snapshot?.site?.siteCode).filter(Boolean))].map(code => <option key={code} value={code}>{code}</option>)}
                 </select>
               </Field>
               <Field label="Order type">

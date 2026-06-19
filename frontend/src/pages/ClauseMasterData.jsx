@@ -85,7 +85,7 @@ const getVendorName = (order) =>
   order.snapshot?.vendor?.vendorName || order.vendors?.vendor_name || order.vendors?.vendorName || "";
 
 const getSiteCode = (order) =>
-  order.snapshot?.site?.siteCode || order.sites?.site_code || order.sites?.siteCode || "";
+  order.snapshot?.site?.siteCode || "";
 
 const buildRowsFromOrders = (orders, clauses) => {
   return orders.flatMap((order) => {

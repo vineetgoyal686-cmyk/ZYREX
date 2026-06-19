@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node -e \"require\\('./server.js'\\)\")"
+      "Bash(node -e \"require\\('./server.js'\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(Remove-Item \"d:\\\\Zyhawk\\\\_vi_new.jsx\")",
+      "PowerShell(Get-Process -Name \"node\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Id 39644 -Force)",
+      "PowerShell(Start-Process -FilePath \"node\" -ArgumentList \"server.js\" -WorkingDirectory \"d:\\\\Zyhawk\\\\backend\" -WindowStyle Normal)",
+      "PowerShell(Stop-Process -Id 40788 -Force)",
+      "PowerShell(Stop-Process -Id 23400 -Force)",
+      "PowerShell(Get-Process -Name \"node\")"
     ]
   }
 }

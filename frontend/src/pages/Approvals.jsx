@@ -334,7 +334,6 @@ export default function Approvals() {
       o.snapshot?.vendor?.vendorName,
       o.vendors?.vendor_name,
       o.snapshot?.site?.siteCode,
-      o.sites?.site_code,
       o.made_by,
     ].filter(Boolean).join(" ").toLowerCase();
     return !query || text.includes(query);
@@ -478,7 +477,7 @@ export default function Approvals() {
                             </button>
                             <p className="text-[9px] text-slate-400 font-bold uppercase truncate mt-1">by {doc.made_by || "—"}</p>
                           </div>
-                          <span className="text-[8px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded-none border border-slate-200 uppercase shrink-0">{doc.sites?.site_code || "—"}</span>
+                          <span className="text-[8px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded-none border border-slate-200 uppercase shrink-0">{doc.snapshot?.site?.siteCode || "—"}</span>
                         </div>
                         <div className="p-3.5 flex-1 flex flex-col gap-4">
                           <div className="bg-white p-2 border border-slate-100 relative">
@@ -585,7 +584,7 @@ export default function Approvals() {
                           <button onClick={() => setPdfPreviewId(o.id)} className="text-[11px] font-black text-indigo-700 hover:underline uppercase tracking-tight truncate block leading-none">{orderTitle(o)}</button>
                           <p className="text-[9px] text-slate-400 font-bold uppercase truncate mt-1">by {o.made_by || o.snapshot?.madeBy || "—"}</p>
                         </div>
-                        <span className="text-[8px] font-black text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded-none border border-slate-200 uppercase">{o.snapshot?.site?.siteCode || o.sites?.site_code || "-"}</span>
+                        <span className="text-[8px] font-black text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded-none border border-slate-200 uppercase">{o.snapshot?.site?.siteCode || "-"}</span>
                       </div>
                       <div className="mb-3 flex-1 min-w-0 space-y-4">
                         <div className="bg-white p-2 border border-slate-100 relative">

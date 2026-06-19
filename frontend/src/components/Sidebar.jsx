@@ -53,7 +53,7 @@ const TAB_MODULE_KEY = {
   audit: "audit",
   proc_setup__contact_list: "contact_list",
   proc_setup__company_list: "company_list",
-  proc_setup__site_list: "site_list",
+
   proc_setup__vendor_list: "vendor_list",
   proc_setup__item_list: "item_list",
   proc_setup__category_list: "category_list",
@@ -102,7 +102,6 @@ const masterDataRows = [
 ];
 
 const setupRows = [
-  { id: "proc_setup__site_list", label: "Site", description: "Manage sites / locations" },
   { id: "proc_setup__vendor_list", label: "Vendor", description: "Manage vendors" },
   { id: "proc_setup__item_list", label: "Item", description: "Manage items" },
   { id: "proc_setup__category_list", label: "Category", description: "Manage categories" },
@@ -186,7 +185,7 @@ const projectSections = [
 
 const iconById = {
   proc_setup__company_list: Users,
-  proc_setup__site_list: MapPinned,
+
   proc_setup__vendor_list: Users,
   proc_setup__item_list: Package,
   proc_setup__contact_list: Contact,

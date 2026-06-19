@@ -221,9 +221,9 @@ export default function VendorList() {
 
   const fetchSites = async (isBackground = false) => {
     try {
-      const res = await fetch(`${API}/api/procurement/sites`);
+      const res = await fetch(`${API}/api/projects`);
       const data = await res.json();
-      cachedSites = data.sites || [];
+      cachedSites = data.projects || [];
       setSites(cachedSites);
     } catch { if (!cachedSites) setSites([]); }
   };
@@ -1035,19 +1035,19 @@ export default function VendorList() {
                           </div>
                           <div className="py-1">
                             {sites.length === 0 ? (
-                              <div className="px-4 py-3 text-xs text-slate-400 italic">No sites found…</div>
+                              <div className="px-4 py-3 text-xs text-slate-400 italic">No projects found…</div>
                             ) : (
                               sites.map(s => {
-                                const isSel = form.siteCodes.includes(s.siteCode);
+                                const isSel = form.siteCodes.includes(s.projectCode);
                                 return (
                                   <div key={s.id} onClick={() => {
                                     setForm(f => {
-                                      const newCodes = isSel ? f.siteCodes.filter(x => x !== s.siteCode) : [...f.siteCodes, s.siteCode];
+                                      const newCodes = isSel ? f.siteCodes.filter(x => x !== s.projectCode) : [...f.siteCodes, s.projectCode];
                                       return { ...f, siteCodes: newCodes };
                                     });
                                   }}
                                   className={`px-4 py-2.5 text-xs flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors ${isSel ? "bg-indigo-50/50 text-indigo-700 font-bold" : "text-slate-600"}`}>
-                                    <span>{s.siteCode} <span className="text-slate-400 font-normal ml-1">— {s.siteName}</span></span>
+                                    <span>{s.projectCode} <span className="text-slate-400 font-normal ml-1">— {s.projectName}</span></span>
                                     {isSel && <div className="w-1.5 h-1.5 rounded-full bg-indigo-600" />}
                                   </div>
                                 );

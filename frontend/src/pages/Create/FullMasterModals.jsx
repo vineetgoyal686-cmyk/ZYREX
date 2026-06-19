@@ -1,5 +1,15 @@
 import React, { useState, useRef, useEffect } from "react";
-import { X, Building2, Upload, FileText, Download, MapPin, Landmark, Pencil, Image as ImageIcon, Plus, Users, Phone, CreditCard, Search, Trash2, Star, ChevronDown } from "lucide-react";
+import { X, Building2, Upload, FileText, Download, MapPin, Landmark, Pencil, Image as ImageIcon, Plus, Users, Phone, CreditCard, Search, Trash2, Star, ChevronDown, Hash } from "lucide-react";
+
+const PROJECT_GRADIENTS = [
+  "from-blue-500 to-indigo-600",
+  "from-violet-500 to-purple-600",
+  "from-emerald-500 to-teal-600",
+  "from-orange-500 to-red-500",
+  "from-pink-500 to-rose-600",
+  "from-cyan-500 to-blue-500",
+];
+const projectGradient = (name) => PROJECT_GRADIENTS[(name?.charCodeAt(0) || 0) % PROJECT_GRADIENTS.length];
 import { SiteMapModal } from "../../components/procurement/SiteShared";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
@@ -1168,15 +1178,15 @@ export const FullSiteModal = ({ onClose, onSuccess, editData, allContacts = [] }
     return {
       ...emptySite,
       ...editData,
-      siteName: editData.siteName || editData.site_name || "",
-      siteCode: editData.siteCode || editData.site_code || "",
-      status: editData.status || "active",
+      siteName: editData.siteName || editData.site_name || editData.projectName || editData.project_name || "",
+      siteCode: editData.siteCode || editData.site_code || editData.projectCode || editData.project_code || "",
+      status: editData.status || (editData.isActive === false ? "inactive" : "active"),
       district: editData.district || editData.city || "",
       state: editData.state || "",
       pincode: editData.pincode || "",
       latitude: editData.latitude || "",
       longitude: editData.longitude || "",
-      siteAddress: editData.siteAddress || editData.site_address || "",
+      siteAddress: editData.siteAddress || editData.site_address || editData.address || "",
       contacts: Array.isArray(editData.contacts) ? editData.contacts : [],
       slug: editData.slug || "",
     };
@@ -1214,13 +1224,22 @@ export const FullSiteModal = ({ onClose, onSuccess, editData, allContacts = [] }
     setSaving(true);
     try {
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
-      const payload = { ...form, createdById: u.id || "", createdByName: u.name || "" };
-      const url = editId ? `${API}/api/procurement/sites/${editId}` : `${API}/api/procurement/sites`;
+      const payload = {
+        projectName: form.siteName,
+        projectCode: form.siteCode,
+        address: form.siteAddress,
+        city: form.district,
+        state: form.state,
+        pincode: form.pincode,
+        createdById: u.id || "",
+        createdByName: u.name || "",
+      };
+      const url = editId ? `${API}/api/projects/${editId}` : `${API}/api/projects`;
       const method = editId ? "PUT" : "POST";
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Save failed");
-      onSuccess(data.site?.id || data.id);
+      onSuccess(data.id);
       onClose();
     } catch (err) { alert(err.message || "Failed to save site"); }
     setSaving(false);
@@ -1359,128 +1378,85 @@ export const FullSiteModal = ({ onClose, onSuccess, editData, allContacts = [] }
 
 export const FullViewSiteModal = ({ site, onClose, onEdit }) => {
   if (!site) return null;
-  const view = {
-    siteName: site.siteName || site.site_name || "",
-    siteCode: site.siteCode || site.site_code || "",
-    status: site.status || "active",
-    district: site.district || site.city || "—",
-    state: site.state || "—",
-    pincode: site.pincode || "—",
-    latitude: site.latitude || "",
-    longitude: site.longitude || "",
-    siteAddress: site.siteAddress || site.site_address || "—",
-    contacts: Array.isArray(site.contacts) ? site.contacts : [],
+  const p = {
+    projectName: site.projectName || site.project_name || site.siteName || site.site_name || "",
+    projectCode: site.projectCode || site.project_code || site.siteCode || site.site_code || "",
+    city: site.city || site.district || "",
+    state: site.state || "",
+    pincode: site.pincode || "",
+    address: site.address || site.siteAddress || site.site_address || "",
+    logoUrl: site.logoUrl || site.logo_url || "",
+    isActive: site.isActive !== false && site.status !== "inactive",
   };
+  const detailRows = [
+    ["City", p.city],
+    ["State", p.state],
+    ["Pincode", p.pincode],
+    ["Address", p.address],
+  ].filter(([, v]) => v);
+
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm text-left">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-              <MapPin size={20} className="text-indigo-600" />
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[2200] flex items-center justify-center p-4 text-left">
+      <div className="bg-white rounded-md shadow-2xl w-full max-w-md">
+        <div className={`h-1.5 w-full rounded-t-md ${p.isActive ? "bg-linear-to-r from-blue-500 to-indigo-500" : "bg-slate-200"}`} />
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h3 className="text-base font-black text-slate-800">Project Details</h3>
+          <button onClick={onClose} className="p-1.5 rounded-sm hover:bg-slate-100 text-slate-400 transition-colors"><X size={16} /></button>
+        </div>
+        <div className="p-6">
+          <div className="flex items-center gap-4 mb-5">
+            {p.logoUrl && (
+              <img
+                src={p.logoUrl} alt=""
+                className="w-20 h-20 rounded-md object-cover border border-slate-100 shadow shrink-0"
+                onError={e => { e.target.style.display = "none"; e.target.nextElementSibling.style.display = "flex"; }}
+              />
+            )}
+            <div
+              className={`w-20 h-20 rounded-md bg-linear-to-br ${projectGradient(p.projectName)} items-center justify-center text-white text-2xl font-black shadow shrink-0`}
+              style={{ display: p.logoUrl ? "none" : "flex" }}
+            >
+              {(p.projectCode || p.projectName).slice(0, 2).toUpperCase()}
             </div>
             <div className="min-w-0">
-              <h2 className="text-lg font-bold text-slate-900 leading-tight truncate">Site Details</h2>
-              <p className="text-xs text-slate-400 font-medium truncate">{view.siteCode || "No Code"}</p>
+              <h4 className="text-lg font-black text-slate-800">{p.projectName}</h4>
+              {p.projectCode && (
+                <span className="inline-flex items-center gap-1 text-xs font-mono font-bold bg-slate-100 text-slate-500 px-2.5 py-1 rounded mt-1">
+                  <Hash size={10} />{p.projectCode}
+                </span>
+              )}
+              <div className="mt-1.5">
+                <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded border
+                  ${p.isActive ? "bg-green-50 text-green-700 border-green-200" : "bg-slate-100 text-slate-500 border-slate-200"}`}>
+                  {p.isActive ? "● Active" : "○ Inactive"}
+                </span>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {onEdit && (
-              <button
-                onClick={() => { onClose(); onEdit(site); }}
-                className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl transition-all"
-                title="Edit Site"
-              >
-                <Pencil size={18} />
-              </button>
-            )}
-            <button onClick={onClose}
-              className="w-9 h-9 flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl transition-all">
-              <X size={20} />
+          {detailRows.length > 0 ? (
+            <div className="grid grid-cols-2 gap-3">
+              {detailRows.map(([label, val]) => (
+                <div key={label} className={`bg-slate-50 rounded-sm px-4 py-3 ${label === "Address" ? "col-span-2" : ""}`}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">{label}</p>
+                  <p className="text-sm font-semibold text-slate-700">{val}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">No additional details recorded.</p>
+          )}
+        </div>
+        <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-md">
+          {onEdit && (
+            <button
+              onClick={() => { onClose(); onEdit(site); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-sm border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-white transition-all"
+            >
+              <Pencil size={13} /> Edit
             </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                view.status === "active" ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-slate-50 text-slate-500 border border-slate-100"
-              }`}>{view.status}</span>
-              <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold uppercase tracking-wider">Site Master</span>
-            </div>
-            <h1 className="text-2xl font-bold text-slate-900 break-words">{view.siteName}</h1>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">District</p>
-              <p className="text-sm font-semibold text-slate-700">{view.district}</p>
-            </div>
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">State</p>
-              <p className="text-sm font-semibold text-slate-700">{view.state}</p>
-            </div>
-            <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 col-span-2">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pincode</p>
-              <p className="text-sm font-semibold text-slate-700">{view.pincode}</p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Site Address</h3>
-            <div className="p-4 rounded-xl border border-slate-200 text-slate-600 text-sm leading-relaxed bg-white shadow-sm">
-              {view.siteAddress}
-            </div>
-          </div>
-
-          {view.contacts.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Assigned Contacts</h3>
-              <div className="space-y-2.5">
-                {view.contacts.map((c, i) => (
-                  <div key={c.id || i} className="flex items-center gap-3 p-3 rounded-xl border border-slate-100 bg-slate-50/50">
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 font-bold text-sm ${
-                      i === 0 ? "bg-indigo-600 text-white shadow-md" : "bg-slate-200 text-slate-500"
-                    }`}>
-                      {(c.name || "C")?.[0]?.toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold text-slate-800 truncate">{c.name || "Unnamed"}</p>
-                        {i === 0 && <span className="text-[8px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-full uppercase">Primary</span>}
-                      </div>
-                      <div className="flex items-center gap-3 mt-0.5 text-[11px] text-slate-500 font-medium">
-                        <span>{c.phone || "No phone"}</span>
-                        {c.email && <span className="opacity-50 truncate">{c.email}</span>}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
           )}
-
-          {(view.latitude || view.longitude) && (
-            <div className="p-4 rounded-xl bg-indigo-50/40 border border-indigo-100 space-y-3">
-              <h3 className="text-[11px] font-bold text-indigo-600 uppercase tracking-widest">Coordinates</h3>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Latitude</p>
-                  <p className="text-xs font-mono font-bold text-slate-700">{view.latitude || "0.000000"}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase mb-0.5">Longitude</p>
-                  <p className="text-xs font-mono font-bold text-slate-700">{view.longitude || "0.000000"}</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="px-6 py-5 border-t border-slate-100 bg-slate-50 flex items-center gap-3 shrink-0">
           <button onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold bg-slate-900 text-white hover:bg-slate-800 transition-all shadow-lg shadow-slate-200">
+            className="px-4 py-2.5 rounded-sm bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 transition-all">
             Close
           </button>
         </div>

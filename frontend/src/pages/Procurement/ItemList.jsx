@@ -148,7 +148,11 @@ export default function ItemList() {
     setEditId(item.id);
     setForm({
       materialName:   item.materialName || "",
-      specifications: item.specifications || [],
+      specifications: (item.specifications || []).map(s => {
+        if (activeTab === "SITC") return s;
+        const tmp = document.createElement("div"); tmp.innerHTML = s || "";
+        return (tmp.textContent || tmp.innerText || "").replace(/ /g, " ").trim() || s;
+      }),
       category:       item.category || "",
       brands:         item.brands || [],
       unit:           item.unit || "",
@@ -647,9 +651,12 @@ export default function ItemList() {
                       <td className="px-4 py-3 border border-slate-200 align-top">
                         {item.specifications?.length > 0
                           ? <div className="flex flex-wrap gap-1">
-                              {item.specifications.map((s, i) => (
-                                <span key={i} className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 text-xs whitespace-normal break-words leading-tight">{s}</span>
-                              ))}
+                              {item.specifications.map((s, i) => {
+                                const tmp = document.createElement("div");
+                                tmp.innerHTML = s || "";
+                                const plain = (tmp.textContent || tmp.innerText || "").replace(/ /g, " ").trim();
+                                return <span key={i} className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 text-xs whitespace-normal break-words leading-tight">{plain || s}</span>;
+                              })}
                             </div>
                           : <span className="text-slate-300 text-sm">—</span>}
                       </td>

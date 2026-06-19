@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   UserCircle, Lock, Users, ShieldCheck, Briefcase,
   FolderOpen, KeyRound, Inbox, Workflow, Mail, X, UserCheck,
+  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import api from "../../utils/api";
 import ManageProjects from "../../components/ManageProjects";
@@ -33,8 +34,10 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
   const isAdminOrAbove = ["global_admin", "super_admin", "admin"].includes(currentUser.role);
   const pp             = currentUser.profile_permissions || {};
 
-  const [section, setSection] = useState("profile");
-  const [toast, setToast]     = useState(null);
+  const [section,   setSection]   = useState("profile");
+  const [toast,     setToast]     = useState(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const [tooltip,   setTooltip]   = useState(null);
 
   /* ── Shared: designations (needed by Designations tab + UserManagement dropdown) ── */
   const [designations, setDesignations]               = useState([]);
@@ -133,46 +136,70 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
     <div className="w-full min-w-0 min-h-full flex flex-col bg-[#f0f2f5]">
       {toast && <Toast msg={toast.msg} type={toast.type} />}
 
-      <div className="flex w-full min-w-0 flex-1 md:grid md:grid-cols-[14rem_minmax(0,1fr)]">
+      <div className="flex w-full min-w-0 flex-1">
+
+        {/* Fixed tooltip when collapsed */}
+        {collapsed && tooltip && (
+          <div className="fixed z-[999] pointer-events-none"
+            style={{ left: tooltip.x + 8, top: tooltip.y, transform: "translateY(-50%)" }}>
+            <div className="bg-slate-800 text-white text-[11px] font-semibold px-2.5 py-1 rounded whitespace-nowrap shadow-lg">
+              {tooltip.label}
+            </div>
+          </div>
+        )}
 
         {/* Sidebar */}
-        <div className="hidden md:block border-r border-slate-200/90 bg-slate-100 self-stretch">
+        <div
+          className="hidden md:block border-r border-slate-200/90 bg-slate-100 self-stretch shrink-0 transition-all duration-300 ease-in-out"
+          style={{ width: collapsed ? "3.25rem" : "14rem" }}>
           <aside
-            className="sticky top-0 w-full bg-slate-100 h-screen max-h-screen overflow-y-auto thin-scrollbar-xs"
+            className="sticky top-0 h-screen max-h-screen overflow-y-auto thin-scrollbar-xs flex flex-col"
+            style={{ width: collapsed ? "3.25rem" : "14rem" }}
             aria-label="Settings"
           >
-            <nav className="flex flex-col gap-0 w-full py-0 px-0 md:pt-0 md:pb-3">
-              <div className="px-3 md:px-4 py-3 border-b border-slate-200/90 bg-slate-100">
-                <h2 className="text-[15px] font-bold text-slate-900 tracking-tight">Settings</h2>
-              </div>
+            {/* Header row with title + collapse toggle */}
+            <div className="flex items-center border-b border-slate-200/90 shrink-0"
+              style={{ padding: collapsed ? "0.6rem 0" : "0.6rem 1rem", justifyContent: collapsed ? "center" : "space-between" }}>
+              {!collapsed && (
+                <h2 className="text-[15px] font-bold text-slate-900 tracking-tight whitespace-nowrap">Settings</h2>
+              )}
+              <button
+                onClick={() => setCollapsed(v => !v)}
+                className="text-slate-400 hover:text-slate-700 transition-colors shrink-0"
+                title={collapsed ? "Expand" : "Collapse"}>
+                {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+              </button>
+            </div>
+
+            {/* Nav */}
+            <nav className="flex flex-col gap-0 w-full flex-1 py-0">
               {settingsNavGroups.map((group, gi) => (
-                <div key={gi} className={gi > 0 ? "border-t border-slate-200/90" : ""}>
-                  {group.title && (
-                    <p className="px-3 md:px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+                <div key={gi} className={`py-2 ${gi > 0 ? "border-t border-slate-200/90" : ""}`}>
+                  {!collapsed && group.title && (
+                    <p className="px-4 pt-0.5 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400 whitespace-nowrap">
                       {group.title}
                     </p>
                   )}
-                  <div className={`flex flex-col gap-0 ${group.title ? "pb-2 pt-0.5" : "py-2"}`}>
-                    {group.items.map((t) => {
-                      const Icon = t.icon;
-                      const active = section === t.id;
-                      return (
+                  {group.items.map((t) => {
+                    const Icon   = t.icon;
+                    const active = section === t.id;
+                    return (
+                      <div key={t.id}
+                        onMouseEnter={collapsed ? e => { const r = e.currentTarget.getBoundingClientRect(); setTooltip({ label: t.label, y: r.top + r.height / 2, x: r.right }); } : undefined}
+                        onMouseLeave={collapsed ? () => setTooltip(null) : undefined}>
                         <button
-                          key={t.id}
                           type="button"
                           onClick={() => setSection(t.id)}
-                          className={`w-full flex items-center gap-3 text-left rounded-none px-3 md:px-4 py-2.5 text-[13px] font-semibold transition-colors
-                            ${active
-                              ? "bg-indigo-600 text-white"
-                              : "text-slate-700 hover:bg-slate-100/90 hover:text-slate-900"
-                            }`}
+                          className={`w-full flex items-center text-left py-2.5 text-[13px] font-semibold transition-colors
+                            ${collapsed ? "justify-center px-0" : "gap-3 px-4"}
+                            ${active ? "bg-indigo-600 text-white" : "text-slate-700 hover:bg-slate-200/60 hover:text-slate-900"}`}
                         >
                           <Icon size={17} className={`shrink-0 ${active ? "text-white" : "text-slate-400"}`} strokeWidth={2} />
-                          <span className="leading-snug">{t.label}</span>
+                          {!collapsed && <span className="leading-snug whitespace-nowrap">{t.label}</span>}
                         </button>
-                      );
-                    })}
-                  </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </nav>
@@ -180,8 +207,13 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
         </div>
 
         {/* Main content */}
-        <div className="min-w-0 flex-1 flex flex-col">
-          <div className="min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4">
+        <div className="min-w-0 flex-1 flex flex-col min-h-0">
+
+          {section === "serialization" && (isGlobalAdmin || !!pp.serialization?.view) && (
+            <Serialization isGlobalAdmin={isGlobalAdmin} showToast={showToast} />
+          )}
+
+          <div className={`min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4 ${section === "serialization" ? "hidden" : ""}`}>
 
             {section === "profile" && (
               <PersonalInfo
@@ -232,10 +264,6 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
                 permissions={pp.manage_project}
                 onProjectsUpdate={onProjectsUpdate}
               />
-            )}
-
-            {section === "serialization" && (isGlobalAdmin || !!pp.serialization?.view) && (
-              <Serialization isGlobalAdmin={isGlobalAdmin} showToast={showToast} />
             )}
 
             {section === "approval_flow" && (

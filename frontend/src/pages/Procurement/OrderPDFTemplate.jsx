@@ -6,6 +6,21 @@ const normalizeRichTextHtml = (value) =>
     ? value.replace(/&nbsp;|&#160;|\u00A0/g, " ")
     : value;
 
+// Normalize notes \u2014 handles HTML string, JSON array string, plain array, plain text
+const notesToHtml = (notes) => {
+  if (!notes) return "";
+  if (Array.isArray(notes)) return `<ol>${notes.map(item => `<li>${String(item)}</li>`).join("")}</ol>`;
+  if (typeof notes !== "string") return "";
+  const s = notes.trim();
+  if (s.startsWith("[")) {
+    try {
+      const arr = JSON.parse(s);
+      if (Array.isArray(arr)) return `<ol>${arr.map(item => `<li>${String(item)}</li>`).join("")}</ol>`;
+    } catch {}
+  }
+  return s;
+};
+
 const extractListItemsFromHtml = (html) => {
   const normalized = normalizeRichTextHtml(html);
   if (!normalized || typeof document === "undefined") return [];
@@ -223,13 +238,14 @@ const estimateListUnits = (entries = [], titleLines = 1) =>
     return titleLines + countTextLines(text) + Math.ceil(structuralBreaks / 4);
   };
 
-  const noteListItems = extractListItemsFromHtml(order.notes);
+  const normalizedNotes = notesToHtml(order.notes);
+  const noteListItems = extractListItemsFromHtml(normalizedNotes);
 
   const supplementarySections = [
-    order.notes
+    normalizedNotes
       ? noteListItems.length
         ? { id: "notes", title: "Order Notes", kind: "list", items: noteListItems, units: estimateListUnits(noteListItems, 1) }
-        : { id: "notes", title: "Order Notes", kind: "html", content: normalizeRichTextHtml(order.notes), units: estimateHtmlUnits(order.notes, 1) }
+        : { id: "notes", title: "Order Notes", kind: "html", content: normalizeRichTextHtml(normalizedNotes), units: estimateHtmlUnits(normalizedNotes, 1) }
       : null,
     order.terms_conditions?.length
       ? (() => {
@@ -1349,7 +1365,7 @@ table tbody td[rowspan] {
                               <div className="space-y-0.5">
                                 {(() => {
                                   const desc = it.description;
-                                  if (!desc) return "--";
+                                  if (!desc || desc === "--") return null;
                                   let points = [];
                                   try { points = typeof desc === 'string' && (desc.startsWith('[') || desc.startsWith('{')) ? JSON.parse(desc) : (Array.isArray(desc) ? desc : [desc]); } catch (e) { points = [desc]; }
                                   return points.map((p, i) => (
@@ -1376,7 +1392,7 @@ table tbody td[rowspan] {
                             <div className="space-y-0.5">
                               {(() => {
                                 const desc = it.description;
-                                if (!desc) return null;
+                                if (!desc || desc === "--") return null;
                                 let points = [];
                                 try { points = typeof desc === 'string' && (desc.startsWith('[') || desc.startsWith('{')) ? JSON.parse(desc) : (Array.isArray(desc) ? desc : [desc]); } catch (e) { points = [desc]; }
                                 return points.map((p, i) => (
@@ -1403,7 +1419,7 @@ table tbody td[rowspan] {
                         <td className="px-4 py-1.5 text-right font-bold text-[#000000] text-[10px] bg-slate-50 whitespace-nowrap">₹ {Number(it.amount).toLocaleString("en-IN")}</td>
                         {groupedItems.some(it2 => it2.remarks) && totals.showRemarks !== false && (
                           <td className="px-3 py-1.5 border-l border-[#000000] text-left text-[#000000] font-normal text-[10px] whitespace-normal leading-tight">
-                            <span className="pdf-fit-text">{it.remarks || "--"}</span>
+                            <span className="pdf-fit-text">{it.remarks || ""}</span>
                           </td>
                         )}
                       </tr>
@@ -1613,7 +1629,7 @@ table tbody td[rowspan] {
                                   <div className="space-y-0.5">
                                     {(() => {
                                       const desc = it.description;
-                                      if (!desc) return '--';
+                                      if (!desc || desc === "--") return null;
                                       let points = [];
                                       try { points = typeof desc === 'string' && (desc.startsWith('[') || desc.startsWith('{')) ? JSON.parse(desc) : (Array.isArray(desc) ? desc : [desc]); } catch (e) { points = [desc]; }
                                       return points.map((p, i) => (
