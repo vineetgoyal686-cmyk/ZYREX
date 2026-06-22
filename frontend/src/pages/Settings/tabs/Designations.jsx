@@ -162,12 +162,12 @@ export default function Designations({ showToast, designations, designationsLoad
         <div className="bg-white rounded-none shadow-sm border border-slate-100 p-6">
           <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-200">
             <h2 className="font-sans text-lg sm:text-xl font-bold text-slate-800 tracking-normal antialiased">
-              Designation Management
+              Access Profile Management
             </h2>
             <button type="button" onClick={openCreate}
               className="inline-flex items-center justify-center gap-2 rounded-sm bg-[#3b4df2] px-5 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#2f40d4] active:bg-[#2838c4]">
               <Plus size={18} strokeWidth={2.5} className="shrink-0" aria-hidden />
-              Add designation
+              Add Access Profile
             </button>
           </div>
 
@@ -178,7 +178,7 @@ export default function Designations({ showToast, designations, designationsLoad
           ) : designations.length === 0 ? (
             <div className="border-2 border-dashed border-slate-200 rounded-sm p-10 text-center">
               <ShieldCheck size={32} className="mx-auto text-slate-300 mb-3" />
-              <p className="text-sm font-bold text-slate-500">No designations yet</p>
+              <p className="text-sm font-bold text-slate-500">No access profiles yet</p>
               <p className="text-[12px] text-slate-400 mt-1">Create templates like &quot;Site Engineer&quot;, &quot;Procurement Manager&quot; to speed up user onboarding.</p>
             </div>
           ) : (
@@ -240,7 +240,7 @@ export default function Designations({ showToast, designations, designationsLoad
               </div>
               <div className="min-w-0">
                 <h3 className="text-sm font-bold text-slate-900 leading-tight">
-                  {formReadOnly ? "View Designation" : editingDesg ? "Edit Designation" : "New Designation"}
+                  {formReadOnly ? "View Access Profile" : editingDesg ? "Edit Access Profile" : "New Access Profile"}
                 </h3>
                 <p className="text-[11px] text-slate-400 leading-tight">
                   {formReadOnly ? "Read-only preview" : "Define a reusable permission set"}
@@ -273,7 +273,7 @@ export default function Designations({ showToast, designations, designationsLoad
           <div className="p-6 space-y-5">
             <div className="flex flex-wrap items-end gap-3">
               <div className="w-64 shrink-0">
-                <label className={lbl}>Designation Name *</label>
+                <label className={lbl}>Access Profile Name *</label>
                 <input value={desgName} onChange={e => setDesgName(e.target.value)} className={inp}
                   disabled={formReadOnly} placeholder="e.g. Site Engineer" />
               </div>

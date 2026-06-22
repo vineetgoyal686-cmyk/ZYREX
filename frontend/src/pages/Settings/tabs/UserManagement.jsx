@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   Users, UserPlus, ShieldCheck, Loader2, Save, Trash2,
   Mail, Phone, Building2, Briefcase, CheckCircle2, XCircle,
-  Pencil, LayoutDashboard, ShieldAlert, SendHorizonal, Camera,
+  Pencil, LayoutDashboard, ShieldAlert, SendHorizonal, Camera, ChevronDown,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../../../utils/api";
@@ -58,15 +58,23 @@ export default function UserManagement({
   const [allProjects,          setAllProjects]          = useState([]);
 
   /* Add user */
-  const [showAddUser,        setShowAddUser]        = useState(false);
-  const [newUser,            setNewUser]            = useState({ name: "", email: "", contact_no: "", designation: "", department: "", role: "user" });
-  const [newUserProfilePerms,setNewUserProfilePerms]= useState(DEFAULT_PROFILE_PERMS);
-  const [newUserModules,     setNewUserModules]     = useState([]);
-  const [modulesLoading,     setModulesLoading]     = useState(false);
-  const [newUserSignature,   setNewUserSignature]   = useState(null);
-  const [newUserSigLoading,  setNewUserSigLoading]  = useState(false);
-  const [allPermsSelected,   setAllPermsSelected]   = useState(false);
+  const [showAddUser,           setShowAddUser]           = useState(false);
+  const [newUser,               setNewUser]               = useState({ name: "", email: "", contact_no: "", designation: "", department: "", role: "user" });
+  const [newUserAccessProfileIds, setNewUserAccessProfileIds] = useState([]);
+  const [newUserProfilePerms,   setNewUserProfilePerms]   = useState(DEFAULT_PROFILE_PERMS);
+  const [newUserAllowedProjects,setNewUserAllowedProjects]= useState([]);
+  const [newUserModules,        setNewUserModules]        = useState([]);
+  const [modulesLoading,        setModulesLoading]        = useState(false);
+  const [newUserSignature,      setNewUserSignature]      = useState(null);
+  const [newUserSigLoading,     setNewUserSigLoading]     = useState(false);
+  const [allPermsSelected,      setAllPermsSelected]      = useState(false);
   const newUserSigRef = useRef();
+
+  /* Edit member */
+  const [editingMember,         setEditingMember]         = useState(null);
+  const [editForm,              setEditForm]              = useState({ name: "", contact_no: "", designation: "", department: "" });
+  const [editAccessProfileIds,  setEditAccessProfileIds]  = useState([]);
+  const [editSaving,            setEditSaving]            = useState(false);
 
   /* Lock body scroll when modal open */
   useEffect(() => {
@@ -114,33 +122,41 @@ export default function UserManagement({
     finally { setModulesLoading(false); }
   };
 
-  const applyDesignationToNewUser = (desgId) => {
-    if (!desgId) return;
-    const tpl = designations.find(d => d.id === desgId);
-    if (!tpl) return;
-    setNewUser(p => ({ ...p, designation: tpl.name, designation_id: tpl.id }));
-    setNewUserProfilePerms(tpl.profile_permissions || DEFAULT_PROFILE_PERMS);
-    const stored = tpl.app_permissions || [];
+  const applyAccessProfiles = (profileIds) => {
+    const profiles = designations.filter(d => profileIds.includes(d.id));
+    if (!profiles.length) {
+      setNewUserProfilePerms(DEFAULT_PROFILE_PERMS);
+      setNewUserModules(prev => prev.map(m => {
+        const blank = { ...m, can_view: false, can_add: false, can_edit: false, can_delete: false, can_trash: false, can_bulk_upload: false, can_export: false, can_log: false, can_download_document: false, can_take_action: false, can_submit: false, can_approve: false, can_issue: false, can_recall: false, can_reject: false, can_revert: false, can_request: false, can_withdraw: false, can_cancel: false, can_manage_amend: false };
+        if (m.module_key === "global_dashboard") GLOBAL_DASHBOARD_ORDER_KEYS.forEach(k => { blank[k] = false; });
+        return blank;
+      }));
+      return;
+    }
+    // Merge profile_permissions — union
+    const mergedPP = JSON.parse(JSON.stringify(DEFAULT_PROFILE_PERMS));
+    profiles.forEach(p => {
+      const pp = p.profile_permissions || {};
+      PROFILE_SECTIONS.forEach(sec => {
+        sec.keys.forEach(({ k }) => { if (pp[sec.key]?.[k]) mergedPP[sec.key][k] = true; });
+      });
+    });
+    setNewUserProfilePerms(mergedPP);
+    // Merge app_permissions — union per module
+    const allStored = profiles.flatMap(p => p.app_permissions || []);
     setNewUserModules(prev => prev.map(m => {
-      const match = stored.find(s => s.module_id === m.module_id);
-      if (!match) return {
-        ...m,
-        can_view: false, can_add: false, can_edit: false, can_delete: false,
-        can_trash: false, can_bulk_upload: false, can_export: false,
-        can_log: false, can_download_document: false,
-        can_take_action: false, can_submit: false, can_approve: false,
-        can_issue: false, can_recall: false, can_reject: false, can_revert: false,
-        can_request: false, can_withdraw: false,
-        can_cancel: false, can_manage_amend: false,
-        ...(m.module_key === "global_dashboard"
-          ? Object.fromEntries(GLOBAL_DASHBOARD_ORDER_KEYS.map(k => [k, false]))
-          : {}),
-      };
-      const merged = { ...m, ...match };
+      const matches = allStored.filter(s => s.module_id === m.module_id);
+      if (!matches.length) {
+        const blank = { ...m, can_view: false, can_add: false, can_edit: false, can_delete: false, can_trash: false, can_bulk_upload: false, can_export: false, can_log: false, can_download_document: false, can_take_action: false, can_submit: false, can_approve: false, can_issue: false, can_recall: false, can_reject: false, can_revert: false, can_request: false, can_withdraw: false, can_cancel: false, can_manage_amend: false };
+        if (m.module_key === "global_dashboard") GLOBAL_DASHBOARD_ORDER_KEYS.forEach(k => { blank[k] = false; });
+        return blank;
+      }
+      const merged = { ...m };
+      getModulePermKeysFull(m).forEach(k => { merged[k] = matches.some(x => x[k]); });
       if (m.module_key === "global_dashboard") {
-        merged.order_overview_aging = !!match.order_overview_aging;
-        merged.order_intake = !!match.order_intake;
-        merged.order_payment = !!match.order_payment;
+        merged.order_overview_aging = matches.some(x => x.order_overview_aging);
+        merged.order_intake         = matches.some(x => x.order_intake);
+        merged.order_payment        = matches.some(x => x.order_payment);
       }
       return merged;
     }));
@@ -185,7 +201,7 @@ export default function UserManagement({
     setLoading(true);
     try {
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
-      const { data } = await api.post("/api/users", { ...newUser, profile_permissions: newUserProfilePerms, createdById: u.id || "", createdByName: u.name || "" });
+      const { data } = await api.post("/api/users", { ...newUser, access_profile_ids: newUserAccessProfileIds, designation_id: newUserAccessProfileIds[0] || null, profile_permissions: { ...newUserProfilePerms, allowed_projects: newUserAllowedProjects }, createdById: u.id || "", createdByName: u.name || "" });
       const userId = data.user?.id;
       if (userId && newUserModules.some(m =>
         MODULE_PERM_KEYS.some(k => m[k.key]) || GLOBAL_DASHBOARD_ORDER_KEYS.some(k => m[k])
@@ -195,8 +211,10 @@ export default function UserManagement({
       if (userId && newUserSignature) {
         try { await api.post(`/api/users/${userId}/signature`, { signature: newUserSignature }); } catch { /* non-blocking */ }
       }
-      setNewUser({ name: "", email: "", contact_no: "", designation: "", designation_id: null, department: "", role: "user" });
+      setNewUser({ name: "", email: "", contact_no: "", designation: "", department: "", role: "user" });
+      setNewUserAccessProfileIds([]);
       setNewUserProfilePerms(DEFAULT_PROFILE_PERMS);
+      setNewUserAllowedProjects([]);
       setNewUserSignature(null);
       setAllPermsSelected(false);
       setNewUserModules(prev => prev.map(m => {
@@ -240,6 +258,30 @@ export default function UserManagement({
     } catch (err) {
       showToast(err.response?.data?.error || "Failed to update role", "error");
     } finally { setLoading(false); setConfirmRoleChange(null); }
+  };
+
+  const handleEditSave = async () => {
+    if (!editingMember || !editForm.name.trim()) return;
+    setEditSaving(true);
+    try {
+      await api.put(`/api/users/${editingMember.id}`, {
+        name: editForm.name.trim(), contact_no: editForm.contact_no,
+        designation: editForm.designation, designation_id: editAccessProfileIds[0] || null,
+        access_profile_ids: editAccessProfileIds,
+        department: editForm.department,
+      });
+      setMembers(prev => prev.map(m => m.id === editingMember.id ? { ...m, ...editForm, name: editForm.name.trim(), access_profile_ids: editAccessProfileIds } : m));
+      showToast(`${editForm.name.trim()} updated`);
+      setEditingMember(null);
+    } catch (err) { showToast(err.response?.data?.error || "Failed to update", "error"); }
+    setEditSaving(false);
+  };
+
+  const handleResendInvite = async (member) => {
+    try {
+      await api.post(`/api/users/${member.id}/resend-invite`);
+      showToast(`Invitation resent to ${member.email}`);
+    } catch (err) { showToast(err.response?.data?.error || "Failed to resend invite", "error"); }
   };
 
   const removeUser = async (member) => {
@@ -450,7 +492,7 @@ export default function UserManagement({
                     <div>
                       <div className="flex items-center gap-2 mb-4">
                         <div className="w-1 h-5 rounded-full bg-blue-500" />
-                        <span className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-600">Designation Based</span>
+                        <span className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-600">Access Profile Based</span>
                         <div className="flex-1 h-px bg-blue-100" />
                       </div>
 
@@ -515,7 +557,7 @@ export default function UserManagement({
                 <div className="mt-2">
                   <button onClick={savePerms} disabled={permLoading} className={btnPrimary}>
                     {permLoading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                    {pickedTemplate ? "Save Permissions & Designation" : "Save Permissions"}
+                    {pickedTemplate ? "Save Permissions & Access Profile" : "Save Permissions"}
                   </button>
                 </div>
               </>
@@ -572,6 +614,7 @@ export default function UserManagement({
                         <th className="px-5 py-3 border-r border-slate-200">User</th>
                         <th className="px-5 py-3 border-r border-slate-200">Email</th>
                         <th className="px-5 py-3 border-r border-slate-200">Designation</th>
+                        <th className="px-5 py-3 border-r border-slate-200">Access Profile</th>
                         <th className="px-5 py-3 border-r border-slate-200">Role</th>
                         <th className="px-5 py-3 border-r border-slate-200 text-center">Status</th>
                         <th className="px-5 py-3 text-right">Actions</th>
@@ -608,11 +651,21 @@ export default function UserManagement({
                               <div className="flex items-center gap-2"><Mail size={13} className="text-slate-400 shrink-0" /><span className="truncate">{m.email}</span></div>
                             </td>
                             <td className="px-5 py-3.5 border-r border-slate-100">
-                              {m.designation ? (
-                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-indigo-50 text-indigo-700 text-[11px] font-bold border border-indigo-100">
-                                  <Briefcase size={11} /> {m.designation}
-                                </span>
-                              ) : <span className="text-[11px] text-slate-300 italic">— not assigned —</span>}
+                              <span className="text-[13px] text-slate-700">{m.designation || <span className="text-slate-300 italic text-[11px]">—</span>}</span>
+                            </td>
+                            <td className="px-5 py-3.5 border-r border-slate-100">
+                              {(m.access_profile_ids?.length > 0) ? (
+                                <div className="flex flex-wrap gap-1">
+                                  {m.access_profile_ids.map(id => {
+                                    const d = designations.find(d => d.id === id);
+                                    return d ? (
+                                      <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-violet-50 text-violet-700 text-[10px] font-bold border border-violet-100">
+                                        <Briefcase size={9} /> {d.name}
+                                      </span>
+                                    ) : null;
+                                  })}
+                                </div>
+                              ) : <span className="text-[11px] text-slate-300 italic">—</span>}
                             </td>
                             <td className="px-5 py-3.5 border-r border-slate-100">
                               {canManageRole && editingRoleId === m.id ? (
@@ -640,8 +693,10 @@ export default function UserManagement({
                             </td>
                             <td className="px-5 py-3.5">
                               <div className="flex items-center justify-end gap-1.5">
-                                {(canShield || canToggle || canDel) ? (
+                                {(canShield || canToggle || canDel || canHierarchy) ? (
                                   <>
+                                    {canHierarchy && <button onClick={() => { setEditingMember(m); setEditForm({ name: m.name, contact_no: m.contact_no || "", designation: m.designation || "", department: m.department || "" }); setEditAccessProfileIds(m.access_profile_ids || []); }} title="Edit Info" className="p-2 rounded-sm text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition border border-transparent hover:border-indigo-200"><Pencil size={16} /></button>}
+                                    {canHierarchy && <button onClick={() => handleResendInvite(m)} title="Resend Invite" className="p-2 rounded-sm text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition border border-transparent hover:border-emerald-200"><SendHorizonal size={16} /></button>}
                                     {canShield && <button onClick={() => viewPerms(m)} title="Manage Permissions" className="p-2 rounded-sm text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition border border-transparent hover:border-blue-200"><ShieldCheck size={16} /></button>}
                                     {canToggle && <button onClick={() => toggleActive(m)} title={m.is_active ? "Deactivate" : "Activate"} className={`p-2 rounded-sm transition border border-transparent ${m.is_active ? "text-slate-400 hover:text-amber-600 hover:bg-amber-50 hover:border-amber-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200"}`}>{m.is_active ? <XCircle size={16} /> : <CheckCircle2 size={16} />}</button>}
                                     {canDel && <button onClick={() => removeUser(m)} title="Remove User" className="p-2 rounded-sm text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition border border-transparent hover:border-rose-200"><Trash2 size={16} /></button>}
@@ -690,6 +745,8 @@ export default function UserManagement({
                           const cDel    = ch && m.id !== currentUser.id && (isGlobalAdmin || !!pp.manage_user?.delete);
                           return (
                             <>
+                              {ch && <button onClick={() => { setEditingMember(m); setEditForm({ name: m.name, contact_no: m.contact_no || "", designation: m.designation || "", department: m.department || "" }); setEditAccessProfileIds(m.access_profile_ids || []); }} title="Edit Info" className="p-2 rounded-sm bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><Pencil size={16} /></button>}
+                              {ch && <button onClick={() => handleResendInvite(m)} title="Resend Invite" className="p-2 rounded-sm bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all shadow-sm"><SendHorizonal size={16} /></button>}
                               {cShield && <button onClick={() => viewPerms(m)} title="Permissions" className="p-2 rounded-sm bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm"><ShieldCheck size={16} /></button>}
                               {cToggle && <button onClick={() => toggleActive(m)} className={`p-2 rounded-sm transition-all shadow-sm ${m.is_active ? "bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white" : "bg-green-50 text-green-600 hover:bg-green-600 hover:text-white"}`}>{m.is_active ? <XCircle size={16} /> : <CheckCircle2 size={16} />}</button>}
                               {cDel    && <button onClick={() => removeUser(m)} className="p-2 rounded-sm bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm"><Trash2 size={16} /></button>}
@@ -736,33 +793,59 @@ export default function UserManagement({
                       <div><span className={lbl}>Phone Number</span><input className={inp} placeholder="+91 00000 00000" value={newUser.contact_no} onChange={(e) => setNewUser((p) => ({ ...p, contact_no: e.target.value }))} /></div>
                       <div>
                         <span className={lbl}>Designation</span>
-                        {designations.length > 0 ? (
-                          <select className={inp}
-                            value={designations.find(d => d.name === newUser.designation)?.id || ""}
-                            onChange={e => {
-                              if (e.target.value === "__custom__") setNewUser(p => ({ ...p, designation: "" }));
-                              else applyDesignationToNewUser(e.target.value);
-                            }}>
-                            <option value="">Select designation...</option>
-                            {designations.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                            <option value="__custom__">— Custom (no template) —</option>
-                          </select>
-                        ) : (
-                          <input className={inp} placeholder="Product Manager" value={newUser.designation}
-                            onChange={(e) => setNewUser((p) => ({ ...p, designation: e.target.value }))} />
-                        )}
-                        {designations.length > 0 && <p className="text-[10px] text-slate-400 mt-1 ml-1">Selecting a designation auto-fills permissions.</p>}
+                        <input className={inp} placeholder="e.g. Site Engineer" value={newUser.designation}
+                          onChange={(e) => setNewUser((p) => ({ ...p, designation: e.target.value }))} />
                       </div>
                       <div><span className={lbl}>Department</span><input className={inp} placeholder="Operations" value={newUser.department} onChange={(e) => setNewUser((p) => ({ ...p, department: e.target.value }))} /></div>
                       <div>
                         <span className={lbl}>Role Access</span>
-                        <select className={inp} value={newUser.role} onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
-                          {getManageableRoles(currentUser.role).includes("super_admin") && <option value="super_admin">Super Admin (Organization)</option>}
-                          {getManageableRoles(currentUser.role).includes("admin") && <option value="admin">Administrator (Team)</option>}
-                          <option value="user">Standard User (Staff)</option>
-                        </select>
-                        <p className="text-[10px] text-slate-400 mt-1 ml-1">Role controls who this user can manage. Permissions come from Designation template.</p>
+                        <div className="relative">
+                          <select className={`${inp} appearance-none pr-10`} value={newUser.role} onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
+                            {getManageableRoles(currentUser.role).includes("super_admin") && <option value="super_admin">Super Admin (Organization)</option>}
+                            {getManageableRoles(currentUser.role).includes("admin") && <option value="admin">Administrator (Team)</option>}
+                            <option value="user">Standard User (Staff)</option>
+                          </select>
+                          <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1 ml-1">Role controls who this user can manage.</p>
                       </div>
+                      {designations.length > 0 && (
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className={lbl}>Access Profile</span>
+                            <span className="text-[9px] font-black uppercase tracking-widest text-rose-400">Min. 1 required</span>
+                          </div>
+                          <SearchableTemplateSelect
+                            designations={designations}
+                            selectedIds={newUserAccessProfileIds}
+                            multiSelect
+                            onPick={d => {
+                              const ids = newUserAccessProfileIds.includes(d.id)
+                                ? newUserAccessProfileIds.filter(x => x !== d.id)
+                                : [...newUserAccessProfileIds, d.id];
+                              setNewUserAccessProfileIds(ids);
+                              applyAccessProfiles(ids);
+                            }}
+                          />
+                          {newUserAccessProfileIds.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {newUserAccessProfileIds.map(id => {
+                                const d = designations.find(x => x.id === id);
+                                return d ? (
+                                  <span key={id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-violet-50 text-violet-700 text-[11px] font-bold border border-violet-200">
+                                    {d.name}
+                                    <button type="button" onClick={() => {
+                                      const ids = newUserAccessProfileIds.filter(x => x !== id);
+                                      setNewUserAccessProfileIds(ids);
+                                      applyAccessProfiles(ids);
+                                    }} className="hover:text-rose-500 transition-colors ml-0.5 text-[14px] leading-none">×</button>
+                                  </span>
+                                ) : null;
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -809,24 +892,35 @@ export default function UserManagement({
                     <div className="flex items-center gap-2 mb-5 border-l-4 border-purple-500 pl-4 py-1">
                       <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Management Access</p>
                     </div>
-                    <div className="rounded-sm border border-slate-100 bg-white overflow-hidden shadow-sm">
-                      <div className="flex items-center gap-4 px-6 py-4 bg-slate-50/80 border-b border-slate-100">
-                        <span className="w-48 shrink-0 text-[10px] font-black uppercase tracking-widest text-slate-400">Platform Section</span>
-                        <span className="w-20 text-center text-[10px] font-black uppercase tracking-widest text-slate-400">View</span>
-                        <span className="w-20 text-center text-[10px] font-black uppercase tracking-widest text-slate-400">Edit</span>
-                      </div>
-                      {PROFILE_SECTIONS.map(sec => (
-                        <div key={sec.key} className="flex items-center gap-4 px-6 py-4 border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors">
-                          <span className="w-48 shrink-0 text-[13px] font-bold text-slate-700">{sec.label}</span>
-                          {["view", "edit"].map(k => (
-                            <div key={k} className="w-20 flex justify-center">
-                              <input type="checkbox" checked={newUserProfilePerms[sec.key]?.[k] || false}
-                                onChange={e => setNewUserProfilePerms(prev => ({ ...prev, [sec.key]: { ...prev[sec.key], [k]: e.target.checked } }))}
-                                className="w-5 h-5 rounded-sm accent-purple-600 cursor-pointer shadow-sm" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {PROFILE_SECTIONS.map(sec => {
+                        const allChecked = sec.keys.every(({ k }) => newUserProfilePerms[sec.key]?.[k]);
+                        const anyChecked = sec.keys.some(({ k }) => newUserProfilePerms[sec.key]?.[k]);
+                        return (
+                          <div key={sec.key} className={`rounded-sm border p-3.5 transition-all ${anyChecked ? "border-violet-200 bg-violet-50/40" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+                            <div className="flex items-start justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
+                              <p className="text-[13px] font-bold text-slate-800">{sec.label}</p>
+                              <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0 px-2 py-1 rounded-sm hover:bg-slate-100/70 transition">
+                                <input type="checkbox" checked={allChecked}
+                                  ref={el => { if (el) el.indeterminate = anyChecked && !allChecked; }}
+                                  onChange={e => setNewUserProfilePerms(prev => ({ ...prev, [sec.key]: Object.fromEntries(sec.keys.map(({ k }) => [k, e.target.checked])) }))}
+                                  className="w-3.5 h-3.5 rounded accent-violet-600 cursor-pointer" />
+                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">All</span>
+                              </label>
                             </div>
-                          ))}
-                        </div>
-                      ))}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-2">
+                              {sec.keys.map(({ k, label }) => (
+                                <label key={k} className="flex items-center gap-1.5 cursor-pointer select-none group/item">
+                                  <input type="checkbox" checked={newUserProfilePerms[sec.key]?.[k] || false}
+                                    onChange={e => setNewUserProfilePerms(prev => ({ ...prev, [sec.key]: { ...prev[sec.key], [k]: e.target.checked } }))}
+                                    className="w-3.5 h-3.5 rounded accent-violet-600 cursor-pointer shrink-0" />
+                                  <span className="text-[11px] font-medium text-slate-600 group-hover/item:text-slate-900 transition-colors">{label}</span>
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -841,7 +935,7 @@ export default function UserManagement({
                     </div>
                     {modulesLoading
                       ? <div className="flex justify-center p-8"><Loader2 className="animate-spin text-emerald-500" /></div>
-                      : <GroupedPermissions modules={newUserModules} onChange={updateNewUserModule} />}
+                      : <GroupedPermissions modules={newUserModules} onChange={updateNewUserModule} allProjects={allProjects} selectedProjects={newUserAllowedProjects} onProjectChange={setNewUserAllowedProjects} />}
                   </div>
                 </form>
               </div>
@@ -890,6 +984,80 @@ export default function UserManagement({
                 <button onClick={() => setConfirmRoleChange(null)}
                   className="w-full py-2 text-xs font-bold text-slate-400 hover:text-slate-600 transition-all">
                   Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Member Modal */}
+      <AnimatePresence>
+        {editingMember && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+            <motion.div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingMember(null)} />
+            <motion.div className="relative w-full max-w-md bg-white shadow-2xl overflow-hidden" initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}>
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-[15px] font-black text-slate-800">Edit Member</h3>
+                  <p className="text-[12px] text-slate-400">{editingMember.email}</p>
+                </div>
+                <button onClick={() => setEditingMember(null)} className="w-8 h-8 flex items-center justify-center rounded-sm hover:bg-slate-100 text-slate-400 transition"><XCircle size={18} /></button>
+              </div>
+              <div className="p-5 space-y-4">
+                <div>
+                  <span className={lbl}>Full Name *</span>
+                  <input className={inp} value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} placeholder="Full Name" />
+                </div>
+                <div>
+                  <span className={lbl}>Phone Number</span>
+                  <input className={inp} value={editForm.contact_no} onChange={e => setEditForm(p => ({ ...p, contact_no: e.target.value }))} placeholder="+91 00000 00000" />
+                </div>
+                <div>
+                  <span className={lbl}>Designation</span>
+                  <input className={inp} value={editForm.designation} onChange={e => setEditForm(p => ({ ...p, designation: e.target.value }))} placeholder="e.g. Site Engineer" />
+                </div>
+                {designations.length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={lbl}>Access Profile</span>
+                      <span className="text-[9px] font-black uppercase tracking-widest text-rose-400">Min. 1 required</span>
+                    </div>
+                    <SearchableTemplateSelect
+                      designations={designations}
+                      selectedIds={editAccessProfileIds}
+                      multiSelect
+                      onPick={d => setEditAccessProfileIds(prev =>
+                        prev.includes(d.id) ? prev.filter(x => x !== d.id) : [...prev, d.id]
+                      )}
+                    />
+                    {editAccessProfileIds.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {editAccessProfileIds.map(id => {
+                          const d = designations.find(x => x.id === id);
+                          return d ? (
+                            <span key={id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-violet-50 text-violet-700 text-[11px] font-bold border border-violet-200">
+                              {d.name}
+                              <button type="button" onClick={() => setEditAccessProfileIds(prev => prev.filter(x => x !== id))} className="hover:text-rose-500 transition-colors ml-0.5">×</button>
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-rose-400 mt-1.5 ml-1">No access profile selected.</p>
+                    )}
+                  </div>
+                )}
+                <div>
+                  <span className={lbl}>Department</span>
+                  <input className={inp} value={editForm.department} onChange={e => setEditForm(p => ({ ...p, department: e.target.value }))} placeholder="e.g. Operations" />
+                </div>
+              </div>
+              <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+                <button onClick={() => setEditingMember(null)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-sm transition-all">Cancel</button>
+                <button onClick={handleEditSave} disabled={editSaving || !editForm.name.trim()}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-sm shadow-lg shadow-indigo-200 transition-all active:scale-95 flex items-center gap-2 disabled:opacity-60">
+                  {editSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save Changes
                 </button>
               </div>
             </motion.div>

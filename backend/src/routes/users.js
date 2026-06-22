@@ -28,7 +28,7 @@ router.get("/", requireAuth, async (req, res) => {
   const admin = getAdminClient();
   const { data, error } = await admin
     .from("users")
-    .select("id, name, email, contact_no, designation, department, role, is_active, avatar, created_at")
+    .select("id, name, email, contact_no, designation, designation_id, access_profile_ids, department, role, is_active, avatar, created_at")
     .order("created_at", { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });
@@ -46,7 +46,7 @@ router.get("/", requireAuth, async (req, res) => {
 
 /* POST /api/users — invite */
 router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
-  let { name, email, contact_no, designation, designation_id, department, role, profile_permissions } = req.body;
+  let { name, email, contact_no, designation, designation_id, access_profile_ids, department, role, profile_permissions } = req.body;
   if (!name || !email) return res.status(400).json({ error: "Name aur email required hai" });
   email = email.toLowerCase().trim();
 
@@ -78,6 +78,7 @@ router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
     contact_no:          contact_no          || "",
     designation:         designation         || "",
     designation_id:      designation_id      || null,
+    access_profile_ids:  access_profile_ids  || [],
     department:          department          || "",
     role:                role                || "user",
     profile_permissions: profile_permissions || null,
@@ -87,6 +88,19 @@ router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
 
   if (profileError) return res.status(500).json({ error: profileError.message });
   res.json({ success: true, user: profile });
+});
+
+/* POST /api/users/:id/resend-invite */
+router.post("/:id/resend-invite", requireAuth, requireAdminOrAbove, async (req, res) => {
+  const { id } = req.params;
+  const admin = getAdminClient();
+  const { data: user, error: fetchErr } = await admin.from("users").select("email").eq("id", id).single();
+  if (fetchErr || !user) return res.status(404).json({ error: "User not found" });
+  const { error } = await admin.auth.admin.inviteUserByEmail(user.email, {
+    redirectTo: process.env.FRONTEND_URL + "/",
+  });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ success: true });
 });
 
 /* POST /api/users/:id/signature — admin uploads signature on behalf of user */
@@ -146,7 +160,7 @@ router.post("/:id/signature", requireAuth, requireAdminOrAbove, async (req, res)
 /* PUT /api/users/:id */
 router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
   const { id } = req.params;
-  const { name, contact_no, designation, designation_id, department, role, is_active, profile_permissions, reset_permissions } = req.body;
+  const { name, contact_no, designation, designation_id, access_profile_ids, department, role, is_active, profile_permissions, reset_permissions } = req.body;
 
   const admin = getAdminClient();
   const { data: targetUser } = await admin.from("users").select("role").eq("id", id).single();
@@ -162,12 +176,13 @@ router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
   }
 
   const updates = {};
-  if (name           !== undefined) updates.name           = name;
-  if (contact_no     !== undefined) updates.contact_no     = contact_no;
-  if (designation    !== undefined) updates.designation    = designation;
-  if (designation_id !== undefined) updates.designation_id = designation_id || null;
-  if (department     !== undefined) updates.department     = department;
-  if (is_active      !== undefined) updates.is_active      = is_active;
+  if (name                !== undefined) updates.name                = name;
+  if (contact_no          !== undefined) updates.contact_no          = contact_no;
+  if (designation         !== undefined) updates.designation         = designation;
+  if (designation_id      !== undefined) updates.designation_id      = designation_id || null;
+  if (access_profile_ids  !== undefined) updates.access_profile_ids  = access_profile_ids || [];
+  if (department          !== undefined) updates.department          = department;
+  if (is_active           !== undefined) updates.is_active           = is_active;
 
   if (role !== undefined && role !== targetUser.role) {
     if (req.user.role === "global_admin") {
@@ -257,7 +272,7 @@ router.delete("/:id", requireAuth, requireGlobalAdmin, async (req, res) => {
 router.get("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res) => {
   const admin = getAdminClient();
   const { data: modules } = await admin.from("modules").select("*").eq("is_active", true).order("id");
-  const { data: user }   = await admin.from("users").select("profile_permissions").eq("id", req.params.id).single();
+  const { data: user }   = await admin.from("users").select("profile_permissions, access_profile_ids").eq("id", req.params.id).single();
   const { data: perms }   = await admin.from("permissions").select("*").eq("user_id", req.params.id);
 
   const result = (modules || []).map(mod => {
@@ -292,7 +307,7 @@ router.get("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
     };
   });
 
-  res.json({ permissions: result, profile_permissions: user?.profile_permissions || {} });
+  res.json({ permissions: result, profile_permissions: user?.profile_permissions || {}, access_profile_ids: user?.access_profile_ids || [] });
 });
 
 /* PUT /api/users/:id/permissions */

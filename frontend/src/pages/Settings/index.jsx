@@ -60,25 +60,53 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
     }
   };
 
-  /* On mount: sync current user permissions from DB */
+  /* On mount: sync current user data from DB */
   useEffect(() => {
     const syncProfile = async () => {
       try {
         const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
         if (!u.id) return;
-        const res = await fetch(`${API}/api/users/${u.id}/permissions`, {
+
+        // Fetch full user data (accessible to all users)
+        const meRes = await fetch(`${API}/api/auth/me`, {
           headers: { Authorization: `Bearer ${localStorage.getItem("bms_token")}` },
         });
-        if (res.ok) {
-          const data = await res.json();
-          const updated = {
-            ...u,
-            profile_permissions: data.profile_permissions,
-            app_permissions: data.permissions,
-          };
-          localStorage.setItem("bms_user", JSON.stringify(updated));
-          onProfileUpdate?.(updated);
+        if (!meRes.ok) return;
+        const meData = await meRes.json();
+        const meUser = meData.user || {};
+
+        const updated = {
+          ...u,
+          name:               meUser.name               ?? u.name,
+          designation:        meUser.designation        ?? u.designation,
+          department:         meUser.department         ?? u.department,
+          contact_no:         meUser.contact_no         ?? u.contact_no,
+          avatar:             meUser.avatar             ?? u.avatar,
+          access_profile_ids: meUser.access_profile_ids ?? u.access_profile_ids ?? [],
+          profile_permissions: meUser.profile_permissions ?? u.profile_permissions,
+        };
+
+        // Also sync app permissions if admin-level (existing logic)
+        if (["global_admin","super_admin","admin"].includes(u.role)) {
+          const permRes = await fetch(`${API}/api/users/${u.id}/permissions`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem("bms_token")}` },
+          });
+          if (permRes.ok) {
+            const permData = await permRes.json();
+            updated.app_permissions = permData.permissions;
+          }
+        } else {
+          const permRes = await fetch(`${API}/api/auth/my-permissions`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem("bms_token")}` },
+          });
+          if (permRes.ok) {
+            const permData = await permRes.json();
+            updated.app_permissions = permData.permissions;
+          }
         }
+
+        localStorage.setItem("bms_user", JSON.stringify(updated));
+        onProfileUpdate?.(updated);
       } catch {
         /* silent */
       }
@@ -88,7 +116,9 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
 
   /* Fetch designations when relevant sections become active */
   useEffect(() => {
-    if (
+    if (section === "profile") {
+      fetchDesignations();
+    } else if (
       (section === "roles" || section === "designations" || section === "team") &&
       (isGlobalAdmin || currentUser.role === "super_admin")
     ) {
@@ -113,7 +143,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
       ...(adminSettings
         ? [
             { id: "roles",        label: "Roles",        icon: ShieldCheck },
-            { id: "designations", label: "Designations", icon: Briefcase   },
+            { id: "designations", label: "Access Profiles", icon: Briefcase   },
           ]
         : []),
     ];
@@ -220,6 +250,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
                 currentUser={currentUser}
                 showToast={showToast}
                 onProfileUpdate={onProfileUpdate}
+                designations={designations}
               />
             )}
 

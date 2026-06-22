@@ -17,16 +17,14 @@ const GRADIENTS = [
   { name: "Royal",    value: "linear-gradient(135deg, #1e1b4b 0%, #4338ca 100%)" },
 ];
 
-export default function PersonalInfo({ currentUser, showToast, onProfileUpdate }) {
+export default function PersonalInfo({ currentUser, showToast, onProfileUpdate, designations = [] }) {
   const uiSettings = currentUser.profile_permissions?.ui || {};
   const roleLabel = ROLE_BADGE[currentUser.role]?.label || "User";
 
   const [loading, setLoading] = useState(false);
   const [profile, setProfile] = useState({
-    name:        currentUser.name        || "",
-    contact_no:  currentUser.contact_no  || "",
-    designation: currentUser.designation || "",
-    department:  currentUser.department  || "",
+    name:       currentUser.name       || "",
+    contact_no: currentUser.contact_no || "",
   });
 
   const [avatar, setAvatar]               = useState(currentUser.avatar || null);
@@ -317,6 +315,27 @@ export default function PersonalInfo({ currentUser, showToast, onProfileUpdate }
                     </div>
                   </div>
                 ))}
+                {/* Access Profiles */}
+                {(currentUser.access_profile_ids?.length > 0) && (
+                  <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-sm bg-violet-50 flex items-center justify-center shrink-0 mt-0.5">
+                      <Briefcase size={15} className="text-violet-500" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Access Profile</p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {currentUser.access_profile_ids.map(id => {
+                          const d = designations.find(x => x.id === id);
+                          return d ? (
+                            <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-violet-50 text-violet-700 text-[10px] font-bold border border-violet-100">
+                              {d.name}
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -382,14 +401,42 @@ export default function PersonalInfo({ currentUser, showToast, onProfileUpdate }
                     </div>
                     <p className="text-[10px] text-slate-400 mt-1.5 ml-1">Set by your administrator. Contact admin to change.</p>
                   </div>
-                  <div className="sm:col-span-2">
-                    <span className={lbl}>Department</span>
+
+                  {/* Access Profile — read-only, set by admin */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={lbl}>Access Profile</span>
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 bg-slate-200 px-1.5 py-0.5 rounded-sm">Admin</span>
+                    </div>
+                    <div className={`${inp} bg-slate-50 cursor-not-allowed min-h-[46px] flex flex-wrap gap-1.5 items-center`}>
+                      {currentUser.access_profile_ids?.length > 0 ? (
+                        currentUser.access_profile_ids.map(id => {
+                          const d = designations.find(x => x.id === id);
+                          return d ? (
+                            <span key={id} className="inline-flex items-center px-2.5 py-0.5 rounded-sm bg-violet-100 text-violet-700 text-[11px] font-bold border border-violet-200">
+                              {d.name}
+                            </span>
+                          ) : null;
+                        })
+                      ) : (
+                        <span className="text-slate-400 text-[13px]">Not assigned</span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1.5 ml-1">Set by your administrator. Contact admin to change.</p>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={lbl}>Department</span>
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 bg-slate-200 px-1.5 py-0.5 rounded-sm">Admin</span>
+                    </div>
                     <div className="relative">
                       <Building2 size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                      <input className={`${inp} pl-10`} value={profile.department}
-                        onChange={(e) => setProfile((p) => ({ ...p, department: e.target.value }))}
-                        placeholder="Engineering" />
+                      <input className={`${inp} pl-10 bg-slate-50 cursor-not-allowed text-slate-500`}
+                        value={currentUser.department || "Not assigned"} readOnly disabled
+                        title="Department is managed by your administrator" />
                     </div>
+                    <p className="text-[10px] text-slate-400 mt-1.5 ml-1">Set by your administrator. Contact admin to change.</p>
                   </div>
                 </div>
               </form>

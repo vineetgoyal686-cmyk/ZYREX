@@ -604,7 +604,7 @@ router.get("/me", async (req, res) => {
   const admin = getAdminClient();
   const { data: profile } = await admin
     .from("users")
-    .select("id, name, email, role, designation, department, contact_no, avatar, profile_permissions, permissions(*, modules(module_key, module_name))")
+    .select("id, name, email, role, designation, department, contact_no, avatar, access_profile_ids, profile_permissions, permissions(*, modules(module_key, module_name))")
     .eq("id", userId)
     .single();
 
