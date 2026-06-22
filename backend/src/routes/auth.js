@@ -141,7 +141,7 @@ router.get("/accept-invite", (req, res) => {
   const { token_hash, type = "invite" } = req.query;
   if (!token_hash) return res.status(400).send("Missing token_hash");
   const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-  res.redirect(`${frontendUrl}/set-password?token_hash=${encodeURIComponent(token_hash)}&type=${type}`);
+  res.redirect(`${frontendUrl}/app.html?token_hash=${encodeURIComponent(token_hash)}&type=${type}`);
 });
 
 /* ─────────────────────────────────────────

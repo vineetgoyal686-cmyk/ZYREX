@@ -12,7 +12,7 @@ const parseHash = () => {
   const tokenHash   = searchParams.get("token_hash") || null;
   const accessToken = hashParams.get("access_token") || null;
   const authError   = hashParams.get("error")        || searchParams.get("error") || null;
-  const isSetPassword = window.location.pathname === "/set-password";
+  const isSetPassword = false; // handled via token_hash query param on /app.html
 
   const isReset = isSetPassword || type === "recovery" || type === "invite"
     || !!tokenHash || !!accessToken || !!authError;
