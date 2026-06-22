@@ -99,6 +99,15 @@ function App() {
   const [isResetMode, setIsResetMode]   = useState(() => parseHash().isReset);
   const [isInviteMode, setIsInviteMode] = useState(() => parseHash().isInvite);
 
+  // Fallback: re-check URL after mount in case browser processed redirect late
+  useEffect(() => {
+    const { isReset, isInvite } = parseHash();
+    if (isReset && !isResetMode) {
+      setIsResetMode(true);
+      setIsInviteMode(isInvite);
+    }
+  }, []);
+
   const loggedIn = !!localStorage.getItem("bms_token");
   const [isLoggedIn, setIsLoggedIn] = useState(() => loggedIn);
   const [userRole, setUserRole] = useState(() => {
