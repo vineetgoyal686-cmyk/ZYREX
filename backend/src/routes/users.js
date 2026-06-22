@@ -70,13 +70,18 @@ router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
 
   const admin = getAdminClient();
 
+  // Check if user already exists in our users table
+  const { data: existingUser } = await admin.from("users").select("id, email").eq("email", email).maybeSingle();
+  if (existingUser) return res.status(409).json({ error: "Yeh email already registered hai. Resend invite use karo." });
+
   const { data: authData, error: authError } = await admin.auth.admin.inviteUserByEmail(email, {
     data: { name },
     redirectTo: process.env.FRONTEND_URL + "/",
   });
   if (authError) return res.status(400).json({ error: authError.message });
 
-  const { data: profile, error: profileError } = await admin.from("users").insert({
+  // upsert instead of insert — handles rare case where auth user exists but profile row doesn't
+  const { data: profile, error: profileError } = await admin.from("users").upsert({
     id:                  authData.user.id,
     name,
     email,
@@ -89,7 +94,7 @@ router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
     profile_permissions: profile_permissions || null,
     created_by_id:       req.body.createdById || null,
     created_by_name:     req.body.createdByName || null,
-  }).select().single();
+  }, { onConflict: "id" }).select().single();
 
   if (profileError) return res.status(500).json({ error: profileError.message });
   res.json({ success: true, user: profile });
