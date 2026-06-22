@@ -3,14 +3,23 @@ import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import Sidebar from "./components/Sidebar";
 
-// Read current tab + project from URL hash
+// Read current tab + project from URL hash OR query params (Supabase PKCE flow)
 const parseHash = () => {
-  const params = new URLSearchParams(window.location.hash.slice(1));
+  const hashParams   = new URLSearchParams(window.location.hash.slice(1));
+  const searchParams = new URLSearchParams(window.location.search);
+
+  // Supabase old flow: tokens in hash fragment (#access_token=...&type=invite)
+  // Supabase PKCE flow: tokens in query params (?token_hash=...&type=invite)
+  const type      = hashParams.get("type") || searchParams.get("type");
+  const tokenHash = searchParams.get("token_hash") || null;
+  const isReset   = type === "recovery" || type === "invite" || !!tokenHash;
+
   return {
-    tab:     params.get("tab")     || "global_dashboard",
-    project: params.get("project") || null,
-    isReset:  params.get("type") === "recovery" || params.get("type") === "invite",
-    isInvite: params.get("type") === "invite",
+    tab:       hashParams.get("tab")     || "global_dashboard",
+    project:   hashParams.get("project") || null,
+    isReset,
+    isInvite:  type === "invite" || (!!tokenHash && type === "invite"),
+    tokenHash,
   };
 };
 

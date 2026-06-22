@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Lock, Eye, EyeOff, CheckCircle2, ArrowRight } from "lucide-react";
+import { Lock, Eye, EyeOff, CheckCircle2, ArrowRight, Loader2 } from "lucide-react";
 import api from "../utils/api";
 
 export default function ResetPassword({ onComplete, isInvite = false }) {
@@ -12,17 +12,40 @@ export default function ResetPassword({ onComplete, isInvite = false }) {
   const [success, setSuccess]     = useState(false);
   const [token, setToken]               = useState("");
   const [refreshToken, setRefreshToken] = useState("");
+  const [exchanging, setExchanging]     = useState(false);
 
   useEffect(() => {
-    // Supabase puts access_token + refresh_token + type=recovery in the URL hash
-    const params = new URLSearchParams(window.location.hash.slice(1));
-    const t    = params.get("access_token");
-    const rt   = params.get("refresh_token");
-    const type = params.get("type");
+    const hashParams   = new URLSearchParams(window.location.hash.slice(1));
+    const searchParams = new URLSearchParams(window.location.search);
+
+    // 1. Try old hash-based flow first (#access_token=...&type=invite/recovery)
+    const t    = hashParams.get("access_token");
+    const rt   = hashParams.get("refresh_token");
+    const type = hashParams.get("type");
     if (t && (type === "recovery" || type === "invite")) {
       setToken(t);
       setRefreshToken(rt || "");
-    } else setError("Invalid or expired link. Please request a new one.");
+      return;
+    }
+
+    // 2. Try new PKCE flow (?token_hash=...&type=invite/recovery)
+    const tokenHash  = searchParams.get("token_hash");
+    const searchType = searchParams.get("type");
+    if (tokenHash && (searchType === "recovery" || searchType === "invite")) {
+      setExchanging(true);
+      api.post("/api/auth/verify-otp", { token_hash: tokenHash, type: searchType })
+        .then(({ data }) => {
+          setToken(data.access_token);
+          setRefreshToken(data.refresh_token || "");
+          // Clean URL so refresh doesn't re-trigger
+          window.history.replaceState(null, "", window.location.pathname);
+        })
+        .catch(() => setError("Invalid or expired link. Please request a new invite."))
+        .finally(() => setExchanging(false));
+      return;
+    }
+
+    setError("Invalid or expired link. Please request a new one.");
   }, []);
 
   const handleSubmit = async (e) => {
@@ -63,7 +86,12 @@ export default function ResetPassword({ onComplete, isInvite = false }) {
           </div>
         </div>
 
-        {success ? (
+        {exchanging ? (
+          <div className="flex flex-col items-center gap-3 py-8">
+            <Loader2 size={32} className="animate-spin text-blue-600" />
+            <p className="text-sm text-gray-500 font-medium">Verifying your invite link…</p>
+          </div>
+        ) : success ? (
           <div className="text-center">
             <div className="flex justify-center mb-4">
               <CheckCircle2 size={48} className="text-green-500" />

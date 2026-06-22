@@ -76,7 +76,7 @@ router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
 
   const { data: authData, error: authError } = await admin.auth.admin.inviteUserByEmail(email, {
     data: { name },
-    redirectTo: process.env.FRONTEND_URL + "/",
+    redirectTo: process.env.FRONTEND_URL + "/set-password",
   });
   if (authError) return res.status(400).json({ error: authError.message });
 

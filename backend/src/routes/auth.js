@@ -133,6 +133,27 @@ router.post("/forgot-password", async (req, res) => {
 });
 
 /* ─────────────────────────────────────────
+   POST /api/auth/verify-otp
+   Body: { token_hash, type }
+   Used by PKCE invite/recovery links (query-param based, newer Supabase)
+───────────────────────────────────────── */
+router.post("/verify-otp", async (req, res) => {
+  const { token_hash, type } = req.body;
+  if (!token_hash || !type) return res.status(400).json({ error: "token_hash and type required" });
+
+  const adminClient = getAdminClient();
+  const { data, error } = await adminClient.auth.verifyOtp({ token_hash, type });
+
+  if (error || !data?.session)
+    return res.status(401).json({ error: error?.message || "Invalid or expired link. Please request a new invite." });
+
+  res.json({
+    access_token:  data.session.access_token,
+    refresh_token: data.session.refresh_token,
+  });
+});
+
+/* ─────────────────────────────────────────
    POST /api/auth/reset-password
    Body: { password }
    Header: Authorization: Bearer <recovery_token>
