@@ -56,6 +56,7 @@ export default function UserManagement({
   const [permFilter,           setPermFilter]           = useState("all");
   const [editingAllowedProjects, setEditingAllowedProjects] = useState([]);
   const [allProjects,          setAllProjects]          = useState([]);
+  const [permAccessProfileIds, setPermAccessProfileIds] = useState([]);
 
   /* Add user */
   const [showAddUser,           setShowAddUser]           = useState(false);
@@ -301,6 +302,7 @@ export default function UserManagement({
     setEditingProfilePerms(DEFAULT_PROFILE_PERMS);
     setEditingAllowedProjects([]);
     setPickedTemplate(null);
+    setPermAccessProfileIds(member.access_profile_ids || []);
     try {
       const { data } = await api.get(`/api/users/${member.id}/permissions`);
       const list = data.permissions || [];
@@ -351,6 +353,8 @@ export default function UserManagement({
       await api.put(`/api/users/${permUser.id}/permissions`, {
         permissions: cleanPerms,
         profile_permissions: { ...editingProfilePerms, allowed_projects: editingAllowedProjects },
+        access_profile_ids: permAccessProfileIds,
+        designation_id: permAccessProfileIds[0] || null,
         ...designationPatch,
       });
       if (permUser.id === currentUser.id) {
@@ -382,220 +386,200 @@ export default function UserManagement({
       <div className="space-y-4">
         {permUser ? (
           /* ── Permissions panel ── */
-          <div className="bg-white rounded-none shadow-sm border border-slate-100 p-6">
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h2 className="text-lg font-black text-slate-800">Permissions</h2>
-                <p className="text-sm text-slate-500">{permUser.name} — {permUser.email}</p>
+          <div className="bg-white rounded-none shadow-sm border border-slate-100">
+
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-sm bg-indigo-50 flex items-center justify-center shrink-0">
+                  <ShieldCheck size={16} className="text-indigo-600" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-[15px] font-black text-slate-800">Permissions</h2>
+                  <p className="text-[12px] text-slate-500 truncate">{permUser.name} — {permUser.email}</p>
+                </div>
               </div>
               <button onClick={closePermsPanel}
-                className="text-sm font-semibold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-sm hover:bg-slate-100 transition-colors">
+                className="flex items-center gap-1.5 text-[12px] font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-sm hover:bg-slate-100 transition-colors border border-slate-200 shrink-0">
                 ← Back
               </button>
             </div>
 
-            {designations.length > 0 && (
-              <div className="mb-5 inline-flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-indigo-50 to-blue-50 rounded-sm border border-indigo-100">
-                <ShieldCheck size={15} className="text-indigo-600 shrink-0" />
-                <p className="text-[12px] font-bold text-slate-700 shrink-0">Apply Template:</p>
-                <SearchableTemplateSelect
-                  designations={designations}
-                  onPick={(tpl) => {
-                    const traw = tpl.profile_permissions || {};
-                    if (traw.add_project && !traw.manage_project) traw.manage_project = { view: !!traw.add_project.view, add: !!traw.add_project.edit, edit: !!traw.add_project.edit, delete: false };
-                    if (traw.manage_user && traw.manage_user.edit !== undefined && traw.manage_user.add === undefined) { const e = !!traw.manage_user.edit; traw.manage_user = { view: !!traw.manage_user.view, add: e, edit: e, delete: e, manage_permissions: e }; }
-                    const tmerged = {};
-                    PROFILE_SECTIONS.forEach(sec => { tmerged[sec.key] = { ...Object.fromEntries(sec.keys.map(({ k }) => [k, false])), ...(traw[sec.key] || {}) }; });
-                    setEditingProfilePerms(tmerged);
-                    const stored = tpl.app_permissions || [];
-                    setPermissions(prev => prev.map(m => {
-                      const match = stored.find(s => s.module_id === m.module_id);
-                      if (!match) return {
-                        ...m,
-                        can_view: false, can_add: false, can_edit: false, can_delete: false,
-                        can_trash: false, can_bulk_upload: false, can_export: false,
-                        can_log: false, can_download_document: false,
-                        can_take_action: false, can_submit: false, can_approve: false,
-                        can_issue: false, can_recall: false, can_reject: false, can_revert: false,
-                        can_request: false, can_withdraw: false,
-                        can_cancel: false, can_manage_amend: false,
-                        ...(m.module_key === "global_dashboard"
-                          ? Object.fromEntries(GLOBAL_DASHBOARD_ORDER_KEYS.map(k => [k, false]))
-                          : {}),
-                      };
-                      const merged = { ...m, ...match };
-                      if (m.module_key === "global_dashboard") {
-                        merged.order_overview_aging = !!match.order_overview_aging;
-                        merged.order_intake = !!match.order_intake;
-                        merged.order_payment = !!match.order_payment;
-                      }
-                      return merged;
-                    }));
-                    setPickedTemplate({ id: tpl.id, name: tpl.name });
-                    showToast(`Selected "${tpl.name}" template - save to apply`);
-                  }}
-                />
-              </div>
-            )}
-
             {permLoading ? (
-              <div className="flex justify-center py-8"><Loader2 size={24} className="animate-spin text-blue-500" /></div>
+              <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-blue-500" /></div>
             ) : (
-              <>
-                {permissions.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-slate-400">No modules found</p>
-                ) : (
-                  <div className="space-y-0">
-                    {/* Role Based */}
-                    <div className="mb-6">
-                      <div className="flex items-center gap-2 mb-4">
-                        <div className="w-1 h-5 rounded-full bg-violet-500" />
-                        <span className="text-[11px] font-black uppercase tracking-[0.18em] text-violet-600">Role Based</span>
-                        <div className="flex-1 h-px bg-violet-100" />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {PROFILE_SECTIONS.map(sec => {
-                          const allChecked = sec.keys.every(({ k }) => editingProfilePerms[sec.key]?.[k]);
-                          const anyChecked = sec.keys.some(({ k }) => editingProfilePerms[sec.key]?.[k]);
-                          return (
-                            <div key={sec.key} className={`rounded-sm border p-3.5 transition-all ${anyChecked ? "border-violet-200 bg-violet-50/40" : "border-slate-200 bg-white hover:border-slate-300"}`}>
-                              <div className="flex items-start justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-[13px] font-bold text-slate-800">{sec.label}</p>
-                                  <p className="text-[9px] font-medium text-slate-400 uppercase tracking-widest mt-0.5">{sec.key}</p>
-                                </div>
-                                <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0 px-2 py-1 rounded-sm hover:bg-slate-100/70 transition">
-                                  <input type="checkbox" checked={allChecked}
-                                    ref={el => { if (el) el.indeterminate = anyChecked && !allChecked; }}
-                                    onChange={e => setEditingProfilePerms(prev => ({ ...prev, [sec.key]: Object.fromEntries(sec.keys.map(({ k }) => [k, e.target.checked])) }))}
-                                    className="w-3.5 h-3.5 rounded accent-violet-600 cursor-pointer" />
-                                  <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">All</span>
-                                </label>
-                              </div>
-                              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-2">
-                                {sec.keys.map(({ k, label }) => (
-                                  <label key={k} className="flex items-center gap-1.5 cursor-pointer select-none group/item">
-                                    <input type="checkbox" checked={editingProfilePerms[sec.key]?.[k] || false}
-                                      onChange={e => setEditingProfilePerms(prev => ({ ...prev, [sec.key]: { ...prev[sec.key], [k]: e.target.checked } }))}
-                                      className="w-3.5 h-3.5 rounded accent-violet-600 cursor-pointer shrink-0" />
-                                    <span className="text-[11px] font-medium text-slate-600 group-hover/item:text-slate-900 transition-colors">{label}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+              <div className="p-6 space-y-6">
 
-                    {/* Designation Based */}
-                    <div>
-                      <div className="flex items-center gap-2 mb-4">
-                        <div className="w-1 h-5 rounded-full bg-blue-500" />
-                        <span className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-600">Access Profile Based</span>
-                        <div className="flex-1 h-px bg-blue-100" />
-                      </div>
-
-                      {allProjects.length > 0 && (
-                        <div className="mb-5">
-                          <div className="flex items-center justify-between mb-3">
-                            <p className={lbl}>Project Access</p>
-                            <div className="flex items-center gap-2">
-                              <button type="button" onClick={() => setEditingAllowedProjects(allProjects.map(p => p.id))}
-                                className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-sm bg-blue-100 text-blue-700 hover:bg-blue-600 hover:text-white transition-all">
-                                All
-                              </button>
-                              <button type="button" onClick={() => setEditingAllowedProjects([])}
-                                className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-sm bg-slate-100 text-slate-500 hover:bg-rose-100 hover:text-rose-600 transition-all">
-                                None
-                              </button>
-                            </div>
-                          </div>
-                          <p className="text-[11px] text-slate-400 mb-3">Tick the projects this user can access.</p>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                            {allProjects.map(proj => {
-                              const checked = editingAllowedProjects.includes(proj.id);
-                              return (
-                                <label key={proj.id}
-                                  className={`flex items-center gap-2.5 p-2.5 rounded-sm border cursor-pointer select-none transition-all ${checked ? "border-blue-200 bg-blue-50/60" : "border-slate-200 bg-white hover:border-slate-300"}`}>
-                                  <input type="checkbox" checked={checked}
-                                    onChange={e => setEditingAllowedProjects(prev =>
-                                      e.target.checked ? [...prev, proj.id] : prev.filter(id => id !== proj.id)
-                                    )}
-                                    className="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer shrink-0" />
-                                  <div className="min-w-0">
-                                    <p className={`text-[12px] font-bold truncate ${checked ? "text-blue-800" : "text-slate-700"}`}>{proj.projectName}</p>
-                                    {proj.projectCode && <p className="text-[9px] font-mono text-slate-400 uppercase tracking-widest">{proj.projectCode}</p>}
-                                    {!proj.isActive && <span className="text-[8px] font-black uppercase text-amber-600">Inactive</span>}
-                                  </div>
-                                </label>
-                              );
+                {/* ── Section 1: Access Profile ── */}
+                <div>
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-1 h-5 rounded-full bg-violet-500" />
+                    <span className="text-[11px] font-black uppercase tracking-[0.18em] text-violet-600">Access Profile</span>
+                    <div className="flex-1 h-px bg-violet-100" />
+                  </div>
+                  <div className="flex items-start gap-4 flex-wrap">
+                    {designations.length > 0 ? (
+                      <div className="w-72 shrink-0">
+                        <SearchableTemplateSelect
+                          designations={designations}
+                          selectedIds={permAccessProfileIds}
+                          multiSelect
+                          onPick={d => {
+                            const ids = permAccessProfileIds.includes(d.id)
+                              ? permAccessProfileIds.filter(x => x !== d.id)
+                              : [...permAccessProfileIds, d.id];
+                            setPermAccessProfileIds(ids);
+                          }}
+                        />
+                        {permAccessProfileIds.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {permAccessProfileIds.map(id => {
+                              const d = designations.find(x => x.id === id);
+                              return d ? (
+                                <span key={id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-violet-100 text-violet-700 text-[11px] font-bold border border-violet-200">
+                                  {d.name}
+                                  <button type="button" onClick={() => setPermAccessProfileIds(prev => prev.filter(x => x !== id))}
+                                    className="hover:text-rose-500 transition-colors text-[14px] leading-none ml-0.5">×</button>
+                                </span>
+                              ) : null;
                             })}
                           </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-[12px] text-slate-400 italic">No access profiles created yet.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Section 2: Management Permissions (super_admin / global_admin only) ── */}
+                {["global_admin", "super_admin"].includes(currentUser.role) && (
+                  <div className="rounded-sm border-2 border-indigo-200 bg-indigo-50/20">
+                    {/* Section header */}
+                    <div className="flex items-center gap-2 px-4 py-3 border-b border-indigo-100 bg-indigo-50/50">
+                      <div className="w-1.5 h-5 rounded-full bg-indigo-500" />
+                      <span className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-600">
+                        Management Permissions
+                      </span>
+                      <div className="flex-1" />
+                      <span className={`text-[10px] font-black px-2.5 py-1 rounded-sm ${(ROLE_BADGE[permUser.role] || ROLE_BADGE.user).color}`}>
+                        {(ROLE_BADGE[permUser.role] || ROLE_BADGE.user).label}
+                      </span>
+                    </div>
+
+                    {/* Grid */}
+                    <div className="p-4">
+                      {permissions.length === 0 ? (
+                        <p className="py-4 text-center text-sm text-slate-400">No modules found</p>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                          {PROFILE_SECTIONS.map(sec => {
+                            const allChecked = sec.keys.every(({ k }) => editingProfilePerms[sec.key]?.[k]);
+                            const anyChecked = sec.keys.some(({ k }) => editingProfilePerms[sec.key]?.[k]);
+                            return (
+                              <div key={sec.key} className={`rounded-sm border p-3.5 bg-white transition-all hover:border-indigo-300 ${anyChecked ? "border-indigo-200" : "border-slate-200"}`}>
+                                <div className="flex items-start justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-[13px] font-bold text-slate-800">{sec.label}</p>
+                                    <p className="text-[9px] font-medium text-slate-400 uppercase tracking-widest mt-0.5">{sec.key}</p>
+                                  </div>
+                                  <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0 px-2 py-1 rounded-sm hover:bg-slate-100/70 transition">
+                                    <input type="checkbox" checked={allChecked}
+                                      ref={el => { if (el) el.indeterminate = anyChecked && !allChecked; }}
+                                      onChange={e => setEditingProfilePerms(prev => ({ ...prev, [sec.key]: Object.fromEntries(sec.keys.map(({ k }) => [k, e.target.checked])) }))}
+                                      className="w-3.5 h-3.5 rounded accent-indigo-600 cursor-pointer" />
+                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">All</span>
+                                  </label>
+                                </div>
+                                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                                  {sec.keys.map(({ k, label }) => (
+                                    <label key={k} className="flex items-center gap-1.5 cursor-pointer select-none group/item">
+                                      <input type="checkbox" checked={editingProfilePerms[sec.key]?.[k] || false}
+                                        onChange={e => setEditingProfilePerms(prev => ({ ...prev, [sec.key]: { ...prev[sec.key], [k]: e.target.checked } }))}
+                                        className="w-3.5 h-3.5 rounded accent-indigo-600 shrink-0" />
+                                      <span className="text-[11px] font-medium text-slate-600 group-hover/item:text-slate-900 transition-colors">{label}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
-
-                      <div>
-                        <div className="flex items-center justify-between mb-3">
-                          <p className={lbl}>App Tab Permissions</p>
-                          <label className="flex items-center gap-2 cursor-pointer select-none">
-                            <input type="checkbox"
-                              checked={permissions.length > 0 && permissions.every(m => getModulePermKeysFull(m).every(k => m[k]))}
-                              onChange={e => setPermissions(prev => prev.map(m => {
-                                const keys = getModulePermKeysFull(m);
-                                return { ...m, ...Object.fromEntries(keys.map(k => [k, e.target.checked])) };
-                              }))}
-                              className="w-4 h-4 rounded accent-blue-600" />
-                            <span className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">Select All</span>
-                          </label>
-                        </div>
-                        <GroupedPermissions modules={permissions} onChange={updatePerm} />
-                      </div>
                     </div>
                   </div>
                 )}
-                <div className="mt-2">
+
+                {/* ── Section 3: Module Permissions (Project Access inside) ── */}
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-1 h-5 rounded-full bg-blue-500" />
+                      <span className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-600">Module Permissions</span>
+                      <div className="w-12 h-px bg-blue-100" />
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input type="checkbox"
+                        checked={permissions.length > 0 && permissions.every(m => getModulePermKeysFull(m).every(k => m[k]))}
+                        onChange={e => setPermissions(prev => prev.map(m => {
+                          const keys = getModulePermKeysFull(m);
+                          return { ...m, ...Object.fromEntries(keys.map(k => [k, e.target.checked])) };
+                        }))}
+                        className="w-3.5 h-3.5 rounded accent-blue-600" />
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Select All</span>
+                    </label>
+                  </div>
+                  <GroupedPermissions
+                    modules={permissions}
+                    onChange={updatePerm}
+                    allProjects={allProjects}
+                    selectedProjects={editingAllowedProjects}
+                    onProjectChange={setEditingAllowedProjects}
+                  />
+                </div>
+
+                {/* Save */}
+                <div className="pt-2 border-t border-slate-100">
                   <button onClick={savePerms} disabled={permLoading} className={btnPrimary}>
                     {permLoading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                    {pickedTemplate ? "Save Permissions & Access Profile" : "Save Permissions"}
+                    Save Permissions
                   </button>
                 </div>
-              </>
+              </div>
             )}
           </div>
         ) : (
           /* ── Team list ── */
-          <div className="bg-white rounded-none shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-6 border-b border-slate-50 bg-slate-50/30 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-black text-slate-800 tracking-tight">User Management</h2>
-                {!teamLoading && (
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <p className="text-xs font-medium text-slate-500">
-                      Total {members.length} team member{members.length !== 1 ? "s" : ""}
-                    </p>
-                    <div className="h-3 w-px bg-slate-200" />
-                    <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-sm">
-                      <button onClick={() => setViewType("list")}
-                        className={`p-1 rounded-sm transition-all ${viewType === "list" ? "bg-white shadow-sm text-blue-600" : "text-slate-400 hover:text-slate-600"}`} title="List View">
-                        <Briefcase size={14} />
-                      </button>
-                      <button onClick={() => setViewType("tile")}
-                        className={`p-1 rounded-sm transition-all ${viewType === "tile" ? "bg-white shadow-sm text-blue-600" : "text-slate-400 hover:text-slate-600"}`} title="Tile View">
-                        <LayoutDashboard size={14} />
-                      </button>
-                    </div>
-                  </div>
-                )}
+          <div className="flex flex-col h-full">
+
+            {/* Sticky header — full width, no side gaps */}
+            <div className="sticky top-0 z-20 bg-white border-b-2 border-slate-200 shadow-sm px-6 py-3 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="min-w-0">
+                  <h2 className="text-[15px] font-black text-slate-800 tracking-tight">User Management</h2>
+                  {!teamLoading && <p className="text-[11px] text-slate-400 mt-0.5">Total {members.length} team member{members.length !== 1 ? "s" : ""}</p>}
+                </div>
+                <div className="flex items-center gap-0.5 bg-slate-100 p-1 rounded-sm border border-slate-200 shrink-0">
+                  <button onClick={() => setViewType("list")} title="List View"
+                    className={`p-1.5 rounded-sm transition-all ${viewType === "list" ? "bg-white shadow-sm text-blue-600" : "text-slate-400 hover:text-slate-600"}`}>
+                    <Briefcase size={13} />
+                  </button>
+                  <button onClick={() => setViewType("tile")} title="Tile View"
+                    className={`p-1.5 rounded-sm transition-all ${viewType === "tile" ? "bg-white shadow-sm text-blue-600" : "text-slate-400 hover:text-slate-600"}`}>
+                    <LayoutDashboard size={13} />
+                  </button>
+                </div>
               </div>
               {(isGlobalAdmin || !!pp.manage_user?.add) && (
                 <button onClick={() => setShowAddUser(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-sm text-sm font-bold shadow-lg shadow-blue-200 transition-all active:scale-95">
-                  <UserPlus size={16} /> Add New User
+                  className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-sm text-sm font-bold shadow-md shadow-blue-200 transition-all active:scale-95 shrink-0">
+                  <UserPlus size={15} /> Add New User
                 </button>
               )}
             </div>
 
+            {/* Table area */}
+            <div className="flex-1 bg-[#f0f2f5] p-5">
             {teamLoading ? (
               <div className="flex justify-center py-16"><Loader2 size={32} className="animate-spin text-blue-500" /></div>
             ) : members.length === 0 ? (
@@ -606,113 +590,135 @@ export default function UserManagement({
                 <p className="text-sm font-medium text-slate-400">No team members found.</p>
               </div>
             ) : viewType === "list" ? (
-              <div className="p-5">
-                <div className="overflow-x-auto rounded-sm border border-slate-200">
-                  <table className="w-full text-left border-collapse">
-                    <thead className="bg-slate-50">
-                      <tr className="text-[10px] font-black uppercase tracking-widest text-slate-500 border-b border-slate-200">
-                        <th className="px-5 py-3 border-r border-slate-200">User</th>
-                        <th className="px-5 py-3 border-r border-slate-200">Email</th>
-                        <th className="px-5 py-3 border-r border-slate-200">Designation</th>
-                        <th className="px-5 py-3 border-r border-slate-200">Access Profile</th>
-                        <th className="px-5 py-3 border-r border-slate-200">Role</th>
-                        <th className="px-5 py-3 border-r border-slate-200 text-center">Status</th>
-                        <th className="px-5 py-3 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {members.map((m, idx) => {
-                        const mb = ROLE_BADGE[m.role] || ROLE_BADGE.user;
-                        const initials = m.name?.split(" ").map(n => n[0]).join("").toUpperCase() || "?";
-                        const isSelf = m.id === currentUser.id;
-                        const canHierarchy = canManage(currentUser.role, m.role, m.id);
-                        const canShield  = canHierarchy && (isGlobalAdmin || !!pp.manage_user?.manage_permissions);
-                        const canToggle  = canHierarchy && !isSelf && (isGlobalAdmin || !!pp.manage_user?.edit);
-                        const canDel     = canHierarchy && !isSelf && (isGlobalAdmin || !!pp.manage_user?.delete);
-                        const canManageRole = canHierarchy && m.role !== "global_admin" && (isGlobalAdmin || !!pp.manage_user?.edit);
-                        return (
-                          <tr key={m.id} className={`hover:bg-blue-50/30 transition group ${idx !== members.length - 1 ? "border-b border-slate-200" : ""}`}>
-                            <td className="px-5 py-3.5 border-r border-slate-100">
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className="relative w-10 h-10 rounded-sm flex items-center justify-center text-white font-black text-sm overflow-hidden shadow-sm shrink-0"
-                                  style={{ background: "linear-gradient(135deg, #3b82f6, #8b5cf6)" }}>
-                                  {m.avatar ? <img src={m.avatar} alt="" className="w-full h-full object-cover" /> : initials}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <p className="font-bold text-[14px] text-slate-800 truncate">{m.name}</p>
-                                    {isSelf && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[8px] font-black uppercase tracking-widest border border-blue-200">You</span>}
-                                  </div>
-                                  {m.contact_no && <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5"><Phone size={10} /> {m.contact_no}</p>}
-                                </div>
+              <div className="bg-white border border-slate-200 shadow-sm overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[900px]">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-300">
+                      {["S.No","Name","Email","Designation","Access Profile","Role","Status","Actions"].map((h, i) => (
+                        <th key={h} className={`px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 whitespace-nowrap border-r border-slate-200 last:border-r-0 ${i === 0 || i >= 6 ? "text-center" : ""}`}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {members.map((m, idx) => {
+                      const mb = ROLE_BADGE[m.role] || ROLE_BADGE.user;
+                      const initials = m.name?.split(" ").map(n => n[0]).join("").toUpperCase() || "?";
+                      const isSelf = m.id === currentUser.id;
+                      const canHierarchy = canManage(currentUser.role, m.role, m.id);
+                      const canShield  = canHierarchy && (isGlobalAdmin || !!pp.manage_user?.manage_permissions);
+                      const canToggle  = canHierarchy && !isSelf && (isGlobalAdmin || !!pp.manage_user?.edit);
+                      const canDel     = canHierarchy && !isSelf && (isGlobalAdmin || !!pp.manage_user?.delete);
+                      const canManageRole = canHierarchy && m.role !== "global_admin" && (isGlobalAdmin || !!pp.manage_user?.edit);
+                      const isEven = idx % 2 === 0;
+                      const td = "px-4 py-3 border-r border-slate-100 last:border-r-0";
+                      return (
+                        <tr key={m.id} className={`border-b border-slate-100 hover:bg-blue-50/30 transition-colors ${isEven ? "bg-white" : "bg-slate-50/40"}`}>
+                          <td className={`${td} text-[12px] font-bold text-slate-400 tabular-nums w-10 text-center`}>{idx + 1}</td>
+                          <td className={td}>
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-9 h-9 rounded-sm flex items-center justify-center text-white font-black text-sm overflow-hidden shadow-sm shrink-0"
+                                style={{ background: "linear-gradient(135deg, #3b82f6, #8b5cf6)" }}>
+                                {m.avatar ? <img src={m.avatar} alt="" className="w-full h-full object-cover" /> : initials}
                               </div>
-                            </td>
-                            <td className="px-5 py-3.5 border-r border-slate-100 text-[13px] text-slate-600">
-                              <div className="flex items-center gap-2"><Mail size={13} className="text-slate-400 shrink-0" /><span className="truncate">{m.email}</span></div>
-                            </td>
-                            <td className="px-5 py-3.5 border-r border-slate-100">
-                              <span className="text-[13px] text-slate-700">{m.designation || <span className="text-slate-300 italic text-[11px]">—</span>}</span>
-                            </td>
-                            <td className="px-5 py-3.5 border-r border-slate-100">
-                              {(m.access_profile_ids?.length > 0) ? (
-                                <div className="flex flex-wrap gap-1">
-                                  {m.access_profile_ids.map(id => {
-                                    const d = designations.find(d => d.id === id);
-                                    return d ? (
-                                      <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-violet-50 text-violet-700 text-[10px] font-bold border border-violet-100">
-                                        <Briefcase size={9} /> {d.name}
-                                      </span>
-                                    ) : null;
-                                  })}
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <p className="font-bold text-[13px] text-slate-800 truncate">{m.name}</p>
+                                  {isSelf && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded-sm text-[8px] font-black uppercase tracking-widest border border-blue-200">You</span>}
                                 </div>
-                              ) : <span className="text-[11px] text-slate-300 italic">—</span>}
-                            </td>
-                            <td className="px-5 py-3.5 border-r border-slate-100">
-                              {canManageRole && editingRoleId === m.id ? (
-                                <select autoFocus defaultValue={m.role}
-                                  className="text-[11px] font-bold px-2 py-1 rounded-sm border border-blue-400 bg-white text-slate-700 outline-none shadow-sm"
-                                  onChange={e => changeRole(m, e.target.value)}
-                                  onBlur={() => setEditingRoleId(null)}>
-                                  {getManageableRoles(currentUser.role).map(r => (
-                                    <option key={r} value={r}>{ROLE_BADGE[r]?.label || r}</option>
-                                  ))}
-                                </select>
-                              ) : (
-                                <span onClick={() => canManageRole && setEditingRoleId(m.id)}
-                                  className={`inline-flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1 rounded-sm ${mb.color} ${canManageRole ? "cursor-pointer hover:shadow-sm" : ""}`}>
-                                  {mb.label.toUpperCase()}
-                                  {canManageRole && <Pencil size={9} className="opacity-50" />}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-5 py-3.5 border-r border-slate-100 text-center">
-                              <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest ${m.is_active ? "text-emerald-600" : "text-rose-600"}`}>
-                                <span className={`w-1.5 h-1.5 rounded-full ${m.is_active ? "bg-emerald-500" : "bg-rose-500"}`} />
-                                {m.is_active ? "Active" : "Inactive"}
+                                {m.contact_no && <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5"><Phone size={9} /> {m.contact_no}</p>}
+                              </div>
+                            </div>
+                          </td>
+                          <td className={`${td} text-[12px] text-slate-500 max-w-[180px]`}>
+                            <div className="flex items-center gap-1.5 min-w-0"><Mail size={12} className="text-slate-300 shrink-0" /><span className="truncate">{m.email}</span></div>
+                          </td>
+                          <td className={`${td} text-[12px] text-slate-600 whitespace-nowrap`}>
+                            {m.designation || <span className="text-slate-300">—</span>}
+                          </td>
+                          <td className={td}>
+                            {(m.access_profile_ids?.length > 0) ? (
+                              <div className="flex flex-wrap gap-1">
+                                {m.access_profile_ids.map(id => {
+                                  const d = designations.find(d => d.id === id);
+                                  return d ? (
+                                    <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-violet-50 text-violet-700 text-[10px] font-bold border border-violet-200">
+                                      <Briefcase size={8} /> {d.name}
+                                    </span>
+                                  ) : null;
+                                })}
+                              </div>
+                            ) : <span className="text-slate-300 text-[12px]">—</span>}
+                          </td>
+                          <td className={td}>
+                            {canManageRole && editingRoleId === m.id ? (
+                              <select autoFocus defaultValue={m.role}
+                                className="text-[11px] font-bold px-2 py-1 rounded-sm border border-blue-400 bg-white text-slate-700 outline-none shadow-sm"
+                                onChange={e => changeRole(m, e.target.value)}
+                                onBlur={() => setEditingRoleId(null)}>
+                                {getManageableRoles(currentUser.role).map(r => (
+                                  <option key={r} value={r}>{ROLE_BADGE[r]?.label || r}</option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span onClick={() => canManageRole && setEditingRoleId(m.id)}
+                                className={`inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-sm ${mb.color} ${canManageRole ? "cursor-pointer hover:shadow-sm" : ""} whitespace-nowrap`}>
+                                {mb.label.toUpperCase()}
+                                {canManageRole && <Pencil size={8} className="opacity-50" />}
                               </span>
-                            </td>
-                            <td className="px-5 py-3.5">
-                              <div className="flex items-center justify-end gap-1.5">
-                                {(canShield || canToggle || canDel || canHierarchy) ? (
-                                  <>
-                                    {canHierarchy && <button onClick={() => { setEditingMember(m); setEditForm({ name: m.name, contact_no: m.contact_no || "", designation: m.designation || "", department: m.department || "" }); setEditAccessProfileIds(m.access_profile_ids || []); }} title="Edit Info" className="p-2 rounded-sm text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition border border-transparent hover:border-indigo-200"><Pencil size={16} /></button>}
-                                    {canHierarchy && <button onClick={() => handleResendInvite(m)} title="Resend Invite" className="p-2 rounded-sm text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition border border-transparent hover:border-emerald-200"><SendHorizonal size={16} /></button>}
-                                    {canShield && <button onClick={() => viewPerms(m)} title="Manage Permissions" className="p-2 rounded-sm text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition border border-transparent hover:border-blue-200"><ShieldCheck size={16} /></button>}
-                                    {canToggle && <button onClick={() => toggleActive(m)} title={m.is_active ? "Deactivate" : "Activate"} className={`p-2 rounded-sm transition border border-transparent ${m.is_active ? "text-slate-400 hover:text-amber-600 hover:bg-amber-50 hover:border-amber-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 hover:border-emerald-200"}`}>{m.is_active ? <XCircle size={16} /> : <CheckCircle2 size={16} />}</button>}
-                                    {canDel && <button onClick={() => removeUser(m)} title="Remove User" className="p-2 rounded-sm text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition border border-transparent hover:border-rose-200"><Trash2 size={16} /></button>}
-                                  </>
-                                ) : <span className="text-[10px] text-slate-300 italic">—</span>}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                            )}
+                          </td>
+                          <td className={`${td} text-center`}>
+                            <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-sm border ${m.is_active ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-600 border-rose-200"}`}>
+                              <span className={`w-1.5 h-1.5 rounded-full ${m.is_active ? "bg-emerald-500" : "bg-rose-500"}`} />
+                              {m.is_active ? "Active" : "Inactive"}
+                            </span>
+                          </td>
+                          <td className={`${td} text-center`}>
+                            <div className="flex items-center justify-center gap-1">
+                              {(canShield || canToggle || canDel || canHierarchy) ? (
+                                <>
+                                  {canHierarchy && (
+                                    <button onClick={() => { setEditingMember(m); setEditForm({ name: m.name, contact_no: m.contact_no || "", designation: m.designation || "", department: m.department || "" }); setEditAccessProfileIds(m.access_profile_ids || []); }}
+                                      title="Edit Info" className="w-8 h-8 flex items-center justify-center rounded-sm bg-indigo-50 text-indigo-500 border border-indigo-100 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all">
+                                      <Pencil size={13} />
+                                    </button>
+                                  )}
+                                  {canHierarchy && (
+                                    <button onClick={() => handleResendInvite(m)} title="Resend Invite"
+                                      className="w-8 h-8 flex items-center justify-center rounded-sm bg-emerald-50 text-emerald-500 border border-emerald-100 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all">
+                                      <SendHorizonal size={13} />
+                                    </button>
+                                  )}
+                                  {canShield && (
+                                    <button onClick={() => viewPerms(m)} title="Manage Permissions"
+                                      className="w-8 h-8 flex items-center justify-center rounded-sm bg-blue-50 text-blue-500 border border-blue-100 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all">
+                                      <ShieldCheck size={13} />
+                                    </button>
+                                  )}
+                                  {canToggle && (
+                                    <button onClick={() => toggleActive(m)} title={m.is_active ? "Deactivate" : "Activate"}
+                                      className={`w-8 h-8 flex items-center justify-center rounded-sm border transition-all ${m.is_active ? "bg-amber-50 text-amber-500 border-amber-100 hover:bg-amber-500 hover:text-white hover:border-amber-500" : "bg-emerald-50 text-emerald-500 border-emerald-100 hover:bg-emerald-500 hover:text-white hover:border-emerald-500"}`}>
+                                      {m.is_active ? <XCircle size={13} /> : <CheckCircle2 size={13} />}
+                                    </button>
+                                  )}
+                                  {canDel && (
+                                    <button onClick={() => removeUser(m)} title="Remove User"
+                                      className="w-8 h-8 flex items-center justify-center rounded-sm bg-rose-50 text-rose-500 border border-rose-100 hover:bg-rose-600 hover:text-white hover:border-rose-600 transition-all">
+                                      <Trash2 size={13} />
+                                    </button>
+                                  )}
+                                </>
+                              ) : <span className="text-slate-300 text-[11px]">—</span>}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {members.map((m) => {
                   const mb = ROLE_BADGE[m.role] || ROLE_BADGE.user;
                   const initials = m.name?.split(" ").map(n => n[0]).join("").toUpperCase() || "?";
@@ -759,6 +765,7 @@ export default function UserManagement({
                 })}
               </div>
             )}
+            </div>{/* end flex-1 bg area */}
           </div>
         )}
       </div>

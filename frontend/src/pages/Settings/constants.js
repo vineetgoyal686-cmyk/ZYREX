@@ -8,17 +8,25 @@ export const ROLE_BADGE = {
 };
 
 export const PROFILE_SECTIONS = [
-  { key: "manage_user",    label: "Users",         keys: [{ k: "view", label: "View" }, { k: "add", label: "Add" }, { k: "edit", label: "Edit" }, { k: "delete", label: "Delete" }, { k: "manage_permissions", label: "Manage Permissions" }] },
-  { key: "manage_project", label: "Projects",      keys: [{ k: "view", label: "View" }, { k: "add", label: "Add" }, { k: "edit", label: "Edit" }, { k: "delete", label: "Delete" }] },
-  { key: "serialization",  label: "Serialization", keys: [{ k: "view", label: "View" }, { k: "edit", label: "Edit" }] },
-  { key: "approval_flow",  label: "Approval Flow", keys: [{ k: "view", label: "View" }, { k: "edit", label: "Edit" }] },
+  { key: "manage_user",      label: "User Management",   keys: [{ k: "view", label: "View" }, { k: "add", label: "Add" }, { k: "edit", label: "Edit" }, { k: "delete", label: "Delete" }, { k: "manage_permissions", label: "Manage Permissions" }] },
+  { key: "manage_project",   label: "Project Management",keys: [{ k: "view", label: "View" }, { k: "add", label: "Add" }, { k: "edit", label: "Edit" }, { k: "delete", label: "Delete" }] },
+  { key: "designation",      label: "Access Profile",    keys: [{ k: "view", label: "View" }, { k: "add", label: "Add" }, { k: "edit", label: "Edit" }, { k: "delete", label: "Delete" }] },
+  { key: "approval_flow",    label: "Approval Flow",     keys: [{ k: "view", label: "View" }, { k: "add", label: "Add" }, { k: "edit", label: "Edit" }, { k: "delete", label: "Delete" }] },
+  { key: "serialization",    label: "Serialization",     keys: [{ k: "view", label: "View" }, { k: "add", label: "Add" }, { k: "edit", label: "Edit" }, { k: "delete", label: "Delete" }] },
+  { key: "request_handler",  label: "Request Handler",   keys: [{ k: "view", label: "View" }, { k: "edit", label: "Edit" }] },
+  { key: "delegation",       label: "Delegation",        keys: [{ k: "view", label: "View" }, { k: "add", label: "Add" }, { k: "edit", label: "Edit" }, { k: "delete", label: "Delete" }] },
+  { key: "mail_management",  label: "Mail Management",   keys: [{ k: "view", label: "View" }, { k: "add", label: "Add" }, { k: "edit", label: "Edit" }, { k: "delete", label: "Delete" }] },
 ];
 
 export const DEFAULT_PROFILE_PERMS = {
-  manage_user:    { view: false, add: false, edit: false, delete: false, manage_permissions: false },
-  manage_project: { view: false, add: false, edit: false, delete: false },
-  serialization:  { view: false, edit: false },
-  approval_flow:  { view: false, edit: false },
+  manage_user:     { view: false, add: false, edit: false, delete: false, manage_permissions: false },
+  manage_project:  { view: false, add: false, edit: false, delete: false },
+  designation:     { view: false, add: false, edit: false, delete: false },
+  approval_flow:   { view: false, add: false, edit: false, delete: false },
+  serialization:   { view: false, add: false, edit: false, delete: false },
+  request_handler: { view: false, edit: false },
+  delegation:      { view: false, add: false, edit: false, delete: false },
+  mail_management: { view: false, add: false, edit: false, delete: false },
 };
 
 export const MODULE_PERM_KEYS = [

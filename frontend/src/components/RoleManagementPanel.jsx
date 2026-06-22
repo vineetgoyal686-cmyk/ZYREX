@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useCallback, useEffect } from "react";
 import {
   Users, FolderOpen, Briefcase, Workflow, KeyRound, Inbox,
-  ShieldUser, UserCog, User, Info, ChevronDown, Save,
+  ShieldUser, UserCog, User, Info, ChevronDown, Save, UserCheck, Mail,
 } from "lucide-react";
 
 const STORAGE_KEY = "zyhawk_role_management_matrix_v1";
@@ -53,7 +53,7 @@ const MODULES = [
         label: "Edit User",
         children: [
           { key: "change_role", label: "Change Role" },
-          { key: "change_designation", label: "Change Designation" },
+          { key: "change_designation", label: "Change Access Profile" },
           { key: "custom_permissions", label: "Custom Permissions" },
           { key: "activate_user", label: "Activate / Deactivate User" },
         ],
@@ -73,13 +73,13 @@ const MODULES = [
   },
   {
     id: "designation",
-    label: "Designation",
+    label: "Access Profile",
     Icon: Briefcase,
     perms: [
-      { key: "view", label: "View Designation" },
-      { key: "add", label: "Add Designation" },
-      { key: "edit", label: "Edit Designation" },
-      { key: "delete", label: "Delete Designation" },
+      { key: "view", label: "View Access Profile" },
+      { key: "add", label: "Add Access Profile" },
+      { key: "edit", label: "Edit Access Profile" },
+      { key: "delete", label: "Delete Access Profile" },
     ],
   },
   {
@@ -111,6 +111,28 @@ const MODULES = [
     perms: [
       { key: "view", label: "View Request Handler" },
       { key: "edit", label: "Edit Request Handler" },
+    ],
+  },
+  {
+    id: "delegation",
+    label: "Delegation",
+    Icon: UserCheck,
+    perms: [
+      { key: "view", label: "View Delegation" },
+      { key: "add", label: "Add Delegation" },
+      { key: "edit", label: "Edit Delegation" },
+      { key: "delete", label: "Delete Delegation" },
+    ],
+  },
+  {
+    id: "mail_management",
+    label: "Mail Management",
+    Icon: Mail,
+    perms: [
+      { key: "view", label: "View Mail Management" },
+      { key: "add", label: "Add Mail Template" },
+      { key: "edit", label: "Edit Mail Template" },
+      { key: "delete", label: "Delete Mail Template" },
     ],
   },
 ];

@@ -243,7 +243,20 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
             <Serialization isGlobalAdmin={isGlobalAdmin} showToast={showToast} />
           )}
 
-          <div className={`min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4 ${section === "serialization" ? "hidden" : ""}`}>
+          {/* Team = full-bleed, no padding */}
+          {section === "team" && (isGlobalAdmin || !!pp.manage_user?.view) && (
+            <UserManagement
+              currentUser={currentUser}
+              isGlobalAdmin={isGlobalAdmin}
+              pp={pp}
+              showToast={showToast}
+              onProfileUpdate={onProfileUpdate}
+              designations={designations}
+              fetchDesignations={fetchDesignations}
+            />
+          )}
+
+          <div className={`min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4 ${(section === "serialization" || section === "team") ? "hidden" : ""}`}>
 
             {section === "profile" && (
               <PersonalInfo
@@ -260,18 +273,6 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
 
             {section === "delegation" && (
               <Delegation showToast={showToast} />
-            )}
-
-            {section === "team" && (isGlobalAdmin || !!pp.manage_user?.view) && (
-              <UserManagement
-                currentUser={currentUser}
-                isGlobalAdmin={isGlobalAdmin}
-                pp={pp}
-                showToast={showToast}
-                onProfileUpdate={onProfileUpdate}
-                designations={designations}
-                fetchDesignations={fetchDesignations}
-              />
             )}
 
             {section === "roles" && adminSettings && (
