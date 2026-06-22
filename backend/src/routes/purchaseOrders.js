@@ -1190,7 +1190,7 @@ router.post("/bulk-import", async (req, res) => {
           siteName: site.project_name || site.site_name || "",
           city: site.city || "",
           state: site.state || "",
-          siteAddress: site.site_address || "",
+          siteAddress: site.site_address || site.address || "",
           billingAddress: site.billing_address || "",
         };
 
@@ -1762,7 +1762,7 @@ const loadOrderForRender = async (orderId) => {
   }));
   const comp = cleanOrder.companies || {};
   const vend = cleanOrder.vendors || {};
-  const site = cleanOrder.sites || {};
+  const site = cleanOrder.sites || cleanOrder.snapshot?.site || {};
   // Mirror ViewOrder logic: snapshot contacts first, fallback to live JOIN
   const snapContacts = cleanOrder.snapshot?.contacts;
   const liveContact = cleanOrder.contact_person;

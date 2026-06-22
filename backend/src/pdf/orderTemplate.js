@@ -15,7 +15,7 @@ const css = `
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; color: #000; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   body { font-size: 11px; line-height: 1.6; }
-  :root { --box-line: 1px solid #444; }
+  :root { --box-line: 1px solid #333; }
 
   .page { position: relative; padding-top: 18px; }
   .page + .page { page-break-before: always; }
@@ -34,14 +34,12 @@ const css = `
   .annexure-content li { margin-bottom: 4px; }
   .annexure-content img { max-width: 100%; height: auto; }
 
-  table.meta { width: 100%; border-collapse: collapse; border: var(--box-line); margin: -2mm 0 0; }
-  table.meta td { border: var(--box-line); padding: 5px 7px; vertical-align: middle; width: 50%; }
-  table.meta .label { font-size: 12.5px; font-weight: 700; text-transform: none; display: inline-block; min-width: 100px; margin-right: 10px; }
-  table.meta .value { font-size: 13px; font-weight: 500; }
-
-  .details-wrap { display: flex; border: var(--box-line); border-top: 0; margin-bottom: 0; }
-  .details-col { flex: 1; padding: 9px 11px; }
-  .details-col + .details-col { border-left: var(--box-line); }
+  table.order-frame { width: 100%; border-collapse: collapse; border: 1px solid #333; margin: -2mm 0 0; }
+  table.order-frame td { border: 1px solid #333; vertical-align: top; }
+  table.order-frame .meta-td { padding: 5px 7px; vertical-align: middle; width: 50%; }
+  table.order-frame .detail-td { padding: 9px 11px; width: 50%; }
+  .label { font-size: 12.5px; font-weight: 700; text-transform: none; display: inline-block; min-width: 100px; margin-right: 10px; }
+  .value { font-size: 13px; font-weight: 500; }
   .details-tab {
     clip-path: polygon(0 0, 100% 0, 85% 100%, 0 100%);
     background: #000000 !important; color: #ffffff !important; padding: 3px 22px 3px 8px;
@@ -116,11 +114,14 @@ const css = `
 
   .section { margin-top: 10px; }
   .section-title {
+    clip-path: polygon(0 0, 100% 0, 85% 100%, 0 100%);
+    background: #000; color: #fff; padding: 3px 22px 3px 8px;
+    font-weight: 700; font-size: 10.5px; text-transform: uppercase;
     display: inline-block; margin-bottom: 6px; page-break-inside: avoid;
-    font-weight: 800; font-size: 11px; text-transform: uppercase; color: #000;
-    border-bottom: 2.5px solid #000; padding-bottom: 2px;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
-  .section .content { font-size: 12.5px; line-height: 1.7; text-align: justify; }
+  .section .content { font-size: 12.5px; line-height: 1.7; text-align: justify; color: #000 !important; }
+  .section .content p, .section .content li, .section .content span, .section .content div { color: #000 !important; }
   .section .content ol { margin: 0 0 6px 0; padding-left: 28px; list-style: decimal; }
   .section .content ol ol { list-style-type: lower-alpha; }
   .section .content ol ol ol { list-style-type: lower-roman; }
@@ -154,25 +155,20 @@ const renderMetaGrid = (order, site) => {
     ["Requisition By", order.request_by || order.requested_by],
   ];
 
-  let html = "<table class='meta'><tbody>";
+  let html = "";
   for (let i = 0; i < rows.length; i += 2) {
     html += "<tr>";
     for (let j = 0; j < 2; j++) {
       const row = rows[i + j];
-      if (!row) {
-        html += "<td></td>";
-        continue;
-      }
-      html += `<td><span class="label">${escapeHtml(row[0])} :</span>   <span class="value">${escapeHtml(row[1] || "--")}</span></td>`;
+      if (!row) { html += `<td class="meta-td"></td>`; continue; }
+      html += `<td class="meta-td"><span class="label">${escapeHtml(row[0])} :</span><span class="value">${escapeHtml(row[1] || "--")}</span></td>`;
     }
     html += "</tr>";
   }
-  html += "</tbody></table>";
   return html;
 };
 
 const renderVendorCard = (vend) => `
-  <div class="details-col">
     <div class="details-tab">Vendor Details</div>
     <div class="party-name">${escapeHtml(vend.vendor_name || vend.vendorName || "N/A")}</div>
     <div class="card">
@@ -200,11 +196,9 @@ const renderVendorCard = (vend) => `
       <div class="kv"><span class="kv-label">Phone:</span><span class="kv-value">${escapeHtml(vend.mobile || vend.phone || "N/A")}</span></div>
       <div class="kv"><span class="kv-label">Email:</span><span class="kv-value">${escapeHtml(vend.email || "N/A")}</span></div>
     </div>
-  </div>
 `;
 
 const renderCompanyCard = (comp, site, contacts, billingProfile) => `
-  <div class="details-col">
     <div class="details-tab">Company Details</div>
     <div class="party-name">${escapeHtml(comp.company_name || comp.companyName || "N/A")}</div>
     <div class="card">
@@ -231,7 +225,7 @@ const renderCompanyCard = (comp, site, contacts, billingProfile) => `
                   const rawName = c.person_name || c.personName || "N/A";
                   const cleanName = rawName.replace(/[\t\n\r]/g, ' ').replace(/\s+/g, ' ').trim();
                   const phone = c.contact_number || c.contactNumber || "N/A";
-                  return `<div style="display: flex; margin-bottom: 2px; font-size: 9px; align-items: center;">
+                  return `<div style="display: flex; margin-bottom: 2px; font-size: 10.5px; align-items: center;">
                     <span style="font-weight: 400; width: 180px; display: inline-block;">${escapeHtml(cleanName)}</span>
                     <span style="font-weight: 400; display: flex; align-items: center;">
                       📞 ${escapeHtml(phone)}
@@ -243,7 +237,6 @@ const renderCompanyCard = (comp, site, contacts, billingProfile) => `
           : '<div class="card-text" style="font-style:italic;color:#666;">-- NA --</div>'
       }
     </div>
-  </div>
 `;
 
 const renderItemsTable = (order, items) => {
@@ -767,11 +760,13 @@ const renderOrderHtml = ({ order, items = [], comp = {}, vend = {}, site = {}, c
 ${openWrap}
 ${preview ? previewHeaderHtml : ""}
 <div class="page">
-  ${renderMetaGrid(order, site)}
-  <div class="details-wrap">
-    ${renderVendorCard(vend)}
-    ${renderCompanyCard(comp, site, contacts, billingProfile)}
-  </div>
+  <table class="order-frame">
+    ${renderMetaGrid(order, site)}
+    <tr>
+      <td class="detail-td">${renderVendorCard(vend)}</td>
+      <td class="detail-td">${renderCompanyCard(comp, site, contacts, billingProfile)}</td>
+    </tr>
+  </table>
   ${subject ? `<div class="subject-bar"><span class="lbl">Subject :</span>${escapeHtml(subject)}</div>` : ""}
   ${renderItemsTable(order, items)}
   ${renderTotals(order)}

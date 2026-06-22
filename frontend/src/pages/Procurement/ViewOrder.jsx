@@ -1,9 +1,38 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ArrowLeft, Search, Building2, User, Landmark, MapPin, Receipt, ShieldQuestion, FileText, CheckCircle2, Phone, Mail, FileDown, Download, Eye, X, Upload, Trash2, FileCheck, Lock, ShoppingCart, Package, GitMerge, Calendar, Undo2, Folder, Plus, Clock, Pencil, ChevronDown } from "lucide-react";
 import { getCachedOrderDetails, preloadOrderDetails, seedOrderDetails } from "./orderDetailsCache";
 import { normalizeOrderSite } from "../../utils/orderSite";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
+
+function PdfViewTab({ pdfBlobUrl, pdfLoading, onDownload }) {
+  return (
+    <div className="bg-slate-300 flex flex-col" style={{ minHeight: "calc(100vh - 120px)" }}>
+      <div className="px-4 py-3 flex items-center justify-end print:hidden bg-slate-200 border-b border-slate-300">
+        <button
+          disabled={pdfLoading}
+          onClick={onDownload}
+          className={`flex items-center gap-2 px-6 py-2.5 text-white font-bold rounded-xl shadow-lg transition-all text-xs uppercase ${pdfLoading ? "bg-slate-400" : "bg-[#1b3e8a] hover:bg-[#16326d]"}`}
+        >
+          <Download size={14} /> {pdfLoading ? "Working..." : "Download PDF"}
+        </button>
+      </div>
+      <div className="flex-1 flex justify-center px-4 py-4">
+        {pdfBlobUrl ? (
+          <iframe
+            src={pdfBlobUrl}
+            title="Order Preview"
+            style={{ width: "210mm", minHeight: "calc(100vh - 160px)", border: "none", background: "#fff", boxShadow: "0 2px 12px rgba(0,0,0,0.15)" }}
+          />
+        ) : (
+          <div className="text-slate-400 text-sm py-12">
+            {pdfLoading ? "Loading preview…" : "Preview not available."}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const makeOrderPdfFilename = (orderNumber, fallback = "Order") => {
   const base = String(orderNumber || fallback).trim().replace(/\.pdf$/i, "") || fallback;
@@ -2949,23 +2978,11 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       )}
 
       {activeTab === "PDF View" && (
-        <div className="bg-slate-200">
-          <div className="px-4 py-3 flex justify-end print:hidden">
-            <button disabled={pdfLoading} onClick={() => handleSafeDownload(true)} className={`flex items-center gap-2 px-6 py-2.5 text-white font-bold rounded-xl shadow-lg transition-all text-xs uppercase ${pdfLoading ? 'bg-slate-400' : 'bg-[#1b3e8a] hover:bg-[#16326d]'}`}>
-              <Download size={14} /> {pdfLoading ? "Working..." : "Download PDF"}
-            </button>
-          </div>
-          {data?.order?.id && (
-            <div className="flex justify-center px-4 pb-8 bg-slate-300">
-              <iframe
-                title="Order PDF"
-                src={pdfBlobUrl || "about:blank"}
-                className="bg-white shadow-xl"
-                style={{ border: 0, width: "210mm", maxWidth: "100%", height: "297mm" }}
-              />
-            </div>
-          )}
-        </div>
+        <PdfViewTab
+          pdfBlobUrl={pdfBlobUrl}
+          pdfLoading={pdfLoading}
+          onDownload={() => handleSafeDownload(true)}
+        />
       )}
       {/* Amendment Modal */}
       {amendModal && (() => {
@@ -3749,6 +3766,8 @@ const VendorInvoicesTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
   const [editingItems, setEditingItems]     = useState(false);
   const [detailItems, setDetailItems]       = useState([]);
   const [detailCharges, setDetailCharges]   = useState([]);
+  const [discountConfig, setDiscountConfig] = useState({ mode: null, pct: '' });
+  const [calcModalOpen, setCalcModalOpen]   = useState(false);
   const [chargesMenuOpen, setChargesMenuOpen] = useState(false);
   const [savingCharges, setSavingCharges]   = useState(false);
   const [editInvModal, setEditInvModal] = useState(null); // invoice to edit
@@ -3775,7 +3794,7 @@ const VendorInvoicesTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
   const editEwayInputRef       = useRef();
   const detailEwayInputRef     = useRef();
 
-  const blankItem = () => ({ item: '', hsn: '', unit: '', qty: '', rate: '', gst_pct: '', remarks: '' });
+  const blankItem = () => ({ item: '', hsn: '', unit: '', qty: '', rate: '', disc_pct: '', gst_pct: '', remarks: '' });
   const [addForm, setAddForm] = useState({ invoice_no: '', invoice_date: '', amount: '' });
 
   const isIssued = order.status === 'Issued';
@@ -3944,10 +3963,12 @@ const VendorInvoicesTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
   };
 
   // ── Detail items ──
-  const calcRow = (it) => {
-    const qty = Number(it.qty) || 0, rate = Number(it.rate) || 0, gst_pct = Number(it.gst_pct) || 0;
-    const gst_amount = (qty * rate * gst_pct) / 100;
-    return { gst_amount, net_amount: qty * rate + gst_amount };
+  const calcRow = (it, discMode) => {
+    const qty = Number(it.qty) || 0, rate = Number(it.rate) || 0;
+    const disc = discMode === 'inline' ? (Number(it.disc_pct) || 0) : 0;
+    const base = qty * rate * (1 - disc / 100);
+    const gst_amount = base * (Number(it.gst_pct) || 0) / 100;
+    return { gst_amount, net_amount: base + gst_amount };
   };
   const addDetailRow    = () => setDetailItems(r => [...r, blankItem()]);
   const removeDetailRow = (i) => setDetailItems(r => r.filter((_, idx) => idx !== i));
@@ -3957,9 +3978,11 @@ const VendorInvoicesTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
     setSelectedInv(inv);
     const items = (inv.items || []);
     setDetailItems(items.length > 0
-      ? items.map(it => ({ item: it.item || '', hsn: it.hsn || '', unit: it.unit || '', qty: String(it.qty || ''), rate: String(it.rate || ''), gst_pct: String(it.gst_pct || ''), remarks: it.remarks || '' }))
+      ? items.map(it => ({ item: it.item || '', hsn: it.hsn || '', unit: it.unit || '', qty: String(it.qty || ''), rate: String(it.rate || ''), disc_pct: String(it.disc_pct || ''), gst_pct: String(it.gst_pct || ''), remarks: it.remarks || '' }))
       : []);
-    setDetailCharges(inv.charges || []);
+    const charges = (inv.charges || []).filter(c => c.label !== 'Discount');
+    setDetailCharges(charges.map(c => ({ ...c, before_gst: c.before_gst !== false })));
+    setDiscountConfig(inv.discount_config || { mode: null, pct: '' });
     setEditingItems(false);
     setBillDocsInvId(null);
     setPage('detail');
@@ -3970,8 +3993,8 @@ const VendorInvoicesTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
     setSaving(true);
     try {
       const items = detailItems.map((it, idx) => {
-        const { gst_amount, net_amount } = calcRow(it);
-        return { sno: idx + 1, item: it.item, hsn: it.hsn, unit: it.unit, qty: Number(it.qty) || 0, rate: Number(it.rate) || 0, gst_pct: Number(it.gst_pct) || 0, gst_amount, net_amount, remarks: it.remarks };
+        const { gst_amount, net_amount } = calcRow(it, discountConfig.mode);
+        return { sno: idx + 1, item: it.item, hsn: it.hsn, unit: it.unit, qty: Number(it.qty) || 0, rate: Number(it.rate) || 0, disc_pct: Number(it.disc_pct) || 0, gst_pct: Number(it.gst_pct) || 0, gst_amount, net_amount, remarks: it.remarks };
       });
       const res = await fetch(`${API}/api/orders/${orderId}/vendor-invoices/${selectedInv.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -3992,7 +4015,7 @@ const VendorInvoicesTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
     try {
       const res = await fetch(`${API}/api/orders/${orderId}/vendor-invoices/${selectedInv.id}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoice_no: selectedInv.invoice_no, invoice_date: selectedInv.invoice_date, amount: selectedInv.amount, charges: detailCharges, updated_by: thisUser?.name || thisUser?.full_name || thisUser?.email || 'Unknown' }),
+        body: JSON.stringify({ invoice_no: selectedInv.invoice_no, invoice_date: selectedInv.invoice_date, amount: selectedInv.amount, charges: detailCharges, discount_config: discountConfig.mode ? discountConfig : null, updated_by: thisUser?.name || thisUser?.full_name || thisUser?.email || 'Unknown' }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -4187,14 +4210,14 @@ const VendorInvoicesTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
                 <table className="w-full text-[12px]">
                   <thead className="bg-slate-50 border-b border-slate-200">
                     <tr>
-                      {['S.No','Item','HSN','Unit','Qty','Rate (₹)','GST %','GST Amt','Net Amt','Remarks',''].map((h,i) => (
-                        <th key={i} className={`px-2 py-2.5 text-[11px] font-semibold text-slate-500 border-r border-slate-100 last:border-r-0 ${i===0||i===4||i===5||i===6||i===7||i===8 ? 'text-center' : 'text-left'}`}>{h}</th>
+                      {['S.No','Item','HSN','Unit','Qty','Rate (₹)', ...(discountConfig.mode === 'inline' ? ['Disc%'] : []), 'GST %','GST Amt','Net Amt','Remarks',''].map((h,i) => (
+                        <th key={i} className={`px-2 py-2.5 text-[11px] font-semibold text-slate-500 border-r border-slate-100 last:border-r-0 ${['S.No','Qty','Rate (₹)','Disc%','GST %','GST Amt','Net Amt'].includes(h) ? 'text-center' : 'text-left'}`}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {detailItems.map((it, i) => {
-                      const { gst_amount, net_amount } = calcRow(it);
+                      const { gst_amount, net_amount } = calcRow(it, discountConfig.mode);
                       return (
                         <tr key={i}>
                           <td className="px-2 py-1.5 text-center text-slate-400 border-r border-slate-100 w-10">{i+1}</td>
@@ -4203,6 +4226,9 @@ const VendorInvoicesTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
                           <td className="px-2 py-1.5 border-r border-slate-100 w-20"><input value={it.unit} onChange={e => updateDetail(i,'unit',e.target.value)} placeholder="Unit" className="w-full px-2 py-1 border border-slate-200 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-slate-300" /></td>
                           <td className="px-2 py-1.5 border-r border-slate-100 w-20"><input type="text" inputMode="decimal" value={it.qty} onChange={e => updateDetail(i,'qty',e.target.value.replace(/[^0-9.]/g,''))} placeholder="0" className="w-full px-2 py-1 border border-slate-200 rounded text-[12px] text-right focus:outline-none focus:ring-1 focus:ring-slate-300" /></td>
                           <td className="px-2 py-1.5 border-r border-slate-100 w-28"><input type="text" inputMode="decimal" value={it.rate} onChange={e => updateDetail(i,'rate',e.target.value.replace(/[^0-9.]/g,''))} placeholder="0" className="w-full px-2 py-1 border border-slate-200 rounded text-[12px] text-right focus:outline-none focus:ring-1 focus:ring-slate-300" /></td>
+                          {discountConfig.mode === 'inline' && (
+                            <td className="px-2 py-1.5 border-r border-slate-100 w-20"><input type="text" inputMode="decimal" value={it.disc_pct} onChange={e => updateDetail(i,'disc_pct',e.target.value.replace(/[^0-9.]/g,''))} placeholder="0" className="w-full px-2 py-1 border border-slate-200 rounded text-[12px] text-right focus:outline-none focus:ring-1 focus:ring-slate-300" /></td>
+                          )}
                           <td className="px-2 py-1.5 border-r border-slate-100 w-20"><input type="text" inputMode="decimal" value={it.gst_pct} onChange={e => updateDetail(i,'gst_pct',e.target.value.replace(/[^0-9.]/g,''))} placeholder="0" className="w-full px-2 py-1 border border-slate-200 rounded text-[12px] text-right focus:outline-none focus:ring-1 focus:ring-slate-300" /></td>
                           <td className="px-2 py-1.5 text-right text-slate-500 border-r border-slate-100 w-28">₹{gst_amount.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
                           <td className="px-2 py-1.5 text-right font-semibold text-slate-800 border-r border-slate-100 w-28">₹{net_amount.toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
@@ -4230,8 +4256,8 @@ const VendorInvoicesTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
               <table className="w-full text-[12px]">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    {['S.No','Item','HSN Code','Unit','Qty','Rate','GST %','GST Amount','Net Amount','Remarks'].map((h,i) => (
-                      <th key={h} className={`px-3 py-2.5 text-[11px] font-semibold text-slate-500 border-r border-slate-100 last:border-r-0 whitespace-nowrap ${['Qty','Rate','GST %','GST Amount','Net Amount'].includes(h) ? 'text-right' : i===0 ? 'text-center' : 'text-left'}`}>{h}</th>
+                    {['S.No','Item','HSN Code','Unit','Qty','Rate', ...(discountConfig.mode === 'inline' ? ['Disc%'] : []), 'GST %','GST Amount','Net Amount','Remarks'].map((h,i) => (
+                      <th key={h} className={`px-3 py-2.5 text-[11px] font-semibold text-slate-500 border-r border-slate-100 last:border-r-0 whitespace-nowrap ${['Qty','Rate','Disc%','GST %','GST Amount','Net Amount'].includes(h) ? 'text-right' : i===0 ? 'text-center' : 'text-left'}`}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -4244,6 +4270,7 @@ const VendorInvoicesTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
                       <td className="px-3 py-2.5 text-slate-500 border-r border-slate-100">{it.unit || '—'}</td>
                       <td className="px-3 py-2.5 text-right text-slate-700 border-r border-slate-100">{it.qty}</td>
                       <td className="px-3 py-2.5 text-right text-slate-700 border-r border-slate-100">₹{Number(it.rate||0).toLocaleString('en-IN')}</td>
+                      {discountConfig.mode === 'inline' && <td className="px-3 py-2.5 text-right text-slate-500 border-r border-slate-100">{Number(it.disc_pct||0)}%</td>}
                       <td className="px-3 py-2.5 text-right text-slate-500 border-r border-slate-100">{it.gst_pct}%</td>
                       <td className="px-3 py-2.5 text-right text-slate-700 border-r border-slate-100">₹{Number(it.gst_amount||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
                       <td className="px-3 py-2.5 text-right font-semibold text-slate-800 border-r border-slate-100">₹{Number(it.net_amount||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
@@ -4259,98 +4286,308 @@ const VendorInvoicesTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
         {/* ── Calculation Box ── */}
         {(() => {
           const items = editingItems ? detailItems : (selectedInv?.items || []);
-          const baseTotal = items.reduce((s, it) => s + (Number(it.qty)||0) * (Number(it.rate)||0), 0);
-          const gstTotal  = items.reduce((s, it) => {
-            const b = (Number(it.qty)||0)*(Number(it.rate)||0);
-            return s + b * ((Number(it.gst_pct)||Number(it.gst_amount && it.qty && it.rate ? (it.gst_amount/(it.qty*it.rate)*100) : 0))||0)/100;
-          }, 0);
-          const gstSum = items.reduce((s, it) => s + (Number(it.gst_amount)||0), 0);
-          const chargesTotal = detailCharges.reduce((s, c) => c.type === 'deduction' ? s - (Number(c.amount)||0) : s + (Number(c.amount)||0), 0);
-          const grandTotal = baseTotal + gstSum + chargesTotal;
+          const discMode = discountConfig.mode;
+          const discPct  = Number(discountConfig.pct) || 0;
+
+          // Per-item base after inline discount
+          const itemBases = items.map(it => {
+            const qty = Number(it.qty) || 0, rate = Number(it.rate) || 0;
+            const disc = discMode === 'inline' ? (Number(it.disc_pct) || 0) : 0;
+            return qty * rate * (1 - disc / 100);
+          });
+          const subtotal = itemBases.reduce((s, b) => s + b, 0);
+          const discountAmt = discMode === 'total' ? subtotal * discPct / 100 : 0;
+          const afterDiscount = subtotal - discountAmt;
+
+          const beforeGstCharges = detailCharges.filter(c => c.before_gst !== false);
+          const afterGstCharges  = detailCharges.filter(c => c.before_gst === false);
+          const beforeGstAmt = beforeGstCharges.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+          const afterGstAmt  = afterGstCharges.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+          const taxable = afterDiscount + beforeGstAmt;
+
+          const discFactor = discMode === 'total' ? (1 - discPct / 100) : 1;
+          const gstSum = items.reduce((s, it, idx) => s + itemBases[idx] * discFactor * (Number(it.gst_pct) || 0) / 100, 0);
+          const grandTotal = taxable + gstSum + afterGstAmt;
+
+          const showTaxableLine = discountAmt > 0 || beforeGstAmt > 0;
 
           const CHARGE_OPTIONS = [
             { label: 'Freight Charge', type: 'addition' },
             { label: 'Labour Charge', type: 'addition' },
-            { label: 'Discount',      type: 'deduction' },
           ];
-          const addedTypes = detailCharges.map(c => c.label);
-          const available  = CHARGE_OPTIONS.filter(o => !addedTypes.includes(o.label));
+          const addedLabels = detailCharges.map(c => c.label);
+          const available   = CHARGE_OPTIONS.filter(o => !addedLabels.includes(o.label));
+          const canAddDiscount = !discMode;
 
           return (
             <div className="mt-4 flex justify-end">
               <div className="w-full max-w-sm bg-white border border-slate-200 rounded-md overflow-hidden">
+
+                {/* Calculation Modal */}
+                {calcModalOpen && (
+                  <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setCalcModalOpen(false)}>
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+                        <span className="text-[13px] font-bold text-slate-800">Calculation Breakdown</span>
+                        <button onClick={() => setCalcModalOpen(false)} className="p-1 text-slate-400 hover:text-slate-700 rounded"><X size={14} /></button>
+                      </div>
+                      <div className="px-5 py-4 space-y-2 text-[12px]">
+                        {/* Subtotal */}
+                        <div className="flex justify-between text-slate-600">
+                          <span>Subtotal (Base)</span>
+                          <span className="font-medium text-slate-800">₹{subtotal.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                        </div>
+                        {/* Inline discount note */}
+                        {discMode === 'inline' && (
+                          <div className="text-slate-400 italic text-[11px]">↳ Discount applied per item (In-line)</div>
+                        )}
+                        {/* Total discount */}
+                        {discMode === 'total' && discPct > 0 && (
+                          <div className="flex justify-between text-red-500">
+                            <span>Discount ({discPct}%) on ₹{subtotal.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                            <span>–₹{discountAmt.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                          </div>
+                        )}
+                        {/* Before-GST charges */}
+                        {beforeGstCharges.map(c => (
+                          <div key={c.id} className="flex justify-between text-slate-600">
+                            <span>{c.label} (Before GST)</span>
+                            <span>+₹{Number(c.amount||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                          </div>
+                        ))}
+                        {/* Taxable line */}
+                        {showTaxableLine && (
+                          <div className="flex justify-between font-semibold text-slate-700 border-t border-slate-100 pt-2">
+                            <span>Taxable Amount</span>
+                            <span>₹{taxable.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                          </div>
+                        )}
+                        {/* GST breakdown per item */}
+                        <div className="border-t border-slate-100 pt-2">
+                          <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">GST Breakdown</div>
+                          {items.map((it, idx) => {
+                            const disc = discMode === 'inline' ? (Number(it.disc_pct)||0) : 0;
+                            const base = (Number(it.qty)||0)*(Number(it.rate)||0)*(1-disc/100)*discFactor;
+                            const gst  = base*(Number(it.gst_pct)||0)/100;
+                            if (!it.item && !base) return null;
+                            return (
+                              <div key={idx} className="flex justify-between text-slate-500 text-[11px] py-0.5">
+                                <span className="truncate max-w-[55%]">{it.item || `Item ${idx+1}`}{it.gst_pct ? ` @${it.gst_pct}%` : ''}{disc ? ` (disc ${disc}%)` : ''}</span>
+                                <span>₹{gst.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                              </div>
+                            );
+                          })}
+                          <div className="flex justify-between text-slate-700 font-semibold pt-1 border-t border-slate-100">
+                            <span>Total GST</span>
+                            <span>₹{gstSum.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                          </div>
+                        </div>
+                        {/* After-GST charges */}
+                        {afterGstCharges.length > 0 && (
+                          <div className="border-t border-slate-100 pt-2 space-y-1">
+                            {afterGstCharges.map(c => (
+                              <div key={c.id} className="flex justify-between text-slate-600">
+                                <span>{c.label} (After GST)</span>
+                                <span>+₹{Number(c.amount||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {/* Grand Total */}
+                        <div className="flex justify-between font-bold text-slate-900 bg-slate-50 rounded-lg px-3 py-2.5 mt-2 text-[13px]">
+                          <span>Total Value</span>
+                          <span>₹{grandTotal.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200">
-                  <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Summary</span>
-                  {canEdit && available.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Summary</span>
+                    <button onClick={() => setCalcModalOpen(true)}
+                      className="flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:text-blue-800 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-50 transition-colors">
+                      <Eye size={10} /> View Calculation
+                    </button>
+                  </div>
+                  {canEdit && (available.length > 0 || canAddDiscount) && (
                     <div className="relative">
                       <button onClick={() => setChargesMenuOpen(o => !o)}
                         className="flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 px-2 py-1 rounded hover:bg-white">
                         <Plus size={10} /> Add Charge <ChevronDown size={10} className={`transition-transform ${chargesMenuOpen ? 'rotate-180' : ''}`} />
                       </button>
                       {chargesMenuOpen && (
-                        <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-slate-200 rounded shadow-lg z-20">
+                        <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded shadow-lg z-20">
                           {available.map(opt => (
                             <button key={opt.label} onClick={() => {
-                              setDetailCharges(c => [...c, { id: `ch_${Date.now()}`, label: opt.label, type: opt.type, amount: '' }]);
+                              setDetailCharges(c => [...c, { id: `ch_${Date.now()}`, label: opt.label, type: opt.type, amount: '', before_gst: true }]);
                               setChargesMenuOpen(false);
                             }} className="w-full text-left px-3 py-2 text-[12px] text-slate-700 hover:bg-slate-50">
                               {opt.label}
                             </button>
                           ))}
+                          {available.length > 0 && canAddDiscount && <div className="border-t border-slate-100 my-1" />}
+                          {canAddDiscount && (
+                            <button onClick={() => { setDiscountConfig({ mode: 'total', pct: '' }); setChargesMenuOpen(false); }}
+                              className="w-full text-left px-3 py-2 text-[12px] text-red-600 hover:bg-slate-50">
+                              Discount
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
                   )}
                 </div>
 
-                {/* Rows */}
                 <div className="px-4 py-2 space-y-0">
+
                   {/* Subtotal */}
                   <div className="flex justify-between items-center py-2 border-b border-slate-100">
                     <span className="text-[12px] text-slate-500">Subtotal (Base)</span>
-                    <span className="text-[12px] font-medium text-slate-800">₹{baseTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    <span className="text-[12px] font-medium text-slate-800">₹{subtotal.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
                   </div>
+
+                  {/* Discount row */}
+                  {discMode && (
+                    <div className="py-2 border-b border-slate-100">
+                      {/* Mode toggle */}
+                      {canEdit && (
+                        <div className="flex items-center gap-1 mb-2">
+                          <button onClick={() => setDiscountConfig(d => ({ ...d, mode: 'total' }))}
+                            className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors ${discMode==='total' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
+                            Total %
+                          </button>
+                          <button onClick={() => setDiscountConfig(d => ({ ...d, mode: 'inline' }))}
+                            className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors ${discMode==='inline' ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
+                            In-line
+                          </button>
+                          <button onClick={() => setDiscountConfig({ mode: null, pct: '' })}
+                            className="ml-auto p-0.5 text-slate-300 hover:text-red-500"><X size={12} /></button>
+                        </div>
+                      )}
+                      {discMode === 'total' ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[12px] text-red-500">Discount (–)</span>
+                          {canEdit ? (
+                            <div className="flex items-center gap-1">
+                              <input type="text" inputMode="decimal" value={discountConfig.pct}
+                                onChange={e => setDiscountConfig(d => ({ ...d, pct: e.target.value.replace(/[^0-9.]/g,'') }))}
+                                className="w-16 px-2 py-0.5 border border-slate-200 rounded text-[12px] text-right focus:outline-none focus:ring-1 focus:ring-slate-300"
+                                placeholder="0" />
+                              <span className="text-[12px] text-slate-400">%</span>
+                              <span className="text-[12px] font-medium text-red-500 w-28 text-right">–₹{discountAmt.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                            </div>
+                          ) : (
+                            <span className="text-[12px] font-medium text-red-500">–₹{discountAmt.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <span className="text-[12px] text-slate-400 italic">Discount applied per item (In-line)</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Before-GST charges (Freight / Labour with before_gst=true) */}
+                  {beforeGstCharges.map((c, i) => {
+                    const globalIdx = detailCharges.findIndex(ch => ch.id === c.id);
+                    return (
+                      <div key={c.id} className="py-2 border-b border-slate-100">
+                        {canEdit && (
+                          <div className="flex items-center gap-1 mb-1.5">
+                            <button onClick={() => setDetailCharges(prev => prev.map((ch, idx) => idx === globalIdx ? { ...ch, before_gst: true } : ch))}
+                              className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors ${c.before_gst !== false ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
+                              Before GST
+                            </button>
+                            <button onClick={() => setDetailCharges(prev => prev.map((ch, idx) => idx === globalIdx ? { ...ch, before_gst: false } : ch))}
+                              className={`px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors ${c.before_gst === false ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}`}>
+                              After GST
+                            </button>
+                            <button onClick={() => setDetailCharges(prev => prev.filter((_, idx) => idx !== globalIdx))}
+                              className="ml-auto p-0.5 text-slate-300 hover:text-red-500"><X size={12} /></button>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[12px] text-slate-600">{c.label} (+)</span>
+                          {canEdit ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[12px] text-slate-400">₹</span>
+                              <input type="text" inputMode="decimal" value={c.amount}
+                                onChange={e => setDetailCharges(prev => prev.map((ch, idx) => idx === globalIdx ? { ...ch, amount: e.target.value.replace(/[^0-9.]/g,'') } : ch))}
+                                className="w-28 px-2 py-0.5 border border-slate-200 rounded text-[12px] text-right focus:outline-none focus:ring-1 focus:ring-slate-300"
+                                placeholder="0.00" />
+                            </div>
+                          ) : (
+                            <span className="text-[12px] font-medium text-slate-800">+₹{Number(c.amount||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* Taxable line (shown only if there's discount or before-GST charges) */}
+                  {showTaxableLine && (
+                    <div className="flex justify-between items-center py-2 border-b border-slate-200 bg-slate-50 -mx-4 px-4">
+                      <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Taxable Amount</span>
+                      <span className="text-[12px] font-semibold text-slate-800">₹{taxable.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                    </div>
+                  )}
+
                   {/* GST */}
                   <div className="flex justify-between items-center py-2 border-b border-slate-100">
                     <span className="text-[12px] text-slate-500">GST Amount</span>
-                    <span className="text-[12px] font-medium text-slate-800">₹{gstSum.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    <span className="text-[12px] font-medium text-slate-800">₹{gstSum.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
                   </div>
-                  {/* Flexible charges */}
-                  {detailCharges.map((c, i) => (
-                    <div key={c.id} className="flex items-center gap-2 py-2 border-b border-slate-100">
-                      <span className={`text-[12px] flex-1 ${c.type === 'deduction' ? 'text-red-500' : 'text-slate-600'}`}>
-                        {c.label} {c.type === 'deduction' ? '(–)' : '(+)'}
-                      </span>
-                      {canEdit ? (
-                        <div className="flex items-center gap-1">
-                          <span className="text-[12px] text-slate-400">₹</span>
-                          <input
-                            type="text" inputMode="decimal" value={c.amount}
-                            onChange={e => setDetailCharges(prev => prev.map((ch, idx) => idx === i ? { ...ch, amount: e.target.value.replace(/[^0-9.]/g,'') } : ch))}
-                            className="w-24 px-2 py-0.5 border border-slate-200 rounded text-[12px] text-right focus:outline-none focus:ring-1 focus:ring-slate-300"
-                            placeholder="0.00"
-                          />
-                          <button onClick={() => setDetailCharges(prev => prev.filter((_, idx) => idx !== i))}
-                            className="p-0.5 text-slate-300 hover:text-red-500 rounded"><X size={12} /></button>
+
+                  {/* After-GST charges */}
+                  {afterGstCharges.map((c) => {
+                    const globalIdx = detailCharges.findIndex(ch => ch.id === c.id);
+                    return (
+                      <div key={c.id} className="py-2 border-b border-slate-100">
+                        {canEdit && (
+                          <div className="flex items-center gap-1 mb-1.5">
+                            <button onClick={() => setDetailCharges(prev => prev.map((ch, idx) => idx === globalIdx ? { ...ch, before_gst: true } : ch))}
+                              className="px-2 py-0.5 rounded text-[10px] font-semibold border bg-white text-slate-500 border-slate-200 hover:bg-slate-50">
+                              Before GST
+                            </button>
+                            <button onClick={() => setDetailCharges(prev => prev.map((ch, idx) => idx === globalIdx ? { ...ch, before_gst: false } : ch))}
+                              className="px-2 py-0.5 rounded text-[10px] font-semibold border bg-slate-800 text-white border-slate-800">
+                              After GST
+                            </button>
+                            <button onClick={() => setDetailCharges(prev => prev.filter((_, idx) => idx !== globalIdx))}
+                              className="ml-auto p-0.5 text-slate-300 hover:text-red-500"><X size={12} /></button>
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[12px] text-slate-600">{c.label} (+)</span>
+                          {canEdit ? (
+                            <div className="flex items-center gap-1">
+                              <span className="text-[12px] text-slate-400">₹</span>
+                              <input type="text" inputMode="decimal" value={c.amount}
+                                onChange={e => setDetailCharges(prev => prev.map((ch, idx) => idx === globalIdx ? { ...ch, amount: e.target.value.replace(/[^0-9.]/g,'') } : ch))}
+                                className="w-28 px-2 py-0.5 border border-slate-200 rounded text-[12px] text-right focus:outline-none focus:ring-1 focus:ring-slate-300"
+                                placeholder="0.00" />
+                            </div>
+                          ) : (
+                            <span className="text-[12px] font-medium text-slate-800">+₹{Number(c.amount||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
+                          )}
                         </div>
-                      ) : (
-                        <span className={`text-[12px] font-medium ${c.type === 'deduction' ? 'text-red-500' : 'text-slate-800'}`}>
-                          {c.type === 'deduction' ? '–' : '+'}₹{Number(c.amount||0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Total */}
                 <div className="flex justify-between items-center px-4 py-3 bg-slate-900">
                   <span className="text-[12px] font-bold text-white">Total Value</span>
-                  <span className="text-[14px] font-bold text-white">₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  <span className="text-[14px] font-bold text-white">₹{grandTotal.toLocaleString('en-IN',{minimumFractionDigits:2})}</span>
                 </div>
 
-                {/* Save charges button */}
-                {canEdit && detailCharges.length > 0 && (
+                {/* Save charges */}
+                {canEdit && (detailCharges.length > 0 || discMode) && (
                   <div className="flex justify-end px-4 py-2.5 border-t border-slate-100 bg-slate-50">
                     <button onClick={handleSaveCharges} disabled={savingCharges}
                       className="px-3 py-1.5 bg-slate-800 text-white text-[11px] font-semibold rounded hover:bg-slate-700 disabled:opacity-60">
