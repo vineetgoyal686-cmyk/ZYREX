@@ -11,18 +11,19 @@ const parseHash = () => {
   const type        = hashParams.get("type")        || searchParams.get("type");
   const tokenHash   = searchParams.get("token_hash") || null;
   const accessToken = hashParams.get("access_token") || null;
-  const code        = searchParams.get("code")       || null; // PKCE auth code flow
+  const code        = searchParams.get("code")       || null;
+  const inv         = hashParams.get("inv")          || null; // backend redirect flow
+  const authError   = hashParams.get("error")        || searchParams.get("error") || null;
 
-  const authError = hashParams.get("error") || searchParams.get("error") || null;
-  const isReset = type === "recovery" || type === "invite"
+  const isReset = !!inv || type === "recovery" || type === "invite"
     || !!tokenHash || !!accessToken || !!code || !!authError;
 
   return {
     tab:       hashParams.get("tab")     || "global_dashboard",
     project:   hashParams.get("project") || null,
     isReset,
-    isInvite:  type === "invite",
-    tokenHash: tokenHash || code,
+    isInvite:  !!inv || type === "invite",
+    tokenHash: inv || tokenHash || code,
   };
 };
 

@@ -28,6 +28,22 @@ export default function ResetPassword({ onComplete, isInvite = false }) {
       return;
     }
 
+    // 0. Backend redirect flow (#inv=TOKEN_HASH&type=invite) — most reliable
+    const inv = hashParams.get("inv");
+    if (inv) {
+      const invType = hashParams.get("type") || "invite";
+      setExchanging(true);
+      api.post("/api/auth/verify-otp", { token_hash: decodeURIComponent(inv), type: invType })
+        .then(({ data }) => {
+          setToken(data.access_token);
+          setRefreshToken(data.refresh_token || "");
+          window.history.replaceState(null, "", window.location.pathname);
+        })
+        .catch(() => setError("Invalid or expired link. Please ask admin to resend the invite."))
+        .finally(() => setExchanging(false));
+      return;
+    }
+
     // 1. Try old hash-based flow first (#access_token=...&type=invite/recovery)
     const t    = hashParams.get("access_token");
     const rt   = hashParams.get("refresh_token");

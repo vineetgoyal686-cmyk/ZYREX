@@ -133,6 +133,18 @@ router.post("/forgot-password", async (req, res) => {
 });
 
 /* ─────────────────────────────────────────
+   GET /api/auth/accept-invite
+   Email link yahan aata hai, frontend pe redirect karta hai with hash
+   (scanners JS execute nahi karte — token safe rehta hai)
+───────────────────────────────────────── */
+router.get("/accept-invite", (req, res) => {
+  const { token_hash, type = "invite" } = req.query;
+  if (!token_hash) return res.status(400).send("Missing token_hash");
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+  res.redirect(`${frontendUrl}/#inv=${encodeURIComponent(token_hash)}&type=${type}`);
+});
+
+/* ─────────────────────────────────────────
    POST /api/auth/verify-otp
    Body: { token_hash, type }
    Used by PKCE invite/recovery links (query-param based, newer Supabase)
