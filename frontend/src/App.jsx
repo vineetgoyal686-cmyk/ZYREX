@@ -8,18 +8,26 @@ const parseHash = () => {
   const hashParams   = new URLSearchParams(window.location.hash.slice(1));
   const searchParams = new URLSearchParams(window.location.search);
 
-  // Supabase old flow: tokens in hash fragment (#access_token=...&type=invite)
-  // Supabase PKCE flow: tokens in query params (?token_hash=...&type=invite)
-  const type      = hashParams.get("type") || searchParams.get("type");
-  const tokenHash = searchParams.get("token_hash") || null;
-  const isReset   = type === "recovery" || type === "invite" || !!tokenHash;
+  const type        = hashParams.get("type")        || searchParams.get("type");
+  const tokenHash   = searchParams.get("token_hash") || null;
+  const accessToken = hashParams.get("access_token") || null;
+  const code        = searchParams.get("code")       || null; // PKCE auth code flow
+
+  const isReset = type === "recovery" || type === "invite"
+    || !!tokenHash || !!accessToken || !!code;
+
+  console.log("[Auth] URL check →", {
+    hash: window.location.hash.slice(0, 60),
+    search: window.location.search.slice(0, 60),
+    type, tokenHash, accessToken, code, isReset
+  });
 
   return {
     tab:       hashParams.get("tab")     || "global_dashboard",
     project:   hashParams.get("project") || null,
     isReset,
-    isInvite:  type === "invite" || (!!tokenHash && type === "invite"),
-    tokenHash,
+    isInvite:  type === "invite",
+    tokenHash: tokenHash || code,
   };
 };
 

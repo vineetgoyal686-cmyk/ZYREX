@@ -28,9 +28,9 @@ export default function ResetPassword({ onComplete, isInvite = false }) {
       return;
     }
 
-    // 2. Try new PKCE flow (?token_hash=...&type=invite/recovery)
-    const tokenHash  = searchParams.get("token_hash");
-    const searchType = searchParams.get("type");
+    // 2. Try new PKCE flow (?token_hash=... or ?code=...&type=invite/recovery)
+    const tokenHash  = searchParams.get("token_hash") || searchParams.get("code");
+    const searchType = searchParams.get("type") || (tokenHash ? "invite" : null);
     if (tokenHash && (searchType === "recovery" || searchType === "invite")) {
       setExchanging(true);
       api.post("/api/auth/verify-otp", { token_hash: tokenHash, type: searchType })
