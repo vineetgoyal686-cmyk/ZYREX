@@ -11,19 +11,18 @@ const parseHash = () => {
   const type        = hashParams.get("type")        || searchParams.get("type");
   const tokenHash   = searchParams.get("token_hash") || null;
   const accessToken = hashParams.get("access_token") || null;
-  const code        = searchParams.get("code")       || null;
-  const inv         = hashParams.get("inv")          || null; // backend redirect flow
   const authError   = hashParams.get("error")        || searchParams.get("error") || null;
+  const isSetPassword = window.location.pathname === "/set-password";
 
-  const isReset = !!inv || type === "recovery" || type === "invite"
-    || !!tokenHash || !!accessToken || !!code || !!authError;
+  const isReset = isSetPassword || type === "recovery" || type === "invite"
+    || !!tokenHash || !!accessToken || !!authError;
 
   return {
     tab:       hashParams.get("tab")     || "global_dashboard",
     project:   hashParams.get("project") || null,
     isReset,
-    isInvite:  !!inv || type === "invite",
-    tokenHash: inv || tokenHash || code,
+    isInvite:  isSetPassword || type === "invite",
+    tokenHash: tokenHash,
   };
 };
 
