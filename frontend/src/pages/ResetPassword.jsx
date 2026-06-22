@@ -18,6 +18,16 @@ export default function ResetPassword({ onComplete, isInvite = false }) {
     const hashParams   = new URLSearchParams(window.location.hash.slice(1));
     const searchParams = new URLSearchParams(window.location.search);
 
+    // Handle Supabase error redirect (e.g. expired link)
+    const authErr = hashParams.get("error") || searchParams.get("error");
+    const errDesc = hashParams.get("error_description") || searchParams.get("error_description");
+    if (authErr) {
+      const msg = errDesc ? errDesc.replace(/\+/g, " ") : "Your invite link has expired.";
+      setError(`Link expired or invalid: ${msg}. Please ask admin to resend the invite.`);
+      window.history.replaceState(null, "", window.location.pathname);
+      return;
+    }
+
     // 1. Try old hash-based flow first (#access_token=...&type=invite/recovery)
     const t    = hashParams.get("access_token");
     const rt   = hashParams.get("refresh_token");

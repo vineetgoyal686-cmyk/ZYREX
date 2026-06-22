@@ -13,14 +13,9 @@ const parseHash = () => {
   const accessToken = hashParams.get("access_token") || null;
   const code        = searchParams.get("code")       || null; // PKCE auth code flow
 
+  const authError = hashParams.get("error") || searchParams.get("error") || null;
   const isReset = type === "recovery" || type === "invite"
-    || !!tokenHash || !!accessToken || !!code;
-
-  console.log("[Auth] URL check →", {
-    hash: window.location.hash.slice(0, 60),
-    search: window.location.search.slice(0, 60),
-    type, tokenHash, accessToken, code, isReset
-  });
+    || !!tokenHash || !!accessToken || !!code || !!authError;
 
   return {
     tab:       hashParams.get("tab")     || "global_dashboard",
