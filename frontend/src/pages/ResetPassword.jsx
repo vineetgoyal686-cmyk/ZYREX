@@ -12,7 +12,8 @@ export default function ResetPassword({ onComplete, isInvite = false }) {
   const [success, setSuccess]     = useState(false);
   const [token, setToken]               = useState("");
   const [refreshToken, setRefreshToken] = useState("");
-  const [exchanging, setExchanging]     = useState(false);
+  const [tokenHash, setTokenHash]       = useState("");
+  const [tokenType, setTokenType]       = useState("invite");
   const canvasRef = useRef(null);
 
   // Canvas dot animation — same as Login
@@ -74,33 +75,23 @@ export default function ResetPassword({ onComplete, isInvite = false }) {
       return;
     }
 
-    // Backend redirect flow (#inv=TOKEN)
-    const inv = hashParams.get("inv");
-    if (inv) {
-      const invType = hashParams.get("type") || "invite";
-      setExchanging(true);
-      api.post("/api/auth/verify-otp", { token_hash: decodeURIComponent(inv), type: invType })
-        .then(({ data }) => { setToken(data.access_token); setRefreshToken(data.refresh_token || ""); window.history.replaceState(null, "", window.location.pathname); })
-        .catch(() => setError("Invalid or expired link. Please ask admin to resend the invite."))
-        .finally(() => setExchanging(false));
-      return;
-    }
-
-    // Old hash flow (#access_token=...)
+    // Old hash flow (#access_token=...) — already exchanged by Supabase
     const t = hashParams.get("access_token");
     const rt = hashParams.get("refresh_token");
     const type = hashParams.get("type");
-    if (t && (type === "recovery" || type === "invite")) { setToken(t); setRefreshToken(rt || ""); return; }
+    if (t && (type === "recovery" || type === "invite")) {
+      setToken(t); setRefreshToken(rt || "");
+      window.history.replaceState(null, "", window.location.pathname);
+      return;
+    }
 
-    // PKCE query param flow (?token_hash=...&type=...)
-    const tokenHash  = searchParams.get("token_hash") || searchParams.get("code");
-    const searchType = searchParams.get("type") || (tokenHash ? "invite" : null);
-    if (tokenHash && (searchType === "recovery" || searchType === "invite")) {
-      setExchanging(true);
-      api.post("/api/auth/verify-otp", { token_hash: tokenHash, type: searchType })
-        .then(({ data }) => { setToken(data.access_token); setRefreshToken(data.refresh_token || ""); window.history.replaceState(null, "", window.location.pathname); })
-        .catch(() => setError("Invalid or expired link. Please request a new invite."))
-        .finally(() => setExchanging(false));
+    // PKCE flow — store hash, exchange only on submit
+    const hash = searchParams.get("token_hash") || searchParams.get("code") || hashParams.get("inv");
+    const sType = searchParams.get("type") || hashParams.get("type") || (hash ? "invite" : null);
+    if (hash && (sType === "recovery" || sType === "invite")) {
+      setTokenHash(decodeURIComponent(hash));
+      setTokenType(sType);
+      window.history.replaceState(null, "", window.location.pathname);
       return;
     }
 
@@ -113,11 +104,24 @@ export default function ResetPassword({ onComplete, isInvite = false }) {
     if (password.length < 8)  return setError("Password must be at least 8 characters");
     setLoading(true); setError("");
     try {
-      await api.post("/api/auth/reset-password", { password, refresh_token: refreshToken }, { headers: { Authorization: `Bearer ${token}` } });
-      window.history.replaceState(null, "", window.location.pathname);
+      let accessToken = token;
+      let refreshTok  = refreshToken;
+
+      // Exchange token_hash only when user actually submits — keeps link reusable until then
+      if (!accessToken && tokenHash) {
+        const { data } = await api.post("/api/auth/verify-otp", { token_hash: tokenHash, type: tokenType });
+        accessToken = data.access_token;
+        refreshTok  = data.refresh_token || "";
+      }
+
+      if (!accessToken) throw new Error("no_token");
+
+      await api.post("/api/auth/reset-password", { password, refresh_token: refreshTok }, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
       setSuccess(true);
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to reset password. Link may have expired.");
+      setError(err.response?.data?.error || "Invalid or expired link. Please request a new invite.");
     } finally { setLoading(false); }
   };
 
@@ -135,13 +139,7 @@ export default function ResetPassword({ onComplete, isInvite = false }) {
         {/* LEFT: Form */}
         <div className="bg-white flex flex-col justify-center px-10 sm:px-14 py-8">
 
-          {exchanging ? (
-            <div className="flex flex-col items-center gap-3 py-8">
-              <svg className="animate-spin h-8 w-8 text-teal-500" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
-              <p className="text-sm text-gray-500 font-medium">Verifying your invite link…</p>
-            </div>
-
-          ) : success ? (
+          {success ? (
             <div className="flex flex-col items-center text-center gap-3 py-8">
               <CheckCircle2 size={48} className="text-teal-500" />
               <h2 className="text-2xl font-bold text-gray-900">Password Set!</h2>
@@ -186,7 +184,7 @@ export default function ResetPassword({ onComplete, isInvite = false }) {
                   <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-500 font-medium">{error}</div>
                 )}
 
-                <button type="submit" disabled={loading || !token}
+                <button type="submit" disabled={loading || (!token && !tokenHash)}
                   className="w-full h-11 rounded-sm bg-[#0f172a] text-white text-sm font-bold tracking-wide hover:bg-[#1e293b] active:scale-[0.99] transition-all flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
                   {loading ? (
                     <><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg> Saving…</>

@@ -233,11 +233,11 @@ function App() {
 
   // Fetch projects + permissions + profile whenever logged in
   useEffect(() => {
-    if (!isLoggedIn) return;
+    if (!isLoggedIn || isResetMode) return;
     fetchProjects();
     fetchUserProfile();
     if (!userTabPermissions) fetchUserPermissions();
-  }, [isLoggedIn, userTabPermissions]);
+  }, [isLoggedIn, userTabPermissions, isResetMode]);
 
   const handleLogin = (user) => {
     setUserRole(user.role);
