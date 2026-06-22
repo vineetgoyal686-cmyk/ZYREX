@@ -303,7 +303,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
             )}
 
             {section === "request_handler" && (
-              <RequestHandler />
+              <RequestHandler currentUser={currentUser} showToast={showToast} />
             )}
 
             {section === "mail_management" && (

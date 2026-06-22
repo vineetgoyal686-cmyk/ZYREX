@@ -15,7 +15,9 @@ const MODULES = [
   { key: "payment", label: "Payment", actions: [] },
 ];
 
-export default function RequestHandler({ showToast }) {
+export default function RequestHandler({ showToast, currentUser }) {
+  const canEdit = ["global_admin","super_admin","admin"].includes(currentUser?.role)
+    || !!currentUser?.profile_permissions?.request_handler?.edit;
   const [activeTab, setActiveTab]   = useState("order");
   const [config, setConfig]         = useState({});
   const [allUsers, setAllUsers]     = useState([]);
@@ -134,7 +136,7 @@ export default function RequestHandler({ showToast }) {
             <p className="text-[11px] text-slate-400 mt-0.5">Configure who handles each action for each module</p>
           </div>
         </div>
-        <button type="button"
+        {canEdit && <button type="button"
           onClick={() => { setEditMode(e => !e); setErrors({}); setSelected({}); }}
           className={`inline-flex items-center gap-2 h-8 px-4 rounded-sm text-[12px] font-bold transition-colors
             ${editMode
@@ -145,7 +147,7 @@ export default function RequestHandler({ showToast }) {
             ? <><Check size={13} strokeWidth={2.5} /> Done</>
             : <><Pencil size={13} strokeWidth={2} /> Edit</>
           }
-        </button>
+        </button>}
       </div>
 
       {/* Module Tabs */}
