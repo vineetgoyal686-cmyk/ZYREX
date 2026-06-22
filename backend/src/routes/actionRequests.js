@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const supabaseClient = require("../helpers/supabaseHelper");
 const { broadcast } = require("../sse");
+const { requirePerm } = require("../helpers/permHelper");
 
 const extractUserId = (token) => {
   try {
@@ -37,7 +38,7 @@ const historyHasAction = (order = {}, expected = "") => {
 
 
 // POST /api/action-requests — submit recall or cancel request
-router.post("/", requireAuth, async (req, res) => {
+router.post("/", requireAuth, requirePerm("order", "can_request"), async (req, res) => {
   const admin = supabaseClient;
   const { order_id, request_type, reason } = req.body;
   const userId = req.userId;

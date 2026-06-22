@@ -32,7 +32,12 @@ router.get("/", requireAuth, async (req, res) => {
     .order("created_at", { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });
-  const users = await Promise.all((data || []).map(async user => {
+
+  // global_admin users are invisible to everyone except other global_admins
+  const isGlobalAdmin = req.user.role === "global_admin";
+  const visible = (data || []).filter(u => isGlobalAdmin || u.role !== "global_admin");
+
+  const users = await Promise.all(visible.map(async user => {
     const pp = user.profile_permissions || {};
     const sigFile = pp.ui?.signature || null;
     const [signedAvatar, signedSignature] = await Promise.all([

@@ -10,6 +10,7 @@ const {
   removeStorageFile,
 } = require("../helpers/storageHelper");
 const { addClient, removeClient, broadcast } = require("../sse");
+const { requirePerm } = require("../helpers/permHelper");
 
 // SSE endpoint — frontend subscribes here for instant order updates
 router.get("/events", (req, res) => {
@@ -850,7 +851,7 @@ router.delete("/:id/permanent", async (req, res) => {
   }
 });
 
-router.post("/", upload.fields([
+router.post("/", requirePerm("order", "can_add"), upload.fields([
   { name: "quotation", maxCount: 1 },
   { name: "comparative", maxCount: 1 }
 ]), async (req, res) => {
@@ -1425,7 +1426,7 @@ router.post("/bulk-import", async (req, res) => {
   }
 });
 
-router.put("/:id", upload.fields([
+router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
   { name: "quotation", maxCount: 1 },
   { name: "comparative", maxCount: 1 }
 ]), async (req, res) => {
@@ -1939,7 +1940,7 @@ router.get("/:id/pdf", async (req, res) => {
   }
 });
 
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", requirePerm("order", "can_delete"), async (req, res) => {
   try {
     if (isHistoryId(req.params.id)) {
       return res.status(400).json({ error: "History snapshots cannot be deleted" });
