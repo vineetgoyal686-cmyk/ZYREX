@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
-import { Plus, Search, Pencil, Trash2, X, Building2, Upload, FileText, ChevronLeft, ChevronRight, FileSpreadsheet, ChevronDown, Eye, Copy, Check, Trash, RotateCcw, History } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, X, Building2, Upload, FileText, ChevronLeft, ChevronRight, FileSpreadsheet, ChevronDown, Eye, Copy, Check, Trash, RotateCcw, History, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -181,6 +181,8 @@ export default function VendorList() {
   const [showMore, setShowMore]     = useState(false);
   const [poolMoreOpen, setPoolMoreOpen] = useState(false);
   const vendorPoolRef               = useRef(null);
+  const moreRef                     = useRef(null);
+  const poolMoreRef                 = useRef(null);
   const [sites, setSites]         = useState(cachedSites || []);
   const [companies, setCompanies] = useState(cachedCompanies || []);
   const [showCompanySearch, setShowCompanySearch] = useState(false);
@@ -214,6 +216,8 @@ export default function VendorList() {
     const click = (e) => {
       if (siteRef.current && !siteRef.current.contains(e.target)) setShowSiteSearch(false);
       if (companyRef.current && !companyRef.current.contains(e.target)) setShowCompanySearch(false);
+      if (moreRef.current && !moreRef.current.contains(e.target)) setShowMore(false);
+      if (poolMoreRef.current && !poolMoreRef.current.contains(e.target)) setPoolMoreOpen(false);
     };
     document.addEventListener("mousedown", click);
     return () => document.removeEventListener("mousedown", click);
@@ -497,7 +501,7 @@ export default function VendorList() {
         <div className="flex items-center gap-2 flex-wrap sm:justify-end">
           {/* More dropdown — Export / Bulk Upload / Trash */}
           {mainTab === "vendors" && (
-            <div className="relative">
+            <div className="relative" ref={moreRef}>
               <button type="button" onClick={() => setShowMore(s => !s)}
                 className={`inline-flex h-9 select-none items-center gap-2 rounded-md border px-3.5 text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
                   showMore
@@ -544,7 +548,7 @@ export default function VendorList() {
           )}
 
           {mainTab === "pool" && (
-            <div className="relative">
+            <div className="relative" ref={poolMoreRef}>
               <button type="button" onClick={() => setPoolMoreOpen(s => !s)}
                 className={`inline-flex h-9 select-none items-center gap-2 rounded-md border px-3.5 text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
                   poolMoreOpen

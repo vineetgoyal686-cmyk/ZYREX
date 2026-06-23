@@ -49,6 +49,29 @@ router.get("/", requireAuth, async (req, res) => {
   res.json({ users });
 });
 
+const ROLE_DEFAULT_PERMS = {
+  super_admin: {
+    manage_user:     { view: true, add: true, edit: true, delete: true, manage_permissions: true },
+    manage_project:  { view: true, add: true, edit: true, delete: true },
+    designation:     { view: true, add: true, edit: true, delete: true },
+    approval_flow:   { view: true, add: true, edit: true, delete: true },
+    serialization:   { view: true, add: true, edit: true, delete: true },
+    request_handler: { view: true, edit: true },
+    delegation:      { view: true, add: true, edit: true, delete: true },
+    mail_management: { view: true, add: true, edit: true, delete: true },
+  },
+  admin: {
+    manage_user:     { view: true, add: true, edit: true, delete: false, manage_permissions: false },
+    manage_project:  { view: true, add: true, edit: true, delete: false },
+    designation:     { view: true, add: true, edit: true, delete: false },
+    approval_flow:   { view: true, add: true, edit: true, delete: false },
+    serialization:   { view: true, add: false, edit: true, delete: false },
+    request_handler: { view: true, edit: true },
+    delegation:      { view: true, add: true, edit: true, delete: false },
+    mail_management: { view: true, add: true, edit: true, delete: false },
+  },
+};
+
 /* POST /api/users — invite */
 router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
   let { name, email, contact_no, designation, designation_id, access_profile_ids, department, role, profile_permissions } = req.body;
@@ -76,7 +99,7 @@ router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
 
   const { data: authData, error: authError } = await admin.auth.admin.inviteUserByEmail(email, {
     data: { name },
-    redirectTo: process.env.FRONTEND_URL,
+    redirectTo: process.env.FRONTEND_URL + "/app.html",
   });
   if (authError) return res.status(400).json({ error: authError.message });
 
@@ -91,7 +114,7 @@ router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
     access_profile_ids:  access_profile_ids  || [],
     department:          department          || "",
     role:                role                || "user",
-    profile_permissions: profile_permissions || null,
+    profile_permissions: profile_permissions ?? ROLE_DEFAULT_PERMS[role] ?? null,
     created_by_id:       req.body.createdById || null,
     created_by_name:     req.body.createdByName || null,
   }, { onConflict: "id" }).select().single();
@@ -107,7 +130,7 @@ router.post("/:id/resend-invite", requireAuth, requireAdminOrAbove, async (req, 
   const { data: user, error: fetchErr } = await admin.from("users").select("email").eq("id", id).single();
   if (fetchErr || !user) return res.status(404).json({ error: "User not found" });
   const { error } = await admin.auth.admin.inviteUserByEmail(user.email, {
-    redirectTo: process.env.FRONTEND_URL + "/",
+    redirectTo: process.env.FRONTEND_URL + "/app.html",
   });
   if (error) return res.status(400).json({ error: error.message });
   res.json({ success: true });

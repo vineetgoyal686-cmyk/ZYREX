@@ -32,7 +32,19 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
   const currentUser    = JSON.parse(localStorage.getItem("bms_user") || "{}");
   const isGlobalAdmin  = currentUser.role === "global_admin";
   const isAdminOrAbove = ["global_admin", "super_admin", "admin"].includes(currentUser.role);
-  const pp             = currentUser.profile_permissions || {};
+  const rawPp          = currentUser.profile_permissions || {};
+  const pp = currentUser.role === "super_admin"
+    ? {
+        manage_user:     { view: true, add: true, edit: true, delete: true, manage_permissions: true },
+        manage_project:  { view: true, add: true, edit: true, delete: true },
+        designation:     { view: true, add: true, edit: true, delete: true },
+        approval_flow:   { view: true, add: true, edit: true, delete: true },
+        serialization:   { view: true, add: true, edit: true, delete: true },
+        request_handler: { view: true, edit: true },
+        delegation:      { view: true, add: true, edit: true, delete: true },
+        mail_management: { view: true, add: true, edit: true, delete: true },
+      }
+    : rawPp;
 
   const [section,   setSection]   = useState("profile");
   const [toast,     setToast]     = useState(null);
@@ -127,8 +139,9 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
   }, [section]);
 
   /* ── Nav groups ── */
-  const showProjectsTab = isGlobalAdmin || !!pp.manage_project?.view;
-  const showTeamTab     = isGlobalAdmin || !!pp.manage_user?.view;
+  const isSuperOrGlobal = isGlobalAdmin || currentUser.role === "super_admin";
+  const showProjectsTab = isSuperOrGlobal || !!pp.manage_project?.view;
+  const showTeamTab     = isSuperOrGlobal || !!pp.manage_user?.view;
   const adminSettings   = isGlobalAdmin || currentUser.role === "super_admin";
 
   const settingsNavGroups = (() => {
@@ -149,7 +162,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
     ];
     const workflow = [
       { id: "approval_flow",   label: "Approval Flow",   icon: Workflow },
-      ...(isGlobalAdmin || !!pp.serialization?.view
+      ...(isGlobalAdmin || currentUser.role === "super_admin" || !!pp.serialization?.view
         ? [{ id: "serialization", label: "Serialization", icon: KeyRound }]
         : []),
       { id: "request_handler",  label: "Request Handler",  icon: Inbox },
@@ -239,12 +252,12 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
         {/* Main content */}
         <div className="min-w-0 flex-1 flex flex-col min-h-0">
 
-          {section === "serialization" && (isGlobalAdmin || !!pp.serialization?.view) && (
-            <Serialization isGlobalAdmin={isGlobalAdmin} showToast={showToast} />
+          {section === "serialization" && (isGlobalAdmin || currentUser.role === "super_admin" || !!pp.serialization?.view) && (
+            <Serialization isGlobalAdmin={isGlobalAdmin || currentUser.role === "super_admin"} showToast={showToast} />
           )}
 
           {/* Team = full-bleed, no padding */}
-          {section === "team" && (isGlobalAdmin || !!pp.manage_user?.view) && (
+          {section === "team" && (isSuperOrGlobal || !!pp.manage_user?.view) && (
             <UserManagement
               currentUser={currentUser}
               isGlobalAdmin={isGlobalAdmin}

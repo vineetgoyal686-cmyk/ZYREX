@@ -230,7 +230,7 @@ export default function RequestHandler({ showToast, currentUser }) {
                             <span key={u.id}
                               className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-100 border border-slate-200 rounded text-[11px] font-medium text-slate-700">
                               {u.name}
-                              {editMode && !action.single && (
+                              {editMode && (
                                 <button type="button" onClick={() => removeUser(activeTab, action, u.id)}
                                   className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-slate-300 text-slate-400 hover:text-slate-600 transition shrink-0 ml-0.5">
                                   <X size={9} strokeWidth={3} />

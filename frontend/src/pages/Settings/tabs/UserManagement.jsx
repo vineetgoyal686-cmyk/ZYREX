@@ -7,7 +7,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../../../utils/api";
 import {
-  ROLE_BADGE, PROFILE_SECTIONS, DEFAULT_PROFILE_PERMS,
+  ROLE_BADGE, PROFILE_SECTIONS, DEFAULT_PROFILE_PERMS, ROLE_DEFAULT_PERMS,
   MODULE_PERM_KEYS, GLOBAL_DASHBOARD_ORDER_KEYS,
   getModulePermKeysFull, makeBlankModule,
 } from "../constants";
@@ -204,14 +204,23 @@ export default function UserManagement({
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
       const { data } = await api.post("/api/users", { ...newUser, access_profile_ids: newUserAccessProfileIds, designation_id: newUserAccessProfileIds[0] || null, profile_permissions: { ...newUserProfilePerms, allowed_projects: newUserAllowedProjects }, createdById: u.id || "", createdByName: u.name || "" });
       const userId = data.user?.id;
-      if (userId && newUserModules.some(m =>
+      const newMember = data.user;
+
+      const hasPerms = userId && newUserModules.some(m =>
         MODULE_PERM_KEYS.some(k => m[k.key]) || GLOBAL_DASHBOARD_ORDER_KEYS.some(k => m[k])
-      )) {
-        await api.put(`/api/users/${userId}/permissions`, { permissions: newUserModules });
+      );
+
+      // Run permissions + signature in parallel instead of sequentially
+      await Promise.all([
+        hasPerms ? api.put(`/api/users/${userId}/permissions`, { permissions: newUserModules }) : Promise.resolve(),
+        (userId && newUserSignature) ? api.post(`/api/users/${userId}/signature`, { signature: newUserSignature }).catch(() => {}) : Promise.resolve(),
+      ]);
+
+      // Optimistically add to list — avoids full fetchTeam() round-trip
+      if (newMember) {
+        setMembers(prev => [newMember, ...prev]);
       }
-      if (userId && newUserSignature) {
-        try { await api.post(`/api/users/${userId}/signature`, { signature: newUserSignature }); } catch { /* non-blocking */ }
-      }
+
       setNewUser({ name: "", email: "", contact_no: "", designation: "", department: "", role: "user" });
       setNewUserAccessProfileIds([]);
       setNewUserProfilePerms(DEFAULT_PROFILE_PERMS);
@@ -229,7 +238,6 @@ export default function UserManagement({
       }));
       setShowAddUser(false);
       showToast(`Invite sent to ${newUser.email}`);
-      fetchTeam();
     } catch (err) { showToast(err.response?.data?.error || "Failed to add member", "error"); }
     finally { setLoading(false); }
   };
@@ -604,11 +612,12 @@ export default function UserManagement({
                       const mb = ROLE_BADGE[m.role] || ROLE_BADGE.user;
                       const initials = m.name?.split(" ").map(n => n[0]).join("").toUpperCase() || "?";
                       const isSelf = m.id === currentUser.id;
+                      const isSuperOrGlobal = isGlobalAdmin || currentUser.role === "super_admin";
                       const canHierarchy = canManage(currentUser.role, m.role, m.id);
-                      const canShield  = canHierarchy && (isGlobalAdmin || !!pp.manage_user?.manage_permissions);
-                      const canToggle  = canHierarchy && !isSelf && (isGlobalAdmin || !!pp.manage_user?.edit);
-                      const canDel     = canHierarchy && !isSelf && (isGlobalAdmin || !!pp.manage_user?.delete);
-                      const canManageRole = canHierarchy && m.role !== "global_admin" && (isGlobalAdmin || !!pp.manage_user?.edit);
+                      const canShield  = canHierarchy && (isSuperOrGlobal || !!pp.manage_user?.manage_permissions);
+                      const canToggle  = canHierarchy && !isSelf && (isSuperOrGlobal || !!pp.manage_user?.edit);
+                      const canDel     = canHierarchy && !isSelf && (isSuperOrGlobal || !!pp.manage_user?.delete);
+                      const canManageRole = canHierarchy && m.role !== "global_admin" && (isSuperOrGlobal || !!pp.manage_user?.edit);
                       const isEven = idx % 2 === 0;
                       const td = "px-4 py-3 border-r border-slate-100 last:border-r-0";
                       return (
@@ -745,10 +754,11 @@ export default function UserManagement({
                       </div>
                       <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100">
                         {(() => {
+                          const isSuperOrGlobal2 = isGlobalAdmin || currentUser.role === "super_admin";
                           const ch = canManage(currentUser.role, m.role, m.id);
-                          const cShield = ch && (isGlobalAdmin || !!pp.manage_user?.manage_permissions);
-                          const cToggle = ch && m.id !== currentUser.id && (isGlobalAdmin || !!pp.manage_user?.edit);
-                          const cDel    = ch && m.id !== currentUser.id && (isGlobalAdmin || !!pp.manage_user?.delete);
+                          const cShield = ch && (isSuperOrGlobal2 || !!pp.manage_user?.manage_permissions);
+                          const cToggle = ch && m.id !== currentUser.id && (isSuperOrGlobal2 || !!pp.manage_user?.edit);
+                          const cDel    = ch && m.id !== currentUser.id && (isSuperOrGlobal2 || !!pp.manage_user?.delete);
                           return (
                             <>
                               {ch && <button onClick={() => { setEditingMember(m); setEditForm({ name: m.name, contact_no: m.contact_no || "", designation: m.designation || "", department: m.department || "" }); setEditAccessProfileIds(m.access_profile_ids || []); }} title="Edit Info" className="p-2 rounded-sm bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><Pencil size={16} /></button>}
@@ -807,7 +817,11 @@ export default function UserManagement({
                       <div>
                         <span className={lbl}>Role Access</span>
                         <div className="relative">
-                          <select className={`${inp} appearance-none pr-10`} value={newUser.role} onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
+                          <select className={`${inp} appearance-none pr-10`} value={newUser.role} onChange={(e) => {
+                              const role = e.target.value;
+                              setNewUser((p) => ({ ...p, role }));
+                              setNewUserProfilePerms(ROLE_DEFAULT_PERMS[role] || DEFAULT_PROFILE_PERMS);
+                            }}>
                             {getManageableRoles(currentUser.role).includes("super_admin") && <option value="super_admin">Super Admin (Organization)</option>}
                             {getManageableRoles(currentUser.role).includes("admin") && <option value="admin">Administrator (Team)</option>}
                             <option value="user">Standard User (Staff)</option>

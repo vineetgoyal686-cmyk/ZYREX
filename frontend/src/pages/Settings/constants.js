@@ -29,6 +29,39 @@ export const DEFAULT_PROFILE_PERMS = {
   mail_management: { view: false, add: false, edit: false, delete: false },
 };
 
+export const ROLE_DEFAULT_PERMS = {
+  super_admin: {
+    manage_user:     { view: true, add: true, edit: true, delete: true, manage_permissions: true },
+    manage_project:  { view: true, add: true, edit: true, delete: true },
+    designation:     { view: true, add: true, edit: true, delete: true },
+    approval_flow:   { view: true, add: true, edit: true, delete: true },
+    serialization:   { view: true, add: true, edit: true, delete: true },
+    request_handler: { view: true, edit: true },
+    delegation:      { view: true, add: true, edit: true, delete: true },
+    mail_management: { view: true, add: true, edit: true, delete: true },
+  },
+  admin: {
+    manage_user:     { view: true, add: true, edit: true, delete: false, manage_permissions: false },
+    manage_project:  { view: true, add: true, edit: true, delete: false },
+    designation:     { view: true, add: true, edit: true, delete: false },
+    approval_flow:   { view: true, add: true, edit: true, delete: false },
+    serialization:   { view: true, add: false, edit: true, delete: false },
+    request_handler: { view: true, edit: true },
+    delegation:      { view: true, add: true, edit: true, delete: false },
+    mail_management: { view: true, add: true, edit: true, delete: false },
+  },
+  user: {
+    manage_user:     { view: false, add: false, edit: false, delete: false, manage_permissions: false },
+    manage_project:  { view: false, add: false, edit: false, delete: false },
+    designation:     { view: false, add: false, edit: false, delete: false },
+    approval_flow:   { view: false, add: false, edit: false, delete: false },
+    serialization:   { view: false, add: false, edit: false, delete: false },
+    request_handler: { view: false, edit: false },
+    delegation:      { view: false, add: false, edit: false, delete: false },
+    mail_management: { view: false, add: false, edit: false, delete: false },
+  },
+};
+
 export const MODULE_PERM_KEYS = [
   { key: "can_view",              label: "View"           },
   { key: "can_add",               label: "Create"         },
