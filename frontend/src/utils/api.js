@@ -26,11 +26,16 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    // Don't intercept 401s from the login endpoint itself — let the form handle the error
+    if (original.url?.includes("/api/auth/login")) {
+      return Promise.reject(error);
+    }
+
     const refreshToken = localStorage.getItem("bms_refresh_token");
     if (!refreshToken) {
       localStorage.removeItem("bms_token");
       localStorage.removeItem("bms_user");
-      window.location.href = "/";
+      window.location.href = "/app.html";
       return Promise.reject(error);
     }
 
@@ -61,7 +66,7 @@ api.interceptors.response.use(
       localStorage.removeItem("bms_token");
       localStorage.removeItem("bms_refresh_token");
       localStorage.removeItem("bms_user");
-      window.location.href = "/";
+      window.location.href = "/app.html";
       return Promise.reject(err);
     } finally {
       isRefreshing = false;
