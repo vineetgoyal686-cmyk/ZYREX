@@ -11,7 +11,7 @@ router.get("/global-stats", requireAuth, async (req, res) => {
     const { data: orders, error: ordErr } = await supabase
       .schema("procurement")
       .from("purchase_orders")
-      .select("id, order_number, order_type, status, totals, site_id, company_id, vendor_id, category_id, created_at, updated_at, made_by, companies(name, code), vendors(name), categories(name), snapshot")
+      .select("id, order_number, order_type, status, totals, site_id, company_id, vendor_id, category_id, created_at, updated_at, made_by, companies(company_name, company_code), vendors(vendor_name), snapshot")
       .neq("status", "Deleted");
     if (ordErr) throw ordErr;
 
@@ -94,24 +94,24 @@ router.get("/global-stats", requireAuth, async (req, res) => {
       }
 
       // Entity spend
-      const eName = o.companies?.name || o.snapshot?.company?.name || "Unknown";
-      const eCode = o.companies?.code || "";
+      const eName = o.companies?.company_name || o.snapshot?.company?.name || "Unknown";
+      const eCode = o.companies?.company_code || "";
       if (!entityMap[eName]) entityMap[eName] = { entity: eName, code: eCode, po: 0, wo: 0 };
       entityMap[eName][type] = Math.round((entityMap[eName][type] + valL) * 100) / 100;
 
       // Site spend
-      const siteName = o.snapshot?.site?.name || o.site_id || "Unknown";
-      const siteCode = o.snapshot?.site?.code || "";
+      const siteName = o.snapshot?.site?.name || o.snapshot?.site?.project_name || o.site_id || "Unknown";
+      const siteCode = o.snapshot?.site?.code || o.snapshot?.site?.project_code || "";
       if (!siteMap[siteName]) siteMap[siteName] = { site: siteName, code: siteCode, po: 0, wo: 0 };
       siteMap[siteName][type] = Math.round((siteMap[siteName][type] + valL) * 100) / 100;
 
-      // Category spend
-      const catName = o.categories?.name || o.snapshot?.category || "Other";
+      // Category spend (no FK join — use snapshot or category_id)
+      const catName = o.snapshot?.category || o.snapshot?.category_name || o.category_id || "Other";
       if (!catMap[catName]) catMap[catName] = { category: catName, po: 0, wo: 0 };
       catMap[catName][type] = Math.round((catMap[catName][type] + valL) * 100) / 100;
 
       // Vendor spend
-      const vName = o.vendors?.name || o.snapshot?.vendor?.name || "Unknown";
+      const vName = o.vendors?.vendor_name || o.snapshot?.vendor?.name || o.snapshot?.vendor?.vendor_name || "Unknown";
       if (!vendorMap[vName]) vendorMap[vName] = { name: vName, pov: 0, wov: 0, poc: 0, woc: 0 };
       if (isPO) { vendorMap[vName].pov = Math.round((vendorMap[vName].pov + valL) * 100) / 100; vendorMap[vName].poc++; }
       else       { vendorMap[vName].wov = Math.round((vendorMap[vName].wov + valL) * 100) / 100; vendorMap[vName].woc++; }
@@ -134,7 +134,7 @@ router.get("/global-stats", requireAuth, async (req, res) => {
         agingOrders.push({
           orderNo:   o.order_number,
           type:      isPO ? "PO" : "WO",
-          vendor:    o.vendors?.name || o.snapshot?.vendor?.name || "—",
+          vendor:    o.vendors?.vendor_name || o.snapshot?.vendor?.name || o.snapshot?.vendor?.vendor_name || "—",
           value:     `₹${valL}L`,
           rawValue:  val,
           status:    o.status,
@@ -151,7 +151,7 @@ router.get("/global-stats", requireAuth, async (req, res) => {
     // Counts
     const [vR, pR, cR, coR, iR, uR, clR] = await Promise.all([
       supabase.schema("procurement").from("vendors").select("id", { count: "exact", head: true }),
-      supabase.from("projects").select("id", { count: "exact", head: true }).eq("status", "active"),
+      supabase.from("projects").select("id", { count: "exact", head: true }).neq("is_active", false),
       supabase.schema("procurement").from("companies").select("id", { count: "exact", head: true }),
       supabase.schema("procurement").from("contacts").select("id", { count: "exact", head: true }),
       supabase.schema("procurement").from("items").select("id", { count: "exact", head: true }),
