@@ -370,7 +370,6 @@ export default React.memo(function Sidebar({
 
   const go = (id) => {
     setActiveTab(id);
-    if (id === "global_dashboard") setSelectedProject(null);
   };
 
   const toggleSection = (key) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));

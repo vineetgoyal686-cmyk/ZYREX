@@ -48,8 +48,10 @@ router.get("/global-stats", requireAuth, async (req, res) => {
     const catMap     = {};
     const vendorMap  = {};
     const userMap    = {};
-    const monthlySpendArr = Array.from({ length: 12 }, (_, i) => ({ month: MONTHS[i], po: 0, wo: 0 }));
-    const monthlyCountArr = Array.from({ length: 12 }, (_, i) => ({ month: MONTHS[i], po: 0, wo: 0 }));
+    const monthlySpendArr  = Array.from({ length: 12 }, (_, i) => ({ month: MONTHS[i], po: 0, wo: 0 }));
+    const monthlyCountArr  = Array.from({ length: 12 }, (_, i) => ({ month: MONTHS[i], po: 0, wo: 0 }));
+    const monthlyBySite      = Array.from({ length: 12 }, () => ({})); // { siteCode: {code,po(₹L),wo(₹L),orders} }
+    const monthlyCountBySiteArr = Array.from({ length: 12 }, () => ({})); // { siteCode: {code,po(count),wo(count)} }
     const agingOrders = [];
     const today = new Date(); today.setHours(0, 0, 0, 0);
 
@@ -86,24 +88,38 @@ router.get("/global-stats", requireAuth, async (req, res) => {
         orderStats[key][`${type}Value`] += val;
       }
 
-      // Monthly
+      // Monthly totals + site breakdown
       const mIdx = new Date(o.created_at).getMonth();
       if (!isNaN(mIdx)) {
         monthlySpendArr[mIdx][type] = Math.round((monthlySpendArr[mIdx][type] + valL) * 100) / 100;
         monthlyCountArr[mIdx][type]++;
+        // site breakdown per month (populated after siteCode is known below)
       }
 
-      // Entity spend
+      // Entity spend — use company_code as chart key, full name for tooltip
       const eName = o.companies?.company_name || o.snapshot?.company?.name || "Unknown";
-      const eCode = o.companies?.company_code || "";
-      if (!entityMap[eName]) entityMap[eName] = { entity: eName, code: eCode, po: 0, wo: 0 };
-      entityMap[eName][type] = Math.round((entityMap[eName][type] + valL) * 100) / 100;
+      const eCode = o.companies?.company_code || o.snapshot?.company?.code || "";
+      const eKey  = eCode || eName;
+      if (!entityMap[eKey]) entityMap[eKey] = { entity: eKey, name: eName, code: eCode, po: 0, wo: 0 };
+      entityMap[eKey][type] = Math.round((entityMap[eKey][type] + valL) * 100) / 100;
 
-      // Site spend
-      const siteName = o.snapshot?.site?.name || o.snapshot?.site?.project_name || o.site_id || "Unknown";
-      const siteCode = o.snapshot?.site?.code || o.snapshot?.site?.project_code || "";
-      if (!siteMap[siteName]) siteMap[siteName] = { site: siteName, code: siteCode, po: 0, wo: 0 };
-      siteMap[siteName][type] = Math.round((siteMap[siteName][type] + valL) * 100) / 100;
+      // Site spend — use siteCode from snapshot (stored as siteCode/siteName)
+      const siteCode = o.snapshot?.site?.siteCode || "";
+      const siteName = o.snapshot?.site?.siteName || siteCode || o.site_id || "Unknown";
+      const sKey     = siteCode || siteName;
+      if (!siteMap[sKey]) siteMap[sKey] = { site: sKey, name: siteName, code: siteCode, po: 0, wo: 0 };
+      siteMap[sKey][type] = Math.round((siteMap[sKey][type] + valL) * 100) / 100;
+
+      // Month × site breakdown (for tooltips)
+      if (!isNaN(mIdx) && siteCode) {
+        // spend breakdown
+        if (!monthlyBySite[mIdx][siteCode]) monthlyBySite[mIdx][siteCode] = { code: siteCode, po: 0, wo: 0, orders: 0 };
+        monthlyBySite[mIdx][siteCode][type] = Math.round((monthlyBySite[mIdx][siteCode][type] + valL) * 100) / 100;
+        monthlyBySite[mIdx][siteCode].orders++;
+        // count breakdown (integers only, no ₹ values)
+        if (!monthlyCountBySiteArr[mIdx][siteCode]) monthlyCountBySiteArr[mIdx][siteCode] = { code: siteCode, po: 0, wo: 0 };
+        monthlyCountBySiteArr[mIdx][siteCode][type]++;
+      }
 
       // Category spend (no FK join — use snapshot or category_id)
       const catName = o.snapshot?.category || o.snapshot?.category_name || o.category_id || "Other";
@@ -195,8 +211,10 @@ router.get("/global-stats", requireAuth, async (req, res) => {
       entitySpend:   Object.values(entityMap),
       siteSpend:     Object.values(siteMap),
       categorySpend: Object.values(catMap).sort((a, b) => (b.po + b.wo) - (a.po + a.wo)).slice(0, 10),
-      monthlySpend:  monthlySpendArr,
-      monthlyCount:  monthlyCountArr,
+      monthlySpend:    monthlySpendArr,
+      monthlyCount:    monthlyCountArr,
+      monthlySpendBySite: Object.fromEntries(monthlyBySite.map((s, i) => [MONTHS[i], Object.values(s)])),
+      monthlyCountBySite: Object.fromEntries(monthlyCountBySiteArr.map((s, i) => [MONTHS[i], Object.values(s)])),
       topVendorsPO,
       topVendorsWO,
       userOrderData,

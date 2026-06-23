@@ -128,13 +128,11 @@ const MonthTooltip = ({ active, payload, label }) => {
   const poVal = payload.find(p => p.dataKey === "po")?.value || 0;
   const woVal = payload.find(p => p.dataKey === "wo")?.value || 0;
   const totalSpendVal = poVal + woVal;
-  const fyStart = new Date().getMonth() >= 3 ? new Date().getFullYear() - 1 : new Date().getFullYear() - 2;
-  const year = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].includes(label) ? fyStart : fyStart + 1;
-  const fullLabel = `${label}-${year}`;
+  const year = new Date().getFullYear();
   return (
     <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 4, overflow: "hidden", minWidth: 220, boxShadow: "0 8px 28px rgba(15,23,42,0.14)" }}>
       <div style={{ background: "#0f172a", padding: "7px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ color: "#fff", fontWeight: 800, fontSize: 13 }}>{fullLabel}</span>
+        <span style={{ color: "#fff", fontWeight: 800, fontSize: 13 }}>{label}-{year}</span>
         <span style={{ color: CPL, fontWeight: 800, fontSize: 13 }}>₹{fmt(totalSpendVal)}L</span>
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -146,13 +144,15 @@ const MonthTooltip = ({ active, payload, label }) => {
           </tr>
         </thead>
         <tbody>
-          {sites.map((s, i) => (
+          {sites.length > 0 ? sites.map((s, i) => (
             <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
               <td style={{ color: "#374151", fontSize: 11, fontWeight: 600, padding: "5px 10px" }}>{s.code}</td>
               <td style={{ color: "#64748b", fontSize: 11, padding: "5px 8px", textAlign: "center" }}>{s.orders}</td>
               <td style={{ color: "#0f172a", fontSize: 11, fontWeight: 700, padding: "5px 10px", textAlign: "right" }}>₹{fmt(s.po + s.wo)}L</td>
             </tr>
-          ))}
+          )) : (
+            <tr><td colSpan={3} style={{ color: "#94a3b8", fontSize: 11, padding: "7px 10px", textAlign: "center" }}>—</td></tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -165,13 +165,11 @@ const CountTooltip = ({ active, payload, label }) => {
   const sites = monthlyCountBySite[label] || [];
   const poVal = payload.find(p => p.dataKey === "po")?.value || 0;
   const woVal = payload.find(p => p.dataKey === "wo")?.value || 0;
-  const fyStart = new Date().getMonth() >= 3 ? new Date().getFullYear() - 1 : new Date().getFullYear() - 2;
-  const year = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].includes(label) ? fyStart : fyStart + 1;
-  const fullLabel = `${label}-${year}`;
+  const year = new Date().getFullYear();
   return (
     <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 4, overflow: "hidden", minWidth: 210, boxShadow: "0 8px 28px rgba(15,23,42,0.14)" }}>
       <div style={{ background: "#0f172a", padding: "7px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <span style={{ color: "#fff", fontWeight: 800, fontSize: 13 }}>{fullLabel}</span>
+        <span style={{ color: "#fff", fontWeight: 800, fontSize: 13 }}>{label}-{year}</span>
         <span style={{ color: "#34d399", fontWeight: 800, fontSize: 13 }}>{poVal + woVal} Orders</span>
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -183,13 +181,15 @@ const CountTooltip = ({ active, payload, label }) => {
           </tr>
         </thead>
         <tbody>
-          {sites.map((s, i) => (
+          {sites.length > 0 ? sites.map((s, i) => (
             <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
               <td style={{ color: "#374151", fontSize: 11, fontWeight: 600, padding: "5px 10px" }}>{s.code}</td>
               <td style={{ color: "#2563eb", fontSize: 11, fontWeight: 700, padding: "5px 8px", textAlign: "center" }}>{s.po}</td>
               <td style={{ color: "#d97706", fontSize: 11, fontWeight: 700, padding: "5px 10px", textAlign: "right" }}>{s.wo}</td>
             </tr>
-          ))}
+          )) : (
+            <tr><td colSpan={3} style={{ color: "#94a3b8", fontSize: 11, padding: "7px 10px", textAlign: "center" }}>—</td></tr>
+          )}
         </tbody>
       </table>
     </div>
@@ -431,6 +431,9 @@ const GlobalDashboard = memo(function GlobalDashboard() {
           const el = (data.entitySpend || []).map(e => e.entity);
           setSelectedSites(sl);
           setSelectedEntities(el);
+          // populate module-level tooltip lookup maps
+          monthlySpendBySite = data.monthlySpendBySite || {};
+          monthlyCountBySite = data.monthlyCountBySite || {};
         }
       })
       .catch(() => {})
@@ -799,7 +802,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                                   <div style={{ position: "absolute", top: "calc(100% + 5px)", left: 90, zIndex: 200,
                                     background: "#fff", border: "1px solid #c7d2fe", borderRadius: 9,
                                     padding: "9px 13px", boxShadow: "0 6px 20px rgba(124,58,237,0.12)", pointerEvents: "none", whiteSpace: "nowrap" }}>
-                                    <div style={{ color: "#64748b", fontSize: 10, fontWeight: 600, marginBottom: 7 }}>{s.entity}</div>
+                                    <div style={{ color: "#64748b", fontSize: 10, fontWeight: 600, marginBottom: 7 }}>{s.name || s.entity}</div>
                                     <div style={{ display: "flex", gap: 14 }}>
                                       <div>
                                         <div style={{ color: EP, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.po)}</div>
@@ -909,7 +912,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                                   <div style={{ position: "absolute", top: "calc(100% + 5px)", left: 90, zIndex: 200,
                                     background: "#fff", border: "1px solid #fecdd3", borderRadius: 9,
                                     padding: "9px 13px", boxShadow: "0 6px 20px rgba(190,24,93,0.10)", pointerEvents: "none", whiteSpace: "nowrap" }}>
-                                    <div style={{ color: "#64748b", fontSize: 10, fontWeight: 600, marginBottom: 7 }}>{s.site}</div>
+                                    <div style={{ color: "#64748b", fontSize: 10, fontWeight: 600, marginBottom: 7 }}>{s.name || s.site}</div>
                                     <div style={{ display: "flex", gap: 14 }}>
                                       <div>
                                         <div style={{ color: SP, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.po)}</div>
