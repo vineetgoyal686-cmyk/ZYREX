@@ -199,6 +199,10 @@ export default function UserManagement({
 
   const addMember = async (e) => {
     e.preventDefault();
+    if (!newUser.name.trim())  return showToast("Full name is required", "error");
+    if (!newUser.email.trim()) return showToast("Email address is required", "error");
+    if (designations.length > 0 && newUserAccessProfileIds.length === 0)
+      return showToast("Please select at least one Access Profile", "error");
     setLoading(true);
     try {
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
