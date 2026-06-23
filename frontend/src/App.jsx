@@ -91,6 +91,7 @@ import CompareImages from "./pages/Images/CompareImages";
  
 // Attendance
 import Attendance from "./pages/Attendance/Attendance";
+import HistoricalData from "./pages/HistoricalData";
  
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const SIDEBAR_EXPANDED_WIDTH = 220;
@@ -345,7 +346,8 @@ function App() {
     if (activeTab === "proc_setup__category_list") return <CategoryList />;
     if (activeTab === "proc_setup__annexure") return <AnnexureMaster />;
 
-    if (activeTab === "organisation") return <Organisation currentUser={currentUser} />;
+    if (activeTab === "organisation")   return <Organisation currentUser={currentUser} />;
+    if (activeTab === "historical_data") return <HistoricalData />;
 
     if (activeTab === "master_data" || activeTab === "master_data__vendor") return <MasterData view="vendor" />;
     if (activeTab === "master_data__clauses") return <ClauseMasterData />;
@@ -503,6 +505,8 @@ function App() {
                 ? "pt-0 px-0 pb-0"
                 : (activeTab === "create__order" || activeTab === "procurement__orders" || activeTab === "master_data__orders" || activeTab === "procurement__intake" || activeTab === "master_data__intakes" || activeTab === "create__intake")
                   ? "pt-0 px-0 pb-0 bg-[#f0f2f5]"
+                  : activeTab === "historical_data"
+                    ? "pt-0 px-0 pb-0 bg-[#f0f2f5]"
                   : "pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4"}
         `}>
           {renderPage()}

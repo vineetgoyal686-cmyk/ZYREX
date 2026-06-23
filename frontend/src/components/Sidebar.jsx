@@ -89,8 +89,9 @@ const globalRows = [
 ];
 
 const managementRows = [
-  { id: "organisation", label: "Organisation", icon: Building2, description: "Org structure, hierarchy and SOPs" },
-  { id: "audit",        label: "Audit",        icon: Activity,  description: "System audit logs and history" },
+  { id: "organisation",   label: "Organisation",   icon: Building2,      description: "Org structure, hierarchy and SOPs" },
+  { id: "audit",          label: "Audit",          icon: Activity,       description: "System audit logs and history" },
+  { id: "historical_data", label: "Historical Data", icon: FileSpreadsheet, description: "Pre-system order records" },
 ];
 
 const masterDataRows = [
