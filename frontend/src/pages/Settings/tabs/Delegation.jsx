@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { UserCheck, Plus, Trash2, Loader2, CalendarRange, ChevronDown, ToggleLeft, ToggleRight, X } from "lucide-react";
 import api from "../../../utils/api";
 
@@ -49,8 +49,20 @@ export default function Delegation({ showToast }) {
   const [deleting,    setDeleting]    = useState({});
   const [userSearch,  setUserSearch]  = useState("");
   const [userOpen,    setUserOpen]    = useState(false);
+  const userDropdownRef               = useRef(null);
 
   useEffect(() => { fetchAll(); }, []);
+
+  useEffect(() => {
+    if (!userOpen) return;
+    const handler = (e) => {
+      if (userDropdownRef.current && !userDropdownRef.current.contains(e.target)) {
+        setUserOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [userOpen]);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -221,7 +233,7 @@ export default function Delegation({ showToast }) {
           {/* Delegate To */}
           <div className="flex flex-col gap-1">
             <label className="text-[12px] font-semibold text-slate-600">Delegate To <span className="text-red-500">*</span></label>
-            <div className="relative">
+            <div className="relative" ref={userDropdownRef}>
               <button
                 type="button"
                 onClick={() => setUserOpen(o => !o)}

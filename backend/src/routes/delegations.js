@@ -15,22 +15,28 @@ const ACTION_LABELS = {
 /* GET /api/delegations/my-powers — what actions this user has power over */
 router.get("/my-powers", requireAuth, async (req, res) => {
   const admin       = getAdminClient();
-  const userId      = String(req.user.id);
-  const isSuperOrGlobal = ["global_admin", "super_admin"].includes(req.user.role);
+  const userId       = String(req.user.id);
+  const isGlobalAdmin = req.user.role === "global_admin";
+  const isSuperAdmin  = req.user.role === "super_admin";
 
   const powers = [];
 
-  /* Check request_handlers for order actions */
+  /* Check request_handlers for order actions.
+     global_admin gets all powers automatically.
+     super_admin gets a power only if explicitly listed as a handler (same as regular users).
+     This ensures "Issue Order" (Single handler = Shailesh) doesn't appear for a super_admin
+     who was never added as that handler. */
   const { data: handlers } = await admin.from("request_handlers").select("*");
   for (const h of (handlers || [])) {
     if (h.module_key !== "order") continue;
     if (!ACTION_LABELS[h.action_key] || h.action_key === "approval") continue;
-    const inList = isSuperOrGlobal || (h.users || []).some(u => String(u.id) === userId);
+    const inList = isGlobalAdmin || (h.users || []).some(u => String(u.id) === userId);
     if (inList) powers.push({ key: h.action_key, label: ACTION_LABELS[h.action_key] });
   }
 
-  /* Check if user is approver in any active flow */
-  let isApprover = isSuperOrGlobal;
+  /* Check if user is approver in any active flow.
+     global_admin and super_admin are always treated as approvers. */
+  let isApprover = isGlobalAdmin || isSuperAdmin;
   if (!isApprover) {
     const { data: flows } = await admin.from("approval_flows").select("levels").eq("status", "active");
     outer: for (const flow of (flows || [])) {
