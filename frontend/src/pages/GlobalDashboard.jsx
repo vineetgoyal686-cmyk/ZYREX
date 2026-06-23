@@ -4,134 +4,12 @@ import {
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Area, Cell, Line,
 } from "recharts";
 
-// ─── MOCK DATA ───────────────────────────────────────────────────────────────
-const SITES = ["All Sites", "Site Alpha", "Site Beta", "Site Gamma", "Site Delta"];
-const SITE_LIST   = ["Site Alpha", "Site Beta", "Site Gamma", "Site Delta"];
-const ENTITY_LIST = ["Entity A", "Entity B", "Entity C", "Entity D"];
+// ─── API ─────────────────────────────────────────────────────────────────────
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
-const gen = (site) => {
-  const m = site === "All Sites" ? 4 : site === "Site Alpha" ? 1.8 : site === "Site Beta" ? 1.2 : site === "Site Gamma" ? 0.7 : 0.5;
-  return {
-    totalPO: Math.round(320 * m), totalWO: Math.round(185 * m),
-    totalPOValue: Math.round(4820 * m), totalWOValue: Math.round(2150 * m),
-    draft:        { po: Math.round(28 * m),  wo: Math.round(14 * m) },
-    review:       { po: Math.round(45 * m),  wo: Math.round(22 * m),  poValue: Math.round(620 * m),  woValue: Math.round(310 * m) },
-    pendingIssue: { po: Math.round(38 * m),  wo: Math.round(19 * m),  poValue: Math.round(540 * m),  woValue: Math.round(270 * m) },
-    issued:       { po: Math.round(180 * m), wo: Math.round(105 * m), poValue: Math.round(3200 * m), woValue: Math.round(1450 * m) },
-    reverted:     { po: Math.round(12 * m),  wo: Math.round(8 * m),   poValue: Math.round(180 * m),  woValue: Math.round(95 * m) },
-    cancelled:    { po: Math.round(8 * m),   wo: Math.round(5 * m),   poValue: Math.round(120 * m),  woValue: Math.round(65 * m) },
-    rejected:     { po: Math.round(6 * m),   wo: Math.round(4 * m),   poValue: Math.round(90 * m),   woValue: Math.round(48 * m) },
-    recalled:     { po: Math.round(3 * m),   wo: Math.round(2 * m),   poValue: Math.round(45 * m),   woValue: Math.round(28 * m) },
-    amendPending: { po: Math.round(15 * m),  wo: Math.round(9 * m),   poValue: Math.round(210 * m),  woValue: Math.round(115 * m) },
-    amended:      { po: Math.round(22 * m),  wo: Math.round(13 * m),  poValue: Math.round(310 * m),  woValue: Math.round(165 * m) },
-  };
-};
-
-const monthlySpend = [
-  { month: "Apr", po: 320, wo: 145 }, { month: "May", po: 380, wo: 165 },
-  { month: "Jun", po: 420, wo: 195 }, { month: "Jul", po: 395, wo: 180 },
-  { month: "Aug", po: 510, wo: 220 }, { month: "Sep", po: 460, wo: 200 },
-  { month: "Oct", po: 540, wo: 245 }, { month: "Nov", po: 490, wo: 215 },
-  { month: "Dec", po: 620, wo: 280 }, { month: "Jan", po: 580, wo: 260 },
-  { month: "Feb", po: 430, wo: 190 }, { month: "Mar", po: 520, wo: 235 },
-];
-const monthlyCount = [
-  { month: "Apr", po: 36, wo: 20 }, { month: "May", po: 42, wo: 24 },
-  { month: "Jun", po: 48, wo: 28 }, { month: "Jul", po: 45, wo: 26 },
-  { month: "Aug", po: 58, wo: 32 }, { month: "Sep", po: 52, wo: 30 },
-  { month: "Oct", po: 61, wo: 35 }, { month: "Nov", po: 55, wo: 31 },
-  { month: "Dec", po: 70, wo: 40 }, { month: "Jan", po: 66, wo: 37 },
-  { month: "Feb", po: 50, wo: 28 }, { month: "Mar", po: 60, wo: 34 },
-];
-const topVendorsPO = [
-  { name: "Tata Consultancy",   value: 845, count: 42 },
-  { name: "L&T Infrastructure", value: 720, count: 36 },
-  { name: "Siemens India",      value: 635, count: 31 },
-  { name: "ABB Limited",        value: 510, count: 25 },
-  { name: "Schneider Electric", value: 425, count: 21 },
-];
-const topVendorsWO = [
-  { name: "BuildRight Co.",  value: 380, count: 28 },
-  { name: "Infra Solutions", value: 310, count: 22 },
-  { name: "MetroWorks Ltd",  value: 265, count: 19 },
-  { name: "TechBuild Inc.",  value: 215, count: 16 },
-  { name: "ProConstruct",    value: 180, count: 13 },
-];
-const categorySpend = [
-  { category: "Civil", po: 1250, wo: 680 }, { category: "Electrical", po: 980, wo: 320 },
-  { category: "Mechanical", po: 860, wo: 450 }, { category: "IT & Tech", po: 720, wo: 180 },
-  { category: "Safety", po: 540, wo: 290 },    { category: "Infra", po: 470, wo: 230 },
-];
-const siteSpend = [
-  { site: "Site Alpha", code: "SA-01", po: 1850, wo: 820 },
-  { site: "Site Beta",  code: "SB-02", po: 1240, wo: 560 },
-  { site: "Site Gamma", code: "SG-03", po: 890,  wo: 420 },
-  { site: "Site Delta", code: "SD-04", po: 680,  wo: 340 },
-];
-const entitySpend = [
-  { entity: "Entity A", code: "EA-01", po: 2100, wo: 950 },
-  { entity: "Entity B", code: "EB-02", po: 1650, wo: 720 },
-  { entity: "Entity C", code: "EC-03", po: 1200, wo: 580 },
-  { entity: "Entity D", code: "ED-04", po: 820,  wo: 410 },
-];
-const monthlyData = monthlySpend.map((m, i) => ({
-  month:      m.month,
-  poSpend:    m.po,
-  woSpend:    m.wo,
-  totalSpend: m.po + m.wo,
-  poCount:    monthlyCount[i].po,
-  woCount:    monthlyCount[i].wo,
-  totalCount: monthlyCount[i].po + monthlyCount[i].wo,
-}));
-
-const monthlyCountBySite = Object.fromEntries(
-  monthlyCount.map(m => {
-    const ratios = [0.46, 0.30, 0.14, 0.10];
-    return [
-      m.month,
-      siteSpend.map((s, i) => ({
-        code: s.code,
-        po: Math.round(m.po * ratios[i]),
-        wo: Math.round(m.wo * ratios[i]),
-      }))
-    ];
-  })
-);
-
-const monthlySpendBySite = Object.fromEntries(
-  monthlySpend.map(m => {
-    const ratios = [0.46, 0.30, 0.14, 0.10];
-    return [
-      m.month,
-      siteSpend.map((s, i) => ({
-        code: s.code,
-        po: Math.round(m.po * ratios[i]),
-        wo: Math.round(m.wo * ratios[i]),
-        orders: Math.round((m.po + m.wo) * ratios[i] / 8),
-      }))
-    ];
-  })
-);
-
-const userOrderData = [
-  { name: "Rahul Sharma", po: 68, wo: 42, total: 110, value: 248, sites: [{ code: "SA-01", po: 32, wo: 20 }, { code: "SB-02", po: 22, wo: 14 }, { code: "SG-03", po: 14, wo: 8 }] },
-  { name: "Priya Verma",  po: 54, wo: 38, total: 92,  value: 186, sites: [{ code: "SB-02", po: 30, wo: 22 }, { code: "SD-04", po: 24, wo: 16 }] },
-  { name: "Amit Singh",   po: 47, wo: 29, total: 76,  value: 153, sites: [{ code: "SA-01", po: 28, wo: 18 }, { code: "SG-03", po: 19, wo: 11 }] },
-  { name: "Sneha Patel",  po: 41, wo: 25, total: 66,  value: 134, sites: [{ code: "SG-03", po: 41, wo: 25 }] },
-  { name: "Karan Mehta",  po: 38, wo: 22, total: 60,  value: 118, sites: [{ code: "SD-04", po: 22, wo: 13 }, { code: "SA-01", po: 16, wo: 9 }] },
-  { name: "Deepika Rao",  po: 35, wo: 18, total: 53,  value: 96,  sites: [{ code: "SB-02", po: 35, wo: 18 }] },
-  { name: "Vijay Kumar",  po: 30, wo: 15, total: 45,  value: 82,  sites: [{ code: "SG-03", po: 18, wo: 9 }, { code: "SD-04", po: 12, wo: 6 }] },
-  { name: "Anita Joshi",  po: 28, wo: 14, total: 42,  value: 74,  sites: [{ code: "SA-01", po: 28, wo: 14 }] },
-];
-const agingData = [
-  { orderNo: "PO-2025-0312", type: "PO", vendor: "Tata Consultancy",   value: "₹12.4L", status: "Pending Issue", pendingAt: "Rahul Sharma", since: "02 May", days: 10, site: "Site Alpha", siteCode: "SA-01", entity: "Entity A" },
-  { orderNo: "WO-2025-0198", type: "WO", vendor: "BuildRight Co.",     value: "₹4.8L",  status: "In Review",     pendingAt: "Priya Verma",  since: "05 May", days: 7,  site: "Site Beta",  siteCode: "SB-02", entity: "Entity B" },
-  { orderNo: "PO-2025-0289", type: "PO", vendor: "Siemens India",      value: "₹8.2L",  status: "Pending Issue", pendingAt: "Amit Singh",   since: "04 May", days: 8,  site: "Site Alpha", siteCode: "SA-01", entity: "Entity A" },
-  { orderNo: "WO-2025-0211", type: "WO", vendor: "MetroWorks Ltd",     value: "₹2.1L",  status: "In Review",     pendingAt: "Rahul Sharma", since: "09 May", days: 3,  site: "Site Gamma", siteCode: "SG-03", entity: "Entity C" },
-  { orderNo: "PO-2025-0301", type: "PO", vendor: "L&T Infrastructure", value: "₹18.6L", status: "Amend Pending", pendingAt: "Sneha Patel",  since: "07 May", days: 5,  site: "Site Beta",  siteCode: "SB-02", entity: "Entity B" },
-  { orderNo: "WO-2025-0225", type: "WO", vendor: "Infra Solutions",    value: "₹3.5L",  status: "Pending Issue", pendingAt: "Karan Mehta",  since: "01 May", days: 11, site: "Site Delta", siteCode: "SD-04", entity: "Entity D" },
-  { orderNo: "PO-2025-0278", type: "PO", vendor: "ABB Limited",        value: "₹6.9L",  status: "In Review",     pendingAt: "Deepika Rao",  since: "08 May", days: 4,  site: "Site Alpha", siteCode: "SA-01", entity: "Entity A" },
-];
+// Tooltip helpers — populated from component state via closure; empty by default
+let monthlySpendBySite = {};
+let monthlyCountBySite = {};
 
 // ─── FORMATTER ───────────────────────────────────────────────────────────────
 const fmt = (n) => Number(n).toLocaleString("en-IN");
@@ -511,10 +389,23 @@ function MultiSelect({ options, selected, onChange, placeholder, fullWidth = fal
   );
 }
 
+// ─── EMPTY DEFAULTS ──────────────────────────────────────────────────────────
+const mkBucket = () => ({ po: 0, wo: 0, poValue: 0, woValue: 0 });
+const EMPTY_STATS = {
+  orders: { total: mkBucket(), draft: mkBucket(), review: mkBucket(), pendingIssue: mkBucket(), issued: mkBucket(), amended: mkBucket(), amendPending: mkBucket(), reverted: mkBucket(), recalled: mkBucket(), rejected: mkBucket(), cancelled: mkBucket() },
+  counts: { vendors: 0, sites: 0, entities: 0, contacts: 0, items: 0, users: 0, clauses: { total: 0, tc: 0, pay: 0, gov: 0 } },
+  entitySpend: [], siteSpend: [], categorySpend: [],
+  monthlySpend: [], monthlyCount: [],
+  topVendorsPO: [], topVendorsWO: [],
+  userOrderData: [], agingOrders: [],
+};
+
 // ─── MAIN ────────────────────────────────────────────────────────────────────
 const GlobalDashboard = memo(function GlobalDashboard() {
-  const [selectedSites,    setSelectedSites]    = useState(SITE_LIST);
-  const [selectedEntities, setSelectedEntities] = useState(ENTITY_LIST);
+  const [stats,            setStats]            = useState(EMPTY_STATS);
+  const [loading,          setLoading]          = useState(true);
+  const [selectedSites,    setSelectedSites]    = useState([]);
+  const [selectedEntities, setSelectedEntities] = useState([]);
   const [dateRange,        setDateRange]        = useState("This Year");
   const [activeTab,        setActiveTab]        = useState("overview");
   const [activeModule,     setActiveModule]     = useState("orders");
@@ -528,6 +419,27 @@ const GlobalDashboard = memo(function GlobalDashboard() {
   const [agingFilterStatus, setAgingFilterStatus] = useState("All");
   const [agingFilterUser,   setAgingFilterUser]   = useState("All");
 
+  // Fetch real data from backend
+  useEffect(() => {
+    const token = localStorage.getItem("bms_token") || "";
+    fetch(`${API}/api/dashboard/global-stats`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && !data.error) {
+          setStats(data);
+          const sl = (data.siteSpend   || []).map(s => s.site);
+          const el = (data.entitySpend || []).map(e => e.entity);
+          setSelectedSites(sl);
+          setSelectedEntities(el);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const siteList   = useMemo(() => (stats.siteSpend   || []).map(s => s.site),   [stats]);
+  const entityList = useMemo(() => (stats.entitySpend || []).map(e => e.entity), [stats]);
+
   const [winW, setWinW] = useState(typeof window !== "undefined" ? window.innerWidth : 1280);
   useEffect(() => {
     const fn = () => setWinW(window.innerWidth);
@@ -537,9 +449,8 @@ const GlobalDashboard = memo(function GlobalDashboard() {
   const isMobile = winW < 768;
   const isTablet = winW < 1140;
 
-  const isGlobal   = selectedSites.length === SITE_LIST.length;
-  const genSite    = selectedSites.length === 1 ? selectedSites[0] : "All Sites";
-  const d          = useMemo(() => gen(genSite), [genSite]);
+  const isGlobal = selectedSites.length === siteList.length && siteList.length > 0;
+  const d        = stats.orders;
 
   return (
     <div style={{ fontFamily: "'Inter','DM Sans',sans-serif", paddingBottom: 24, width: "100%", boxSizing: "border-box", overflowX: "hidden" }}>
@@ -602,10 +513,10 @@ const GlobalDashboard = memo(function GlobalDashboard() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap", width: isMobile ? "100%" : "auto" }}>
             <div style={{ flex: isMobile ? 1 : "none" }}>
-              <MultiSelect options={SITE_LIST}   selected={selectedSites}    onChange={setSelectedSites}    placeholder="All Sites" fullWidth={isMobile} />
+              <MultiSelect options={siteList}   selected={selectedSites}    onChange={setSelectedSites}    placeholder="All Sites" fullWidth={isMobile} />
             </div>
             <div style={{ flex: isMobile ? 1 : "none" }}>
-              <MultiSelect options={ENTITY_LIST} selected={selectedEntities} onChange={setSelectedEntities} placeholder="All Entity" fullWidth={isMobile} />
+              <MultiSelect options={entityList} selected={selectedEntities} onChange={setSelectedEntities} placeholder="All Entity" fullWidth={isMobile} />
             </div>
             <Sel value={dateRange} onChange={e => setDateRange(e.target.value)} style={{ flex: isMobile ? 1 : "none", minWidth: isMobile ? 0 : 110 }}>
               {["This Month","This Quarter","This Year","Last Year"].map(dr => <option key={dr}>{dr}</option>)}
@@ -697,7 +608,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
               <div style={{ display: isMobile ? "grid" : "flex", gridTemplateColumns: isMobile ? "1fr 1fr" : undefined, flexWrap: "wrap", gap: 8, marginBottom: 16, alignItems: "stretch" }}>
 
                 {/* Full cards */}
-                <SC label="Total Orders"  total={d.totalPO + d.totalWO}                 totalVal={d.totalPOValue + d.totalWOValue}               po={d.totalPO}         wo={d.totalWO}         poVal={d.totalPOValue}         woVal={d.totalWOValue}         accent="#0f172a" />
+                <SC label="Total Orders"  total={d.total.po + d.total.wo}               totalVal={d.total.poValue + d.total.woValue}             po={d.total.po}        wo={d.total.wo}        poVal={d.total.poValue}        woVal={d.total.woValue}        accent="#0f172a" />
                 <SC label="Issued"        total={d.issued.po + d.issued.wo}             totalVal={d.issued.poValue + d.issued.woValue}           po={d.issued.po}       wo={d.issued.wo}       poVal={d.issued.poValue}       woVal={d.issued.woValue}       accent="#16a34a" />
                 <SC label="Amended"       total={d.amended.po + d.amended.wo}           totalVal={d.amended.poValue + d.amended.woValue}         po={d.amended.po}      wo={d.amended.wo}      poVal={d.amended.poValue}      woVal={d.amended.woValue}      accent={CW} />
                 <SC label="In Review"     total={d.review.po + d.review.wo}             totalVal={d.review.poValue + d.review.woValue}           po={d.review.po}       wo={d.review.wo}       poVal={d.review.poValue}       woVal={d.review.woValue}       accent={CP} />
@@ -718,25 +629,25 @@ const GlobalDashboard = memo(function GlobalDashboard() {
 
                 {/* Stacked column: Total Vendors + Total Sites */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: isMobile ? "unset" : "0 0 auto", minWidth: isMobile ? 0 : 110 }}>
-                  <Mini label="Total Vendors" value={48}  accent={CP} sub="registered" />
-                  <Mini label="Total Sites"   value={isGlobal ? 4 : 1} accent={CW} sub="active" />
+                  <Mini label="Total Vendors" value={stats.counts.vendors}  accent={CP} sub="registered" />
+                  <Mini label="Total Sites"   value={isGlobal ? stats.counts.sites : selectedSites.length} accent={CW} sub="active" />
                 </div>
 
                 {/* Stacked column: Total Entity + Total Contact */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: isMobile ? "unset" : "0 0 auto", minWidth: isMobile ? 0 : 110 }}>
-                  <Mini label="Total Entity"  value={12} accent="#7c3aed" sub="registered" />
-                  <Mini label="Total Contact" value={86} accent="#0ea5e9" sub="active" />
+                  <Mini label="Total Entity"  value={stats.counts.entities} accent="#7c3aed" sub="registered" />
+                  <Mini label="Total Contact" value={stats.counts.contacts} accent="#0ea5e9" sub="active" />
                 </div>
 
                 {/* Total Clauses — standalone card */}
                 <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "10px 13px", flex: isMobile ? "unset" : "0 0 auto", minWidth: isMobile ? 0 : 115, display: "flex", flexDirection: "column" }}>
                   <div style={{ color: "#94a3b8", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Total Clauses</div>
-                  <div style={{ color: "#7c3aed", fontSize: 22, fontWeight: 800, lineHeight: 1, marginBottom: 7, whiteSpace: "nowrap" }}>156</div>
+                  <div style={{ color: "#7c3aed", fontSize: 22, fontWeight: 800, lineHeight: 1, marginBottom: 7, whiteSpace: "nowrap" }}>{stats.counts.clauses.total}</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: "auto" }}>
                     {[
-                      { label: "T&C", value: 64, color: CP },
-                      { label: "PAY", value: 52, color: CW },
-                      { label: "GOV", value: 40, color: "#f59e0b" },
+                      { label: "T&C", value: stats.counts.clauses.tc,  color: CP },
+                      { label: "PAY", value: stats.counts.clauses.pay, color: CW },
+                      { label: "GOV", value: stats.counts.clauses.gov, color: "#f59e0b" },
                     ].map((it, i) => (
                       <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <span style={{ background: `${it.color}18`, color: it.color, fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4, minWidth: 28, textAlign: "center" }}>{it.label}</span>
@@ -750,12 +661,12 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: isMobile ? "unset" : "0 0 auto", minWidth: isMobile ? 0 : 105 }}>
                   <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "8px 10px", flex: 1, display: "flex", flexDirection: "column" }}>
                     <div style={{ color: "#94a3b8", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Item Register</div>
-                    <div style={{ color: "#0ea5e9", fontSize: 18, fontWeight: 800, lineHeight: 1, whiteSpace: "nowrap" }}>328</div>
+                    <div style={{ color: "#0ea5e9", fontSize: 18, fontWeight: 800, lineHeight: 1, whiteSpace: "nowrap" }}>{stats.counts.items}</div>
                     <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 2 }}>total items</div>
                   </div>
                   <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "8px 10px", flex: 1, display: "flex", flexDirection: "column" }}>
                     <div style={{ color: "#94a3b8", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Total Users</div>
-                    <div style={{ color: "#7c3aed", fontSize: 18, fontWeight: 800, lineHeight: 1, whiteSpace: "nowrap" }}>24</div>
+                    <div style={{ color: "#7c3aed", fontSize: 18, fontWeight: 800, lineHeight: 1, whiteSpace: "nowrap" }}>{stats.counts.users}</div>
                     <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 2 }}>active users</div>
                   </div>
                 </div>
@@ -843,7 +754,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                   {(() => {
                     const EP = "#4f46e5"; const EPL = "#818cf8";
                     const EW = "#f97316"; const EWL = "#fb923c";
-                    const chartData  = entitySpend.sort((a, b) => (b.po + b.wo) - (a.po + a.wo)).map(s => ({ ...s, total: s.po + s.wo }));
+                    const chartData  = (stats.entitySpend || []).slice().sort((a, b) => (b.po + b.wo) - (a.po + a.wo)).map(s => ({ ...s, total: s.po + s.wo }));
                     const maxVal     = Math.max(...chartData.map(s => s.total));
                     const grandPO    = chartData.reduce((a, s) => a + s.po, 0);
                     const grandWO    = chartData.reduce((a, s) => a + s.wo, 0);
@@ -950,7 +861,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                   {(() => {
                     const SP = "#0369a1"; const SPL = "#38bdf8";
                     const SW = "#be185d"; const SWL = "#f472b6";
-                    const chartData  = siteSpend.filter(s => selectedSites.includes(s.site)).sort((a, b) => (b.po + b.wo) - (a.po + a.wo)).map(s => ({ ...s, total: s.po + s.wo }));
+                    const chartData  = (stats.siteSpend || []).filter(s => selectedSites.includes(s.site)).slice().sort((a, b) => (b.po + b.wo) - (a.po + a.wo)).map(s => ({ ...s, total: s.po + s.wo }));
                     const maxVal     = Math.max(...chartData.map(s => s.total));
                     const grandPO    = chartData.reduce((a, s) => a + s.po, 0);
                     const grandWO    = chartData.reduce((a, s) => a + s.wo, 0);
@@ -1064,15 +975,16 @@ const GlobalDashboard = memo(function GlobalDashboard() {
 
                     {/* Month-wise Spend — Stacked Bar */}
                     {(() => {
+                      const allMonthSpend = stats.monthlySpend || [];
                       const filtered = dateRange === "This Month"
-                        ? monthlySpend.slice(-1)
+                        ? allMonthSpend.slice(-1)
                         : dateRange === "This Quarter"
-                        ? monthlySpend.slice(-3)
-                        : monthlySpend;
+                        ? allMonthSpend.slice(-3)
+                        : allMonthSpend;
                       const subtitle = dateRange === "This Month" ? "Current month spend"
                         : dateRange === "This Quarter" ? "Last 3 months spend"
                         : dateRange === "Last Year" ? "Previous FY spend"
-                        : "Apr – Mar · PO + WO spend (₹L)";
+                        : "Jan – Dec · PO + WO spend (₹L)";
                       const barSz = filtered.length <= 3 ? 56 : filtered.length <= 6 ? 40 : 28;
                       return (
                         <div style={{ ...lCard, background: "linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)", border: "1px solid #dbeafe" }}>
@@ -1139,15 +1051,16 @@ const GlobalDashboard = memo(function GlobalDashboard() {
 
                     {/* Month-wise Order Count — Stacked Bar */}
                     {(() => {
+                      const allMonthCount = stats.monthlyCount || [];
                       const filtered = dateRange === "This Month"
-                        ? monthlyCount.slice(-1)
+                        ? allMonthCount.slice(-1)
                         : dateRange === "This Quarter"
-                        ? monthlyCount.slice(-3)
-                        : monthlyCount;
+                        ? allMonthCount.slice(-3)
+                        : allMonthCount;
                       const subtitle = dateRange === "This Month" ? "Current month order count"
                         : dateRange === "This Quarter" ? "Last 3 months order count"
                         : dateRange === "Last Year" ? "Previous FY order count"
-                        : "Apr – Mar · PO + WO order count";
+                        : "Jan – Dec · PO + WO order count";
                       const barSz = filtered.length <= 3 ? 56 : filtered.length <= 6 ? 40 : 28;
                       return (
                         <div style={{ ...lCard, background: "linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)", border: "1px solid #bbf7d0" }}>
@@ -1234,7 +1147,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                     )}
                     {isMobile ? (
                       <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", width: "100%" }}>
-                        <BarChart width={Math.max(categorySpend.length * 58, 320)} height={200} data={categorySpend} barGap={3}>
+                        <BarChart width={Math.max((stats.categorySpend||[]).length * 58, 320)} height={200} data={stats.categorySpend||[]} barGap={3}>
                           <defs>
                             <linearGradient id="gradCatPO" x1="0" y1="0" x2="0" y2="1">
                               <stop offset="0%" stopColor="#4338ca" />
@@ -1255,7 +1168,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                       </div>
                     ) : (
                       <ResponsiveContainer width="100%" height={230} debounce={260}>
-                        <BarChart data={categorySpend} barGap={3}>
+                        <BarChart data={stats.categorySpend||[]} barGap={3}>
                           <defs>
                             <linearGradient id="gradCatPO" x1="0" y1="0" x2="0" y2="1">
                               <stop offset="0%" stopColor="#4338ca" />
@@ -1282,9 +1195,9 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                   <div style={lCard}>
                     {lHead("Top 5 Vendors — PO", "By highest PO order value (₹L)")}
                     <ResponsiveContainer width="100%" height={220} debounce={260}>
-                      <BarChart data={[...topVendorsPO].reverse()} layout="vertical">
+                      <BarChart data={[...(stats.topVendorsPO||[])].reverse()} layout="vertical">
                         <defs>
-                          {topVendorsPO.map((_, i) => (
+                          {(stats.topVendorsPO||[]).map((_, i) => (
                             <linearGradient key={i} id={`gradVPO${i}`} x1="0" y1="0" x2="1" y2="0">
                               <stop offset="0%" stopColor={["#1e40af","#1d4ed8","#2563eb","#3b82f6","#60a5fa"][i]} />
                               <stop offset="100%" stopColor={["#2563eb","#3b82f6","#60a5fa","#93c5fd","#bfdbfe"][i]} />
@@ -1296,7 +1209,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                         <YAxis dataKey="name" type="category" tick={{ fill: "#374151", fontSize: isMobile ? 9 : 10, fontWeight: 500 }} width={isMobile ? 90 : 118} axisLine={false} tickLine={false} />
                         <Tooltip content={<VendorPOTip />} cursor={{ fill: "rgba(37,99,235,0.05)" }} />
                         <Bar dataKey="value" name="PO Value (₹L)" radius={[0,5,5,0]}>
-                          {[...topVendorsPO].reverse().map((_, i) => (
+                          {[...(stats.topVendorsPO||[])].reverse().map((_, i) => (
                             <Cell key={i} fill={`url(#gradVPO${4 - i})`} />
                           ))}
                         </Bar>
@@ -1308,9 +1221,9 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                   <div style={lCard}>
                     {lHead("Top 5 Vendors — WO", "By highest WO order value (₹L)")}
                     <ResponsiveContainer width="100%" height={220} debounce={260}>
-                      <BarChart data={[...topVendorsWO].reverse()} layout="vertical">
+                      <BarChart data={[...(stats.topVendorsWO||[])].reverse()} layout="vertical">
                         <defs>
-                          {topVendorsWO.map((_, i) => (
+                          {(stats.topVendorsWO||[]).map((_, i) => (
                             <linearGradient key={i} id={`gradVWO${i}`} x1="0" y1="0" x2="1" y2="0">
                               <stop offset="0%" stopColor={["#065f46","#047857","#059669","#10b981","#34d399"][i]} />
                               <stop offset="100%" stopColor={["#059669","#10b981","#34d399","#6ee7b7","#a7f3d0"][i]} />
@@ -1322,7 +1235,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                         <YAxis dataKey="name" type="category" tick={{ fill: "#374151", fontSize: isMobile ? 9 : 10, fontWeight: 500 }} width={isMobile ? 90 : 118} axisLine={false} tickLine={false} />
                         <Tooltip content={<VendorWOTip />} cursor={{ fill: "rgba(5,150,105,0.05)" }} />
                         <Bar dataKey="value" name="WO Value (₹L)" radius={[0,5,5,0]}>
-                          {[...topVendorsWO].reverse().map((_, i) => (
+                          {[...(stats.topVendorsWO||[])].reverse().map((_, i) => (
                             <Cell key={i} fill={`url(#gradVWO${4 - i})`} />
                           ))}
                         </Bar>
@@ -1333,8 +1246,8 @@ const GlobalDashboard = memo(function GlobalDashboard() {
 
               {/* User Performance Stats — compact */}
               {(() => {
-                const totalAll = userOrderData.reduce((s, x) => s + x.total, 0);
-                const totalVal = userOrderData.reduce((s, x) => s + x.value, 0);
+                const totalAll = (stats.userOrderData||[]).reduce((s, x) => s + x.total, 0);
+                const totalVal = (stats.userOrderData||[]).reduce((s, x) => s + x.value, 0);
                 const uTh = { padding: "8px 14px", color: "#64748b", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", background: "#f8fafc", borderBottom: "2px solid #e2e8f0", textAlign: "left", whiteSpace: "nowrap" };
                 const uTh2 = { padding: "8px 10px", color: "#475569", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0", textAlign: "left" };
                 const uTd = { padding: "9px 14px", fontSize: 12.5, borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0" };
@@ -1363,7 +1276,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                           </tr>
                         </thead>
                         <tbody>
-                          {userOrderData.map((u, i) => (
+                          {(stats.userOrderData||[]).map((u, i) => (
                             <tr key={i} style={{ background: "#fff" }}
                               onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
                               onMouseLeave={e => e.currentTarget.style.background = "#fff"}
@@ -1405,8 +1318,8 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                           <tr style={{ background: "#f1f5f9", borderTop: "2px solid #e2e8f0" }}>
                             <td style={{ ...uTd, color: "#94a3b8" }}></td>
                             <td style={{ ...uTd, color: "#0f172a", fontWeight: 700 }}>Total</td>
-                            <td style={{ ...uTd, color: CP, fontWeight: 800 }}>{userOrderData.reduce((s,x)=>s+x.po,0)}</td>
-                            <td style={{ ...uTd, color: CW, fontWeight: 800 }}>{userOrderData.reduce((s,x)=>s+x.wo,0)}</td>
+                            <td style={{ ...uTd, color: CP, fontWeight: 800 }}>{(stats.userOrderData||[]).reduce((s,x)=>s+x.po,0)}</td>
+                            <td style={{ ...uTd, color: CW, fontWeight: 800 }}>{(stats.userOrderData||[]).reduce((s,x)=>s+x.wo,0)}</td>
                             <td style={{ ...uTd, color: "#0f172a", fontWeight: 900 }}>{totalAll}</td>
                             <td style={{ ...uTdLast, color: "#16a34a", fontWeight: 800 }}>₹{totalVal}L</td>
                           </tr>
@@ -1428,17 +1341,22 @@ const GlobalDashboard = memo(function GlobalDashboard() {
         <>
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : isTablet ? "1fr 1fr" : "repeat(3, minmax(0, 380px))", gap: 10, marginBottom: 12 }}>
             {[
-              { label: "In Review",        data: d.review,       color: CP,        icon: "🔍" },
-              { label: "Pending to Issue", data: d.pendingIssue, color: "#f59e0b", icon: "⏳" },
-              { label: "Amend Pending",    data: d.amendPending, color: CW,        icon: "✏️" },
+              { label: "In Review",        data: d.review,       color: CP,        icon: "🔍", rawStatus: "Review" },
+              { label: "Pending to Issue", data: d.pendingIssue, color: "#f59e0b", icon: "⏳", rawStatus: "Pending Issue" },
+              { label: "Amend Pending",    data: d.amendPending, color: CW,        icon: "✏️", rawStatus: "Amend Pending" },
             ].map((it, i) => {
               const totalOrders = it.data.po + it.data.wo;
               const totalVal    = (it.data.poValue || 0) + (it.data.woValue || 0);
+              const statusOrders = (stats.agingOrders||[]).filter(o => o.status === it.rawStatus);
+              const b0 = statusOrders.filter(o => o.days <= 3).length;
+              const b1 = statusOrders.filter(o => o.days >= 4 && o.days <= 7).length;
+              const b2 = statusOrders.filter(o => o.days >= 8 && o.days <= 15).length;
+              const b3 = statusOrders.filter(o => o.days > 15).length;
               const buckets = [
-                { label: "0–3 days",  pct: 0.40, color: "#16a34a" },
-                { label: "4–7 days",  pct: 0.35, color: "#f59e0b" },
-                { label: "8–15 days", pct: 0.18, color: "#ef4444" },
-                { label: "15+ days",  pct: 0.07, color: "#991b1b" },
+                { label: "0–3 days",  cnt: b0, color: "#16a34a" },
+                { label: "4–7 days",  cnt: b1, color: "#f59e0b" },
+                { label: "8–15 days", cnt: b2, color: "#ef4444" },
+                { label: "15+ days",  cnt: b3, color: "#991b1b" },
               ];
               return (
                 <div key={i} style={{
@@ -1475,13 +1393,12 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                   {/* Aging buckets — compact 2-col */}
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px 10px" }}>
                     {buckets.map((a, j) => {
-                      const cnt = Math.round(it.data.po * a.pct);
-                      const barW = Math.round((cnt / totalOrders) * 60);
+                      const barW = totalOrders > 0 ? Math.round((a.cnt / totalOrders) * 60) : 0;
                       return (
                         <div key={j} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                           <div style={{ width: 6, height: 6, borderRadius: "50%", background: a.color, flexShrink: 0 }} />
                           <span style={{ color: "#64748b", fontSize: 9, flex: 1, whiteSpace: "nowrap" }}>{a.label}</span>
-                          <span style={{ color: a.color, fontSize: 10, fontWeight: 700, minWidth: 18, textAlign: "right" }}>{cnt}</span>
+                          <span style={{ color: a.color, fontSize: 10, fontWeight: 700, minWidth: 18, textAlign: "right" }}>{a.cnt}</span>
                           <div style={{ width: barW, height: 3, background: a.color, borderRadius: 2, opacity: 0.5, flexShrink: 0 }} />
                         </div>
                       );
@@ -1500,16 +1417,17 @@ const GlobalDashboard = memo(function GlobalDashboard() {
               </div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : isTablet ? "repeat(3,1fr)" : "repeat(4,1fr)", gap: 8 }}>
-              {[
-                { name: "Rahul Sharma", orders: 5, maxDays: 10, value: "₹16.8L" },
-                { name: "Priya Verma",  orders: 3, maxDays: 7,  value: "₹8.4L" },
-                { name: "Amit Singh",   orders: 4, maxDays: 8,  value: "₹11.2L" },
-                { name: "Sneha Patel",  orders: 2, maxDays: 5,  value: "₹6.1L" },
-                { name: "Karan Mehta",  orders: 3, maxDays: 11, value: "₹9.8L" },
-                { name: "Deepika Rao",  orders: 2, maxDays: 4,  value: "₹5.3L" },
-                { name: "Vijay Kumar",  orders: 1, maxDays: 2,  value: "₹2.1L" },
-                { name: "Anita Joshi",  orders: 2, maxDays: 6,  value: "₹4.9L" },
-              ].map((u, i) => (
+              {(() => {
+                const userAgingMap = {};
+                (stats.agingOrders||[]).forEach(o => {
+                  const key = o.pendingAt || "Unknown";
+                  if (!userAgingMap[key]) userAgingMap[key] = { name: key, orders: 0, maxDays: 0, rawValue: 0 };
+                  userAgingMap[key].orders++;
+                  userAgingMap[key].maxDays = Math.max(userAgingMap[key].maxDays, o.days);
+                  userAgingMap[key].rawValue += o.rawValue || 0;
+                });
+                return Object.values(userAgingMap).sort((a, b) => b.maxDays - a.maxDays);
+              })().map((u, i) => (
                 <div key={i} style={{
                   background: `${agingColor(u.maxDays)}08`,
                   border: `1px solid ${agingColor(u.maxDays)}22`,
@@ -1522,7 +1440,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
                       <span style={{ color: agingColor(u.maxDays), fontSize: 16, fontWeight: 800, lineHeight: 1 }}>{u.orders}</span>
                       <span style={{ color: "#64748b", fontSize: 9 }}>orders</span>
-                      <span style={{ color: "#374151", fontSize: 11, fontWeight: 700, marginLeft: "auto" }}>{u.value}</span>
+                      <span style={{ color: "#374151", fontSize: 11, fontWeight: 700, marginLeft: "auto" }}>₹{fmt(u.rawValue / 100000)}L</span>
                     </div>
                   </div>
                   <AgingBadge days={u.maxDays} />
@@ -1532,7 +1450,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
           </div>
 
           {(() => {
-            const filtered = agingData.filter(r =>
+            const filtered = (stats.agingOrders||[]).filter(r =>
               (agingFilterSite   === "All" || r.siteCode  === agingFilterSite) &&
               (agingFilterType   === "All" || r.type      === agingFilterType) &&
               (agingFilterStatus === "All" || r.status    === agingFilterStatus) &&
@@ -1559,7 +1477,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                     </div>
                     <Sel value={agingFilterSite} onChange={e => setAgingFilterSite(e.target.value)}>
                       <option value="All">All Sites</option>
-                      {["SA-01","SB-02","SG-03","SD-04"].map(s => <option key={s} value={s}>{s}</option>)}
+                      {[...new Set((stats.agingOrders||[]).map(r => r.siteCode).filter(Boolean))].map(s => <option key={s} value={s}>{s}</option>)}
                     </Sel>
                     <Sel value={agingFilterType} onChange={e => setAgingFilterType(e.target.value)}>
                       <option value="All">All Types</option>
@@ -1572,7 +1490,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                     </Sel>
                     <Sel value={agingFilterUser} onChange={e => setAgingFilterUser(e.target.value)}>
                       <option value="All">Pending At</option>
-                      {[...new Set(agingData.map(r => r.pendingAt))].map(n => <option key={n} value={n}>{n}</option>)}
+                      {[...new Set((stats.agingOrders||[]).map(r => r.pendingAt))].map(n => <option key={n} value={n}>{n}</option>)}
                     </Sel>
                   </div>
                 </div>
@@ -1681,8 +1599,8 @@ const GlobalDashboard = memo(function GlobalDashboard() {
       )}
 
       {false && (() => {
-        const totalAll = userOrderData.reduce((s, x) => s + x.total, 0);
-        const totalVal = userOrderData.reduce((s, x) => s + x.value, 0);
+        const totalAll = (stats.userOrderData||[]).reduce((s, x) => s + x.total, 0);
+        const totalVal = (stats.userOrderData||[]).reduce((s, x) => s + x.value, 0);
         const hTh = { padding: "10px 16px", color: "#64748b", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", background: "#f8fafc", borderBottom: "2px solid #e2e8f0", textAlign: "left", whiteSpace: "nowrap" };
         const hTd = { padding: "13px 16px", fontSize: 13, borderBottom: "1px solid #f1f5f9" };
         return (
@@ -1707,7 +1625,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {userOrderData.map((u, i) => {
+                {(stats.userOrderData||[]).map((u, i) => {
                   return (
                     <tr key={i} style={{ background: "#fff" }}
                       onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
@@ -1760,8 +1678,8 @@ const GlobalDashboard = memo(function GlobalDashboard() {
               <tfoot>
                 <tr style={{ background: "#f8fafc", borderTop: "2px solid #e2e8f0" }}>
                   <td style={{ ...hTd, color: "#0f172a", fontWeight: 700 }}>Total</td>
-                  <td style={{ ...hTd, color: CP, fontWeight: 800 }}>{userOrderData.reduce((s,x)=>s+x.po,0)}</td>
-                  <td style={{ ...hTd, color: CW, fontWeight: 800 }}>{userOrderData.reduce((s,x)=>s+x.wo,0)}</td>
+                  <td style={{ ...hTd, color: CP, fontWeight: 800 }}>{(stats.userOrderData||[]).reduce((s,x)=>s+x.po,0)}</td>
+                  <td style={{ ...hTd, color: CW, fontWeight: 800 }}>{(stats.userOrderData||[]).reduce((s,x)=>s+x.wo,0)}</td>
                   <td style={{ ...hTd, color: "#0f172a", fontWeight: 900, fontSize: 14 }}>{totalAll}</td>
                   <td style={{ ...hTd, color: "#16a34a", fontWeight: 800 }}>₹{totalVal}L</td>
                 </tr>

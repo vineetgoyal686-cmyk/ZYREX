@@ -1589,7 +1589,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       const url = editOrderId ? `${API}/api/orders/${editOrderId}` : `${API}/api/orders`;
       const method = editOrderId ? "PUT" : "POST";
 
-      const res = await fetch(url, { method, body: fd });
+      const token = localStorage.getItem("bms_token") || "";
+      const res = await fetch(url, { method, body: fd, headers: { Authorization: `Bearer ${token}` } });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || "Save failed");
 
