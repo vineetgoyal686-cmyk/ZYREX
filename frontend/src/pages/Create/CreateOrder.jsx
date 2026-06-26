@@ -972,7 +972,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const fetchOrderForEdit = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API}/api/orders/${editOrderId}`);
+      const token = localStorage.getItem("bms_token") || "";
+      const res = await fetch(`${API}/api/orders/${editOrderId}`, { headers: { Authorization: `Bearer ${token}` } });
       const { order, items: rawItems } = await res.json();
       setIsRecalledEdit(hasRecallHistory(order));
 
@@ -1140,10 +1141,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   }, [header.orderNumber, header.siteId, header.companyId, header.orderType, companies, sites]);
 
 
-  // Reset items + brand setting when order type changes
+  // Reset items + brand setting when order type changes (skip during edit load)
   useEffect(() => {
+    if (editOrderId) return;
     setItems([makeGroup()]);
-    // Default brand to true for Supply, but allow user settings to override if they already toggled it
     setSettings(s => ({ ...s, brand: header.orderType === "Supply" }));
   }, [header.orderType]);
 

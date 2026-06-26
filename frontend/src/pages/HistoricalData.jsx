@@ -117,6 +117,17 @@ function LogModal({ record, onClose }) {
   );
 }
 
+/* ── Shared field wrapper (must be outside FormModal to avoid focus loss) ─── */
+const inp = "w-full border border-slate-200 rounded px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 transition-all";
+function LBL({ t, children }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">{t}</label>
+      {children}
+    </div>
+  );
+}
+
 /* ── Form Modal ──────────────────────────────────────────────────────────── */
 function FormModal({ record, sites, entities, onClose, onSave }) {
   const isEdit = !!record?.id;
@@ -154,13 +165,6 @@ function FormModal({ record, sites, entities, onClose, onSave }) {
     finally { setSaving(false); }
   };
 
-  const inp = "w-full border border-slate-200 rounded px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 transition-all";
-  const LBL = ({ t, children }) => (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">{t}</label>
-      {children}
-    </div>
-  );
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
