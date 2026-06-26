@@ -937,20 +937,40 @@ router.get("/:id", async (req, res) => {
       return res.json(historical);
     }
 
-    const { data: order, error: orderErr } = await supabase.schema("procurement")
-      .from("purchase_orders")
-      .select("*, companies(*), vendors(*), contact_person:contacts(*)")
-      .eq("id", req.params.id)
-      .single();
-    if (orderErr) throw orderErr;
+    const lean = req.query.lean === "1";
 
-    const { data: items, error: itemErr } = await supabase.schema("procurement")
-      .from("purchase_order_items")
-      .select("*, items(*)")
-      .eq("order_id", req.params.id);
-    if (itemErr) throw itemErr;
+    const [orderRes, itemRes] = await Promise.all([
+      supabase.schema("procurement")
+        .from("purchase_orders")
+        .select(lean
+          ? "*, companies(id,company_name,company_code), vendors(id,vendor_name,vendor_code), contact_person:contacts(*)"
+          : "*, companies(*), vendors(*), contact_person:contacts(*)")
+        .eq("id", req.params.id)
+        .single(),
+      supabase.schema("procurement")
+        .from("purchase_order_items")
+        .select("*, items(*)")
+        .eq("order_id", req.params.id),
+    ]);
+    if (orderRes.error) throw orderRes.error;
+    if (itemRes.error) throw itemRes.error;
 
-    const signedOrder = await signOrderStorageUrls(order);
+    const order = orderRes.data;
+    const items = itemRes.data;
+
+    // Lean mode: only sign the 2 URLs the edit form actually uses; skip vendor/company images
+    let signedOrder;
+    if (lean) {
+      const [quotationUrl, comparativeSheetUrl, preDocuments, postDocuments] = await Promise.all([
+        signOrderDocUrl(order.quotation_url),
+        signOrderDocUrl(order.comparative_sheet_url),
+        signDocArray(order.pre_documents),
+        signDocArray(order.post_documents),
+      ]);
+      signedOrder = { ...order, quotation_url: quotationUrl, comparative_sheet_url: comparativeSheetUrl, pre_documents: preDocuments, post_documents: postDocuments };
+    } else {
+      signedOrder = await signOrderStorageUrls(order);
+    }
 
     // Resolve made_by UUID → user name (same as list route)
     if (signedOrder.made_by && signedOrder.made_by.length === 36 && signedOrder.made_by.includes('-')) {

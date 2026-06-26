@@ -12,6 +12,12 @@ import { preloadOrderDetails, seedOrderDetails } from "../Procurement/orderDetai
 import { normalizeOrderSite, getOrderSiteCode } from "../../utils/orderSite";
 import { authFetch, getValidToken } from "../../utils/authFetch";
 
+// Module-level master data cache — avoids re-fetching on every form open (TTL: 2 min)
+let _masterCache = null;
+let _masterCacheAt = 0;
+const MASTER_CACHE_TTL = 2 * 60 * 1000;
+const invalidateMasterCache = () => { _masterCache = null; _masterCacheAt = 0; };
+
 const QUILL_MODULES = {
   toolbar: [
     ['bold', 'italic', 'underline', 'strike'],
@@ -976,7 +982,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const fetchOrderForEdit = async () => {
     setLoading(true);
     try {
-      const res = await authFetch(`${API}/api/orders/${editOrderId}`);
+      const res = await authFetch(`${API}/api/orders/${editOrderId}?lean=1`);
       const { order, items: rawItems } = await res.json();
       setIsRecalledEdit(hasRecallHistory(order));
 
@@ -1100,8 +1106,14 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     setLoading(false);
   };
 
-  const fetchMasterData = async () => {
+  const fetchMasterData = async (force = false) => {
     try {
+      if (!force && _masterCache && Date.now() - _masterCacheAt < MASTER_CACHE_TTL) {
+        const { sites, companies, vendors, contacts, items, clauses, categories, uoms } = _masterCache;
+        setSites(sites); setCompanies(companies); setVendors(vendors); setContacts(contacts);
+        setItemsList(items); setClauses(clauses); setCategories(categories); setUomList(uoms);
+        return;
+      }
       const [sRes, cRes, vRes, coRes, iRes, clRes, catRes, uomRes] = await Promise.all([
         fetch(`${API}/api/projects`),
         fetch(`${API}/api/procurement/companies`),
@@ -1116,14 +1128,13 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         sRes.json(), cRes.json(), vRes.json(), coRes.json(),
         iRes.json(), clRes.json(), catRes.json(), uomRes.json(),
       ]);
-      setSites(s.projects || []);
-      setCompanies(c.companies || []);
-      setVendors(v.vendors || []);
-      setContacts(co.contacts || []);
-      setItemsList(i.items || []);
-      setClauses(cl.clauses || []);
-      setCategories(cat.categories || []);
-      setUomList(uom.uoms || []);
+      const sites = s.projects || [], companies = c.companies || [], vendors = v.vendors || [],
+            contacts = co.contacts || [], items = i.items || [], clauses = cl.clauses || [],
+            categories = cat.categories || [], uoms = uom.uoms || [];
+      _masterCache = { sites, companies, vendors, contacts, items, clauses, categories, uoms };
+      _masterCacheAt = Date.now();
+      setSites(sites); setCompanies(companies); setVendors(vendors); setContacts(contacts);
+      setItemsList(items); setClauses(clauses); setCategories(categories); setUomList(uoms);
     } catch {
       showToast("Failed to load master data.", "error");
     }
@@ -3091,7 +3102,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
           onClose={() => setActionModal({ type: null })}
           onError={msg => showToast(msg, "error")}
           onSuccess={async (id) => {
-            await fetchMasterData();
+            invalidateMasterCache(); await fetchMasterData(true);
             setHeader(h => ({ ...h, siteId: id }));
             handleSiteChange({ target: { value: id } });
             setActionModal({ type: null });
@@ -3099,8 +3110,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
           }}
         />
       )}
-      {actionModal.type === "addCompany" && <FullCompanyModal onClose={() => setActionModal({ type: null })} onSuccess={(id) => { fetchMasterData(); setHeader(h => ({ ...h, companyId: id })); handleCompanyChange({ target: { value: id } }); }} />}
-      {actionModal.type === "addVendor" && <FullVendorModal onClose={() => setActionModal({ type: null })} onSuccess={(id) => { fetchMasterData(); setHeader(h => ({ ...h, vendorId: id })); handleVendorChange({ target: { value: id } }); }} />}
+      {actionModal.type === "addCompany" && <FullCompanyModal onClose={() => setActionModal({ type: null })} onSuccess={(id) => { invalidateMasterCache(); fetchMasterData(true); setHeader(h => ({ ...h, companyId: id })); handleCompanyChange({ target: { value: id } }); }} />}
+      {actionModal.type === "addVendor" && <FullVendorModal onClose={() => setActionModal({ type: null })} onSuccess={(id) => { invalidateMasterCache(); fetchMasterData(true); setHeader(h => ({ ...h, vendorId: id })); handleVendorChange({ target: { value: id } }); }} />}
 
       {actionModal.type === "editSite" && (
         <ProjectFormModal
@@ -3108,22 +3119,22 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
           onClose={() => setActionModal({ type: null })}
           onError={msg => showToast(msg, "error")}
           onSuccess={async () => {
-            await fetchMasterData();
+            invalidateMasterCache(); await fetchMasterData(true);
             setActionModal({ type: null });
             showToast("Project updated!");
           }}
         />
       )}
-      {actionModal.type === "editCompany" && <FullCompanyModal editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => fetchMasterData()} />}
-      {actionModal.type === "editVendor" && <FullVendorModal editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => fetchMasterData()} />}
+      {actionModal.type === "editCompany" && <FullCompanyModal editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => { invalidateMasterCache(); fetchMasterData(true); }} />}
+      {actionModal.type === "editVendor" && <FullVendorModal editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => { invalidateMasterCache(); fetchMasterData(true); }} />}
 
       {actionModal.type === "viewSite" && <FullViewSiteModal site={actionModal.data} onClose={() => setActionModal({ type: null })} onEdit={(d) => setActionModal({ type: "editSite", data: d })} />}
       {actionModal.type === "viewCompany" && <FullViewCompanyModal company={actionModal.data} onClose={() => setActionModal({ type: null })} onEdit={(d) => setActionModal({ type: "editCompany", data: d })} />}
       {actionModal.type === "viewVendor" && <FullViewVendorModal vendor={actionModal.data} onClose={() => setActionModal({ type: null })} onEdit={(d) => setActionModal({ type: "editVendor", data: d })} />}
 
       {/* CONTACTS */}
-      {actionModal.type === "addContact" && <FullContactModal companies={companies} onClose={() => setActionModal({ type: null })} onSuccess={fetchMasterData} />}
-      {actionModal.type === "editContact" && <FullContactModal companies={companies} editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={fetchMasterData} />}
+      {actionModal.type === "addContact" && <FullContactModal companies={companies} onClose={() => setActionModal({ type: null })} onSuccess={() => { invalidateMasterCache(); fetchMasterData(true); }} />}
+      {actionModal.type === "editContact" && <FullContactModal companies={companies} editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => { invalidateMasterCache(); fetchMasterData(true); }} />}
       {actionModal.type === "viewContact" && <FullViewContactModal contact={actionModal.data} onClose={() => setActionModal({ type: null })} onEdit={(d) => setActionModal({ type: "editContact", data: d })} />}
 
       {/* SPEC VIEW MODAL */}
@@ -3238,7 +3249,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
           initialViewId={actionModal.initialViewId}
           onClose={() => setActionModal({ type: null })}
           onSuccess={(selectedPoints) => {
-            fetchMasterData();
+            invalidateMasterCache(); fetchMasterData(true);
             if (selectedPoints) {
               const html = getCleanHTML(selectedPoints);
               if (actionModal.setPoints) actionModal.setPoints([html]);
