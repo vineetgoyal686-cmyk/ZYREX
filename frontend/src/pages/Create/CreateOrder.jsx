@@ -10,6 +10,7 @@ import "react-quill-new/dist/quill.snow.css";
 import ViewOrder from "../Procurement/ViewOrder";
 import { preloadOrderDetails, seedOrderDetails } from "../Procurement/orderDetailsCache";
 import { normalizeOrderSite, getOrderSiteCode } from "../../utils/orderSite";
+import { authFetch, getValidToken } from "../../utils/authFetch";
 
 const QUILL_MODULES = {
   toolbar: [
@@ -975,8 +976,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const fetchOrderForEdit = async () => {
     setLoading(true);
     try {
-      const token = localStorage.getItem("bms_token") || "";
-      const res = await fetch(`${API}/api/orders/${editOrderId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(`${API}/api/orders/${editOrderId}`);
       const { order, items: rawItems } = await res.json();
       setIsRecalledEdit(hasRecallHistory(order));
 
@@ -1596,8 +1596,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       const url = editOrderId ? `${API}/api/orders/${editOrderId}` : `${API}/api/orders`;
       const method = editOrderId ? "PUT" : "POST";
 
-      const token = localStorage.getItem("bms_token") || "";
-      const res = await fetch(url, { method, body: fd, headers: { Authorization: `Bearer ${token}` } });
+      const res = await authFetch(url, { method, body: fd });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || "Save failed");
 
@@ -3990,16 +3989,13 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     const comments = prompt(promptMsg || `Enter comments for ${action}:`, "");
     if (comments === null) return;
     try {
-      const token = localStorage.getItem("bms_token") || "";
-      const reqRes = await fetch(`${API}/api/approval-flows/request/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const reqRes = await authFetch(`${API}/api/approval-flows/request/${id}`);
       const reqData = await reqRes.json();
       const requestId = reqData?.request?.id;
       if (!requestId) throw new Error("No approval request found");
-      const actRes = await fetch(`${API}/api/approval-flows/action`, {
+      const actRes = await authFetch(`${API}/api/approval-flows/action`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ request_id: requestId, action: action.toLowerCase(), comments: comments || action }),
       });
       if (!actRes.ok) {
@@ -4015,8 +4011,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
 
   const handleRecall = async (id) => {
     try {
-      const token = localStorage.getItem("bms_token") || "";
-      const res = await fetch(`${API}/api/orders/${id}`, {
+      const res = await authFetch(`${API}/api/orders/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ data: JSON.stringify({ mainData: { status: "Recalled" } }) }),
@@ -4045,11 +4040,10 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const handleSendToApproval = async (id) => {
     try {
       showToast("Submitting for approval...");
-      const token = localStorage.getItem("bms_token") || "";
       const bmsUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
-      const res = await fetch(`${API}/api/approval-flows/submit`, {
+      const res = await authFetch(`${API}/api/approval-flows/submit`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ module: "order", document_id: id }),
       });
       const d = await res.json();
@@ -4081,10 +4075,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     setConfirmModal({
       message: "Withdraw this approval request? The order will return to Review.", onConfirm: async () => {
         try {
-          const token = localStorage.getItem("bms_token") || "";
-          const res = await fetch(`${API}/api/approval-flows/withdraw/${id}`, {
+          const res = await authFetch(`${API}/api/approval-flows/withdraw/${id}`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            headers: { "Content-Type": "application/json" },
           });
           const data = await res.json().catch(() => ({}));
           if (!res.ok || !data.success) throw new Error(data.error || "Withdraw failed");
