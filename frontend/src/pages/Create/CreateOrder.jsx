@@ -962,9 +962,12 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
   useEffect(() => {
     const init = async () => {
-      await fetchMasterData();
-      if (editOrderId) fetchOrderForEdit();
-      else setIsRecalledEdit(false);
+      if (editOrderId) {
+        await Promise.all([fetchMasterData(), fetchOrderForEdit()]);
+      } else {
+        await fetchMasterData();
+        setIsRecalledEdit(false);
+      }
     };
     init();
   }, [editOrderId]);
@@ -1098,9 +1101,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   };
 
   const fetchMasterData = async () => {
-    // setLoading is handled by caller or kept here for fresh loads
     try {
-      const [sRes, cRes, vRes, coRes, iRes, clRes, catRes] = await Promise.all([
+      const [sRes, cRes, vRes, coRes, iRes, clRes, catRes, uomRes] = await Promise.all([
         fetch(`${API}/api/projects`),
         fetch(`${API}/api/procurement/companies`),
         fetch(`${API}/api/procurement/vendors`),
@@ -1108,16 +1110,20 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         fetch(`${API}/api/procurement/items`),
         fetch(`${API}/api/procurement/clauses`),
         fetch(`${API}/api/procurement/categories`),
+        fetch(`${API}/api/procurement/uom`),
       ]);
-      const s = await sRes.json(); setSites(s.projects || []);
-      const c = await cRes.json(); setCompanies(c.companies || []);
-      const v = await vRes.json(); setVendors(v.vendors || []);
-      const co = await coRes.json(); setContacts(co.contacts || []);
-      const i = await iRes.json(); setItemsList(i.items || []);
-      const cl = await clRes.json(); setClauses(cl.clauses || []);
-      const cat = await catRes.json(); setCategories(cat.categories || []);
-      const uomRes = await fetch(`${API}/api/procurement/uom`);
-      const uomData = await uomRes.json(); setUomList(uomData.uoms || []);
+      const [s, c, v, co, i, cl, cat, uom] = await Promise.all([
+        sRes.json(), cRes.json(), vRes.json(), coRes.json(),
+        iRes.json(), clRes.json(), catRes.json(), uomRes.json(),
+      ]);
+      setSites(s.projects || []);
+      setCompanies(c.companies || []);
+      setVendors(v.vendors || []);
+      setContacts(co.contacts || []);
+      setItemsList(i.items || []);
+      setClauses(cl.clauses || []);
+      setCategories(cat.categories || []);
+      setUomList(uom.uoms || []);
     } catch {
       showToast("Failed to load master data.", "error");
     }
