@@ -432,6 +432,11 @@ function App() {
   };
 
   const handleTabChange = (tab) => {
+    const isProjectTab = !!PROJECT_TAB_TO_SUB[tab];
+    if (isProjectTab && (!selectedProject || selectedProject === "All Project")) {
+      // Project-specific tab clicked but no project selected — do nothing
+      return;
+    }
     const path = buildPath(tab, selectedProject);
     navigate(path);
   };
