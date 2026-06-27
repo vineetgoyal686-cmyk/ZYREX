@@ -142,6 +142,10 @@ const Login = ({ onLogin }) => {
         {/* ── LEFT: Form (white) ── */}
         <div className="bg-white flex flex-col justify-center px-10 sm:px-14 py-8">
 
+          <a href="https://zyhawk.in" className="inline-flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600 transition mb-6 w-fit">
+            ← Back to website
+          </a>
+
           <h2 className="text-3xl font-bold text-gray-900 mb-7">Login</h2>
 
           {view === "login" ? (
