@@ -173,11 +173,11 @@ function AppLayout({
 
     if (activeTab === "master_data__intakes")  return <IntakeList />;
 
-    if (activeTab === "master_data__products" || activeTab === "master_data__orders") {
-      return (
-        <ComingSoon label={activeTab.split("__")[1].toUpperCase() + " MASTER"} />
-      );
-    }
+    if (activeTab === "master_data__orders")
+      return <GlobalCreateOrder editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
+
+    if (activeTab === "master_data__products")
+      return <ComingSoon label="PRODUCTS MASTER" />;
     if (activeTab === "audit") return <ComingSoon label="Audit" />;
 
     // Project-specific tabs
