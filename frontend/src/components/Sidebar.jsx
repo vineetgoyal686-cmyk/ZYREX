@@ -281,7 +281,7 @@ export default React.memo(function Sidebar({
   }, [currentUser.avatar]);
 
   const collapsed = isMobile ? false : isCollapsed;
-  const isGlobalAdmin = currentUser.role === "global_admin";
+  const isGlobalAdmin = currentUser.role === "global_admin" || currentUser.role === "super_admin";
   const projects = projectsProp || [];
   const userDisplayName = currentUser.name || userName;
   const userDisplayEmail = currentUser.email || userEmail;

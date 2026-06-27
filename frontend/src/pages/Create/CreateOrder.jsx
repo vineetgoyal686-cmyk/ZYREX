@@ -1912,11 +1912,20 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
               <Input label={header.orderType === "Supply" ? "PO Name" : "WO Name"}
                 value={header.orderName} onChange={e => setHeader(h => ({ ...h, orderName: e.target.value }))}
                 placeholder={header.orderType === "Supply" ? "Enter PO Name..." : "Enter WO Name..."} required />
-              <Select label="Order Type" value={header.orderType} onChange={e => setHeader(h => ({ ...h, orderType: e.target.value }))}
-                options={[{ id: "Supply", name: "Supply (PO)" }, { id: "SITC", name: "SITC (WO)" }, { id: "ITC", name: "ITC (WO)" }]} required />
+              <Select label="Order Type" value={header.orderType} onChange={e => {
+                const newType = e.target.value;
+                setHeader(h => {
+                  const expectedPrefix = newType === "Supply" ? "PO" : "WO";
+                  const isDraft = /^(PO|WO)-\d+$/.test(h.orderNumber || "");
+                  const currentPrefix = (h.orderNumber || "").split("-")[0];
+                  // Clear mismatched draft number so backend assigns correct WO-N/PO-N on next save
+                  const orderNumber = isDraft && currentPrefix !== expectedPrefix ? "" : h.orderNumber;
+                  return { ...h, orderType: newType, orderNumber };
+                });
+              }} options={[{ id: "Supply", name: "Supply (PO)" }, { id: "SITC", name: "SITC (WO)" }, { id: "ITC", name: "ITC (WO)" }]} required />
               <Input label={header.orderType === "Supply" ? "PO Number" : "WO Number"}
                 value={header.orderNumber || ""}
-                placeholder="Will be assigned upon issuance"
+                placeholder={header.orderType === "Supply" ? "PO-# (on save)" : "WO-# (on save)"}
                 readOnly mono
               />
               <ProjectSelect

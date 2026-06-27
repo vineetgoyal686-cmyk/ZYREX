@@ -1,131 +1,352 @@
 import React, { useState, useEffect } from "react";
+import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import Sidebar from "./components/Sidebar";
 
-// Read current tab + project from URL hash OR query params (Supabase PKCE flow)
-const parseHash = () => {
-  const hashParams   = new URLSearchParams(window.location.hash.slice(1));
-  const searchParams = new URLSearchParams(window.location.search);
+// ── Route ↔ Tab mapping ──────────────────────────────────────────────────────
 
-  const type        = hashParams.get("type")        || searchParams.get("type");
-  const tokenHash   = searchParams.get("token_hash") || null;
-  const accessToken = hashParams.get("access_token") || null;
-  const authError   = hashParams.get("error")        || searchParams.get("error") || null;
-  const isSetPassword = false; // handled via token_hash query param on /app.html
-
-  const isReset = isSetPassword || type === "recovery" || type === "invite"
-    || !!tokenHash || !!accessToken || !!authError;
-
-  return {
-    tab:       hashParams.get("tab")     || "global_dashboard",
-    project:   hashParams.get("project") || null,
-    isReset,
-    isInvite:  isSetPassword || type === "invite",
-    tokenHash: tokenHash,
-  };
+// Global routes (no project)
+const ROUTE_TO_TAB = {
+  "/dashboard":                   "global_dashboard",
+  "/inbox":                       "approvals",
+  "/profile":                     "profile",
+  "/organisation":                "organisation",
+  "/audit":                       "audit",
+  "/historical-data":             "historical_data",
+  "/create/order":                "create__order",
+  "/create/intake":               "create__intake",
+  "/setup/vendors":               "proc_setup__vendor_list",
+  "/setup/items":                 "proc_setup__item_list",
+  "/setup/categories":            "proc_setup__category_list",
+  "/setup/uom":                   "proc_setup__uom",
+  "/setup/clauses/terms":         "proc_setup__term_condition",
+  "/setup/clauses/payment":       "proc_setup__payment_terms",
+  "/setup/clauses/laws":          "proc_setup__government_laws",
+  "/setup/clauses/annexures":     "proc_setup__annexure",
+  "/master-data":                 "master_data",
+  "/master-data/vendors":         "master_data__vendor",
+  "/master-data/clauses":         "master_data__clauses",
+  "/master-data/products":        "master_data__products",
+  "/master-data/orders":          "master_data__orders",
+  "/master-data/intakes":         "master_data__intakes",
 };
 
-const buildHash = (tab, project) => {
-  const params = new URLSearchParams();
-  params.set("tab", tab);
-  if (project) params.set("project", project);
-  return `#${params.toString()}`;
+const TAB_TO_ROUTE = Object.fromEntries(
+  Object.entries(ROUTE_TO_TAB).map(([path, tab]) => [tab, path])
+);
+
+// Project-specific sub-paths (appended after /p/:project)
+const PROJECT_SUB_TO_TAB = {
+  "/dashboard":                   "dashboard",
+  "/3d":                          "view_3d",
+  "/procurement/intake":          "procurement__intake",
+  "/procurement/orders":          "procurement__orders",
+  "/inventory/grn":               "inventory__received_material_grn",
+  "/inventory/stock":             "inventory__stock_inventory",
+  "/inventory/issues":            "inventory__material_issue",
+  "/operations/work":             "operations__work_activity",
+  "/operations/attendance":       "operations__staff_attendance",
+  "/operations/manpower":         "operations__manpower",
+  "/finance/payment":             "finance__payment_request",
+  "/finance/expenses":            "finance__site_expense",
+  "/finance/petty-cash":          "finance__petty_cash",
+  "/finance/bills":               "finance__bills_documents",
+  "/confidential/loa":            "confidential__loa",
+  "/confidential/boq":            "confidential__boq",
+  "/confidential/drawings":       "confidential__drawings",
+  "/confidential/ra-bills":       "confidential__ra_bills",
 };
-const pushUrl    = (tab, project) => window.history.pushState(null, "", buildHash(tab, project));
-const replaceUrl = (tab, project) => window.history.replaceState(null, "", buildHash(tab, project));
+
+const PROJECT_TAB_TO_SUB = Object.fromEntries(
+  Object.entries(PROJECT_SUB_TO_TAB).map(([sub, tab]) => [tab, sub])
+);
+
+function pathToTabAndProject(pathname) {
+  if (pathname.startsWith("/p/")) {
+    const rest = pathname.slice(3); // strip "/p/"
+    const slashIdx = rest.indexOf("/");
+    if (slashIdx === -1) return { tab: "dashboard", project: decodeURIComponent(rest) };
+    const project = decodeURIComponent(rest.slice(0, slashIdx));
+    const sub = rest.slice(slashIdx);
+    const tab = PROJECT_SUB_TO_TAB[sub] || "dashboard";
+    return { tab, project };
+  }
+  const tab = ROUTE_TO_TAB[pathname] || "global_dashboard";
+  return { tab, project: null };
+}
+
+function buildPath(tab, project) {
+  if (project && project !== "All Project") {
+    const sub = PROJECT_TAB_TO_SUB[tab] || "/dashboard";
+    return `/p/${encodeURIComponent(project)}${sub}`;
+  }
+  return TAB_TO_ROUTE[tab] || "/dashboard";
+}
+
+// ── Page imports ─────────────────────────────────────────────────────────────
 
 import Profile from "./pages/Profile";
 import Organisation from "./pages/Organisation";
 import MasterData from "./pages/MasterData";
 import ClauseMasterData from "./pages/ClauseMasterData";
 import Approvals from "./pages/Approvals";
- 
 import View3D from "./pages/Model";
 import Dashboard from "./pages/Dashboard";
- 
+
 // Confidential
 import LOA from "./pages/confidential/LOA";
 import BOQ from "./pages/confidential/BOQ";
 import Drawings from "./pages/confidential/Drawings";
 import RABills from "./pages/confidential/RABills";
- 
+
 // Finance
 import SiteExpense from "./pages/Finance/SiteExpense";
 import PettyCash from "./pages/Finance/PettyCash";
 import BillsDocs from "./pages/Finance/BillsDocs";
- 
+
 // Work Activity
 import ExecutionPlan from "./pages/WorkActivity/ExecutionPlan";
-import MSPPlan from "./pages/WorkActivity/MSPPlan";
- 
+
 // Manpower
 import DailyManpower from "./pages/Manpower/DailyManpower";
-import AllRecordManpower from "./pages/Manpower/AllRecord";
- 
+
 // Store
 import ReceivedRecord from "./pages/Store/ReceivedRecord";
-import LocalPurchase from "./pages/Store/LocalPurchase";
 import ConsumptionRecord from "./pages/Store/ConsumptionRecord";
 import StockAvailable from "./pages/Store/StockAvailable";
-import GRNDocs from "./pages/Store/GRNDocs";
 
 // Global Create
 import GlobalCreateOrder from "./pages/Create/CreateOrder";
 import IntakeList from "./pages/Create/IntakeList";
 
-// Procurement
+// Procurement setup
 import ItemList from "./pages/Procurement/ItemList";
 import VendorList from "./pages/Procurement/VendorList";
 import TermCondition from "./pages/Procurement/clauses/TermCondition";
 import PaymentTerms from "./pages/Procurement/clauses/PaymentTerms";
 import GovernmentLaws from "./pages/Procurement/clauses/GovernmentLaws";
-
 import UOMList from "./pages/Procurement/UOMList";
 import CategoryList from "./pages/Procurement/CategoryList";
 import AnnexureMaster from "./pages/Procurement/clauses/AnnexureMaster";
 
-// Images
-import AllImages from "./pages/Images/AllImages";
-import CompareImages from "./pages/Images/CompareImages";
- 
 // Attendance
 import Attendance from "./pages/Attendance/Attendance";
 import HistoricalData from "./pages/HistoricalData";
- 
+
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const SIDEBAR_EXPANDED_WIDTH = 220;
 const SIDEBAR_COLLAPSED_WIDTH = 60;
-const SIDEBAR_TRANSITION_MS = 220;
+
+// ── AppLayout (authenticated shell) ─────────────────────────────────────────
+
+function AppLayout({
+  activeTab, selectedProject, projects,
+  onTabChange, onProjectChange, onLogout,
+  userRole, currentUser, userTabPermissions,
+  editingOrderId, setEditingOrderId,
+  isCollapsed, setIsCollapsed,
+  onCurrentUserUpdate, onProjectsRefresh,
+}) {
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  useEffect(() => {
+    const check = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) setMobileOpen(false);
+    };
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
+  const renderPage = () => {
+    if (activeTab === "global_dashboard")     return <Dashboard project="All Project" />;
+    if (activeTab === "profile")              return <Profile onProfileUpdate={onCurrentUserUpdate} onProjectsUpdate={onProjectsRefresh} />;
+    if (activeTab === "organisation")         return <Organisation currentUser={currentUser} />;
+    if (activeTab === "historical_data")      return <HistoricalData />;
+
+    if (["approvals","intake","orders","amendments","payments"].includes(activeTab))
+      return <Approvals />;
+
+    if (activeTab === "create__intake")       return <IntakeList />;
+    if (activeTab === "create__order")        return <GlobalCreateOrder editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
+
+    if (activeTab === "proc_setup__vendor_list")     return <VendorList />;
+    if (activeTab === "proc_setup__item_list")        return <ItemList />;
+    if (activeTab === "proc_setup__category_list")    return <CategoryList />;
+    if (activeTab === "proc_setup__uom")              return <UOMList />;
+    if (activeTab === "proc_setup__term_condition")   return <TermCondition />;
+    if (activeTab === "proc_setup__payment_terms")    return <PaymentTerms />;
+    if (activeTab === "proc_setup__government_laws")  return <GovernmentLaws />;
+    if (activeTab === "proc_setup__annexure")         return <AnnexureMaster />;
+
+    if (activeTab === "master_data" || activeTab === "master_data__vendor")
+      return <MasterData view="vendor" />;
+    if (activeTab === "master_data__clauses")  return <ClauseMasterData />;
+
+    if (activeTab === "master_data__intakes")  return <IntakeList />;
+
+    if (activeTab === "master_data__products" || activeTab === "master_data__orders") {
+      return (
+        <ComingSoon label={activeTab.split("__")[1].toUpperCase() + " MASTER"} />
+      );
+    }
+    if (activeTab === "audit") return <ComingSoon label="Audit" />;
+
+    // Project-specific tabs
+    if (!selectedProject || selectedProject === "All Project") {
+      return (
+        <div className="flex min-h-screen items-center justify-center p-4 md:p-10 bg-[#f8fafc]">
+          <div className="bg-white p-8 md:p-20 rounded-2xl md:rounded-[3rem] shadow-sm border border-slate-100 flex items-center justify-center w-full max-w-4xl">
+            <p className="text-slate-400 font-bold uppercase tracking-wider md:tracking-[0.3em] text-center text-sm md:text-base">
+              Please select a project first
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    switch (activeTab) {
+      case "dashboard":                        return <Dashboard project={selectedProject} />;
+      case "view_3d":                          return <View3D project={selectedProject} />;
+      case "confidential__loa":               return <LOA project={selectedProject} />;
+      case "confidential__boq":               return <BOQ project={selectedProject} />;
+      case "confidential__drawings":          return <Drawings project={selectedProject} />;
+      case "confidential__ra_bills":          return <RABills project={selectedProject} />;
+      case "finance__site_expense":           return <SiteExpense project={selectedProject} />;
+      case "finance__petty_cash":             return <PettyCash project={selectedProject} />;
+      case "finance__bills_documents":        return <BillsDocs project={selectedProject} />;
+      case "operations__work_activity":       return <ExecutionPlan project={selectedProject} />;
+      case "operations__manpower":            return <DailyManpower project={selectedProject} />;
+      case "inventory__received_material_grn": return <ReceivedRecord project={selectedProject} />;
+      case "inventory__stock_inventory":      return <StockAvailable project={selectedProject} />;
+      case "inventory__material_issue":       return <ConsumptionRecord project={selectedProject} />;
+      case "procurement__orders":             return <GlobalCreateOrder project={selectedProject} editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
+      case "procurement__intake":             return <IntakeList project={selectedProject} />;
+      case "operations__staff_attendance":    return <Attendance selectedProject={selectedProject} />;
+      case "finance__payment_request":        return <ComingSoon label="Payment Request" />;
+      default:
+        return (
+          <div className="flex min-h-screen items-center justify-center text-slate-400 font-bold text-xl uppercase tracking-widest">
+            Page not created yet: {activeTab}
+          </div>
+        );
+    }
+  };
+
+  const isMobileVal = isMobile;
+
+  const mainPaddingClass = (() => {
+    if (isMobileVal) return "pt-4 px-3 pb-4";
+    if (activeTab === "profile") return "pt-0 px-0 pb-4 bg-[#f0f2f5]";
+    if (activeTab === "organisation") return "pt-0 px-0 pb-0";
+    if (["create__order","procurement__orders","master_data__orders",
+         "procurement__intake","master_data__intakes","create__intake",
+         "historical_data"].includes(activeTab))
+      return "pt-0 px-0 pb-0 bg-[#f0f2f5]";
+    return "pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4";
+  })();
+
+  return (
+    <div className="flex h-svh min-h-0 overflow-hidden bg-[#f8fafc]">
+      {isMobileVal && !mobileOpen && (
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="fixed top-3 left-3 z-50 bg-[#0b1022] text-white w-10 h-10 rounded-lg flex items-center justify-center shadow-lg text-lg"
+        >
+          ☰
+        </button>
+      )}
+
+      <div
+        className={`fixed top-0 left-0 h-full z-40 transition-transform duration-300 ${
+          isMobileVal ? (mobileOpen ? "translate-x-0" : "-translate-x-full") : "translate-x-0"
+        }`}
+      >
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={onTabChange}
+          userRole={userRole}
+          onLogout={onLogout}
+          selectedProject={selectedProject}
+          setSelectedProject={onProjectChange}
+          isCollapsed={isCollapsed}
+          setIsCollapsed={setIsCollapsed}
+          isMobile={isMobileVal}
+          onClose={() => setMobileOpen(false)}
+          currentUser={currentUser}
+          projects={projects}
+          userTabPermissions={userTabPermissions}
+        />
+      </div>
+
+      {isMobileVal && mobileOpen && (
+        <div className="fixed inset-0 bg-black/50 z-30" onClick={() => setMobileOpen(false)} />
+      )}
+
+      <div
+        className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden transition-[margin-left] duration-[220ms] ease-in-out ${
+          !isMobileVal ? (isCollapsed ? "ml-[60px]" : "ml-[220px]") : "ml-0"
+        }`}
+      >
+        <main
+          className={`flex-1 min-h-0 min-w-0 relative overflow-y-auto overscroll-y-contain thin-scrollbar-xs ${
+            activeTab === "profile" ? "flex flex-col" : ""
+          } ${mainPaddingClass}`}
+        >
+          {renderPage()}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function ComingSoon({ label }) {
+  return (
+    <div className="flex min-h-screen items-center justify-center p-4 md:p-10 bg-[#f8fafc]">
+      <div className="bg-white p-8 md:p-20 rounded-2xl md:rounded-[3rem] shadow-sm border border-slate-100 flex items-center justify-center w-full max-w-4xl">
+        <p className="text-slate-400 font-bold uppercase tracking-wider md:tracking-[0.3em] text-center text-sm md:text-base">
+          {label} — Coming Soon
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Root App component ────────────────────────────────────────────────────────
 
 function App() {
-  // Detect Supabase password-recovery / invite redirect
-  const [isResetMode, setIsResetMode]   = useState(() => parseHash().isReset);
-  const [isInviteMode, setIsInviteMode] = useState(() => parseHash().isInvite);
+  const navigate  = useNavigate();
+  const location  = useLocation();
 
-  // Fallback: re-check URL after mount in case browser processed redirect late
+  // Detect Supabase auth redirects (password reset / invite) in URL
+  // and redirect to /reset-password so auth is handled at a dedicated route.
   useEffect(() => {
-    const { isReset, isInvite } = parseHash();
-    if (isReset && !isResetMode) {
-      setIsResetMode(true);
-      setIsInviteMode(isInvite);
+    const hashParams   = new URLSearchParams(location.hash.slice(1));
+    const searchParams = new URLSearchParams(location.search);
+    const type         = hashParams.get("type") || searchParams.get("type");
+    const tokenHash    = searchParams.get("token_hash");
+    const accessToken  = hashParams.get("access_token");
+    const authError    = hashParams.get("error") || searchParams.get("error");
+
+    const isAuth = type === "recovery" || type === "invite" || !!tokenHash || !!accessToken || !!authError;
+    if (isAuth && location.pathname !== "/reset-password" && location.pathname !== "/invite") {
+      navigate("/reset-password" + location.search + location.hash, { replace: true });
     }
   }, []);
 
-  const loggedIn = !!localStorage.getItem("bms_token");
-  const [isLoggedIn, setIsLoggedIn] = useState(() => loggedIn);
-  const [userRole, setUserRole] = useState(() => {
+  const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem("bms_token"));
+  const [userRole, setUserRole]     = useState(() => {
     const u = localStorage.getItem("bms_user");
     return u ? JSON.parse(u).role : null;
   });
   const [currentUser, setCurrentUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem("bms_user") || "{}"); } catch { return {}; }
   });
-  // projects = [{ name: "All Project" }, ...active projects from DB]
   const [projects, setProjects] = useState([{ name: "All Project" }]);
-
-  // Tab-level permissions for sidebar filtering
-  // { hasAny: bool, map: { module_key: { can_view, can_edit, ... } } }
   const [userTabPermissions, setUserTabPermissions] = useState(() => {
     const u = localStorage.getItem("bms_user");
     const user = u ? JSON.parse(u) : null;
@@ -136,49 +357,19 @@ function App() {
     }
     return null;
   });
-
-  // Restore tab + project from URL on load
-  const GLOBAL_TABS = ["global_dashboard","approvals","intake","orders","amendments","payments",
-    "create__intake","create__order","master_data__orders","profile",
-    "proc_setup__item_list","proc_setup__vendor_list",
-    "proc_setup__term_condition","proc_setup__payment_terms","proc_setup__government_laws",
-    "proc_setup__uom","proc_setup__category_list",
-    "proc_setup__annexure","approvals__config",
-    "master_data","master_data__vendor","master_data__clauses",
-    "master_data__products","master_data__orders","master_data__intakes","audit",
-    "organisation"];
-
-  const [selectedProject, setSelectedProject] = useState(() => {
-    const { isReset, project } = parseHash();
-    if (!isReset && loggedIn) {
-      return project || localStorage.getItem("last_selected_project") || null;
-    }
-    return null;
-  });
-
-  const [activeTab, setActiveTab] = useState(() => {
-    const { isReset, tab } = parseHash();
-    if (!isReset && loggedIn) {
-      const proj = parseHash().project || localStorage.getItem("last_selected_project");
-      // if tab needs a project but none available, go to global_dashboard
-      if (!proj && !GLOBAL_TABS.includes(tab)) return "global_dashboard";
-      return tab;
-    }
-    return "global_dashboard";
-  });
-
   const [editingOrderId, setEditingOrderId] = useState(null);
+  const [isCollapsed, setIsCollapsed] = useState(
+    () => localStorage.getItem("bms_sidebar_collapsed") === "true"
+  );
 
-  const [isCollapsed, setIsCollapsed] = useState(() => localStorage.getItem("bms_sidebar_collapsed") === "true");
+  // Derive activeTab and selectedProject from current URL path
+  const { tab: activeTab, project: selectedProject } = pathToTabAndProject(location.pathname);
 
   const handleSetIsCollapsed = (val) => {
     const next = typeof val === "function" ? val(isCollapsed) : val;
     setIsCollapsed(next);
     localStorage.setItem("bms_sidebar_collapsed", String(next));
   };
-
-  const [isMobile, setIsMobile] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   const fetchProjects = async () => {
     try {
@@ -198,7 +389,7 @@ function App() {
     if (!token) return;
     try {
       const res = await fetch(`${API}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
         const data = await res.json();
@@ -209,19 +400,20 @@ function App() {
       } else if (res.status === 401) {
         handleLogout();
       }
-    } catch (err) { console.error("Profile refresh failed:", err); }
+    } catch { /* silent */ }
   };
 
   const fetchUserPermissions = async () => {
     const token = localStorage.getItem("bms_token");
     if (!token) return;
     try {
-      const res  = await fetch(`${API}/api/auth/my-permissions`, { headers: { Authorization: `Bearer ${token}` } });
+      const res  = await fetch(`${API}/api/auth/my-permissions`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await res.json();
       const permMap = {};
       (data.permissions || []).forEach(p => { permMap[p.module_key] = p; });
       setUserTabPermissions({ hasAny: data.has_any_permissions, map: permMap });
-      // Sync app_permissions into localStorage so all components get fresh data
       const stored = localStorage.getItem("bms_user");
       if (stored) {
         const user = JSON.parse(stored);
@@ -229,32 +421,28 @@ function App() {
         localStorage.setItem("bms_user", JSON.stringify(user));
         window.dispatchEvent(new CustomEvent("bms_permissions_updated"));
       }
-    } catch { /* silent — don't break the app */ }
+    } catch { /* silent */ }
   };
 
-  // Fetch projects + permissions + profile whenever logged in
   useEffect(() => {
-    if (!isLoggedIn || isResetMode) return;
+    if (!isLoggedIn) return;
     fetchProjects();
     fetchUserProfile();
     if (!userTabPermissions) fetchUserPermissions();
-  }, [isLoggedIn, userTabPermissions, isResetMode]);
+  }, [isLoggedIn]);
 
   const handleLogin = (user) => {
     setUserRole(user.role);
     setCurrentUser(user);
     if (user.app_permissions?.length > 0) {
-      setUserTabPermissions(() => {
-        const permMap = {};
-        user.app_permissions.forEach(p => { permMap[p.module_key] = p; });
-        return { hasAny: true, map: permMap };
-      });
+      const permMap = {};
+      user.app_permissions.forEach(p => { permMap[p.module_key] = p; });
+      setUserTabPermissions({ hasAny: true, map: permMap });
     } else {
       setUserTabPermissions(null);
     }
     setIsLoggedIn(true);
-    setActiveTab("global_dashboard");
-    pushUrl("global_dashboard", null);
+    navigate("/dashboard", { replace: true });
   };
 
   const handleLogout = () => {
@@ -264,256 +452,82 @@ function App() {
     setUserRole(null);
     setCurrentUser({});
     setUserTabPermissions(null);
-    setSelectedProject(null);
-    setActiveTab("global_dashboard");
-    window.location.href = "/";
+    navigate("/", { replace: true });
   };
 
-  const handleProfileUpdate = (updatedUser) => {
-    setCurrentUser(updatedUser);
-  };
-
-  const handleProjectsUpdate = () => {
-    fetchProjects();
-  };
- 
   const handleTabChange = (tab) => {
-    const proj = tab === "global_dashboard" ? null : selectedProject;
-    if (tab === "global_dashboard") {
-      setSelectedProject(null);
+    const path = buildPath(tab, selectedProject);
+    navigate(path);
+  };
+
+  const handleProjectChange = (project) => {
+    if (project && project !== "All Project") {
+      localStorage.setItem("last_selected_project", project);
+      // If currently on a project-specific tab, keep that tab for new project;
+      // otherwise navigate to project dashboard.
+      const isProjectTab = !!PROJECT_TAB_TO_SUB[activeTab];
+      const targetTab = isProjectTab ? activeTab : "dashboard";
+      navigate(buildPath(targetTab, project));
+    } else {
       localStorage.removeItem("last_selected_project");
-    }
-    if (tab === activeTab) {
-      replaceUrl(tab, proj);
-      if (isMobile) setMobileOpen(false);
-      return;
-    }
-    setActiveTab(tab);
-    pushUrl(tab, proj);
-    if (isMobile) setMobileOpen(false);
-  };
-
-  const handleSetSelectedProject = (project) => {
-    setSelectedProject(project);
-    if (project) localStorage.setItem("last_selected_project", project);
-    else localStorage.removeItem("last_selected_project");
-    pushUrl(activeTab, project);
-  };
-
-  // Browser back / forward button support
-  useEffect(() => {
-    const onPopState = () => {
-      const { tab, project, isReset } = parseHash();
-      if (isReset) return;
-      setActiveTab(tab);
-      setSelectedProject(project);
-    };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
- 
-  useEffect(() => {
-    const checkScreen = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
-      if (!mobile) setMobileOpen(false);
-    };
-    checkScreen();
-    window.addEventListener("resize", checkScreen);
-    return () => window.removeEventListener("resize", checkScreen);
-  }, []);
- 
-  const renderPage = () => {
-    if (activeTab === "master_data__orders") return <GlobalCreateOrder project={null} editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
-    if (activeTab === "global_dashboard") return <Dashboard project="All Project" />;
-    if (activeTab === "profile") return <Profile onProfileUpdate={handleProfileUpdate} onProjectsUpdate={handleProjectsUpdate} />;
-    
-    // Approvals / Inbox is GLOBAL (no project needed)
-    if (activeTab === "approvals" || activeTab === "intake" || activeTab === "orders" || activeTab === "amendments" || activeTab === "payments") return <Approvals />;
-
-    // Global Create tabs
-    if (activeTab === "create__intake") return <IntakeList />;
-    if (activeTab === "create__order")  return <GlobalCreateOrder editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
-
-    // Global procurement setup tabs — no project needed
-    if (activeTab === "proc_setup__item_list") return <ItemList />;
-    if (activeTab === "proc_setup__vendor_list") return <VendorList />;
-    if (activeTab === "proc_setup__term_condition") return <TermCondition />;
-    if (activeTab === "proc_setup__payment_terms") return <PaymentTerms />;
-    if (activeTab === "proc_setup__government_laws") return <GovernmentLaws />;
-
-    if (activeTab === "proc_setup__uom") return <UOMList />;
-    if (activeTab === "proc_setup__category_list") return <CategoryList />;
-    if (activeTab === "proc_setup__annexure") return <AnnexureMaster />;
-
-    if (activeTab === "organisation")   return <Organisation currentUser={currentUser} />;
-    if (activeTab === "historical_data") return <HistoricalData />;
-
-    if (activeTab === "master_data" || activeTab === "master_data__vendor") return <MasterData view="vendor" />;
-    if (activeTab === "master_data__clauses") return <ClauseMasterData />;
-    
-    if (activeTab === "master_data__products" || activeTab === "master_data__orders") {
-      return (
-        <div className="flex min-h-screen items-center justify-center p-4 md:p-10 bg-[#f8fafc]">
-          <div className="bg-white p-8 md:p-20 rounded-2xl md:rounded-[3rem] shadow-sm border border-slate-100 flex items-center justify-center w-full max-w-4xl">
-            <p className="text-slate-400 font-bold uppercase tracking-wider md:tracking-[0.3em] text-center text-sm md:text-base">
-              {activeTab.split("__")[1].toUpperCase()} MASTER — COMING SOON
-            </p>
-          </div>
-        </div>
-      );
-    }
-    if (activeTab === "master_data__intakes") return <IntakeList />;
-
-    if (activeTab === "master_data") {
-      return (
-        <div className="flex min-h-screen items-center justify-center p-4 md:p-10 bg-[#f8fafc]">
-          <div className="bg-white p-8 md:p-20 rounded-2xl md:rounded-[3rem] shadow-sm border border-slate-100 flex items-center justify-center w-full max-w-4xl">
-            <p className="text-slate-400 font-bold uppercase tracking-wider md:tracking-[0.3em] text-center text-sm md:text-base">
-              Master Data — Coming soon
-            </p>
-          </div>
-        </div>
-      );
-    }
-    if (activeTab === "audit") {
-      return (
-        <div className="flex min-h-screen items-center justify-center p-4 md:p-10 bg-[#f8fafc]">
-          <div className="bg-white p-8 md:p-20 rounded-2xl md:rounded-[3rem] shadow-sm border border-slate-100 flex items-center justify-center w-full max-w-4xl">
-            <p className="text-slate-400 font-bold uppercase tracking-wider md:tracking-[0.3em] text-center text-sm md:text-base">
-              Audit — Coming soon
-            </p>
-          </div>
-        </div>
-      );
-    }
- 
-    if (!selectedProject) {
-      return (
-        <div className="flex min-h-screen items-center justify-center p-4 md:p-10 bg-[#f8fafc]">
-          <div className="bg-white p-8 md:p-20 rounded-2xl md:rounded-[3rem] shadow-sm border border-slate-100 flex items-center justify-center w-full max-w-4xl">
-            <p className="text-slate-400 font-bold uppercase tracking-wider md:tracking-[0.3em] text-center text-sm md:text-base">
-              Please select a project first
-            </p>
-          </div>
-        </div>
-      );
-    }
- 
-    switch (activeTab) {
-      case "dashboard": return <Dashboard project={selectedProject} />;
-      case "view_3d": return <View3D project={selectedProject} />;
-      case "confidential__loa": return <LOA project={selectedProject} />;
-      case "confidential__boq": return <BOQ project={selectedProject} />;
-      case "confidential__drawings": return <Drawings project={selectedProject} />;
-      case "confidential__ra_bills": return <RABills project={selectedProject} />;
-      case "finance__site_expense": return <SiteExpense project={selectedProject} />;
-      case "finance__petty_cash": return <PettyCash project={selectedProject} />;
-      case "finance__bills_documents": return <BillsDocs project={selectedProject} />;
-      case "operations__work_activity": return <ExecutionPlan project={selectedProject} />;
-      case "operations__manpower": return <DailyManpower project={selectedProject} />;
-      case "inventory__received_material_grn": return <ReceivedRecord project={selectedProject} />;
-      case "inventory__stock_inventory": return <StockAvailable project={selectedProject} />;
-      case "inventory__material_issue": return <ConsumptionRecord project={selectedProject} />;
-      case "procurement__orders": return <GlobalCreateOrder project={selectedProject} editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
-      case "procurement__intake": return <IntakeList project={selectedProject} />;
-      case "operations__staff_attendance": return <Attendance selectedProject={selectedProject} />;
-      case "finance__payment_request": return (
-        <div className="flex min-h-screen items-center justify-center p-4 md:p-10 bg-[#f8fafc]">
-          <div className="bg-white p-8 md:p-20 rounded-2xl md:rounded-[3rem] shadow-sm border border-slate-100 flex items-center justify-center w-full max-w-4xl">
-            <p className="text-slate-400 font-bold uppercase tracking-wider md:tracking-[0.3em] text-center text-sm md:text-base">
-              Payment Request — Coming Soon
-            </p>
-          </div>
-        </div>
-      );
-      default:
-        return (
-          <div className="flex min-h-screen items-center justify-center text-slate-400 font-bold text-xl uppercase tracking-widest">
-            Page not created yet: {activeTab}
-          </div>
-        );
+      navigate("/dashboard");
     }
   };
- 
-  if (isResetMode) return <ResetPassword isInvite={isInviteMode} onComplete={() => { setIsResetMode(false); setIsInviteMode(false); window.history.replaceState(null, "", "/"); }} />;
-  if (!isLoggedIn) return <Login onLogin={handleLogin} />;
 
   return (
-    <div className="flex h-svh min-h-0 overflow-hidden bg-[#f8fafc]">
- 
-      {/* ✅ HAMBURGER - sirf tab dikhega jab sidebar BAND ho */}
-      {isMobile && !mobileOpen && (
-        <button
-          onClick={() => setMobileOpen(true)}
-          className="fixed top-3 left-3 z-50 bg-[#0b1022] text-white w-10 h-10 rounded-lg flex items-center justify-center shadow-lg text-lg"
-        >
-          ☰
-        </button>
-      )}
- 
-      {/* ✅ SIDEBAR */}
-      <div
-        className={`
-          fixed top-0 left-0 h-full z-40 transition-transform duration-300
-          ${isMobile
-            ? mobileOpen ? "translate-x-0" : "-translate-x-full"
-            : "translate-x-0"
-          }
-        `}
-      >
-        <Sidebar
-          activeTab={activeTab}
-          setActiveTab={handleTabChange}
-          userRole={userRole}
-          onLogout={handleLogout}
-          selectedProject={selectedProject}
-          setSelectedProject={handleSetSelectedProject}
-          isCollapsed={isCollapsed}
-          setIsCollapsed={handleSetIsCollapsed}
-          isMobile={isMobile}
-          onClose={() => setMobileOpen(false)}
-          currentUser={currentUser}
-          projects={projects}
-          userTabPermissions={userTabPermissions}
-        />
-      </div>
- 
-      {/* ✅ BACKDROP */}
-      {isMobile && mobileOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-30"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
- 
-      {/* ✅ MAIN CONTENT */}
-      <div
-        className={`
-          flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden
-          ${!isMobile ? (isCollapsed ? "ml-[60px]" : "ml-[220px]") : "ml-0"}
-          transition-[margin-left] duration-[220ms] ease-in-out
-        `}
-      >
-        <main className={`flex-1 min-h-0 min-w-0 relative overflow-y-auto overscroll-y-contain thin-scrollbar-xs
-          ${activeTab === "profile" ? "flex flex-col" : ""}
-          ${isMobile
-            ? "pt-4 px-3 pb-4"
-            : activeTab === "profile"
-              ? "pt-0 px-0 pb-4 bg-[#f0f2f5]"
-              : activeTab === "organisation"
-                ? "pt-0 px-0 pb-0"
-                : (activeTab === "create__order" || activeTab === "procurement__orders" || activeTab === "master_data__orders" || activeTab === "procurement__intake" || activeTab === "master_data__intakes" || activeTab === "create__intake")
-                  ? "pt-0 px-0 pb-0 bg-[#f0f2f5]"
-                  : activeTab === "historical_data"
-                    ? "pt-0 px-0 pb-0 bg-[#f0f2f5]"
-                  : "pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4"}
-        `}>
-          {renderPage()}
-        </main>
-      </div>
-    </div>
+    <Routes>
+      {/* Password reset / invite — always accessible */}
+      <Route
+        path="/reset-password"
+        element={
+          <ResetPassword
+            isInvite={false}
+            onComplete={() => navigate("/", { replace: true })}
+          />
+        }
+      />
+      <Route
+        path="/invite"
+        element={
+          <ResetPassword
+            isInvite={true}
+            onComplete={() => navigate("/", { replace: true })}
+          />
+        }
+      />
+
+      {/* All other routes */}
+      <Route
+        path="*"
+        element={
+          !isLoggedIn ? (
+            <Login onLogin={handleLogin} />
+          ) : (
+            <AppLayout
+              activeTab={activeTab}
+              selectedProject={selectedProject}
+              projects={projects}
+              onTabChange={handleTabChange}
+              onProjectChange={handleProjectChange}
+              onLogout={handleLogout}
+              userRole={userRole}
+              currentUser={currentUser}
+              userTabPermissions={userTabPermissions}
+              editingOrderId={editingOrderId}
+              setEditingOrderId={setEditingOrderId}
+              isCollapsed={isCollapsed}
+              setIsCollapsed={handleSetIsCollapsed}
+              onCurrentUserUpdate={(updatedUser) => {
+                setCurrentUser(updatedUser);
+                localStorage.setItem("bms_user", JSON.stringify(updatedUser));
+              }}
+              onProjectsRefresh={fetchProjects}
+            />
+          )
+        }
+      />
+    </Routes>
   );
 }
- 
+
 export default App;

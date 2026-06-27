@@ -70,7 +70,34 @@ router.post("/login", async (req, res) => {
     ? createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.signature)
     : Promise.resolve(null);
 
-  const [signedAvatar, signedCoverImage, signedSignature] = await Promise.all([signedAvatarPromise, signedCoverPromise, signedSignaturePromise]);
+  // Fetch user's permissions + access profile permissions at login so sidebar renders immediately
+  const [signedAvatar, signedCoverImage, signedSignature, modulesRes, permsRes, designationsRes] = await Promise.all([
+    signedAvatarPromise,
+    signedCoverPromise,
+    signedSignaturePromise,
+    admin.from("modules").select("id,module_key,module_name").eq("is_active", true).order("id"),
+    admin.from("permissions").select("*").eq("user_id", profile.id),
+    (profile.access_profile_ids?.length > 0)
+      ? admin.from("designations").select("app_permissions").in("id", profile.access_profile_ids)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const BOOL_KEYS = [
+    "can_view","can_add","can_edit","can_delete","can_bulk_upload","can_export",
+    "can_download_document","can_issue","can_recall","can_reject","can_revert",
+    "can_cancel","can_manage_amend","can_log","can_trash","can_take_action",
+    "can_submit","can_approve","can_request","can_withdraw",
+    "order_overview_aging","order_intake","order_payment",
+  ];
+  const profilePerms = (designationsRes.data || []).flatMap(d => d.app_permissions || []);
+  const appPermissions = (modulesRes.data || []).map(mod => {
+    const explicit = (permsRes.data || []).find(p => p.module_id === mod.id) || {};
+    const profMatches = profilePerms.filter(p => p.module_id === mod.id);
+    const merged = { module_id: mod.id, module_key: mod.module_key, module_name: mod.module_name };
+    BOOL_KEYS.forEach(k => { merged[k] = !!(explicit[k]) || profMatches.some(p => !!p[k]); });
+    return merged;
+  });
+
   const ui = signedProfilePermissions.ui || {};
 
   res.json({
@@ -89,6 +116,7 @@ router.post("/login", async (req, res) => {
       signature:           signedSignature             || null,
       header_theme:        ui.header_theme             || null,
       profile_permissions: signedProfilePermissions,
+      app_permissions:     appPermissions,
     },
   });
 });
@@ -672,33 +700,56 @@ router.get("/my-permissions", async (req, res) => {
   if (!userId) return res.status(401).json({ error: "Invalid token" });
 
   const admin = getAdminClient();
-  const { data: modules } = await admin.from("modules").select("*").eq("is_active", true).order("id");
-  const { data: perms }   = await admin.from("permissions").select("*").eq("user_id", userId);
+
+  // Fetch modules, user's explicit permissions, and their access profiles in parallel
+  const [
+    { data: modules },
+    { data: perms },
+    { data: userRow },
+  ] = await Promise.all([
+    admin.from("modules").select("*").eq("is_active", true).order("id"),
+    admin.from("permissions").select("*").eq("user_id", userId),
+    admin.from("users").select("access_profile_ids").eq("id", userId).single(),
+  ]);
+
+  // Also merge permissions from the user's linked access profiles (designations)
+  // This ensures designation updates are reflected without re-saving per-user permissions
+  const profileIds = userRow?.access_profile_ids || [];
+  let profilePerms = [];
+  if (profileIds.length > 0) {
+    const { data: designations } = await admin.from("designations")
+      .select("app_permissions")
+      .in("id", profileIds);
+    profilePerms = (designations || []).flatMap(d => d.app_permissions || []);
+  }
+
+  const BOOL_KEYS = [
+    "can_view","can_add","can_edit","can_delete","can_bulk_upload","can_export",
+    "can_download_document","can_issue","can_recall","can_reject","can_revert",
+    "can_cancel","can_manage_amend","can_log","can_trash","can_take_action",
+    "can_submit","can_approve","can_request","can_withdraw",
+    "order_overview_aging","order_intake","order_payment",
+  ];
 
   const result = (modules || []).map(mod => {
-    const perm = (perms || []).find(p => p.module_id === mod.id) || {};
+    const explicit = (perms || []).find(p => p.module_id === mod.id) || {};
+    // Union with profile permissions — true if either explicit OR any linked designation says true
+    const profMatches = profilePerms.filter(p => p.module_id === mod.id);
+    const merged = {};
+    BOOL_KEYS.forEach(k => {
+      merged[k] = !!(explicit[k]) || profMatches.some(p => !!p[k]);
+    });
     return {
-      module_id:             mod.id,
-      module_key:            mod.module_key,
-      module_name:           mod.module_name,
-      can_view:              perm.can_view              || false,
-      can_add:               perm.can_add               || false,
-      can_edit:              perm.can_edit              || false,
-      can_delete:            perm.can_delete            || false,
-      can_bulk_upload:       perm.can_bulk_upload       || false,
-      can_export:            perm.can_export            || false,
-      can_download_document: perm.can_download_document || false,
-      can_issue:             perm.can_issue             || false,
-      can_recall:            perm.can_recall            || false,
-      can_reject:            perm.can_reject            || false,
-      can_revert:            perm.can_revert            || false,
-      can_cancel:            perm.can_cancel            || false,
-      can_manage_amend:      perm.can_manage_amend      || false,
-      has_explicit_entry:    !!perms?.find(p => p.module_id === mod.id),
+      module_id:   mod.id,
+      module_key:  mod.module_key,
+      module_name: mod.module_name,
+      ...merged,
+      has_explicit_entry: !!explicit.user_id,
     };
   });
 
-  res.json({ permissions: result, has_any_permissions: (perms || []).length > 0 });
+  const hasAny = result.some(r => r.can_view);
+  res.json({ permissions: result, has_any_permissions: hasAny });
 });
 
 module.exports = router;

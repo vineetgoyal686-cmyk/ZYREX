@@ -1,15 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { resolve } from 'path'
 
 export default defineConfig({
   plugins: [react()],
   build: {
     rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
-        app:  resolve(__dirname, 'app.html'),
-      },
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'],
@@ -19,7 +14,16 @@ export default defineConfig({
       },
     },
   },
+  server: {
+    historyApiFallback: true,
+  },
   preview: {
-    allowedHosts: ['hm-production-adb4.up.railway.app', 'zyrex-production-777c.up.railway.app']
-  }
+    host: '0.0.0.0',
+    port: 4173,
+    allowedHosts: [
+      'hm-production-adb4.up.railway.app',
+      'zyrex-production-777c.up.railway.app',
+      'app.zyhawk.in',
+    ],
+  },
 })

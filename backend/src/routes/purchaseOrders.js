@@ -1573,19 +1573,26 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
     // 2.1 Override order_number to DRAFT if not Issued (prevent premature numbering on Edit)
     // Exception: amendment clones (e.g. PO-4A, PO-4B) keep their assigned number — they
     // are NOT new pending orders, they're versions of an issued one.
-    if (mainData.status !== 'Issued' && !isDraftNumber(mainData.order_number)) {
-        const { data: curr } = await supabase.schema("procurement")
-          .from("purchase_orders").select("order_number, amended_from_id, order_type").eq("id", req.params.id).single();
+    if (mainData.status !== 'Issued') {
+      const { data: curr } = await supabase.schema("procurement")
+        .from("purchase_orders").select("order_number, amended_from_id, order_type").eq("id", req.params.id).single();
 
-        if (curr?.amended_from_id) {
-          // Amendment clone — keep its existing number (e.g. .../4A)
-          mainData.order_number = curr.order_number;
-        } else if (isDraftNumber(curr?.order_number)) {
-          mainData.order_number = curr.order_number; // Preserve existing PO-N / WO-N
+      if (curr?.amended_from_id) {
+        // Amendment clone — keep its existing number (e.g. .../4A)
+        mainData.order_number = curr.order_number;
+      } else if (isDraftNumber(curr?.order_number)) {
+        // If order type changed, regenerate draft number with correct prefix (e.g. PO-1 → WO-2)
+        const expectedPrefix = (mainData.order_type || curr.order_type || 'Supply') === 'Supply' ? 'PO' : 'WO';
+        const currentPrefix = (curr.order_number || '').split('-')[0];
+        if (currentPrefix !== expectedPrefix) {
+          mainData.order_number = await getNextDraftNumber(mainData.order_type || curr.order_type || 'Supply');
         } else {
-          // Shouldn't happen for orders created after this update, but handle gracefully
-          mainData.order_number = curr?.order_number || await getNextDraftNumber(curr?.order_type || 'Supply');
+          mainData.order_number = curr.order_number; // Preserve existing draft number
         }
+      } else if (!isDraftNumber(mainData.order_number)) {
+        // Shouldn't happen for orders created after this update, but handle gracefully
+        mainData.order_number = curr?.order_number || await getNextDraftNumber(curr?.order_type || 'Supply');
+      }
     }
 
     // 2.2 Assign final order number when status → Issued and current number is PENDING-
