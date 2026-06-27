@@ -1,8 +1,7 @@
-// SPA server — serves built files with fallback to index.html for all routes.
-// Used in production (Railway) instead of `vite preview`.
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
+const zlib = require('zlib')
 
 const DIST = path.join(__dirname, 'dist')
 const PORT = parseInt(process.env.PORT || '4173', 10)
@@ -27,24 +26,52 @@ const MIME = {
   '.pdf':  'application/pdf',
 }
 
+const COMPRESSIBLE = new Set(['.html','.js','.mjs','.css','.json','.svg'])
+
+// Vite output files have content hashes — cache 1 year
+// HTML must never be cached (it's the SPA entry)
+function cacheHeader(filePath) {
+  const ext = path.extname(filePath).toLowerCase()
+  if (ext === '.html') return 'no-cache, no-store, must-revalidate'
+  // hashed assets in /assets/
+  if (filePath.includes(path.join('dist', 'assets'))) return 'public, max-age=31536000, immutable'
+  return 'public, max-age=3600'
+}
+
+function serveFile(filePath, req, res) {
+  const ext = path.extname(filePath).toLowerCase()
+  const mime = MIME[ext] || 'application/octet-stream'
+  const cache = cacheHeader(filePath)
+  const acceptsGzip = (req.headers['accept-encoding'] || '').includes('gzip')
+
+  if (acceptsGzip && COMPRESSIBLE.has(ext)) {
+    res.writeHead(200, {
+      'Content-Type': mime,
+      'Content-Encoding': 'gzip',
+      'Cache-Control': cache,
+      'Vary': 'Accept-Encoding',
+    })
+    fs.createReadStream(filePath).pipe(zlib.createGzip()).pipe(res)
+  } else {
+    res.writeHead(200, { 'Content-Type': mime, 'Cache-Control': cache })
+    fs.createReadStream(filePath).pipe(res)
+  }
+}
+
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0]
   let filePath = path.join(DIST, url)
 
-  // Directory index
   if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
     filePath = path.join(filePath, 'index.html')
   }
 
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-    const ext = path.extname(filePath).toLowerCase()
-    const mime = MIME[ext] || 'application/octet-stream'
-    res.writeHead(200, { 'Content-Type': mime })
-    fs.createReadStream(filePath).pipe(res)
+    serveFile(filePath, req, res)
   } else {
-    // SPA fallback — serve index.html for all unknown paths
+    // SPA fallback
     const index = path.join(DIST, 'index.html')
-    res.writeHead(200, { 'Content-Type': 'text/html' })
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache, no-store, must-revalidate' })
     fs.createReadStream(index).pipe(res)
   }
 })
