@@ -1,0 +1,7 @@
+{
+  "name": "zyhawk-landing",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "npx serve . -l tcp://0.0.0.0:$PORT"
+  }
+}
