@@ -196,22 +196,22 @@ function AppLayout({
     switch (activeTab) {
       case "dashboard":                        return <Dashboard project={selectedProject} />;
       case "view_3d":                          return <View3D project={selectedProject} />;
-      case "confidential__loa":               return <LOA project={selectedProject} />;
-      case "confidential__boq":               return <BOQ project={selectedProject} />;
-      case "confidential__drawings":          return <Drawings project={selectedProject} />;
-      case "confidential__ra_bills":          return <RABills project={selectedProject} />;
-      case "finance__site_expense":           return <SiteExpense project={selectedProject} />;
-      case "finance__petty_cash":             return <PettyCash project={selectedProject} />;
-      case "finance__bills_documents":        return <BillsDocs project={selectedProject} />;
-      case "operations__work_activity":       return <ExecutionPlan project={selectedProject} />;
-      case "operations__manpower":            return <DailyManpower project={selectedProject} />;
-      case "inventory__received_material_grn": return <ReceivedRecord project={selectedProject} />;
-      case "inventory__stock_inventory":      return <StockAvailable project={selectedProject} />;
-      case "inventory__material_issue":       return <ConsumptionRecord project={selectedProject} />;
       case "procurement__orders":             return <GlobalCreateOrder project={selectedProject} editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
       case "procurement__intake":             return <IntakeList project={selectedProject} />;
-      case "operations__staff_attendance":    return <Attendance selectedProject={selectedProject} />;
-      case "finance__payment_request":        return <ComingSoon label="Payment Request" />;
+      case "inventory__received_material_grn":
+      case "inventory__stock_inventory":
+      case "inventory__material_issue":
+      case "operations__work_activity":
+      case "operations__staff_attendance":
+      case "operations__manpower":
+      case "finance__payment_request":
+      case "finance__site_expense":
+      case "finance__petty_cash":
+      case "finance__bills_documents":
+      case "confidential__loa":
+      case "confidential__boq":
+      case "confidential__drawings":
+      case "confidential__ra_bills":          return <ComingSoon label="Coming Soon" />;
       default:
         return (
           <div className="flex min-h-screen items-center justify-center text-slate-400 font-bold text-xl uppercase tracking-widest">
