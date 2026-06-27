@@ -5,9 +5,18 @@ const { requireAuth } = require("../middleware/auth");
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
+// 60-second in-memory cache for global stats (expensive query)
+let globalStatsCache = null;
+let globalStatsCacheAt = 0;
+const CACHE_TTL = 60 * 1000;
+
 /* GET /api/dashboard/global-stats */
 router.get("/global-stats", requireAuth, async (req, res) => {
   try {
+    if (globalStatsCache && Date.now() - globalStatsCacheAt < CACHE_TTL) {
+      return res.json(globalStatsCache);
+    }
+
     const { data: orders, error: ordErr } = await supabase
       .schema("procurement")
       .from("purchase_orders")
@@ -192,7 +201,7 @@ router.get("/global-stats", requireAuth, async (req, res) => {
       .sort((a, b) => b.total - a.total)
       .map(u => ({ ...u, sites: Object.values(u.sites) }));
 
-    res.json({
+    const result = {
       orders:       orderStats,
       counts: {
         vendors:  vR.count  || 0,
@@ -219,7 +228,10 @@ router.get("/global-stats", requireAuth, async (req, res) => {
       topVendorsWO,
       userOrderData,
       agingOrders:   agingOrders.sort((a, b) => b.days - a.days),
-    });
+    };
+    globalStatsCache = result;
+    globalStatsCacheAt = Date.now();
+    res.json(result);
   } catch (err) {
     console.error("Dashboard stats error:", err.message);
     res.status(500).json({ error: err.message });

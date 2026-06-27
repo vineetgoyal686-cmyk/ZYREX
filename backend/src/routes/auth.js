@@ -752,4 +752,58 @@ router.get("/my-permissions", async (req, res) => {
   res.json({ permissions: result, has_any_permissions: hasAny });
 });
 
+/* ─────────────────────────────────────────
+   GET /api/auth/init
+   Single call: user profile + projects (replaces /me + /api/projects)
+   Header: Authorization: Bearer <token>
+───────────────────────────────────────── */
+router.get("/init", async (req, res) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Token required" });
+
+  const userId = extractUserId(token);
+  if (!userId) return res.status(401).json({ error: "Invalid token" });
+
+  const admin = getAdminClient();
+
+  const [profileRes, projectsRes] = await Promise.all([
+    admin.from("users")
+      .select("id, name, email, role, designation, department, contact_no, avatar, access_profile_ids, profile_permissions, is_active")
+      .eq("id", userId).single(),
+    admin.from("projects").select("id, project_name, project_code, city, state, is_active, logo_url").order("created_at", { ascending: true }),
+  ]);
+
+  if (!profileRes.data || !profileRes.data.is_active)
+    return res.status(401).json({ error: "User not found or inactive" });
+
+  const profile = profileRes.data;
+  const signedAvatar = await createSignedStorageUrl(admin, "avatars", profile.avatar);
+  const signedProfilePermissions = { ...(profile.profile_permissions || {}) };
+  if (signedProfilePermissions.ui?.cover_image) {
+    signedProfilePermissions.ui = {
+      ...signedProfilePermissions.ui,
+      cover_image: await createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.cover_image),
+    };
+  }
+
+  const projects = (projectsRes.data || []).map(r => ({
+    id:          r.id,
+    projectName: r.project_name || "",
+    projectCode: r.project_code || "",
+    city:        r.city         || "",
+    state:       r.state        || "",
+    isActive:    r.is_active !== false,
+    logoUrl:     "",
+  }));
+
+  res.json({
+    user: {
+      ...profile,
+      avatar: signedAvatar || null,
+      profile_permissions: signedProfilePermissions,
+    },
+    projects,
+  });
+});
+
 module.exports = router;

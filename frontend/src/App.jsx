@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
@@ -84,55 +84,39 @@ function buildPath(tab, project) {
   return TAB_TO_ROUTE[tab] || "/dashboard";
 }
 
-// ── Page imports ─────────────────────────────────────────────────────────────
+// ── Page imports (lazy — each page loads only when first visited) ─────────────
 
-import Profile from "./pages/Profile";
-import Organisation from "./pages/Organisation";
-import MasterData from "./pages/MasterData";
-import ClauseMasterData from "./pages/ClauseMasterData";
-import Approvals from "./pages/Approvals";
-import View3D from "./pages/Model";
-import Dashboard from "./pages/Dashboard";
-
-// Confidential
-import LOA from "./pages/confidential/LOA";
-import BOQ from "./pages/confidential/BOQ";
-import Drawings from "./pages/confidential/Drawings";
-import RABills from "./pages/confidential/RABills";
-
-// Finance
-import SiteExpense from "./pages/Finance/SiteExpense";
-import PettyCash from "./pages/Finance/PettyCash";
-import BillsDocs from "./pages/Finance/BillsDocs";
-
-// Work Activity
-import ExecutionPlan from "./pages/WorkActivity/ExecutionPlan";
-
-// Manpower
-import DailyManpower from "./pages/Manpower/DailyManpower";
-
-// Store
-import ReceivedRecord from "./pages/Store/ReceivedRecord";
-import ConsumptionRecord from "./pages/Store/ConsumptionRecord";
-import StockAvailable from "./pages/Store/StockAvailable";
-
-// Global Create
-import GlobalCreateOrder from "./pages/Create/CreateOrder";
-import IntakeList from "./pages/Create/IntakeList";
-
-// Procurement setup
-import ItemList from "./pages/Procurement/ItemList";
-import VendorList from "./pages/Procurement/VendorList";
-import TermCondition from "./pages/Procurement/clauses/TermCondition";
-import PaymentTerms from "./pages/Procurement/clauses/PaymentTerms";
-import GovernmentLaws from "./pages/Procurement/clauses/GovernmentLaws";
-import UOMList from "./pages/Procurement/UOMList";
-import CategoryList from "./pages/Procurement/CategoryList";
-import AnnexureMaster from "./pages/Procurement/clauses/AnnexureMaster";
-
-// Attendance
-import Attendance from "./pages/Attendance/Attendance";
-import HistoricalData from "./pages/HistoricalData";
+const Profile        = lazy(() => import("./pages/Profile"));
+const Organisation   = lazy(() => import("./pages/Organisation"));
+const MasterData     = lazy(() => import("./pages/MasterData"));
+const ClauseMasterData = lazy(() => import("./pages/ClauseMasterData"));
+const Approvals      = lazy(() => import("./pages/Approvals"));
+const View3D         = lazy(() => import("./pages/Model"));
+const Dashboard      = lazy(() => import("./pages/Dashboard"));
+const LOA            = lazy(() => import("./pages/confidential/LOA"));
+const BOQ            = lazy(() => import("./pages/confidential/BOQ"));
+const Drawings       = lazy(() => import("./pages/confidential/Drawings"));
+const RABills        = lazy(() => import("./pages/confidential/RABills"));
+const SiteExpense    = lazy(() => import("./pages/Finance/SiteExpense"));
+const PettyCash      = lazy(() => import("./pages/Finance/PettyCash"));
+const BillsDocs      = lazy(() => import("./pages/Finance/BillsDocs"));
+const ExecutionPlan  = lazy(() => import("./pages/WorkActivity/ExecutionPlan"));
+const DailyManpower  = lazy(() => import("./pages/Manpower/DailyManpower"));
+const ReceivedRecord = lazy(() => import("./pages/Store/ReceivedRecord"));
+const ConsumptionRecord = lazy(() => import("./pages/Store/ConsumptionRecord"));
+const StockAvailable = lazy(() => import("./pages/Store/StockAvailable"));
+const GlobalCreateOrder = lazy(() => import("./pages/Create/CreateOrder"));
+const IntakeList     = lazy(() => import("./pages/Create/IntakeList"));
+const ItemList       = lazy(() => import("./pages/Procurement/ItemList"));
+const VendorList     = lazy(() => import("./pages/Procurement/VendorList"));
+const TermCondition  = lazy(() => import("./pages/Procurement/clauses/TermCondition"));
+const PaymentTerms   = lazy(() => import("./pages/Procurement/clauses/PaymentTerms"));
+const GovernmentLaws = lazy(() => import("./pages/Procurement/clauses/GovernmentLaws"));
+const UOMList        = lazy(() => import("./pages/Procurement/UOMList"));
+const CategoryList   = lazy(() => import("./pages/Procurement/CategoryList"));
+const AnnexureMaster = lazy(() => import("./pages/Procurement/clauses/AnnexureMaster"));
+const Attendance     = lazy(() => import("./pages/Attendance/Attendance"));
+const HistoricalData = lazy(() => import("./pages/HistoricalData"));
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const SIDEBAR_EXPANDED_WIDTH = 220;
@@ -297,7 +281,9 @@ function AppLayout({
             activeTab === "profile" ? "flex flex-col" : ""
           } ${mainPaddingClass}`}
         >
-          {renderPage()}
+          <Suspense fallback={<div className="flex h-full items-center justify-center"><div className="w-8 h-8 border-2 border-slate-200 border-t-slate-700 rounded-full animate-spin" /></div>}>
+            {renderPage()}
+          </Suspense>
         </main>
       </div>
     </div>
@@ -371,34 +357,25 @@ function App() {
     localStorage.setItem("bms_sidebar_collapsed", String(next));
   };
 
-  const fetchProjects = async () => {
-    try {
-      const res  = await fetch(`${API}/api/projects`);
-      const data = await res.json();
-      const active = (data.projects || [])
-        .filter(p => p.isActive)
-        .map(p => ({ ...p, name: p.projectCode || p.projectName }));
-      setProjects([{ name: "All Project" }, ...active]);
-    } catch {
-      setProjects([{ name: "All Project" }]);
-    }
-  };
-
-  const fetchUserProfile = async () => {
+  const fetchInit = async () => {
     const token = localStorage.getItem("bms_token");
     if (!token) return;
     try {
-      const res = await fetch(`${API}/api/auth/me`, {
+      const res = await fetch(`${API}/api/auth/init`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.user) {
-          setCurrentUser(data.user);
-          localStorage.setItem("bms_user", JSON.stringify(data.user));
-        }
-      } else if (res.status === 401) {
-        handleLogout();
+      if (res.status === 401) { handleLogout(); return; }
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.user) {
+        setCurrentUser(data.user);
+        localStorage.setItem("bms_user", JSON.stringify(data.user));
+      }
+      if (data.projects) {
+        const active = data.projects
+          .filter(p => p.isActive)
+          .map(p => ({ ...p, name: p.projectCode || p.projectName }));
+        setProjects([{ name: "All Project" }, ...active]);
       }
     } catch { /* silent */ }
   };
@@ -426,8 +403,7 @@ function App() {
 
   useEffect(() => {
     if (!isLoggedIn) return;
-    fetchProjects();
-    fetchUserProfile();
+    fetchInit();
     if (!userTabPermissions) fetchUserPermissions();
   }, [isLoggedIn]);
 
