@@ -497,7 +497,7 @@ function App() {
                 setCurrentUser(updatedUser);
                 localStorage.setItem("bms_user", JSON.stringify(updatedUser));
               }}
-              onProjectsRefresh={fetchProjects}
+              onProjectsRefresh={fetchInit}
             />
           )
         }
