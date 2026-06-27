@@ -30,6 +30,8 @@ const ROUTE_TO_TAB = {
   "/master-data/products":        "master_data__products",
   "/master-data/orders":          "master_data__orders",
   "/master-data/intakes":         "master_data__intakes",
+  "/organisation/structure":      "organisation__structure",
+  "/organisation/sop":            "organisation__sop",
 };
 
 const TAB_TO_ROUTE = Object.fromEntries(
@@ -149,7 +151,8 @@ function AppLayout({
   const renderPage = () => {
     if (activeTab === "global_dashboard")     return <Dashboard project="All Project" />;
     if (activeTab === "profile")              return <Profile onProfileUpdate={onCurrentUserUpdate} onProjectsUpdate={onProjectsRefresh} />;
-    if (activeTab === "organisation")         return <Organisation currentUser={currentUser} />;
+    if (activeTab === "organisation" || activeTab === "organisation__structure" || activeTab === "organisation__sop")
+      return <Organisation currentUser={currentUser} />;
     if (activeTab === "historical_data")      return <HistoricalData />;
 
     if (["approvals","intake","orders","amendments","payments"].includes(activeTab))
