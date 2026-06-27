@@ -77,9 +77,9 @@ function pathToTabAndProject(pathname) {
 }
 
 function buildPath(tab, project) {
-  if (project && project !== "All Project") {
-    const sub = PROJECT_TAB_TO_SUB[tab] || "/dashboard";
-    return `/p/${encodeURIComponent(project)}${sub}`;
+  const projectSub = PROJECT_TAB_TO_SUB[tab];
+  if (projectSub && project && project !== "All Project") {
+    return `/p/${encodeURIComponent(project)}${projectSub}`;
   }
   return TAB_TO_ROUTE[tab] || "/dashboard";
 }
