@@ -402,6 +402,34 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
     );
   };
 
+  const renderSimpleCard = (groupMods, title, permKeys) => {
+    const mod = groupMods[0];
+    if (!mod) return null;
+    const availKeys = permKeys.filter(p => getModulePerms(mod.module_key).includes(p.key));
+    const anyChecked = availKeys.some(p => mod[p.key]);
+    return (
+      <div className={`rounded-sm border p-3.5 transition-all ${anyChecked ? "border-blue-200 bg-blue-50/40" : "border-slate-200 bg-white hover:border-slate-300"}`}>
+        <p className="text-[13px] font-bold text-slate-800 mb-3 pb-2.5 border-b border-slate-100">{title}</p>
+        <div className="flex flex-col gap-2">
+          {availKeys.map(({ key, label }) => (
+            <label key={key} className={`flex items-center gap-2 select-none ${readOnly ? "cursor-default opacity-90" : "cursor-pointer"}`}>
+              <input type="checkbox" checked={mod[key] || false} disabled={readOnly}
+                onChange={e => !readOnly && onChange(mod.module_id, key, e.target.checked)}
+                className="w-4 h-4 rounded accent-blue-600 cursor-pointer disabled:cursor-not-allowed" />
+              <span className={`text-[11px] font-semibold ${PERM_COLOR[key] || "text-slate-500"}`}>{label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderHistoricalDataCard = (groupMods) => renderSimpleCard(groupMods, "Historical Data", [
+    { key: "can_view",   label: "View"   },
+    { key: "can_edit",   label: "Edit"   },
+    { key: "can_delete", label: "Delete" },
+  ]);
+
   const renderCombinedViewCard = (group, groupMods) => {
     const anyViewed = groupMods.some(m => m.can_view);
     const allViewed = groupMods.every(m => m.can_view);
@@ -632,6 +660,9 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
                     )}
                     {group.label === "Inbox" ? renderInboxGroup(groupMods)
                       : group.label === "Setup" ? renderSetupTable(groupMods)
+                      : group.label === "Historical Data" ? renderHistoricalDataCard(groupMods)
+                      : group.label === "Organisation" ? renderSimpleCard(groupMods, "Organisation", [{ key: "can_view", label: "View" }])
+                      : group.label === "Audit" ? renderSimpleCard(groupMods, "Audit", [{ key: "can_view", label: "View" }])
                       : group.label === "Master Data" ? renderMasterDataTable(groupMods)
                       : group.label === "Procurement" ? (() => {
                           const order  = groupMods.find(m => m.module_key === "order");

@@ -134,6 +134,7 @@ export const MODULE_PERM_CONFIG = {
   payment_terms:           ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export", "can_log"],
   government_laws:         ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export", "can_log"],
   annexure:                ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export", "can_log"],
+  historical_data:         ["can_view", "can_edit", "can_delete"],
   master_data_vendor:      ["can_view", "can_export"],
   master_data_products:    ["can_view", "can_export"],
   master_data_intakes:     ["can_view", "can_export"],
@@ -170,6 +171,7 @@ export const MODULE_BUILT_STATUS = {
   master_data_orders: true, master_data_intakes: true, master_data_clauses: true,
   dashboard: true, view_3d: true,
   intake: true, order: true,
+  historical_data: true,
   company_list: true, vendor_list: true, site_list: true, uom: true,
   category_list: true, item_list: true, contact_list: true,
   term_condition: true, payment_terms: true, government_laws: true,
@@ -192,6 +194,7 @@ export const MODULE_SECTIONS = [
     groups: [
       { label: "Setup", keys: ["company_list","site_list","vendor_list","vendor_pool","item_supply","item_sitc","uom","category_list","contact_list","term_condition","payment_terms","government_laws","annexure"] },
       { label: "Master Data",       keys: ["master_data_vendor","master_data_products","master_data_orders_tab","master_data_intakes","master_data_clauses"] },
+      { label: "Historical Data", keys: ["historical_data"], single: true },
       { label: "Organisation", keys: ["organisation"], single: true },
       { label: "Audit",        keys: ["audit"],        single: true },
     ],

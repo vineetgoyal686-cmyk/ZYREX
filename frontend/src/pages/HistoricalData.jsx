@@ -4,6 +4,7 @@ import {
   ScrollText, ChevronDown, Search, FileSpreadsheet, Download, ArrowDownToLine, CalendarDays, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { authFetch } from "../utils/authFetch";
+import { useModulePermissions } from "../hooks/useModulePermissions";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -465,6 +466,7 @@ function Toast({ msg, onDone }) {
 
 /* ── Main Page ───────────────────────────────────────────────────────────── */
 export default function HistoricalData() {
+  const { canView, canEdit, canDelete } = useModulePermissions("historical_data");
   const [tab,       setTab]       = useState("orders");
   const [records,   setRecords]   = useState([]);
   const [sites,     setSites]     = useState([]);
@@ -601,21 +603,27 @@ export default function HistoricalData() {
               ]}
             />
             {/* Bulk Upload */}
-            <input ref={xlsxRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleBulk} />
-            <DropBtn
-              label="Bulk Upload" icon={FileSpreadsheet} iconCls="text-green-600"
-              btnCls="border-slate-300 bg-gradient-to-b from-slate-50 to-slate-100 text-slate-700 hover:border-slate-400"
-              items={[
-                { label: "Upload Excel",       icon: FileSpreadsheet, iconCls: "text-green-600", action: () => xlsxRef.current?.click() },
-                "---",
-                { label: "Download Template",  icon: Download,        iconCls: "text-indigo-500", action: downloadTemplate },
-              ]}
-            />
+            {canEdit && (
+              <>
+                <input ref={xlsxRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleBulk} />
+                <DropBtn
+                  label="Bulk Upload" icon={FileSpreadsheet} iconCls="text-green-600"
+                  btnCls="border-slate-300 bg-gradient-to-b from-slate-50 to-slate-100 text-slate-700 hover:border-slate-400"
+                  items={[
+                    { label: "Upload Excel",       icon: FileSpreadsheet, iconCls: "text-green-600", action: () => xlsxRef.current?.click() },
+                    "---",
+                    { label: "Download Template",  icon: Download,        iconCls: "text-indigo-500", action: downloadTemplate },
+                  ]}
+                />
+              </>
+            )}
             {/* Add */}
-            <button onClick={() => { setEditRec(null); setFormOpen(true); }}
-              className="inline-flex h-8 items-center gap-1.5 rounded border border-indigo-700 bg-gradient-to-b from-indigo-600 to-indigo-700 px-3 text-xs font-semibold text-white hover:from-indigo-500 hover:to-indigo-600 transition-all select-none">
-              <Plus size={12} /> Add Entry
-            </button>
+            {canEdit && (
+              <button onClick={() => { setEditRec(null); setFormOpen(true); }}
+                className="inline-flex h-8 items-center gap-1.5 rounded border border-indigo-700 bg-gradient-to-b from-indigo-600 to-indigo-700 px-3 text-xs font-semibold text-white hover:from-indigo-500 hover:to-indigo-600 transition-all select-none">
+                <Plus size={12} /> Add Entry
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -713,8 +721,8 @@ export default function HistoricalData() {
                         <td className={`${tdBase} text-slate-500`}>{r.entry_by}</td>
                         <td className={`${tdBase} sticky right-0 z-[10] bg-white group-hover:bg-slate-50`}>
                           <div className="flex items-center gap-1">
-                            <button onClick={() => { setEditRec(r); setFormOpen(true); }} title="Edit" className="p-1.5 rounded hover:bg-slate-100 transition-colors"><Pencil size={14} className="text-slate-500" /></button>
-                            <button onClick={() => setDelId(r.id)} title="Delete" className="p-1.5 rounded hover:bg-red-50 transition-colors"><Trash2 size={14} className="text-red-400" /></button>
+                            {canEdit   && <button onClick={() => { setEditRec(r); setFormOpen(true); }} title="Edit"   className="p-1.5 rounded hover:bg-slate-100 transition-colors"><Pencil  size={14} className="text-slate-500" /></button>}
+                            {canDelete && <button onClick={() => setDelId(r.id)}                       title="Delete" className="p-1.5 rounded hover:bg-red-50   transition-colors"><Trash2  size={14} className="text-red-400"   /></button>}
                             <button onClick={() => setLogRec(r)} title="Log" className="p-1.5 rounded hover:bg-violet-50 transition-colors"><ScrollText size={14} className="text-violet-500" /></button>
                           </div>
                         </td>

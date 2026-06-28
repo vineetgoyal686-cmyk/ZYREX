@@ -958,24 +958,28 @@ router.get("/:id", async (req, res) => {
     const order = orderRes.data;
     const items = itemRes.data;
 
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const needsUserLookup = order.made_by && UUID_RE.test(order.made_by);
+
     // Lean mode: only sign the 2 URLs the edit form actually uses; skip vendor/company images
     let signedOrder;
     if (lean) {
-      const [quotationUrl, comparativeSheetUrl, preDocuments, postDocuments] = await Promise.all([
+      const [quotationUrl, comparativeSheetUrl, preDocuments, postDocuments, userRow] = await Promise.all([
         signOrderDocUrl(order.quotation_url),
         signOrderDocUrl(order.comparative_sheet_url),
         signDocArray(order.pre_documents),
         signDocArray(order.post_documents),
+        needsUserLookup ? supabase.from("users").select("name").eq("id", order.made_by).single() : Promise.resolve(null),
       ]);
       signedOrder = { ...order, quotation_url: quotationUrl, comparative_sheet_url: comparativeSheetUrl, pre_documents: preDocuments, post_documents: postDocuments };
+      if (userRow?.data?.name) signedOrder.made_by = userRow.data.name;
     } else {
-      signedOrder = await signOrderStorageUrls(order);
-    }
-
-    // Resolve made_by UUID → user name (same as list route)
-    if (signedOrder.made_by && signedOrder.made_by.length === 36 && signedOrder.made_by.includes('-')) {
-      const { data: u } = await supabase.from("users").select("name").eq("id", signedOrder.made_by).single();
-      if (u?.name) signedOrder.made_by = u.name;
+      const [resolved, userRow] = await Promise.all([
+        signOrderStorageUrls(order),
+        needsUserLookup ? supabase.from("users").select("name").eq("id", order.made_by).single() : Promise.resolve(null),
+      ]);
+      signedOrder = resolved;
+      if (userRow?.data?.name) signedOrder.made_by = userRow.data.name;
     }
 
     res.json({ order: sanitizeRichTextDeep(signedOrder), items: sanitizeRichTextDeep(items || []) });

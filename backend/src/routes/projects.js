@@ -2,6 +2,9 @@ const express  = require("express");
 const router   = express.Router();
 const multer   = require("multer");
 const supabase  = require("../helpers/supabaseHelper");
+const cache    = require("../helpers/cacheHelper");
+const CACHE_KEY = "projects_list";
+const CACHE_TTL = 5 * 60 * 1000;
 const {
   normalizeStoragePath,
   uploadStorageFile,
@@ -21,6 +24,9 @@ const uploadLogo = async (files) => {
 /* ── GET all projects ── */
 router.get("/", async (_req, res) => {
   try {
+    const cached = cache.get(CACHE_KEY);
+    if (cached) return res.json(cached);
+
     const { data, error } = await supabase
       .from("projects")
       .select("*")
@@ -37,7 +43,9 @@ router.get("/", async (_req, res) => {
       logoUrl:     r.logo_url ? await createSignedStorageUrl(supabase, "procurement-images", r.logo_url).catch(() => "") : "",
       isActive:    r.is_active !== false,
     })));
-    res.json({ projects });
+    const result = { projects };
+    cache.set(CACHE_KEY, result, CACHE_TTL);
+    res.json(result);
   } catch (err) {
     console.error("Projects read error:", err.message);
     res.json({ projects: [] });
@@ -62,6 +70,7 @@ router.post("/", upload.fields([{ name: "logo", maxCount: 1 }]), async (req, res
       created_by_name: b.createdByName || null,
     }).select().single();
     if (error) throw error;
+    cache.bust(CACHE_KEY);
     res.json({ success: true, id: data.id });
   } catch (err) {
     console.error("Project add error:", err.message);
@@ -84,6 +93,7 @@ router.put("/:id", upload.fields([{ name: "logo", maxCount: 1 }]), async (req, r
       logo_url:     newLogo || normalizeStoragePath(b.logoUrl, "procurement-images") || "",
     }).eq("id", req.params.id);
     if (error) throw error;
+    cache.bust(CACHE_KEY);
     res.json({ success: true });
   } catch (err) {
     console.error("Project update error:", err.message);
@@ -99,6 +109,7 @@ router.patch("/:id/status", async (req, res) => {
       .update({ is_active: isActive })
       .eq("id", req.params.id);
     if (error) throw error;
+    cache.bust(CACHE_KEY);
     res.json({ success: true });
   } catch (err) {
     console.error("Project status error:", err.message);
@@ -111,6 +122,7 @@ router.delete("/:id", async (req, res) => {
   try {
     const { error } = await supabase.from("projects").delete().eq("id", req.params.id);
     if (error) throw error;
+    cache.bust(CACHE_KEY);
     res.json({ success: true });
   } catch (err) {
     console.error("Project delete error:", err.message);

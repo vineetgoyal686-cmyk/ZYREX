@@ -1,3 +1,5 @@
+import { authFetch } from "../../utils/authFetch";
+
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
 const orderDetailsCache = new Map();
@@ -23,7 +25,8 @@ export const preloadOrderDetails = async (orderId, options = {}) => {
   if (cached && !cached.__partial && !force) return cached;
   if (orderDetailsInflight.has(key)) return orderDetailsInflight.get(key);
 
-  const promise = fetch(`${API}/api/orders/${orderId}`)
+  const lean = options.lean !== false;
+  const promise = authFetch(`${API}/api/orders/${orderId}${lean ? "?lean=1" : ""}`)
     .then(async (res) => {
       if (!res.ok) throw new Error("Failed to fetch order");
       const json = await res.json();
@@ -44,3 +47,7 @@ export const preloadOrderDetails = async (orderId, options = {}) => {
 };
 
 export const getCachedOrderDetails = (orderId) => orderDetailsCache.get(getOrderCacheKey(orderId)) || null;
+
+export const bustOrderCache = (orderId) => {
+  if (orderId) orderDetailsCache.delete(getOrderCacheKey(orderId));
+};
