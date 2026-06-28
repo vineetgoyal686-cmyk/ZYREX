@@ -105,7 +105,7 @@ export default function Security({ currentUser, showToast }) {
             <span className={lbl}>New Password</span>
             <div className="relative">
               <input type={showNewPw ? "text" : "password"} className={`${inp} pr-11`}
-                placeholder="Minimum 8 characters" value={newPw}
+                placeholder="Minimum 8 characters" value={newPw} autoComplete="new-password"
                 onChange={(e) => setNewPw(e.target.value)} required />
               <button type="button" onClick={() => setShowNewPw(!showNewPw)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -118,7 +118,7 @@ export default function Security({ currentUser, showToast }) {
             <span className={lbl}>Confirm New Password</span>
             <div className="relative">
               <input type={showConfirmPw ? "text" : "password"} className={`${inp} pr-11`}
-                placeholder="Re-enter password" value={confirmPw}
+                placeholder="Re-enter password" value={confirmPw} autoComplete="new-password"
                 onChange={(e) => setConfirmPw(e.target.value)} required />
               <button type="button" onClick={() => setShowConfirmPw(!showConfirmPw)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">

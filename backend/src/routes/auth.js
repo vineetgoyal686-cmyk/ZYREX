@@ -637,7 +637,6 @@ router.post("/send-otp", async (req, res) => {
 
   // ZeptoMail se bhejo
   const otpName = userRow.name || email;
-  console.log("OTP mergeInfo:", { name: otpName, otp, email });
   try {
     await sendTemplateEmail({
       to:          email,
