@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   Users, UserPlus, ShieldCheck, Loader2, Save, Trash2,
   Mail, Phone, Building2, Briefcase, CheckCircle2, XCircle,
   Pencil, LayoutDashboard, ShieldAlert, SendHorizonal, Camera,
-  Copy, Check, Search,
+  Copy, Check, Search, MoreHorizontal,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../../../utils/api";
@@ -81,12 +82,21 @@ export default function UserManagement({
   const [editForm,              setEditForm]              = useState({ name: "", contact_no: "", designation: "", department: "", can_manage_roles: false });
   const [editAccessProfileIds,  setEditAccessProfileIds]  = useState([]);
   const [editSaving,            setEditSaving]            = useState(false);
+  const [openMenuId,            setOpenMenuId]            = useState(null);
+  const [menuPos,               setMenuPos]               = useState({ top: 0, right: 0 });
 
   /* Lock body scroll when modal open */
   useEffect(() => {
     document.body.style.overflow = showAddUser ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [showAddUser]);
+
+  useEffect(() => {
+    if (!openMenuId) return;
+    const close = (e) => { if (!e.target.closest("[data-user-menu]")) setOpenMenuId(null); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [openMenuId]);
 
   useEffect(() => { fetchTeam(); }, []);
 
@@ -397,9 +407,43 @@ export default function UserManagement({
     } finally { setPermLoading(false); }
   };
 
+  const menuMember = openMenuId ? members.find(m => m.id === openMenuId) : null;
+  const menuCanToggle = menuMember && canManage(currentUser.role, menuMember.role, menuMember.id) && menuMember.id !== currentUser.id && (isGlobalAdmin || currentUser.role === "super_admin" || !!pp.manage_user?.edit);
+  const menuCanDel    = menuMember && canManage(currentUser.role, menuMember.role, menuMember.id) && menuMember.id !== currentUser.id && (isGlobalAdmin || currentUser.role === "super_admin" || !!pp.manage_user?.delete);
+  const menuCanInvite = menuMember && canManage(currentUser.role, menuMember.role, menuMember.id);
+
   return (
     <>
       <input ref={newUserSigRef} type="file" accept="image/*" className="hidden" onChange={handleNewUserSigChange} />
+
+      {openMenuId && menuMember && createPortal(
+        <div data-user-menu className="fixed z-[9999] w-48 bg-white border border-slate-200 rounded-sm shadow-xl overflow-hidden"
+          style={{ top: menuPos.top, right: menuPos.right }}>
+          {menuCanInvite && (
+            <button onClick={() => { handleResendInvite(menuMember); setOpenMenuId(null); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-slate-600 hover:bg-slate-50 transition-colors">
+              <SendHorizonal size={13} className="text-slate-400" /> Resend Invite
+            </button>
+          )}
+          {menuCanToggle && (
+            <button onClick={() => { toggleActive(menuMember); setOpenMenuId(null); }}
+              className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] transition-colors ${menuMember.is_active ? "text-amber-600 hover:bg-amber-50" : "text-emerald-600 hover:bg-emerald-50"}`}>
+              {menuMember.is_active ? <XCircle size={13} /> : <CheckCircle2 size={13} />}
+              {menuMember.is_active ? "Deactivate" : "Activate"}
+            </button>
+          )}
+          {menuCanDel && (
+            <>
+              <div className="border-t border-slate-100" />
+              <button onClick={() => { removeUser(menuMember); setOpenMenuId(null); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-[12px] text-red-500 hover:bg-red-50 transition-colors">
+                <Trash2 size={13} /> Remove User
+              </button>
+            </>
+          )}
+        </div>,
+        document.body
+      )}
 
       <div className="space-y-4">
         {permUser ? (
@@ -732,7 +776,7 @@ export default function UserManagement({
                             </span>
                           </td>
                           <td className={`px-4 py-3 border-b border-l border-slate-200 text-center sticky right-0 z-[20] ${rowBg}`}>
-                            <div className="flex items-center justify-center gap-1.5">
+                            <div className="flex items-center justify-center gap-1">
                               {canHierarchy && (
                                 <button onClick={() => { setEditingMember(m); setEditForm({ name: m.name, contact_no: m.contact_no || "", designation: m.designation || "", department: m.department || "", can_manage_roles: !!m.can_manage_roles }); setEditAccessProfileIds(m.access_profile_ids || []); }}
                                   title="Edit" className={btn}><Pencil size={13} /></button>
@@ -740,16 +784,18 @@ export default function UserManagement({
                               {canShield && (
                                 <button onClick={() => viewPerms(m)} title="Permissions" className={btn}><ShieldCheck size={13} /></button>
                               )}
-                              {canHierarchy && (
-                                <button onClick={() => handleResendInvite(m)} title="Resend Invite" className={btn}><SendHorizonal size={13} /></button>
-                              )}
-                              {canToggle && (
-                                <button onClick={() => toggleActive(m)} title={m.is_active ? "Deactivate" : "Activate"} className={btn}>
-                                  {m.is_active ? <XCircle size={13} /> : <CheckCircle2 size={13} />}
-                                </button>
-                              )}
-                              {canDel && (
-                                <button onClick={() => removeUser(m)} title="Remove" className={`${btn} hover:text-red-500 hover:border-red-200`}><Trash2 size={13} /></button>
+                              {(canHierarchy || canToggle || canDel) && (
+                                <div data-user-menu>
+                                  <button
+                                    onClick={(e) => {
+                                      if (openMenuId === m.id) { setOpenMenuId(null); return; }
+                                      const rect = e.currentTarget.getBoundingClientRect();
+                                      setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                                      setOpenMenuId(m.id);
+                                    }}
+                                    className={btn}><MoreHorizontal size={13} />
+                                  </button>
+                                </div>
                               )}
                             </div>
                           </td>
