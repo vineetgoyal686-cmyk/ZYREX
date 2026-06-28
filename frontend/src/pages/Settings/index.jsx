@@ -153,11 +153,11 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
     ];
     const access = [
       ...(showTeamTab ? [{ id: "team", label: "User Management", icon: Users }] : []),
+      ...((isGlobalAdmin || currentUser.can_manage_roles)
+        ? [{ id: "roles", label: "Roles", icon: ShieldCheck }]
+        : []),
       ...(adminSettings
-        ? [
-            { id: "roles",        label: "Roles",        icon: ShieldCheck },
-            { id: "designations", label: "Access Profiles", icon: Briefcase   },
-          ]
+        ? [{ id: "designations", label: "Access Profiles", icon: Briefcase }]
         : []),
     ];
     const workflow = [
