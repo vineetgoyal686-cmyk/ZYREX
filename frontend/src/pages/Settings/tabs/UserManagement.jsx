@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   Users, UserPlus, ShieldCheck, Loader2, Save, Trash2,
   Mail, Phone, Building2, Briefcase, CheckCircle2, XCircle,
-  Pencil, LayoutDashboard, ShieldAlert, SendHorizonal, Camera, ChevronDown,
+  Pencil, LayoutDashboard, ShieldAlert, SendHorizonal, Camera,
+  Copy, Check, Search,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../../../utils/api";
@@ -46,6 +47,10 @@ export default function UserManagement({
   const [editingRoleId, setEditingRoleId] = useState(null);
   const [confirmRoleChange, setConfirmRoleChange] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [copiedEmail, setCopiedEmail] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   /* Permissions panel */
   const [permUser,             setPermUser]             = useState(null);
@@ -565,56 +570,99 @@ export default function UserManagement({
           <div className="flex flex-col h-full">
 
             {/* Sticky header — full width, no side gaps */}
-            <div className="sticky top-0 z-20 bg-white border-b-2 border-slate-200 shadow-sm px-6 py-3 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="min-w-0">
-                  <h2 className="text-[15px] font-black text-slate-800 tracking-tight">User Management</h2>
-                  {!teamLoading && <p className="text-[11px] text-slate-400 mt-0.5">Total {members.length} team member{members.length !== 1 ? "s" : ""}</p>}
-                </div>
-                <div className="flex items-center gap-0.5 bg-slate-100 p-1 rounded-sm border border-slate-200 shrink-0">
-                  <button onClick={() => setViewType("list")} title="List View"
-                    className={`p-1.5 rounded-sm transition-all ${viewType === "list" ? "bg-white shadow-sm text-blue-600" : "text-slate-400 hover:text-slate-600"}`}>
-                    <Briefcase size={13} />
-                  </button>
-                  <button onClick={() => setViewType("tile")} title="Tile View"
-                    className={`p-1.5 rounded-sm transition-all ${viewType === "tile" ? "bg-white shadow-sm text-blue-600" : "text-slate-400 hover:text-slate-600"}`}>
-                    <LayoutDashboard size={13} />
-                  </button>
-                </div>
-              </div>
+            <div className="sticky top-0 z-20 bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between gap-4">
+              <h2 className="text-[19px] font-black text-slate-800 tracking-tight">User Management</h2>
               {(isGlobalAdmin || !!pp.manage_user?.add) && (
                 <button onClick={() => setShowAddUser(true)}
-                  className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-sm text-sm font-bold shadow-md shadow-blue-200 transition-all active:scale-95 shrink-0">
+                  className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-sm text-sm font-semibold transition-colors shrink-0">
                   <UserPlus size={15} /> Add New User
                 </button>
               )}
             </div>
 
+            {/* Search bar + view toggle */}
+            <div className="px-5 py-2.5 bg-white border-b border-slate-200 flex items-center justify-between gap-3">
+              <div className="relative w-72">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search by name or email..."
+                  value={searchQuery}
+                  onChange={e => { setSearchQuery(e.target.value); setPage(1); }}
+                  className="w-full pl-8 pr-3 py-2 text-[13px] border border-slate-200 rounded bg-slate-50 text-slate-700 placeholder-slate-400 outline-none focus:border-blue-400 focus:bg-white transition-colors"
+                />
+              </div>
+              <div className="flex items-center gap-3 shrink-0">
+                {!teamLoading && <span className="text-[12px] text-slate-400">{members.length} Users</span>}
+                <div className="flex items-center gap-0.5 bg-slate-100 p-1 rounded-sm border border-slate-200">
+                <button onClick={() => setViewType("list")} title="List View"
+                  className={`p-1.5 rounded-sm transition-all ${viewType === "list" ? "bg-white shadow-sm text-blue-600" : "text-slate-400 hover:text-slate-600"}`}>
+                  <Briefcase size={13} />
+                </button>
+                <button onClick={() => setViewType("tile")} title="Tile View"
+                  className={`p-1.5 rounded-sm transition-all ${viewType === "tile" ? "bg-white shadow-sm text-blue-600" : "text-slate-400 hover:text-slate-600"}`}>
+                  <LayoutDashboard size={13} />
+                </button>
+                </div>
+              </div>
+            </div>
+
             {/* Table area */}
             <div className="flex-1 bg-[#f0f2f5] p-5">
-            {teamLoading ? (
+            {(() => {
+              const filtered = members.filter(m => {
+                const q = searchQuery.toLowerCase();
+                return !q || m.name?.toLowerCase().includes(q) || m.email?.toLowerCase().includes(q);
+              });
+              const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+              const safePage = Math.min(page, totalPages);
+              const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+              const Pagination = () => totalPages <= 1 ? null : (
+                <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-slate-200">
+                  <span className="text-[12px] text-slate-400">
+                    Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
+                      className="px-2.5 py-1 text-[12px] border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">‹ Prev</button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
+                      <button key={n} onClick={() => setPage(n)}
+                        className={`w-7 h-7 text-[12px] rounded border transition-colors ${n === safePage ? "bg-blue-500 border-blue-500 text-white" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>{n}</button>
+                    ))}
+                    <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
+                      className="px-2.5 py-1 text-[12px] border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Next ›</button>
+                  </div>
+                </div>
+              );
+              return teamLoading ? (
               <div className="flex justify-center py-16"><Loader2 size={32} className="animate-spin text-blue-500" /></div>
-            ) : members.length === 0 ? (
+            ) : filtered.length === 0 ? (
               <div className="text-center py-16">
                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3">
                   <Users className="text-slate-300" size={32} />
                 </div>
-                <p className="text-sm font-medium text-slate-400">No team members found.</p>
+                <p className="text-sm font-medium text-slate-400">{members.length === 0 ? "No team members found." : "No results match your search."}</p>
               </div>
             ) : viewType === "list" ? (
-              <div className="bg-white border border-slate-200 shadow-sm overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[900px]">
+              <div className="border border-slate-200 bg-white">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-separate border-spacing-0 min-w-[900px]">
                   <thead>
-                    <tr className="bg-slate-100 border-b border-slate-300">
-                      {["S.No","Name","Email","Designation","Access Profile","Role","Status","Actions"].map((h, i) => (
-                        <th key={h} className={`px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 whitespace-nowrap border-r border-slate-200 last:border-r-0 ${i === 0 || i >= 6 ? "text-center" : ""}`}>{h}</th>
-                      ))}
+                    <tr className="bg-slate-50">
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-r border-slate-200 w-[70px] text-center sticky left-0 z-[30]">S.No</th>
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-r border-slate-200 min-w-[180px] sticky left-[70px] z-[30]">Name</th>
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-r border-slate-200 min-w-[220px]">Email</th>
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-r border-slate-200 min-w-[130px]">Designation</th>
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-r border-slate-200 min-w-[160px]">Access Profile</th>
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-r border-slate-200 min-w-[110px]">Role</th>
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-r border-slate-200 min-w-[90px]">Status</th>
+                      <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-50 border-b border-l border-slate-200 min-w-[160px] text-center sticky right-0 z-[30]">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {members.map((m, idx) => {
+                    {paginated.map((m, idx) => {
+                      const globalIdx = (safePage - 1) * PAGE_SIZE + idx;
                       const mb = ROLE_BADGE[m.role] || ROLE_BADGE.user;
-                      const initials = m.name?.split(" ").map(n => n[0]).join("").toUpperCase() || "?";
                       const isSelf = m.id === currentUser.id;
                       const isSuperOrGlobal = isGlobalAdmin || currentUser.role === "super_admin";
                       const canHierarchy = canManage(currentUser.role, m.role, m.id);
@@ -622,50 +670,46 @@ export default function UserManagement({
                       const canToggle  = canHierarchy && !isSelf && (isSuperOrGlobal || !!pp.manage_user?.edit);
                       const canDel     = canHierarchy && !isSelf && (isSuperOrGlobal || !!pp.manage_user?.delete);
                       const canManageRole = canHierarchy && m.role !== "global_admin" && (isSuperOrGlobal || !!pp.manage_user?.edit);
-                      const isEven = idx % 2 === 0;
-                      const td = "px-4 py-3 border-r border-slate-100 last:border-r-0";
+                      const rowBg = "bg-white";
+                      const td = `px-4 py-3 border-b border-r border-slate-200 text-[13px] text-slate-600 ${rowBg}`;
+                      const btn = "w-8 h-8 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:border-slate-300 transition-colors";
                       return (
-                        <tr key={m.id} className={`border-b border-slate-100 hover:bg-blue-50/30 transition-colors ${isEven ? "bg-white" : "bg-slate-50/40"}`}>
-                          <td className={`${td} text-[12px] font-bold text-slate-400 tabular-nums w-10 text-center`}>{idx + 1}</td>
-                          <td className={td}>
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 rounded-sm flex items-center justify-center text-white font-black text-sm overflow-hidden shadow-sm shrink-0"
-                                style={{ background: "linear-gradient(135deg, #3b82f6, #8b5cf6)" }}>
-                                {m.avatar ? <img src={m.avatar} alt="" className="w-full h-full object-cover" /> : initials}
+                        <tr key={m.id} className="hover:bg-blue-50/30 transition-colors">
+                          <td className={`px-4 py-3 border-b border-r border-slate-200 text-[13px] text-slate-400 tabular-nums w-[70px] text-center sticky left-0 z-[20] ${rowBg}`}>{globalIdx + 1}</td>
+                          <td className={`px-4 py-3 border-b border-r border-slate-200 min-w-[180px] sticky left-[70px] z-[20] ${rowBg}`}>
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-[13px] text-slate-800 whitespace-nowrap">{m.name}</span>
+                                {isSelf && <span className="text-[9px] font-bold text-blue-500 uppercase tracking-wider">you</span>}
                               </div>
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-1.5">
-                                  <p className="font-bold text-[13px] text-slate-800 truncate">{m.name}</p>
-                                  {isSelf && <span className="px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded-sm text-[8px] font-black uppercase tracking-widest border border-blue-200">You</span>}
-                                </div>
-                                {m.contact_no && <p className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5"><Phone size={9} /> {m.contact_no}</p>}
-                              </div>
+                              {m.contact_no && <span className="text-[11px] text-slate-400 mt-0.5">{m.contact_no}</span>}
                             </div>
                           </td>
-                          <td className={`${td} text-[12px] text-slate-500 max-w-[180px]`}>
-                            <div className="flex items-center gap-1.5 min-w-0"><Mail size={12} className="text-slate-300 shrink-0" /><span className="truncate">{m.email}</span></div>
+                          <td className={`${td} min-w-[220px]`}>
+                            <div className="flex items-center gap-2 group/email">
+                              <span className="whitespace-nowrap">{m.email}</span>
+                              <button type="button"
+                                onClick={() => { navigator.clipboard.writeText(m.email); setCopiedEmail(m.id); setTimeout(() => setCopiedEmail(null), 1500); }}
+                                title="Copy email"
+                                className="shrink-0 opacity-0 group-hover/email:opacity-100 p-1 rounded text-slate-400 hover:text-slate-600 transition-all">
+                                {copiedEmail === m.id ? <Check size={11} className="text-emerald-500" /> : <Copy size={11} />}
+                              </button>
+                            </div>
                           </td>
-                          <td className={`${td} text-[12px] text-slate-600 whitespace-nowrap`}>
+                          <td className={`${td} whitespace-nowrap`}>
                             {m.designation || <span className="text-slate-300">—</span>}
                           </td>
-                          <td className={td}>
+                          <td className={`${td} min-w-[160px]`}>
                             {(m.access_profile_ids?.length > 0) ? (
-                              <div className="flex flex-wrap gap-1">
-                                {m.access_profile_ids.map(id => {
-                                  const d = designations.find(d => d.id === id);
-                                  return d ? (
-                                    <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-violet-50 text-violet-700 text-[10px] font-bold border border-violet-200">
-                                      <Briefcase size={8} /> {d.name}
-                                    </span>
-                                  ) : null;
-                                })}
-                              </div>
-                            ) : <span className="text-slate-300 text-[12px]">—</span>}
+                              <span className="text-slate-600">
+                                {m.access_profile_ids.map(id => designations.find(d => d.id === id)?.name).filter(Boolean).join(", ") || "—"}
+                              </span>
+                            ) : <span className="text-slate-300">—</span>}
                           </td>
-                          <td className={td}>
+                          <td className={`${td} min-w-[100px]`}>
                             {canManageRole && editingRoleId === m.id ? (
                               <select autoFocus defaultValue={m.role}
-                                className="text-[11px] font-bold px-2 py-1 rounded-sm border border-blue-400 bg-white text-slate-700 outline-none shadow-sm"
+                                className="text-[12px] px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 outline-none"
                                 onChange={e => changeRole(m, e.target.value)}
                                 onBlur={() => setEditingRoleId(null)}>
                                 {getManageableRoles(currentUser.role).map(r => (
@@ -674,54 +718,38 @@ export default function UserManagement({
                               </select>
                             ) : (
                               <span onClick={() => canManageRole && setEditingRoleId(m.id)}
-                                className={`inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-sm ${mb.color} ${canManageRole ? "cursor-pointer hover:shadow-sm" : ""} whitespace-nowrap`}>
-                                {mb.label.toUpperCase()}
-                                {canManageRole && <Pencil size={8} className="opacity-50" />}
+                                className={`text-[13px] text-slate-600 whitespace-nowrap ${canManageRole ? "cursor-pointer hover:text-slate-900 flex items-center gap-1" : ""}`}>
+                                {mb.label}
+                                {canManageRole && <Pencil size={10} className="text-slate-400" />}
                               </span>
                             )}
                           </td>
-                          <td className={`${td} text-center`}>
-                            <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-sm border ${m.is_active ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-rose-50 text-rose-600 border-rose-200"}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${m.is_active ? "bg-emerald-500" : "bg-rose-500"}`} />
-                              {m.is_active ? "Active" : "Inactive"}
+                          <td className={`${td} min-w-[90px]`}>
+                            <span className="flex items-center gap-1.5">
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${m.is_active ? "bg-emerald-500" : "bg-red-400"}`} />
+                              <span className={m.is_active ? "text-slate-600" : "text-slate-400"}>{m.is_active ? "Active" : "Inactive"}</span>
                             </span>
                           </td>
-                          <td className={`${td} text-center`}>
-                            <div className="flex items-center justify-center gap-1">
-                              {(canShield || canToggle || canDel || canHierarchy) ? (
-                                <>
-                                  {canHierarchy && (
-                                    <button onClick={() => { setEditingMember(m); setEditForm({ name: m.name, contact_no: m.contact_no || "", designation: m.designation || "", department: m.department || "" }); setEditAccessProfileIds(m.access_profile_ids || []); }}
-                                      title="Edit Info" className="w-8 h-8 flex items-center justify-center rounded-sm bg-indigo-50 text-indigo-500 border border-indigo-100 hover:bg-indigo-600 hover:text-white hover:border-indigo-600 transition-all">
-                                      <Pencil size={13} />
-                                    </button>
-                                  )}
-                                  {canHierarchy && (
-                                    <button onClick={() => handleResendInvite(m)} title="Resend Invite"
-                                      className="w-8 h-8 flex items-center justify-center rounded-sm bg-emerald-50 text-emerald-500 border border-emerald-100 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all">
-                                      <SendHorizonal size={13} />
-                                    </button>
-                                  )}
-                                  {canShield && (
-                                    <button onClick={() => viewPerms(m)} title="Manage Permissions"
-                                      className="w-8 h-8 flex items-center justify-center rounded-sm bg-blue-50 text-blue-500 border border-blue-100 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all">
-                                      <ShieldCheck size={13} />
-                                    </button>
-                                  )}
-                                  {canToggle && (
-                                    <button onClick={() => toggleActive(m)} title={m.is_active ? "Deactivate" : "Activate"}
-                                      className={`w-8 h-8 flex items-center justify-center rounded-sm border transition-all ${m.is_active ? "bg-amber-50 text-amber-500 border-amber-100 hover:bg-amber-500 hover:text-white hover:border-amber-500" : "bg-emerald-50 text-emerald-500 border-emerald-100 hover:bg-emerald-500 hover:text-white hover:border-emerald-500"}`}>
-                                      {m.is_active ? <XCircle size={13} /> : <CheckCircle2 size={13} />}
-                                    </button>
-                                  )}
-                                  {canDel && (
-                                    <button onClick={() => removeUser(m)} title="Remove User"
-                                      className="w-8 h-8 flex items-center justify-center rounded-sm bg-rose-50 text-rose-500 border border-rose-100 hover:bg-rose-600 hover:text-white hover:border-rose-600 transition-all">
-                                      <Trash2 size={13} />
-                                    </button>
-                                  )}
-                                </>
-                              ) : <span className="text-slate-300 text-[11px]">—</span>}
+                          <td className={`px-4 py-3 border-b border-l border-slate-200 text-center sticky right-0 z-[20] ${rowBg}`}>
+                            <div className="flex items-center justify-center gap-1.5">
+                              {canHierarchy && (
+                                <button onClick={() => { setEditingMember(m); setEditForm({ name: m.name, contact_no: m.contact_no || "", designation: m.designation || "", department: m.department || "" }); setEditAccessProfileIds(m.access_profile_ids || []); }}
+                                  title="Edit" className={btn}><Pencil size={13} /></button>
+                              )}
+                              {canShield && (
+                                <button onClick={() => viewPerms(m)} title="Permissions" className={btn}><ShieldCheck size={13} /></button>
+                              )}
+                              {canHierarchy && (
+                                <button onClick={() => handleResendInvite(m)} title="Resend Invite" className={btn}><SendHorizonal size={13} /></button>
+                              )}
+                              {canToggle && (
+                                <button onClick={() => toggleActive(m)} title={m.is_active ? "Deactivate" : "Activate"} className={btn}>
+                                  {m.is_active ? <XCircle size={13} /> : <CheckCircle2 size={13} />}
+                                </button>
+                              )}
+                              {canDel && (
+                                <button onClick={() => removeUser(m)} title="Remove" className={`${btn} hover:text-red-500 hover:border-red-200`}><Trash2 size={13} /></button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -730,9 +758,12 @@ export default function UserManagement({
                   </tbody>
                 </table>
               </div>
+              {Pagination()}
+              </div>
             ) : (
+              <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {members.map((m) => {
+                {paginated.map((m) => {
                   const mb = ROLE_BADGE[m.role] || ROLE_BADGE.user;
                   const initials = m.name?.split(" ").map(n => n[0]).join("").toUpperCase() || "?";
                   return (
@@ -778,7 +809,10 @@ export default function UserManagement({
                   );
                 })}
               </div>
-            )}
+              {Pagination()}
+              </>
+            );
+            })()}
             </div>{/* end flex-1 bg area */}
           </div>
         )}
