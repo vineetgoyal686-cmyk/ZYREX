@@ -636,12 +636,14 @@ router.post("/send-otp", async (req, res) => {
   if (insertErr) return res.status(500).json({ error: "OTP generate karne mein error hua" });
 
   // ZeptoMail se bhejo
+  const otpName = userRow.name || email;
+  console.log("OTP mergeInfo:", { name: otpName, otp, email });
   try {
     await sendTemplateEmail({
       to:          email,
-      toName:      userRow.name || email,
+      toName:      otpName,
       templateKey: process.env.ZEPTOMAIL_TEMPLATE_OTP,
-      mergeInfo:   { name: userRow.name || email, otp },
+      mergeInfo:   { name: otpName, otp },
     });
   } catch (err) {
     console.error("OTP email error:", err);

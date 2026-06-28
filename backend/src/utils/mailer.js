@@ -45,7 +45,9 @@ async function sendTemplateEmail({ to, toName, cc = [], templateKey, mergeInfo }
     const text = await res.text();
     throw new Error(`ZeptoMail ${res.status}: ${text}`);
   }
-  return res.json();
+  const json = await res.json();
+  console.log("ZeptoMail response:", JSON.stringify(json));
+  return json;
 }
 
 module.exports = { sendTemplateEmail };
