@@ -1,12 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Plus, Pencil, Trash2, FileText, X,
-  ScrollText, ChevronDown, Search, FileSpreadsheet, Download, ArrowDownToLine,
+  ScrollText, ChevronDown, Search, FileSpreadsheet, Download, ArrowDownToLine, CalendarDays, ChevronLeft, ChevronRight,
 } from "lucide-react";
+import { authFetch } from "../utils/authFetch";
 
-const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
-const tok   = () => localStorage.getItem("bms_token") || "";
-const authH = () => ({ Authorization: `Bearer ${tok()}` });
+const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
 const fmt     = (v) => v != null ? Number(v).toLocaleString("en-IN", { maximumFractionDigits: 2 }) : "—";
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
@@ -117,6 +116,188 @@ function LogModal({ record, onClose }) {
   );
 }
 
+/* ── SearchSelect ────────────────────────────────────────────────────────── */
+function SearchSelect({ value, onChange, options, placeholder = "— Select —" }) {
+  const [open, setOpen]   = useState(false);
+  const [query, setQuery] = useState("");
+  const ref     = useRef();
+  const inputRef = useRef();
+
+  useEffect(() => {
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setQuery(""); } };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 50); }, [open]);
+
+  const filtered = query.trim()
+    ? options.filter(o => `${o.code} ${o.name}`.toLowerCase().includes(query.toLowerCase()))
+    : options;
+
+  const selected = options.find(o => o.code === value);
+
+  return (
+    <div ref={ref} className="relative">
+      <div onClick={() => { setOpen(o => !o); setQuery(""); }}
+        className="w-full border border-slate-200 rounded px-3 py-2 text-sm bg-white cursor-pointer flex items-center justify-between gap-2 hover:border-slate-300 transition-colors min-h-[38px]">
+        {selected ? (
+          <span className="text-slate-800 font-medium text-[13px]">{selected.name}
+            <span className="text-slate-400 font-normal text-[11px] ml-1.5">({selected.code})</span>
+          </span>
+        ) : <span className="text-slate-400 text-[13px]">{placeholder}</span>}
+        <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </div>
+
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1 z-[200] bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden">
+          {/* Search */}
+          <div className="px-3 py-2 border-b border-slate-100">
+            <input ref={inputRef} type="text" value={query} onChange={e => setQuery(e.target.value)}
+              placeholder="Search here..." onClick={e => e.stopPropagation()}
+              className="w-full text-[13px] border border-slate-200 rounded px-3 py-1.5 outline-none focus:border-indigo-400 placeholder:text-slate-300" />
+          </div>
+          {/* Count */}
+          <div className="px-3 py-1.5 text-[11px] text-slate-400 bg-slate-50 border-b border-slate-100">
+            {filtered.length} result{filtered.length !== 1 ? "s" : ""} found
+          </div>
+          {/* Options */}
+          <div className="max-h-52 overflow-y-auto">
+            {filtered.length === 0
+              ? <div className="px-4 py-4 text-[12px] text-slate-400 text-center">No results</div>
+              : filtered.map(o => (
+                <div key={o.code} onClick={() => { onChange(o.code); setOpen(false); setQuery(""); }}
+                  className={`px-4 py-2.5 cursor-pointer border-b border-slate-50 last:border-0 transition-colors flex items-center justify-between group
+                    ${value === o.code ? "bg-indigo-50" : "hover:bg-slate-50"}`}>
+                  <div>
+                    <div className={`text-[13px] font-semibold ${value === o.code ? "text-indigo-700" : "text-slate-800"}`}>{o.name}</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      Code: <span className="font-semibold text-slate-500">{o.code}</span>
+                      {o.gstin && <span className="ml-2">GSTIN: {o.gstin}</span>}
+                      {o.location && <span className="ml-0"> · {o.location}</span>}
+                    </div>
+                  </div>
+                  <ChevronRight size={13} className="text-slate-300 group-hover:text-slate-400 shrink-0" />
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── DatePicker ──────────────────────────────────────────────────────────── */
+const MONTHS_FULL = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAYS_HDR    = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+
+function DatePicker({ value, onChange, className }) {
+  const parsed = value ? new Date(value + "T00:00:00") : null;
+  const today  = new Date();
+  const [open, setOpen]           = useState(false);
+  const [view, setView]           = useState("day"); // "day" | "month" | "year"
+  const [vYear, setVYear]         = useState(parsed?.getFullYear() || today.getFullYear());
+  const [vMonth, setVMonth]       = useState(parsed?.getMonth() ?? today.getMonth());
+  const [yrBase, setYrBase]       = useState(Math.floor((parsed?.getFullYear() || today.getFullYear()) / 12) * 12);
+  const ref = useRef();
+
+  useEffect(() => {
+    const h = e => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setView("day"); } };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  const pick = (day) => {
+    onChange({ target: { value: `${vYear}-${String(vMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}` } });
+    setOpen(false); setView("day");
+  };
+
+  const display = parsed
+    ? `${String(parsed.getDate()).padStart(2,"0")}-${String(parsed.getMonth()+1).padStart(2,"0")}-${parsed.getFullYear()}`
+    : "";
+
+  const firstDay    = new Date(vYear, vMonth, 1).getDay();
+  const daysInMonth = new Date(vYear, vMonth + 1, 0).getDate();
+  const prevMonth   = () => { if (vMonth === 0) { setVMonth(11); setVYear(y => y-1); } else setVMonth(m => m-1); };
+  const nextMonth   = () => { if (vMonth === 11) { setVMonth(0); setVYear(y => y+1); } else setVMonth(m => m+1); };
+
+  return (
+    <div ref={ref} className="relative">
+      <div className={`${className} flex items-center justify-between cursor-pointer select-none`}
+        onClick={() => { setOpen(o => !o); setView("day"); }}>
+        <span className={display ? "text-slate-800" : "text-slate-400 text-sm"}>{display || "dd-mm-yyyy"}</span>
+        <CalendarDays size={14} className="text-slate-400 shrink-0" />
+      </div>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-[100] bg-white border border-slate-200 rounded-lg shadow-xl p-3 w-[256px]">
+
+          {/* ── DAY VIEW ── */}
+          {view === "day" && <>
+            <div className="flex items-center justify-between mb-2">
+              <button type="button" onClick={prevMonth} className="p-1 rounded hover:bg-slate-100"><ChevronLeft size={14}/></button>
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => setView("month")}
+                  className="text-[13px] font-semibold text-slate-700 hover:text-indigo-600 px-1 rounded hover:bg-indigo-50 transition-colors">
+                  {MONTHS_FULL[vMonth].slice(0,3)}
+                </button>
+                <button type="button" onClick={() => { setYrBase(Math.floor(vYear/12)*12); setView("year"); }}
+                  className="text-[13px] font-semibold text-slate-700 hover:text-indigo-600 px-1 rounded hover:bg-indigo-50 transition-colors">
+                  {vYear}
+                </button>
+              </div>
+              <button type="button" onClick={nextMonth} className="p-1 rounded hover:bg-slate-100"><ChevronRight size={14}/></button>
+            </div>
+            <div className="grid grid-cols-7 gap-0.5 text-center">
+              {DAYS_HDR.map(d => <div key={d} className="text-[10px] text-slate-400 font-semibold py-0.5">{d}</div>)}
+              {Array.from({length: firstDay}, (_,i) => <div key={`e${i}`}/>)}
+              {Array.from({length: daysInMonth}, (_,i) => {
+                const d = i+1;
+                const sel = parsed && parsed.getDate()===d && parsed.getMonth()===vMonth && parsed.getFullYear()===vYear;
+                const tod = today.getDate()===d && today.getMonth()===vMonth && today.getFullYear()===vYear;
+                return <button key={d} type="button" onClick={() => pick(d)}
+                  className={`text-[12px] rounded py-[3px] transition-colors ${sel ? "bg-indigo-600 text-white font-semibold" : tod ? "border border-indigo-300 text-indigo-600" : "hover:bg-indigo-50 text-slate-700"}`}>{d}</button>;
+              })}
+            </div>
+          </>}
+
+          {/* ── MONTH VIEW ── */}
+          {view === "month" && <>
+            <div className="flex items-center justify-between mb-2">
+              <button type="button" onClick={() => setVYear(y=>y-1)} className="p-1 rounded hover:bg-slate-100"><ChevronLeft size={14}/></button>
+              <button type="button" onClick={() => { setYrBase(Math.floor(vYear/12)*12); setView("year"); }}
+                className="text-[13px] font-semibold text-slate-700 hover:text-indigo-600 px-1 rounded hover:bg-indigo-50">{vYear}</button>
+              <button type="button" onClick={() => setVYear(y=>y+1)} className="p-1 rounded hover:bg-slate-100"><ChevronRight size={14}/></button>
+            </div>
+            <div className="grid grid-cols-3 gap-1">
+              {MONTHS_FULL.map((m,i) => <button key={i} type="button" onClick={() => { setVMonth(i); setView("day"); }}
+                className={`py-2 text-[12px] rounded transition-colors ${i===vMonth ? "bg-indigo-600 text-white font-semibold" : "hover:bg-indigo-50 text-slate-700"}`}>
+                {m.slice(0,3)}</button>)}
+            </div>
+          </>}
+
+          {/* ── YEAR VIEW ── */}
+          {view === "year" && <>
+            <div className="flex items-center justify-between mb-2">
+              <button type="button" onClick={() => setYrBase(b=>b-12)} className="p-1 rounded hover:bg-slate-100"><ChevronLeft size={14}/></button>
+              <span className="text-[12px] font-semibold text-slate-500">{yrBase} – {yrBase+11}</span>
+              <button type="button" onClick={() => setYrBase(b=>b+12)} className="p-1 rounded hover:bg-slate-100"><ChevronRight size={14}/></button>
+            </div>
+            <div className="grid grid-cols-3 gap-1">
+              {Array.from({length:12},(_,i)=>yrBase+i).map(y => <button key={y} type="button"
+                onClick={() => { setVYear(y); setView("month"); }}
+                className={`py-2 text-[12px] rounded transition-colors ${y===vYear ? "bg-indigo-600 text-white font-semibold" : "hover:bg-indigo-50 text-slate-700"}`}>{y}</button>)}
+            </div>
+          </>}
+
+          {value && <button type="button" onClick={() => { onChange({target:{value:""}}); setOpen(false); setView("day"); }}
+            className="mt-2 w-full text-[11px] text-slate-400 hover:text-red-500 transition-colors">Clear</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Shared field wrapper (must be outside FormModal to avoid focus loss) ─── */
 const inp = "w-full border border-slate-200 rounded px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 transition-all";
 function LBL({ t, children }) {
@@ -130,9 +311,12 @@ function LBL({ t, children }) {
 
 /* ── Form Modal ──────────────────────────────────────────────────────────── */
 function FormModal({ record, sites, entities, onClose, onSave }) {
-  const isEdit = !!record?.id;
+  const isEdit   = !!record?.id;
+  const meUser   = (() => { try { return JSON.parse(localStorage.getItem("bms_user") || "{}"); } catch { return {}; } })();
+  const entryBy  = isEdit ? (record.entry_by || "—") : (meUser.name || "—");
   const [form, setForm] = useState({
     order_no:    record?.order_no    || "",
+    order_type:  record?.order_type  || "",
     entity_code: record?.entity_code || "",
     site_code:   record?.site_code   || "",
     vendor_name: record?.vendor_name || "",
@@ -157,7 +341,7 @@ function FormModal({ record, sites, entities, onClose, onSave }) {
       if (pdfFile) fd.append("pdf", pdfFile);
       if (removePdf) fd.append("remove_pdf", "true");
       const url = isEdit ? `${API}/api/historical-orders/${record.id}` : `${API}/api/historical-orders`;
-      const res = await fetch(url, { method: isEdit ? "PUT" : "POST", headers: authH(), body: fd });
+      const res = await authFetch(url, { method: isEdit ? "PUT" : "POST", body: fd });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed");
       onSave(json.record, isEdit);
@@ -168,7 +352,7 @@ function FormModal({ record, sites, entities, onClose, onSave }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
-      <div className="bg-white rounded-xl w-[540px] max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div className="bg-white rounded-xl w-[680px] max-h-[90vh] overflow-y-auto shadow-2xl">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
           <span className="font-bold text-slate-800">{isEdit ? "Edit Record" : "Add Historical Order"}</span>
           <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded transition-colors"><X size={16} className="text-slate-400" /></button>
@@ -178,32 +362,63 @@ function FormModal({ record, sites, entities, onClose, onSave }) {
             <input className={inp} value={form.order_no} onChange={e => set("order_no", e.target.value)} placeholder="e.g. PO/2022/001" />
           </LBL>
           <LBL t="Order Date">
-            <input type="date" className={inp} value={form.order_date} onChange={e => set("order_date", e.target.value)} />
+            <DatePicker className={inp} value={form.order_date} onChange={e => set("order_date", e.target.value)} />
           </LBL>
-          <LBL t="Entity Code">
-            <select className={`${inp} bg-white cursor-pointer`} value={form.entity_code} onChange={e => set("entity_code", e.target.value)}>
-              <option value="">— Select —</option>
-              {entities.map(e => <option key={e.code} value={e.code}>{e.code} — {e.name}</option>)}
-            </select>
-          </LBL>
-          <LBL t="Site Code">
-            <select className={`${inp} bg-white cursor-pointer`} value={form.site_code} onChange={e => set("site_code", e.target.value)}>
-              <option value="">— Select —</option>
-              {sites.map(s => <option key={s.code} value={s.code}>{s.code} — {s.name}</option>)}
-            </select>
-          </LBL>
-          <LBL t="Vendor Name">
-            <input className={inp} value={form.vendor_name} onChange={e => set("vendor_name", e.target.value)} placeholder="Vendor name" />
-          </LBL>
-          <LBL t="Order Value (₹)">
-            <input type="number" className={inp} value={form.order_value} onChange={e => set("order_value", e.target.value)} placeholder="0.00" />
+          {/* Order Type + Prepared In */}
+          <LBL t="Order Type">
+            <div className="flex gap-2">
+              {[["Purchase Order","PO"],["Work Order","WO"]].map(([val, lbl]) => (
+                <button key={val} type="button" onClick={() => set("order_type", form.order_type === val ? "" : val)}
+                  className={`flex-1 py-2 rounded border text-[13px] font-semibold transition-all
+                    ${form.order_type === val
+                      ? val === "Purchase Order" ? "bg-blue-600 border-blue-600 text-white" : "bg-amber-500 border-amber-500 text-white"
+                      : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"}`}>
+                  {lbl} — {val === "Purchase Order" ? "Purchase Order" : "Work Order"}
+                </button>
+              ))}
+            </div>
           </LBL>
           <LBL t="Prepared In">
             <input className={inp} value={form.prepared_in} onChange={e => set("prepared_in", e.target.value)} placeholder="e.g. Tally, SAP, Manual" />
           </LBL>
+          <LBL t="Entity Code">
+            <SearchSelect
+              value={form.entity_code}
+              onChange={v => set("entity_code", v)}
+              options={entities.map(e => ({ code: e.code, name: e.name, gstin: e.gstin }))}
+              placeholder="— Select Entity —"
+            />
+          </LBL>
+          <LBL t="Site Code">
+            <SearchSelect
+              value={form.site_code}
+              onChange={v => set("site_code", v)}
+              options={sites.map(s => ({ code: s.code, name: s.name, location: s.location }))}
+              placeholder="— Select Site —"
+            />
+          </LBL>
+          <div className="col-span-2">
+            <LBL t="Vendor Name">
+              <input className={inp} value={form.vendor_name} onChange={e => set("vendor_name", e.target.value)} placeholder="Vendor name" />
+            </LBL>
+          </div>
+          <LBL t="Entry By">
+            <div className={`${inp} bg-slate-50 text-slate-500 cursor-not-allowed`}>{entryBy}</div>
+          </LBL>
+          <LBL t="Order Value (₹)">
+            <input type="number" className={inp} value={form.order_value} onChange={e => set("order_value", e.target.value)} placeholder="0.00" />
+          </LBL>
           <div className="col-span-2">
             <LBL t="Subject">
-              <input className={inp} value={form.subject} onChange={e => set("subject", e.target.value)} placeholder="Order subject / description" />
+              <textarea
+                className={`${inp} resize-none overflow-hidden`}
+                value={form.subject}
+                onChange={e => { set("subject", e.target.value); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                onInput={e => { e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }}
+                placeholder="Order subject / description"
+                rows={2}
+                style={{minHeight: "40px"}}
+              />
             </LBL>
           </div>
           <div className="col-span-2">
@@ -261,6 +476,7 @@ export default function HistoricalData() {
   const [filterEntity,   setFilterEntity]   = useState([]);
   const [filterVendor,   setFilterVendor]   = useState([]);
   const [filterPrepared, setFilterPrepared] = useState([]);
+  const [filterOrderType,setFilterOrderType]= useState([]);
   const [formOpen, setFormOpen] = useState(false);
   const [editRec,  setEditRec]  = useState(null);
   const [logRec,   setLogRec]   = useState(null);
@@ -270,29 +486,32 @@ export default function HistoricalData() {
   const xlsxRef = useRef();
 
   const fetchDropdowns = async () => {
-    const res  = await fetch(`${API}/api/historical-orders/dropdowns`, { headers: authH() });
-    const json = await res.json();
-    setSites(json.sites || []);
-    setEntities(json.entities || []);
-    setPreparedOpts(json.preparedIn || []);
+    try {
+      const res  = await authFetch(`${API}/api/historical-orders/dropdowns`);
+      const json = await res.json();
+      if (!res.ok) { console.error("Dropdowns API error:", json); return; }
+      setSites(json.sites || []);
+      setEntities(json.entities || []);
+    } catch (e) { console.error("fetchDropdowns failed:", e); }
   };
 
   const fetchRecords = async () => {
     setLoading(true);
     try {
       const p = new URLSearchParams();
-      filterSite.forEach(v     => p.append("site_code",   v));
-      filterEntity.forEach(v   => p.append("entity_code", v));
-      filterVendor.forEach(v   => p.append("vendor_name", v));
-      filterPrepared.forEach(v => p.append("prepared_in", v));
-      const res  = await fetch(`${API}/api/historical-orders?${p}`, { headers: authH() });
+      filterSite.forEach(v       => p.append("site_code",   v));
+      filterEntity.forEach(v     => p.append("entity_code", v));
+      filterVendor.forEach(v     => p.append("vendor_name", v));
+      filterPrepared.forEach(v   => p.append("prepared_in", v));
+      filterOrderType.forEach(v  => p.append("order_type",  v));
+      const res  = await authFetch(`${API}/api/historical-orders?${p}`);
       const json = await res.json();
       setRecords(json.records || []);
     } finally { setLoading(false); }
   };
 
   useEffect(() => { fetchDropdowns(); }, []);
-  useEffect(() => { fetchRecords(); }, [filterSite, filterEntity, filterVendor, filterPrepared]);
+  useEffect(() => { fetchRecords(); }, [filterSite, filterEntity, filterVendor, filterPrepared, filterOrderType]);
 
   const handleSave = (rec, isEdit) => {
     setRecords(prev => isEdit ? prev.map(r => r.id === rec.id ? rec : r) : [rec, ...prev]);
@@ -302,7 +521,7 @@ export default function HistoricalData() {
   const handleDelete = async () => {
     if (!delId) return;
     setDeleting(true);
-    await fetch(`${API}/api/historical-orders/${delId}`, { method: "DELETE", headers: authH() });
+    await authFetch(`${API}/api/historical-orders/${delId}`, { method: "DELETE" });
     setRecords(prev => prev.filter(r => r.id !== delId));
     setDelId(null); setDeleting(false);
   };
@@ -312,7 +531,7 @@ export default function HistoricalData() {
     if (!file) return;
     const fd = new FormData();
     fd.append("excel", file);
-    const res  = await fetch(`${API}/api/historical-orders/bulk`, { method: "POST", headers: authH(), body: fd });
+    const res  = await authFetch(`${API}/api/historical-orders/bulk`, { method: "POST", body: fd });
     const json = await res.json();
     setToast(res.ok ? `Inserted ${json.inserted} records` : json.error || "Upload failed");
     if (res.ok) fetchRecords();
@@ -320,7 +539,7 @@ export default function HistoricalData() {
   };
 
   const dlBlob = async (url, filename) => {
-    const res  = await fetch(url, { headers: authH() });
+    const res  = await authFetch(url);
     const blob = await res.blob();
     const a    = document.createElement("a");
     a.href     = URL.createObjectURL(blob);
@@ -331,7 +550,11 @@ export default function HistoricalData() {
   const downloadTemplate = () => dlBlob(`${API}/api/historical-orders/template`, "historical_orders_template.xlsx");
   const exportExcel      = () => dlBlob(`${API}/api/historical-orders/export`,   "historical_orders_export.xlsx");
 
-  const allVendors = [...new Set(records.map(r => r.vendor_name).filter(Boolean))].sort();
+  const allVendors    = [...new Set(records.map(r => r.vendor_name).filter(Boolean))].sort();
+  const allEntities   = [...new Set(records.map(r => r.entity_code).filter(Boolean))].sort();
+  const allSites      = [...new Set(records.map(r => r.site_code).filter(Boolean))].sort();
+  const allPrepared   = [...new Set(records.map(r => r.prepared_in).filter(Boolean))].sort();
+  const allOrderTypes = [...new Set(records.map(r => r.order_type).filter(Boolean))].sort();
 
   const filtered = records.filter(r => {
     if (!search) return true;
@@ -411,12 +634,13 @@ export default function HistoricalData() {
               className="h-8 w-64 pl-7 pr-3 rounded border border-slate-200 text-xs text-slate-700 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 transition-all bg-white" />
           </div>
           <div className="flex-1" />
-          <MultiSelect label="Entity Code"  options={entities.map(e => e.code)} selected={filterEntity}   onChange={setFilterEntity} />
-          <MultiSelect label="Site Code"    options={sites.map(s => s.code)}    selected={filterSite}     onChange={setFilterSite} />
-          <MultiSelect label="Vendor"       options={allVendors}                 selected={filterVendor}   onChange={setFilterVendor} />
-          <MultiSelect label="Prepared In"  options={preparedOpts}               selected={filterPrepared} onChange={setFilterPrepared} />
-          {(filterSite.length || filterEntity.length || filterVendor.length || filterPrepared.length || search) ? (
-            <button onClick={() => { setFilterSite([]); setFilterEntity([]); setFilterVendor([]); setFilterPrepared([]); setSearch(""); }}
+          <MultiSelect label="Order Type"   options={allOrderTypes} selected={filterOrderType} onChange={setFilterOrderType} />
+          <MultiSelect label="Entity Code"  options={allEntities}   selected={filterEntity}   onChange={setFilterEntity} />
+          <MultiSelect label="Site Code"    options={allSites}      selected={filterSite}     onChange={setFilterSite} />
+          <MultiSelect label="Vendor"       options={allVendors}    selected={filterVendor}   onChange={setFilterVendor} />
+          <MultiSelect label="Prepared In"  options={allPrepared}   selected={filterPrepared} onChange={setFilterPrepared} />
+          {(filterSite.length || filterEntity.length || filterVendor.length || filterPrepared.length || filterOrderType.length || search) ? (
+            <button onClick={() => { setFilterSite([]); setFilterEntity([]); setFilterVendor([]); setFilterPrepared([]); setFilterOrderType([]); setSearch(""); }}
               className="text-[11px] text-red-500 hover:text-red-700 font-medium">Clear</button>
           ) : null}
           <div className="h-4 w-px bg-slate-200" />
@@ -433,8 +657,7 @@ export default function HistoricalData() {
                 <thead>
                   <tr>
                     <TH ch="Order No" />
-                    <TH ch="Entity Code" />
-                    <TH ch="Site Code" />
+                    <TH ch="Order Type" />
                     <TH ch="Vendor Name" />
                     <TH ch="Subject" />
                     <TH ch="Prepared In" />
@@ -460,8 +683,11 @@ export default function HistoricalData() {
                           {r.order_no}
                         </button>
                       </td>
-                      <td className="px-4 py-3 text-sm text-slate-600 border-b border-slate-100">{r.entity_code || <span className="text-slate-300">—</span>}</td>
-                      <td className="px-4 py-3 text-sm text-slate-600 border-b border-slate-100">{r.site_code   || <span className="text-slate-300">—</span>}</td>
+                      <td className="px-4 py-3 text-sm border-b border-slate-100 whitespace-nowrap">
+                        {r.order_type
+                          ? <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${r.order_type === "Purchase Order" ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700"}`}>{r.order_type === "Purchase Order" ? "PO" : "WO"}</span>
+                          : <span className="text-slate-300">—</span>}
+                      </td>
                       <td className="px-4 py-3 text-sm text-slate-600 border-b border-slate-100 max-w-[160px] truncate">{r.vendor_name || <span className="text-slate-300">—</span>}</td>
                       <td className="px-4 py-3 text-sm text-slate-400 border-b border-slate-100 max-w-[180px] truncate">{r.subject     || <span className="text-slate-300">—</span>}</td>
                       <td className="px-4 py-3 text-sm text-slate-600 border-b border-slate-100">{r.prepared_in || <span className="text-slate-300">—</span>}</td>

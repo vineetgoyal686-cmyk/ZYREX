@@ -14,17 +14,18 @@ const formatRow = async (r) => ({ ...r, pdf_url: r.pdf_path ? await signPdf(r.pd
 
 /* ── GET /api/historical-orders/dropdowns ────────────────────────────────── */
 router.get("/dropdowns", requireAuth, async (req, res) => {
-  const [sitesR, entitiesR, preparedR] = await Promise.all([
-    supabase.from("projects").select("project_code, project_name").neq("is_active", false).order("project_code"),
-    supabase.schema("procurement").from("companies").select("company_code, company_name").order("company_code"),
-    supabase.from("historical_orders").select("prepared_in").not("prepared_in", "is", null),
-  ]);
-  const preparedIn = [...new Set((preparedR.data || []).map(r => r.prepared_in).filter(Boolean))].sort();
-  res.json({
-    sites:      (sitesR.data    || []).map(s => ({ code: s.project_code, name: s.project_name })),
-    entities:   (entitiesR.data || []).map(c => ({ code: c.company_code, name: c.company_name })),
-    preparedIn,
-  });
+  try {
+    const [sitesR, entitiesR] = await Promise.all([
+      supabase.from("projects").select("project_code, project_name, city, state").neq("is_active", false).order("project_code"),
+      supabase.schema("procurement").from("companies").select("company_code, company_name, gstin").order("company_code"),
+    ]);
+    res.json({
+      sites:    (sitesR.data    || []).map(s => ({ code: s.project_code, name: s.project_name, location: [s.city, s.state].filter(Boolean).join(", ") })),
+      entities: (entitiesR.data || []).map(c => ({ code: c.company_code, name: c.company_name, gstin: c.gstin })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ── GET /api/historical-orders/template ─────────────────────────────────── */
@@ -49,6 +50,7 @@ router.get("/export", requireAuth, async (req, res) => {
     if (error) throw error;
     const rows = (data || []).map(r => ({
       "Order No":    r.order_no,
+      "Order Type":  r.order_type   || "",
       "Entity Code": r.entity_code  || "",
       "Site Code":   r.site_code    || "",
       "Vendor Name": r.vendor_name  || "",
@@ -73,12 +75,13 @@ router.get("/export", requireAuth, async (req, res) => {
 /* ── GET /api/historical-orders ──────────────────────────────────────────── */
 router.get("/", requireAuth, async (req, res) => {
   try {
-    const { site_code, entity_code, vendor_name, prepared_in } = req.query;
+    const { site_code, entity_code, vendor_name, prepared_in, order_type } = req.query;
     let q = supabase.from("historical_orders").select("*, creator:created_by(id, name)").order("order_date", { ascending: false });
     if (site_code)   q = q.in("site_code",   Array.isArray(site_code)   ? site_code   : [site_code]);
     if (entity_code) q = q.in("entity_code", Array.isArray(entity_code) ? entity_code : [entity_code]);
     if (vendor_name) q = q.in("vendor_name", Array.isArray(vendor_name) ? vendor_name : [vendor_name]);
     if (prepared_in) q = q.in("prepared_in", Array.isArray(prepared_in) ? prepared_in : [prepared_in]);
+    if (order_type)  q = q.in("order_type",  Array.isArray(order_type)  ? order_type  : [order_type]);
     const { data, error } = await q;
     if (error) throw error;
     const records = await Promise.all((data || []).map(formatRow));
@@ -91,7 +94,7 @@ router.get("/", requireAuth, async (req, res) => {
 /* ── POST /api/historical-orders ─────────────────────────────────────────── */
 router.post("/", requireAuth, upload.single("pdf"), async (req, res) => {
   try {
-    const { order_no, site_code, entity_code, vendor_name, subject, order_value, order_date, prepared_in } = req.body;
+    const { order_no, site_code, entity_code, vendor_name, subject, order_value, order_date, prepared_in, order_type } = req.body;
     if (!order_no) return res.status(400).json({ error: "order_no is required" });
     let pdf_path = null;
     if (req.file) {
@@ -99,7 +102,7 @@ router.post("/", requireAuth, upload.single("pdf"), async (req, res) => {
       pdf_path  = await uploadStorageFile(supabase, BUCKET, `${Date.now()}_${order_no.replace(/\s+/g, "_")}.${ext}`, req.file.buffer, req.file.mimetype);
     }
     const { data, error } = await supabase.from("historical_orders")
-      .insert({ order_no, site_code: site_code || null, entity_code: entity_code || null, vendor_name: vendor_name || null, subject: subject || null, order_value: order_value ? Number(order_value) : null, order_date: order_date || null, prepared_in: prepared_in || null, pdf_path, created_by: req.user.id })
+      .insert({ order_no, site_code: site_code || null, entity_code: entity_code || null, vendor_name: vendor_name || null, subject: subject || null, order_value: order_value ? Number(order_value) : null, order_date: order_date || null, prepared_in: prepared_in || null, order_type: order_type || null, pdf_path, created_by: req.user.id })
       .select("*, creator:created_by(id, name)").single();
     if (error) throw error;
     res.json({ record: await formatRow(data) });
@@ -111,7 +114,7 @@ router.post("/", requireAuth, upload.single("pdf"), async (req, res) => {
 /* ── PUT /api/historical-orders/:id ─────────────────────────────────────── */
 router.put("/:id", requireAuth, upload.single("pdf"), async (req, res) => {
   try {
-    const { order_no, site_code, entity_code, vendor_name, subject, order_value, order_date, prepared_in, remove_pdf } = req.body;
+    const { order_no, site_code, entity_code, vendor_name, subject, order_value, order_date, prepared_in, order_type, remove_pdf } = req.body;
     const { data: existing, error: fetchErr } = await supabase.from("historical_orders").select("pdf_path").eq("id", req.params.id).single();
     if (fetchErr) throw fetchErr;
     let pdf_path = existing.pdf_path;
@@ -122,7 +125,7 @@ router.put("/:id", requireAuth, upload.single("pdf"), async (req, res) => {
       pdf_path  = await uploadStorageFile(supabase, BUCKET, `${Date.now()}_${(order_no || "order").replace(/\s+/g, "_")}.${ext}`, req.file.buffer, req.file.mimetype);
     }
     const { data, error } = await supabase.from("historical_orders")
-      .update({ order_no, site_code: site_code || null, entity_code: entity_code || null, vendor_name: vendor_name || null, subject: subject || null, order_value: order_value ? Number(order_value) : null, order_date: order_date || null, prepared_in: prepared_in || null, pdf_path, updated_at: new Date().toISOString() })
+      .update({ order_no, site_code: site_code || null, entity_code: entity_code || null, vendor_name: vendor_name || null, subject: subject || null, order_value: order_value ? Number(order_value) : null, order_date: order_date || null, prepared_in: prepared_in || null, order_type: order_type || null, pdf_path, updated_at: new Date().toISOString() })
       .eq("id", req.params.id).select("*, creator:created_by(id, name)").single();
     if (error) throw error;
     res.json({ record: await formatRow(data) });
