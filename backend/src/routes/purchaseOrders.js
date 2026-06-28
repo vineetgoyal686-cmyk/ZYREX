@@ -2,6 +2,9 @@ const crypto = require("crypto");
 const express  = require("express");
 const router   = express.Router();
 const multer   = require("multer");
+const cache    = require("../helpers/cacheHelper");
+const ORDERS_CACHE_KEY = "orders_list";
+const ORDERS_TTL = 60 * 1000; // 60 sec
 const supabase = require("../helpers/supabaseHelper");
 const {
   normalizeStoragePath,
@@ -547,6 +550,8 @@ router.get("/pending-count", async (req, res) => {
 
 router.get("/", async (req, res) => {
   try {
+    const hit = cache.get(ORDERS_CACHE_KEY);
+    if (hit) return res.json(hit);
     const { data, error } = await supabase.schema("procurement")
       .from("purchase_orders")
       .select("*, companies(*), vendors(*)")
@@ -640,7 +645,9 @@ router.get("/", async (req, res) => {
         }
       }
     }
-    res.json({ orders: [...sanitized, ...historyOrders] });
+    const payload = { orders: [...sanitized, ...historyOrders] };
+    cache.set(ORDERS_CACHE_KEY, payload, ORDERS_TTL);
+    res.json(payload);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -817,6 +824,7 @@ router.post("/:id/restore", async (req, res) => {
     const { error } = await supabase.schema("procurement").from("purchase_orders")
       .update({ status: originalStatus, snapshot: newSnapshot, updated_at: restoredAt }).eq("id", req.params.id);
     if (error) throw error;
+    cache.bust(ORDERS_CACHE_KEY);
     res.json({ success: true, restored_status: originalStatus });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -921,6 +929,7 @@ router.post("/", requirePerm("order", "can_add"), upload.fields([
         .eq("order_kind", kindForSerial);
     }
 
+    cache.bust(ORDERS_CACHE_KEY);
     res.json({ success: true, id: order.id });
   } catch (err) {
     console.error("Order save error:", err.message);
@@ -1729,6 +1738,7 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
       .update({ ...mainData, quotation_url: quotationUrl, comparative_sheet_url: comparativeUrl, updated_at: new Date().toISOString() })
       .eq("id", req.params.id);
     if (orderErr) throw orderErr;
+    cache.bust(ORDERS_CACHE_KEY);
 
     // Notify all connected inbox clients instantly when order status changes
     if (mainData.status) broadcast({ type: "order_updated", status: mainData.status });
@@ -2005,6 +2015,7 @@ router.delete("/:id", requirePerm("order", "can_delete"), async (req, res) => {
     const { error } = await supabase.schema("procurement").from("purchase_orders")
       .update({ status: "Deleted", snapshot: newSnapshot, updated_at: deleted_at }).eq("id", req.params.id);
     if (error) throw error;
+    cache.bust(ORDERS_CACHE_KEY);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -8,6 +8,8 @@ const {
   createSignedStorageUrl,
   removeStorageFile,
 } = require("../helpers/storageHelper");
+const cache = require("../helpers/cacheHelper");
+const TTL5  = 5 * 60 * 1000; // 5 min — master data changes rarely
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -95,6 +97,8 @@ const getNextItemCode = async (itemType = "Supply") => {
 
 router.get("/items", async (_req, res) => {
   try {
+    const hit = cache.get("items");
+    if (hit) return res.json(hit);
     const { data, error } = await supabase
       .schema("procurement").from("items")
       .select("*")
@@ -114,7 +118,9 @@ router.get("/items", async (_req, res) => {
       createdById:  r.created_by_id || "",
       createdByName: r.created_by_name || "",
     })));
-    res.json({ items });
+    const payload = { items };
+    cache.set("items", payload, TTL5);
+    res.json(payload);
   } catch (err) {
     console.error("Items read error:", err.message);
     res.json({ items: [] });
@@ -144,6 +150,7 @@ router.post("/items", upload.single("image"), async (req, res) => {
       created_by_id: createdById || "", created_by_name: createdByName || "",
     }).select().single();
     if (error) throw error;
+    cache.bust("items");
     res.json({ success: true, id: data.id, itemCode: item_code });
   } catch (err) {
     console.error("Item add error:", err.message);
@@ -179,6 +186,7 @@ router.put("/items/:id", upload.single("image"), async (req, res) => {
       remarks: remarks || "",
     }).eq("id", id);
     if (error) throw error;
+    cache.bust("items");
     res.json({ success: true, imageUrl: image_url });
   } catch (err) {
     console.error("Item update error:", err.message);
@@ -253,6 +261,7 @@ router.delete("/items/:id", async (req, res) => {
     }
     const { error } = await supabase.schema("procurement").from("items").delete().eq("id", id);
     if (error) throw error;
+    cache.bust("items");
     res.json({ success: true });
   } catch (err) {
     console.error("Item delete error:", err.message);
@@ -305,6 +314,7 @@ router.post("/items/bulk", async (req, res) => {
 
     const { error } = await supabase.schema("procurement").from("items").insert(inserts);
     if (error) throw error;
+    cache.bust("items");
     res.json({ success: true, inserted: inserts.length, skipped });
   } catch (err) {
     console.error("Bulk items error:", err.message);
@@ -636,6 +646,8 @@ const getNextVendorCode = async () => {
 
 router.get("/vendors", async (_req, res) => {
   try {
+    const hit = cache.get("vendors");
+    if (hit) return res.json(hit);
     const { data, error } = await supabase
       .schema("procurement").from("vendors").select("*").is("deleted_at", null).order("vendor_code", { ascending: true });
     if (error) throw error;
@@ -705,7 +717,9 @@ router.get("/vendors", async (_req, res) => {
         createdAt:           r.created_at            || "",
       };
     }));
-    res.json({ vendors });
+    const payload = { vendors };
+    cache.set("vendors", payload, TTL5);
+    res.json(payload);
   } catch (err) {
     console.error("Vendors read error:", err.message);
     res.json({ vendors: [] });
@@ -773,6 +787,7 @@ router.post("/vendors", vendorUpload, async (req, res) => {
       if (result.error.code !== "23505") break;
     }
     if (!data) throw lastErr || new Error("Failed to insert vendor");
+    cache.bust("vendors");
     res.json({ success: true, id: data.id });
   } catch (err) {
     console.error("Vendor add error:", err.message);
@@ -829,6 +844,7 @@ router.put("/vendors/:id", vendorUpload, async (req, res) => {
       site_codes:            b.siteCodes         || "[]",
     }).eq("id", id);
     if (error) throw error;
+    cache.bust("vendors");
     res.json({ success: true });
   } catch (err) {
     console.error("Vendor update error:", err.message);
@@ -844,6 +860,7 @@ router.delete("/vendors/:id", async (req, res) => {
       deleted_by_name: req.body?.deletedByName || req.query?.deletedByName || "",
     }).eq("id", req.params.id);
     if (error) throw error;
+    cache.bust("vendors");
     res.json({ success: true });
   } catch (err) {
     console.error("Vendor delete error:", err.message);
@@ -892,6 +909,7 @@ router.post("/vendors/:id/restore", async (req, res) => {
       deleted_by_name: null,
     }).eq("id", req.params.id);
     if (error) throw error;
+    cache.bust("vendors");
     res.json({ success: true });
   } catch (err) {
     console.error("Vendor restore error:", err.message);
@@ -930,6 +948,7 @@ router.delete("/vendors/:id/permanent", async (req, res) => {
 
     const { error } = await supabase.schema("procurement").from("vendors").delete().eq("id", req.params.id);
     if (error) throw error;
+    cache.bust("vendors");
     res.json({ success: true });
   } catch (err) {
     console.error("Vendor permanent delete error:", err.message);
@@ -998,6 +1017,7 @@ router.post("/vendors/bulk", async (req, res) => {
     if (!records.length) return res.json({ success: true, inserted: 0, skipped });
     const { error } = await supabase.schema("procurement").from("vendors").insert(records);
     if (error) throw error;
+    cache.bust("vendors");
     res.json({ success: true, inserted: records.length, skipped });
   } catch (err) {
     console.error("Vendor bulk error:", err.message);
@@ -1029,6 +1049,8 @@ const missingSiteColumns = (err) => {
 
 router.get("/uom", async (_req, res) => {
   try {
+    const hit = cache.get("uom");
+    if (hit) return res.json(hit);
     const { data, error } = await supabase
       .schema("procurement").from("uom").select("*").order("uom_name", { ascending: true });
     if (error) throw error;
@@ -1037,7 +1059,9 @@ router.get("/uom", async (_req, res) => {
       uomName: r.uom_name || "",
       uomCode: r.uom_code || "",
     }));
-    res.json({ uoms });
+    const payload = { uoms };
+    cache.set("uom", payload, TTL5);
+    res.json(payload);
   } catch (err) {
     console.error("UOM read error:", err.message);
     res.json({ uoms: [] });
@@ -1055,6 +1079,7 @@ router.post("/uom", async (req, res) => {
       })
       .select().single();
     if (error) throw error;
+    cache.bust("uom");
     res.json({ success: true, uom: { uomCode: data.uom_code || uomCode, uomName: data.uom_name || uomName }, id: data.id });
   } catch (err) {
     console.error("UOM add error:", err.message);
@@ -1069,6 +1094,7 @@ router.put("/uom/:id", async (req, res) => {
       .update({ uom_name: uomName || "", uom_code: uomCode || "" })
       .eq("id", req.params.id);
     if (error) throw error;
+    cache.bust("uom");
     res.json({ success: true });
   } catch (err) {
     console.error("UOM update error:", err.message);
@@ -1080,6 +1106,7 @@ router.delete("/uom/:id", async (req, res) => {
   try {
     const { error } = await supabase.schema("procurement").from("uom").delete().eq("id", req.params.id);
     if (error) throw error;
+    cache.bust("uom");
     res.json({ success: true });
   } catch (err) {
     console.error("UOM delete error:", err.message);
@@ -1124,6 +1151,7 @@ router.post("/uom/bulk", async (req, res) => {
     if (!inserts.length) return res.json({ success: true, count: 0, skipped });
     const { error } = await supabase.schema("procurement").from("uom").insert(inserts);
     if (error) throw error;
+    cache.bust("uom");
     res.json({ success: true, count: inserts.length, skipped });
   } catch (err) {
     console.error("Bulk UOM error:", err.message);
@@ -1146,6 +1174,8 @@ const getNextCategoryCode = async () => {
 
 router.get("/categories", async (_req, res) => {
   try {
+    const hit = cache.get("categories");
+    if (hit) return res.json(hit);
     const { data, error } = await supabase
       .schema("procurement").from("categories").select("*").order("category_code", { ascending: true });
     if (error) throw error;
@@ -1156,7 +1186,9 @@ router.get("/categories", async (_req, res) => {
       description:  r.description   || "",
       status:       r.status        || "Active",
     }));
-    res.json({ categories });
+    const payload = { categories };
+    cache.set("categories", payload, TTL5);
+    res.json(payload);
   } catch (err) {
     console.error("Categories read error:", err.message);
     res.json({ categories: [] });
@@ -1200,6 +1232,7 @@ router.post("/categories/bulk", async (req, res) => {
 
     const { error } = await supabase.schema("procurement").from("categories").insert(inserts);
     if (error) throw error;
+    cache.bust("categories");
     res.json({ success: true, count: inserts.length, skipped: rows.length - inserts.length });
   } catch (err) {
     console.error("Bulk categories error:", err.message);
@@ -1219,6 +1252,7 @@ router.post("/categories", async (req, res) => {
       })
       .select().single();
     if (error) throw error;
+    cache.bust("categories");
     res.json({ success: true, id: data.id, categoryCode });
   } catch (err) {
     console.error("Category add error:", err.message);
@@ -1233,6 +1267,7 @@ router.put("/categories/:id", async (req, res) => {
       .update({ category_name: categoryName || "", description: description || "", status: status || "Active" })
       .eq("id", req.params.id);
     if (error) throw error;
+    cache.bust("categories");
     res.json({ success: true });
   } catch (err) {
     console.error("Category update error:", err.message);
@@ -1244,6 +1279,7 @@ router.delete("/categories/:id", async (req, res) => {
   try {
     const { error } = await supabase.schema("procurement").from("categories").delete().eq("id", req.params.id);
     if (error) throw error;
+    cache.bust("categories");
     res.json({ success: true });
   } catch (err) {
     console.error("Category delete error:", err.message);
@@ -1305,6 +1341,8 @@ const companyExtraPayload = (b) => ({
 
 router.get("/companies", async (_req, res) => {
   try {
+    const hit = cache.get("companies");
+    if (hit) return res.json(hit);
     const { data, error } = await supabase
       .schema("procurement").from("companies").select("*").order("company_name", { ascending: true });
     if (error) throw error;
@@ -1351,7 +1389,9 @@ router.get("/companies", async (_req, res) => {
         signUrl,
       };
     }));
-    res.json({ companies });
+    const payload = { companies };
+    cache.set("companies", payload, TTL5);
+    res.json(payload);
   } catch (err) {
     console.error("Companies read error:", err.message);
     res.json({ companies: [] });
@@ -1390,6 +1430,7 @@ router.post("/companies", companyUpload, async (req, res) => {
       ({ data, error } = await supabase.schema("procurement").from("companies").insert(basePayload).select().single());
     }
     if (error) throw error;
+    cache.bust("companies");
     res.json({ success: true, id: data.id });
   } catch (err) {
     console.error("Company add error:", err.message);
@@ -1428,6 +1469,7 @@ router.put("/companies/:id", companyUpload, async (req, res) => {
       ({ error } = await supabase.schema("procurement").from("companies").update(basePayload).eq("id", id));
     }
     if (error) throw error;
+    cache.bust("companies");
     res.json({ success: true });
   } catch (err) {
     console.error("Company update error:", err.message);
@@ -1439,6 +1481,7 @@ router.delete("/companies/:id", async (req, res) => {
   try {
     const { error } = await supabase.schema("procurement").from("companies").delete().eq("id", req.params.id);
     if (error) throw error;
+    cache.bust("companies");
     res.json({ success: true });
   } catch (err) {
     console.error("Company delete error:", err.message);
