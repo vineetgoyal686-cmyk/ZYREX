@@ -7,6 +7,7 @@ const {
 const admin = require("../helpers/supabaseHelper");
 const getAdminClient = () => admin;
 const { requireAuth } = require("../middleware/auth");
+const { sendTemplateEmail } = require("../utils/mailer");
 
 const shortDbError = (error) => error?.message || error?.details || String(error || "Unknown database error");
 
@@ -149,20 +150,30 @@ router.post("/request", requireAuth, async (req, res) => {
           .eq("module_id", orderMod.id)
           .eq("can_edit", true);
 
-        const toEmails = (approverUsers || [])
+        const toRecipients = (approverUsers || [])
           .filter(u => u.users?.is_active)
-          .map(u => u.users.email)
-          .filter(Boolean);
-        const ccEmails = (ccUsers || [])
-          .filter(u => u.users?.is_active && !toEmails.includes(u.users.email))
-          .map(u => u.users.email)
-          .filter(Boolean);
+          .map(u => ({ email: u.users.email, name: u.users.name || u.users.email }))
+          .filter(r => r.email);
+        const toEmailSet = new Set(toRecipients.map(r => r.email));
+        const ccRecipients = (ccUsers || [])
+          .filter(u => u.users?.is_active && !toEmailSet.has(u.users.email))
+          .map(u => ({ email: u.users.email, name: u.users.name || u.users.email }))
+          .filter(r => r.email);
 
-        // TODO: Wire up an actual mailer (SendGrid / Resend / Supabase SMTP).
-        // For now, keep an audit trail in logs so we can debug who would get notified.
-        console.log(`📧 Amendment requested for ${order.order_number}`);
-        console.log(`   TO (approvers): ${toEmails.join(", ") || "(none)"}`);
-        console.log(`   CC (managers):  ${ccEmails.join(", ") || "(none)"}`);
+        if (toRecipients.length > 0) {
+          const orderLink = `${process.env.FRONTEND_URL}/app.html#/procurement/purchase-orders`;
+          await sendTemplateEmail({
+            to:          toRecipients,
+            cc:          ccRecipients,
+            templateKey: process.env.ZEPTOMAIL_TEMPLATE_AMENDMENT,
+            mergeInfo:   {
+              order_number:    order.order_number,
+              requester_name:  req.user?.name || "A user",
+              reason:          reason.trim(),
+              order_link:      orderLink,
+            },
+          });
+        }
       }
     } catch (mailErr) {
       console.error("Email notification step failed:", mailErr);

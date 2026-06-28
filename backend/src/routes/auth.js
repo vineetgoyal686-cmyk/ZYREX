@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const supabase = require("../helpers/supabaseHelper");
+const { sendTemplateEmail } = require("../utils/mailer");
 const { createClient } = require("@supabase/supabase-js");
 const {
   normalizeStoragePath,
@@ -144,19 +145,37 @@ router.post("/refresh", async (req, res) => {
 /* ─────────────────────────────────────────
    POST /api/auth/forgot-password
    Body: { email }
-   Supabase khud reset email bhejta hai
+   ZeptoMail se reset link bhejta hai
 ───────────────────────────────────────── */
 router.post("/forgot-password", async (req, res) => {
   let { email } = req.body;
   if (!email) return res.status(400).json({ error: "Email required hai" });
 
   email = email.toLowerCase().trim();
+  const admin = getAdminClient();
 
-  await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.FRONTEND_URL}/reset-password`,
-  });
+  try {
+    const { data: userRow } = await admin.from("users").select("name").eq("email", email).maybeSingle();
+    if (userRow) {
+      const { data: linkData } = await admin.auth.admin.generateLink({
+        type: "recovery",
+        email,
+        options: { redirectTo: `${process.env.FRONTEND_URL}/reset-password` },
+      });
+      if (linkData?.properties?.action_link) {
+        await sendTemplateEmail({
+          to:          email,
+          toName:      userRow.name || email,
+          templateKey: process.env.ZEPTOMAIL_TEMPLATE_RESET,
+          mergeInfo:   { name: userRow.name || email, reset_link: linkData.properties.action_link },
+        });
+      }
+    }
+  } catch (err) {
+    console.error("forgot-password email error:", err);
+  }
 
-  // Security ke liye hamesha success return karo (email exist kare ya nahi)
+  // Security: hamesha success return karo
   res.json({ success: true, message: "Agar email registered hai toh reset link aa jayega" });
 });
 
@@ -604,16 +623,31 @@ router.post("/send-otp", async (req, res) => {
 
   // Verify: yeh email hamare users table mein hai?
   const { data: userRow, error: dbErr } = await admin
-    .from("users").select("id").eq("email", email).single();
+    .from("users").select("id, name").eq("email", email).single();
   if (dbErr || !userRow) return res.status(404).json({ error: "Email not found in system" });
 
-  // OTP bhejo
-  const { error } = await admin.auth.signInWithOtp({
-    email,
-    options: { shouldCreateUser: false },
-  });
+  // 6-digit OTP generate karo
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
-  if (error) return res.status(500).json({ error: error.message });
+  // Purane OTPs delete karo, naya insert karo
+  await admin.from("otp_tokens").delete().eq("email", email);
+  const { error: insertErr } = await admin.from("otp_tokens").insert({ email, otp, expires_at: expiresAt });
+  if (insertErr) return res.status(500).json({ error: "OTP generate karne mein error hua" });
+
+  // ZeptoMail se bhejo
+  try {
+    await sendTemplateEmail({
+      to:          email,
+      toName:      userRow.name || email,
+      templateKey: process.env.ZEPTOMAIL_TEMPLATE_OTP,
+      mergeInfo:   { name: userRow.name || email, otp },
+    });
+  } catch (err) {
+    console.error("OTP email error:", err);
+    return res.status(500).json({ error: "OTP email bhejne mein error hua" });
+  }
+
   res.json({ success: true, email });
 });
 
@@ -628,22 +662,28 @@ router.post("/verify-otp-change-password", async (req, res) => {
     return res.status(400).json({ error: "Email, OTP aur naya password required hai" });
 
   const admin = getAdminClient();
+  const normalEmail = email.toLowerCase().trim();
 
-  // OTP verify karo
-  const { data: verifyData, error: otpError } = await admin.auth.verifyOtp({
-    email,
-    token: otp,
-    type: "email",
-  });
+  // OTP verify karo from otp_tokens table
+  const { data: tokenRow, error: tokenErr } = await admin
+    .from("otp_tokens").select("otp, expires_at").eq("email", normalEmail).single();
 
-  if (otpError) return res.status(400).json({ error: "Invalid or expired OTP" });
+  if (tokenErr || !tokenRow) return res.status(400).json({ error: "Invalid or expired OTP" });
+  if (new Date(tokenRow.expires_at) < new Date()) {
+    await admin.from("otp_tokens").delete().eq("email", normalEmail);
+    return res.status(400).json({ error: "OTP expired hai, dobara request karo" });
+  }
+  if (tokenRow.otp !== otp) return res.status(400).json({ error: "Invalid OTP" });
 
-  // Auth user ID nikalo
-  const userId = verifyData?.user?.id;
-  if (!userId) return res.status(400).json({ error: "OTP verification failed" });
+  // OTP valid — delete karo (one-time use)
+  await admin.from("otp_tokens").delete().eq("email", normalEmail);
+
+  // User ID nikalo from our users table
+  const { data: userRow } = await admin.from("users").select("id").eq("email", normalEmail).single();
+  if (!userRow) return res.status(400).json({ error: "User not found" });
 
   // Password update karo via admin API
-  const { error: pwError } = await admin.auth.admin.updateUserById(userId, {
+  const { error: pwError } = await admin.auth.admin.updateUserById(userRow.id, {
     password: newPassword,
   });
 

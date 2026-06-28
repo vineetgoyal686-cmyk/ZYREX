@@ -2,6 +2,7 @@ const express = require("express");
 const router  = express.Router();
 const { createSignedStorageUrl, removeStorageFile } = require("../helpers/storageHelper");
 const admin = require("../helpers/supabaseHelper");
+const { sendTemplateEmail } = require("../utils/mailer");
 const getAdminClient = () => admin;
 const { requireAuth, bustUserCache } = require("../middleware/auth");
 
@@ -97,9 +98,10 @@ router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
   const { data: existingUser } = await admin.from("users").select("id, email").eq("email", email).maybeSingle();
   if (existingUser) return res.status(409).json({ error: "Yeh email already registered hai. Resend invite use karo." });
 
-  const { data: authData, error: authError } = await admin.auth.admin.inviteUserByEmail(email, {
-    data: { name },
-    redirectTo: process.env.FRONTEND_URL + "/app.html",
+  const { data: authData, error: authError } = await admin.auth.admin.generateLink({
+    type: "invite",
+    email,
+    options: { data: { name }, redirectTo: process.env.FRONTEND_URL + "/app.html" },
   });
   if (authError) return res.status(400).json({ error: authError.message });
 
@@ -120,6 +122,18 @@ router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
   }, { onConflict: "id" }).select().single();
 
   if (profileError) return res.status(500).json({ error: profileError.message });
+
+  // Invite email ZeptoMail se bhejo
+  const inviteLink = authData?.properties?.action_link;
+  if (inviteLink) {
+    sendTemplateEmail({
+      to:          email,
+      toName:      name || email,
+      templateKey: process.env.ZEPTOMAIL_TEMPLATE_INVITE,
+      mergeInfo:   { name: name || email, invite_link: inviteLink },
+    }).catch(err => console.error("Invite email error:", err));
+  }
+
   res.json({ success: true, user: profile });
 });
 
@@ -127,12 +141,26 @@ router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
 router.post("/:id/resend-invite", requireAuth, requireAdminOrAbove, async (req, res) => {
   const { id } = req.params;
   const admin = getAdminClient();
-  const { data: user, error: fetchErr } = await admin.from("users").select("email").eq("id", id).single();
+  const { data: user, error: fetchErr } = await admin.from("users").select("email, name").eq("id", id).single();
   if (fetchErr || !user) return res.status(404).json({ error: "User not found" });
-  const { error } = await admin.auth.admin.inviteUserByEmail(user.email, {
-    redirectTo: process.env.FRONTEND_URL + "/app.html",
+
+  const { data: linkData, error } = await admin.auth.admin.generateLink({
+    type: "invite",
+    email: user.email,
+    options: { redirectTo: process.env.FRONTEND_URL + "/app.html" },
   });
   if (error) return res.status(400).json({ error: error.message });
+
+  const inviteLink = linkData?.properties?.action_link;
+  if (inviteLink) {
+    sendTemplateEmail({
+      to:          user.email,
+      toName:      user.name || user.email,
+      templateKey: process.env.ZEPTOMAIL_TEMPLATE_INVITE,
+      mergeInfo:   { name: user.name || user.email, invite_link: inviteLink },
+    }).catch(err => console.error("Resend invite email error:", err));
+  }
+
   res.json({ success: true });
 });
 
