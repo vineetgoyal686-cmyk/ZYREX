@@ -65,6 +65,14 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Backend on port ${PORT}`);
   console.log(`🔗 Connected to: ${process.env.SUPABASE_URL}`);
+
+  // Keep Supabase connection warm — runs every 4 minutes
+  const supabase = require("./src/helpers/supabaseHelper");
+  setInterval(async () => {
+    try {
+      await supabase.from("users").select("id").limit(1).single();
+    } catch (_) { /* silent — just a ping */ }
+  }, 4 * 60 * 1000);
 });
 
 process.on("SIGTERM", () => process.exit(0));
