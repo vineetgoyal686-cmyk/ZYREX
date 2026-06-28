@@ -31,8 +31,8 @@ router.get("/dropdowns", requireAuth, async (req, res) => {
 /* ── GET /api/historical-orders/template ─────────────────────────────────── */
 router.get("/template", requireAuth, (req, res) => {
   const ws = XLSX.utils.aoa_to_sheet([
-    ["Order No", "Entity Code", "Site Code", "Vendor Name", "Subject", "Order Value", "Order Date", "Prepared In"],
-    ["PO/2022/001", "BITL", "B-47", "Vendor Pvt Ltd", "Supply of materials", 500000, "2022-04-01", "Tally"],
+    ["Order No", "Order Type", "Entity Code", "Site Code", "Vendor Name", "Subject", "Order Value", "Order Date", "Prepared In"],
+    ["PO/2022/001", "Purchase Order", "BITL", "B-47", "Vendor Pvt Ltd", "Supply of materials", 500000, "2022-04-01", "Tally"],
   ]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Historical Orders");
@@ -104,7 +104,10 @@ router.post("/", requireAuth, upload.single("pdf"), async (req, res) => {
     const { data, error } = await supabase.from("historical_orders")
       .insert({ order_no, site_code: site_code || null, entity_code: entity_code || null, vendor_name: vendor_name || null, subject: subject || null, order_value: order_value ? Number(order_value) : null, order_date: order_date || null, prepared_in: prepared_in || null, order_type: order_type || null, pdf_path, created_by: req.user.id })
       .select("*, creator:created_by(id, name)").single();
-    if (error) throw error;
+    if (error) {
+      if (error.code === "23505") return res.status(409).json({ error: `Order No "${order_no}" already exists. Duplicate order numbers are not allowed.` });
+      throw error;
+    }
     res.json({ record: await formatRow(data) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -157,6 +160,7 @@ router.post("/bulk", requireAuth, upload.single("excel"), async (req, res) => {
     if (!rows.length) return res.status(400).json({ error: "Excel is empty" });
     const records = rows.map(r => ({
       order_no:    String(r["Order No"]    || r["order_no"]    || "").trim(),
+      order_type:  String(r["Order Type"]  || r["order_type"]  || "").trim() || null,
       entity_code: String(r["Entity Code"] || r["entity_code"] || "").trim() || null,
       site_code:   String(r["Site Code"]   || r["site_code"]   || "").trim() || null,
       vendor_name: String(r["Vendor Name"] || r["vendor_name"] || "").trim() || null,
@@ -168,9 +172,21 @@ router.post("/bulk", requireAuth, upload.single("excel"), async (req, res) => {
       created_by:  req.user.id,
     })).filter(r => r.order_no);
     if (!records.length) return res.status(400).json({ error: "No valid rows. Ensure 'Order No' column exists." });
-    const { data, error } = await supabase.from("historical_orders").insert(records).select("id");
-    if (error) throw error;
-    res.json({ inserted: data.length, skipped: rows.length - records.length });
+
+    // Check for duplicates already in DB
+    const incomingNos = records.map(r => r.order_no);
+    const { data: existing } = await supabase.from("historical_orders").select("order_no").in("order_no", incomingNos);
+    const existingSet = new Set((existing || []).map(r => r.order_no));
+    const duplicates = records.filter(r => existingSet.has(r.order_no)).map(r => r.order_no);
+    const toInsert   = records.filter(r => !existingSet.has(r.order_no));
+
+    let inserted = 0;
+    if (toInsert.length > 0) {
+      const { data, error } = await supabase.from("historical_orders").insert(toInsert).select("id");
+      if (error) throw error;
+      inserted = data.length;
+    }
+    res.json({ inserted, skipped: rows.length - records.length, duplicates });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

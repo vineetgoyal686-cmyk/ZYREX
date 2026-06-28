@@ -477,6 +477,8 @@ export default function HistoricalData() {
   const [filterVendor,   setFilterVendor]   = useState([]);
   const [filterPrepared, setFilterPrepared] = useState([]);
   const [filterOrderType,setFilterOrderType]= useState([]);
+  const [page,     setPage]     = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [formOpen, setFormOpen] = useState(false);
   const [editRec,  setEditRec]  = useState(null);
   const [logRec,   setLogRec]   = useState(null);
@@ -533,7 +535,9 @@ export default function HistoricalData() {
     fd.append("excel", file);
     const res  = await authFetch(`${API}/api/historical-orders/bulk`, { method: "POST", body: fd });
     const json = await res.json();
-    setToast(res.ok ? `Inserted ${json.inserted} records` : json.error || "Upload failed");
+    if (!res.ok) { setToast(json.error || "Upload failed"); return; }
+    const dupMsg = json.duplicates?.length ? ` | ${json.duplicates.length} duplicate(s) skipped` : "";
+    setToast(`${json.inserted} records inserted${dupMsg}`);
     if (res.ok) fetchRecords();
     e.target.value = "";
   };
@@ -562,8 +566,11 @@ export default function HistoricalData() {
     return [r.order_no, r.vendor_name, r.subject, r.site_code, r.entity_code, r.prepared_in].some(v => v?.toLowerCase().includes(q));
   });
 
-  const TH = ({ ch, right }) => (
-    <th className={`px-4 py-3 text-[11px] font-bold text-slate-500 uppercase tracking-wide whitespace-nowrap bg-slate-50 border-b border-slate-200 ${right ? "text-right" : "text-left"}`}>{ch}</th>
+  const TH = ({ ch, right, sticky }) => (
+    <th className={`px-4 py-3 text-[13px] font-medium text-slate-500 whitespace-nowrap bg-[#f9fafb] border-b border-r border-slate-200
+      ${right ? "text-right" : "text-left"}
+      ${sticky === "left"  ? "sticky left-0 z-[21]" : ""}
+      ${sticky === "right" ? "sticky right-0 z-[21]" : ""}`}>{ch}</th>
   );
 
   return (
@@ -629,7 +636,7 @@ export default function HistoricalData() {
         <div className="bg-white border-b border-slate-200 px-6 py-2.5 flex items-center gap-2.5 shrink-0 sticky top-0 z-10 shadow-sm">
           <div className="relative">
             <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <input value={search} onChange={e => setSearch(e.target.value)}
+            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
               placeholder="Search order no, vendor, subject…"
               className="h-8 w-64 pl-7 pr-3 rounded border border-slate-200 text-xs text-slate-700 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 transition-all bg-white" />
           </div>
@@ -650,69 +657,111 @@ export default function HistoricalData() {
         </div>
 
         {/* ── Table ──────────────────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto p-5 min-h-0">
-          <div className="bg-white rounded border border-slate-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr>
-                    <TH ch="Order No" />
-                    <TH ch="Order Type" />
-                    <TH ch="Vendor Name" />
-                    <TH ch="Subject" />
-                    <TH ch="Prepared In" />
-                    <TH ch="Order Value" right />
-                    <TH ch="Order Date" />
-                    <TH ch="Entry By" />
-                    <TH ch="Actions" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr><td colSpan={10} className="px-4 py-16 text-center text-sm text-slate-400">Loading…</td></tr>
-                  ) : filtered.length === 0 ? (
-                    <tr><td colSpan={10} className="px-4 py-16 text-center text-sm text-slate-400">No records found</td></tr>
-                  ) : filtered.map(r => (
-                    <tr key={r.id} className="hover:bg-slate-50 transition-colors group">
-                      {/* Order No — clickable, opens PDF */}
-                      <td className="px-4 py-3 border-b border-slate-100 align-middle">
-                        <button
-                          onClick={() => r.pdf_url ? window.open(r.pdf_url, "_blank") : setToast("No attachment for this order")}
-                          className="text-sm font-semibold text-indigo-600 hover:text-indigo-800 hover:underline transition-colors text-left"
-                        >
-                          {r.order_no}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3 text-sm border-b border-slate-100 whitespace-nowrap">
-                        {r.order_type
-                          ? <span className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold ${r.order_type === "Purchase Order" ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700"}`}>{r.order_type === "Purchase Order" ? "PO" : "WO"}</span>
-                          : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600 border-b border-slate-100 max-w-[160px] truncate">{r.vendor_name || <span className="text-slate-300">—</span>}</td>
-                      <td className="px-4 py-3 text-sm text-slate-400 border-b border-slate-100 max-w-[180px] truncate">{r.subject     || <span className="text-slate-300">—</span>}</td>
-                      <td className="px-4 py-3 text-sm text-slate-600 border-b border-slate-100">{r.prepared_in || <span className="text-slate-300">—</span>}</td>
-                      <td className="px-4 py-3 text-sm text-right font-semibold text-slate-800 border-b border-slate-100 whitespace-nowrap">
-                        {r.order_value != null ? `₹${fmt(r.order_value)}` : <span className="text-slate-300">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-slate-600 border-b border-slate-100 whitespace-nowrap">{fmtDate(r.order_date)}</td>
-                      <td className="px-4 py-3 text-xs text-slate-400 border-b border-slate-100">{r.entry_by}</td>
-                      <td className="px-4 py-3 border-b border-slate-100 align-middle">
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => { setEditRec(r); setFormOpen(true); }} title="Edit" className="p-1.5 rounded hover:bg-slate-100 transition-colors"><Pencil size={13} className="text-slate-500" /></button>
-                          <button onClick={() => setDelId(r.id)} title="Delete" className="p-1.5 rounded hover:bg-red-50 transition-colors"><Trash2 size={13} className="text-red-400" /></button>
-                          <button onClick={() => setLogRec(r)} title="Log" className="p-1.5 rounded hover:bg-violet-50 transition-colors"><ScrollText size={13} className="text-violet-500" /></button>
-                        </div>
-                      </td>
+        {(() => {
+          const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+          const safePage   = Math.min(page, totalPages);
+          const paginated  = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+          const pageNums = (() => {
+            if (totalPages <= 7) return Array.from({ length: totalPages }, (_, i) => i + 1);
+            if (safePage <= 4)               return [1,2,3,4,5,"…",totalPages];
+            if (safePage >= totalPages - 3)  return [1,"…",totalPages-4,totalPages-3,totalPages-2,totalPages-1,totalPages];
+            return [1,"…",safePage-1,safePage,safePage+1,"…",totalPages];
+          })();
+
+          const tdBase = "px-4 py-3 text-[13px] text-slate-700 border-b border-r border-slate-200 align-middle";
+
+          return (
+          <div className="flex-1 overflow-y-auto px-5 pt-4 pb-5 min-h-0 flex flex-col gap-3">
+            <div className="bg-white rounded border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full border-separate border-spacing-0 min-w-[820px]">
+                  <thead>
+                    <tr>
+                      <TH ch="Order No"    sticky="left" />
+                      <TH ch="Order Type" />
+                      <TH ch="Vendor Name" />
+                      <TH ch="Subject" />
+                      <TH ch="Prepared In" />
+                      <TH ch="Order Value" right />
+                      <TH ch="Order Date" />
+                      <TH ch="Entry By" />
+                      <TH ch="Actions"     sticky="right" />
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr><td colSpan={9} className="px-4 py-16 text-center text-[13px] text-slate-400">Loading…</td></tr>
+                    ) : paginated.length === 0 ? (
+                      <tr><td colSpan={9} className="px-4 py-16 text-center text-[13px] text-slate-400">No records found</td></tr>
+                    ) : paginated.map(r => (
+                      <tr key={r.id} className="group hover:bg-slate-50 transition-colors">
+                        <td className={`${tdBase} sticky left-0 z-[10] bg-white group-hover:bg-slate-50`}>
+                          <button onClick={() => r.pdf_url ? window.open(r.pdf_url, "_blank") : setToast("No attachment for this order")}
+                            className="text-[13px] font-medium text-indigo-600 hover:underline text-left whitespace-nowrap">
+                            {r.order_no}
+                          </button>
+                        </td>
+                        <td className={`${tdBase} whitespace-nowrap`}>
+                          {r.order_type ? <span className="text-slate-700">{r.order_type}</span> : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className={`${tdBase} max-w-[180px] truncate`}>{r.vendor_name || <span className="text-slate-300">—</span>}</td>
+                        <td className={`${tdBase} max-w-[260px] truncate text-slate-500`}>{r.subject || <span className="text-slate-300">—</span>}</td>
+                        <td className={`${tdBase}`}>{r.prepared_in || <span className="text-slate-300">—</span>}</td>
+                        <td className={`${tdBase} text-right font-medium`}>{r.order_value != null ? `₹${fmt(r.order_value)}` : <span className="text-slate-300 font-normal">—</span>}</td>
+                        <td className={`${tdBase} whitespace-nowrap`}>{fmtDate(r.order_date)}</td>
+                        <td className={`${tdBase} text-slate-500`}>{r.entry_by}</td>
+                        <td className={`${tdBase} sticky right-0 z-[10] bg-white group-hover:bg-slate-50`}>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => { setEditRec(r); setFormOpen(true); }} title="Edit" className="p-1.5 rounded hover:bg-slate-100 transition-colors"><Pencil size={14} className="text-slate-500" /></button>
+                            <button onClick={() => setDelId(r.id)} title="Delete" className="p-1.5 rounded hover:bg-red-50 transition-colors"><Trash2 size={14} className="text-red-400" /></button>
+                            <button onClick={() => setLogRec(r)} title="Log" className="p-1.5 rounded hover:bg-violet-50 transition-colors"><ScrollText size={14} className="text-violet-500" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* ── Pagination ── */}
+              <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-white">
+                <span className="text-[13px] text-slate-500 min-w-[140px]">
+                  {filtered.length === 0 ? "0 items" : `${(safePage-1)*pageSize+1}-${Math.min(safePage*pageSize,filtered.length)} of ${filtered.length} items`}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setPage(1)} disabled={safePage===1}
+                    className="w-8 h-8 flex items-center justify-center rounded text-slate-400 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-[14px] font-medium">«</button>
+                  <button onClick={() => setPage(p=>Math.max(1,p-1))} disabled={safePage===1}
+                    className="w-8 h-8 flex items-center justify-center rounded text-slate-400 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-[14px]">‹</button>
+                  {pageNums.map((n,i) => n === "…"
+                    ? <span key={`e${i}`} className="w-8 h-8 flex items-center justify-center text-slate-400 text-[13px]">...</span>
+                    : <button key={n} onClick={() => setPage(n)}
+                        className={`w-8 h-8 flex items-center justify-center rounded text-[13px] font-medium transition-colors
+                          ${n === safePage ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{n}</button>
+                  )}
+                  <button onClick={() => setPage(p=>Math.min(totalPages,p+1))} disabled={safePage===totalPages}
+                    className="w-8 h-8 flex items-center justify-center rounded text-slate-400 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-[14px]">›</button>
+                  <button onClick={() => setPage(totalPages)} disabled={safePage===totalPages}
+                    className="w-8 h-8 flex items-center justify-center rounded text-slate-400 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed text-[14px] font-medium">»</button>
+                </div>
+                <div className="flex items-center gap-2 min-w-[140px] justify-end">
+                  <div className="relative">
+                    <select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
+                      className="h-8 pl-3 pr-8 rounded border border-slate-200 text-[13px] text-slate-600 bg-white outline-none cursor-pointer appearance-none">
+                      {[10,20,30,40,50].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  </div>
+                </div>
+              </div>
             </div>
+            <p className="text-[11px] text-slate-400 text-center">
+              Bulk upload columns: <b>Order No</b> · <b>Order Type</b> · <b>Entity Code</b> · <b>Site Code</b> · <b>Vendor Name</b> · <b>Subject</b> · <b>Order Value</b> · <b>Order Date</b> · <b>Prepared In</b>
+            </p>
           </div>
-          <p className="mt-3 text-[11px] text-slate-400 text-center">
-            Bulk upload columns: <b>Order No</b> · <b>Entity Code</b> · <b>Site Code</b> · <b>Vendor Name</b> · <b>Subject</b> · <b>Order Value</b> · <b>Order Date</b>
-          </p>
-        </div>
+          );
+        })()}
       </>)}
 
       {/* ── Delete Confirm ────────────────────────────────────────────────── */}
