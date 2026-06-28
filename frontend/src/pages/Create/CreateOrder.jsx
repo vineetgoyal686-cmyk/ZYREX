@@ -8,7 +8,7 @@ import ProjectSelect from "../../components/ProjectSelect";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 import ViewOrder from "../Procurement/ViewOrder";
-import { preloadOrderDetails, seedOrderDetails } from "../Procurement/orderDetailsCache";
+import { preloadOrderDetails, seedOrderDetails, getCachedOrderDetails } from "../Procurement/orderDetailsCache";
 import { normalizeOrderSite, getOrderSiteCode } from "../../utils/orderSite";
 import { authFetch, getValidToken } from "../../utils/authFetch";
 
@@ -982,8 +982,15 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const fetchOrderForEdit = async () => {
     setLoading(true);
     try {
-      const res = await authFetch(`${API}/api/orders/${editOrderId}?lean=1`);
-      const { order, items: rawItems } = await res.json();
+      // Use cache if already preloaded (hover triggered preload), else fetch fresh
+      const cached = getCachedOrderDetails(editOrderId);
+      let order, rawItems;
+      if (cached && !cached.__partial) {
+        ({ order, items: rawItems } = cached);
+      } else {
+        const res = await authFetch(`${API}/api/orders/${editOrderId}?lean=1`);
+        ({ order, items: rawItems } = await res.json());
+      }
       setIsRecalledEdit(hasRecallHistory(order));
 
       // 1. Map Header
@@ -5311,7 +5318,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                                   </button>
                                 )}
                                 {canEditOrder(o) && (
-                                  <button onClick={() => onEditClick(o.id)}
+                                  <button
+                                    onMouseEnter={() => preloadOrderDetails(o.id).catch(() => {})}
+                                    onClick={() => { preloadOrderDetails(o.id).catch(() => {}); onEditClick(o.id); }}
                                     className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-sky-600 hover:border-sky-200 hover:bg-sky-50 transition-all shadow-sm"
                                     title="Full Edit">
                                     <Pencil size={13} />
