@@ -8,7 +8,7 @@ const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov
 // 60-second in-memory cache for global stats (expensive query)
 let globalStatsCache = null;
 let globalStatsCacheAt = 0;
-const CACHE_TTL = 60 * 1000;
+const CACHE_TTL = 5 * 60 * 1000;
 
 /* GET /api/dashboard/global-stats */
 router.get("/global-stats", requireAuth, async (req, res) => {
