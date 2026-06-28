@@ -184,7 +184,7 @@ function AppLayout({
     if (activeTab === "audit") return <ComingSoon label="Audit" />;
 
     // Project-specific tabs
-    if (!selectedProject || selectedProject === "All Project") {
+    if (!selectedProject || selectedProject === "All Project" || selectedProject === "select-project") {
       return (
         <div className="flex min-h-screen items-center justify-center p-4 md:p-10 bg-[#f8fafc]">
           <div className="bg-white p-8 md:p-20 rounded-2xl md:rounded-[3rem] shadow-sm border border-slate-100 flex items-center justify-center w-full max-w-4xl">
@@ -437,7 +437,7 @@ function App() {
   const handleTabChange = (tab) => {
     const isProjectTab = !!PROJECT_TAB_TO_SUB[tab];
     if (isProjectTab && (!selectedProject || selectedProject === "All Project")) {
-      // Project-specific tab clicked but no project selected — do nothing
+      navigate(`/p/select-project${PROJECT_TAB_TO_SUB[tab]}`);
       return;
     }
     const path = buildPath(tab, selectedProject);

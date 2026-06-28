@@ -378,7 +378,7 @@ export default React.memo(function Sidebar({
   const RowButton = ({ row, nested = false }) => {
     if (!isTabVisible(row.id)) return null;
     const Icon = row.icon || iconById[row.id];
-    const isActive = activeTab === row.id || 
+    const isActive = activeTab === row.id ||
                     (row.id === "approvals" && ["approvals", "intake", "orders", "payments", "amendments"].some(t => activeTab === t || activeTab.startsWith(t + "__")));
     return (
       <Tip label={row.label} show={collapsed}>
@@ -561,6 +561,16 @@ export default React.memo(function Sidebar({
                     exit={{ opacity: 0, y: -4 }}
                     className="thin-scrollbar mt-1.5 max-h-56 overflow-y-auto rounded-md border border-cyan-400/18 bg-[#071827] p-1 shadow-xl"
                   >
+                    {selectedProject && (
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedProject(null); setProjOpen(false); }}
+                        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-slate-500 hover:bg-rose-500/10 hover:text-rose-400 transition-colors border-b border-cyan-400/10 mb-1"
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
+                        <span>None</span>
+                      </button>
+                    )}
                     {visibleProjects.map((p) => {
                       const name = typeof p === "string" ? p : p.name;
                       return (
