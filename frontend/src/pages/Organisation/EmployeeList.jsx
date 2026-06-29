@@ -118,6 +118,7 @@ function EmployeeDetail({ emp, imgUrl, onBack, onEdit, onDelete }) {
               {emp.department && <span className="inline-flex items-center gap-1 text-[11px] text-slate-400"><Briefcase size={10} />{emp.department}</span>}
               {div && <span className="inline-flex items-center gap-1 text-[11px] text-slate-400"><Building2 size={10} />{div}</span>}
               {emp.employeeId && <code className="text-[10px] text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-mono font-bold">{emp.employeeId}</code>}
+              {emp.contactCode && <code className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-mono font-bold">{emp.contactCode}</code>}
             </div>
           </div>
         </div>
@@ -854,7 +855,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
           <table className="w-full text-sm">
             <thead>
               <tr className="text-[11px] uppercase tracking-wide text-slate-500" style={{ background: "rgb(243,243,245)" }}>
-                <th className="px-4 py-3 text-center font-semibold w-12">S.No</th>
+                <th className="px-4 py-3 text-left font-semibold w-24">Contact ID</th>
                 <th className="px-4 py-3 text-left font-semibold w-28">Emp ID</th>
                 <th className="px-4 py-3 text-left font-semibold">Name</th>
                 <th className="px-4 py-3 text-left font-semibold">Division</th>
@@ -870,7 +871,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                 const div = emp.division || emp.company || "";
                 return (
                   <tr key={emp.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => setSelected(emp)}>
-                    <td className="px-4 py-3 text-center text-xs text-slate-400">{(page - 1) * PER_PAGE + i + 1}</td>
+                    <td className="px-4 py-3 font-mono text-xs font-bold text-emerald-700">{emp.contactCode || "—"}</td>
                     <td className="px-4 py-3 font-mono text-xs text-slate-500">{emp.employeeId || "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
