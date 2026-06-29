@@ -4449,8 +4449,8 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       "Order Notes": isPO
         ? "Deliver at site gate, Payment net 30, Quality check mandatory, Insurance included"
         : "Scraping of old paint, Application of primer coat, Final water-proofing coat with warranty",
-      "TC ID": "TC-001",            // V1 (latest if no version specified — uses base record)
-      "Payment Terms ID": "PAY-001/V2", // V2 of PAY-001
+      "TC ID": "TC-001",
+      "Payment Terms ID": "PAY-001",
       "Govern Laws ID": "GOV-001",
       "Annexure ID": "",
     };
