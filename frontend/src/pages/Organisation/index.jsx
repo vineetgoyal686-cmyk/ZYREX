@@ -130,7 +130,7 @@ function OrgDetail({ org, onBack, currentUser }) {
   };
 
   return (
-    <div className="flex w-full min-w-0 flex-1 min-h-0">
+    <div className="flex w-full min-w-0 flex-1">
 
       {/* Toast notification */}
       {toast && (
@@ -217,7 +217,7 @@ function OrgDetail({ org, onBack, currentUser }) {
       </div>
 
       {/* Main content */}
-      <div className="min-w-0 flex-1 flex flex-col overflow-y-auto">
+      <div className="min-w-0 flex-1 flex flex-col">
         {/* Per-tab header */}
         <div className="flex items-center justify-between px-5 sm:px-6 py-3.5 bg-white border-b border-slate-200 sticky top-0 z-10 gap-3">
           <div className="flex items-center gap-2.5">
@@ -312,9 +312,9 @@ export default function Organisation({ currentUser }) {
   const [showAddOrg,   setShowAddOrg]   = useState(false);
 
   return (
-    <div className={`w-full min-w-0 flex flex-col bg-[#f0f2f5] ${selectedOrg ? "h-full" : "min-h-full"}`}>
+    <div className="w-full min-w-0 min-h-full flex flex-col bg-[#f0f2f5]">
       {selectedOrg ? (
-        <div className="flex w-full min-w-0 flex-1 min-h-0">
+        <div className="flex w-full min-w-0 flex-1">
           <OrgDetail org={selectedOrg} onBack={() => setSelectedOrg(null)} currentUser={currentUser} />
         </div>
       ) : (
