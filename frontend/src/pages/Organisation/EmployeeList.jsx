@@ -117,7 +117,6 @@ function EmployeeDetail({ emp, imgUrl, onBack, onEdit, onDelete }) {
             <div className="flex items-center gap-3 mt-1.5 flex-wrap">
               {emp.department && <span className="inline-flex items-center gap-1 text-[11px] text-slate-400"><Briefcase size={10} />{emp.department}</span>}
               {div && <span className="inline-flex items-center gap-1 text-[11px] text-slate-400"><Building2 size={10} />{div}</span>}
-              {emp.employeeId && <code className="text-[10px] text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-mono font-bold">{emp.employeeId}</code>}
               {emp.contactCode && <code className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-mono font-bold">{emp.contactCode}</code>}
             </div>
           </div>
