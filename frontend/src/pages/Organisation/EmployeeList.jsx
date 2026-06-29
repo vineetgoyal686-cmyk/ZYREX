@@ -767,8 +767,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         </div>
       )}
 
-      {/* Filters row — sticky below tab header, bleeds out of parent padding */}
-      <div className="sticky top-[64px] z-[9] bg-white border-b border-slate-200 -mx-4 sm:-mx-5 lg:-mx-6 -mt-5 px-4 sm:px-5 lg:px-6 py-3 flex items-center gap-3">
+      {/* Filters row */}
+      <div className="bg-white rounded-lg border border-slate-200 px-4 py-3 flex items-center gap-3">
         {/* Search — left, fixed width */}
         <div className="relative w-52">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -851,10 +851,10 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       ) : (
 
         /* ── TABLE VIEW ── */
-        <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
+        <div className="bg-white rounded-lg border border-slate-200 flex flex-col" style={{ height: "calc(100svh - 185px)" }}>
+          <div className="overflow-auto flex-1">
             <table className="w-full text-left border-separate border-spacing-0 min-w-[1000px]">
-              <thead>
+              <thead className="sticky top-0 z-[10]">
                 <tr className="text-[11px] uppercase tracking-wider text-slate-500">
                   <th style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[30]">Contact ID</th>
                   <th style={{ minWidth: 180, left: 110 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[30]">Name</th>
@@ -901,7 +901,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
             </table>
           </div>
 
-          {/* Pagination */}
+          {/* Pagination — always visible, outside scroll */}
           <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-slate-400">Rows per page:</span>
