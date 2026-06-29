@@ -877,7 +877,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                   ].filter(Boolean).join("\n") || "No log available";
                   return (
                     <tr key={emp.id} className="group cursor-pointer" onClick={() => setSelected(emp)}>
-                      <td style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 border-b border-r border-slate-200 font-mono text-xs font-semibold text-slate-700 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[20]">{emp.contactCode || "—"}</td>
+                      <td style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 border-b border-r border-slate-200 font-mono text-xs text-slate-500 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[20]">{emp.contactCode || "—"}</td>
                       <td style={{ minWidth: 180, left: 110 }} className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[20]">
                         <span className="font-semibold text-slate-800 text-[13px]">{emp.personName}</span>
                       </td>
