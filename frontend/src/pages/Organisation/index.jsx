@@ -130,7 +130,7 @@ function OrgDetail({ org, onBack, currentUser }) {
   };
 
   return (
-    <div className="flex w-full min-w-0 flex-1">
+    <div className="flex w-full min-w-0 flex-1 min-h-0">
 
       {/* Toast notification */}
       {toast && (
@@ -312,9 +312,9 @@ export default function Organisation({ currentUser }) {
   const [showAddOrg,   setShowAddOrg]   = useState(false);
 
   return (
-    <div className="w-full min-w-0 min-h-full flex flex-col bg-[#f0f2f5]">
+    <div className={`w-full min-w-0 flex flex-col bg-[#f0f2f5] ${selectedOrg ? "h-full" : "min-h-full"}`}>
       {selectedOrg ? (
-        <div className="flex w-full min-w-0 flex-1">
+        <div className="flex w-full min-w-0 flex-1 min-h-0">
           <OrgDetail org={selectedOrg} onBack={() => setSelectedOrg(null)} currentUser={currentUser} />
         </div>
       ) : (
