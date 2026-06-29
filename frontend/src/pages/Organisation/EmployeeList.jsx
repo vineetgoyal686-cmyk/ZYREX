@@ -856,47 +856,45 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
             <table className="w-full text-left border-separate border-spacing-0 min-w-[1000px]">
               <thead>
                 <tr className="text-[11px] uppercase tracking-wider text-slate-500">
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 w-[100px] sticky left-0 z-[30]">Contact ID</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 min-w-[180px] sticky left-[100px] z-[30]">Name</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 w-[110px]">Emp ID</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 min-w-[150px]">Division</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 min-w-[130px]">Department</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 min-w-[160px]">Designation</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 w-[80px] text-center">Grade</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 w-[100px] text-center">Status</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-l border-slate-200 w-[110px] text-center sticky right-0 z-[30]">Action</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky left-0 z-[30]">Contact ID</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap min-w-[180px] sticky left-[108px] z-[30]">Name</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Emp ID</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Division</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Department</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Designation</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Grade</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Status</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-l border-slate-200 whitespace-nowrap text-center sticky right-0 z-[30]">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {paginated.map((emp) => {
                   const div = emp.division || emp.company || "";
                   const rowBg = "bg-white hover:bg-slate-50";
-                  const td = `px-4 py-3 border-b border-r border-slate-200 text-[13px] text-slate-600 ${rowBg}`;
+                  const td = `px-4 py-3 border-b border-r border-slate-200 text-[13px] text-slate-600 whitespace-nowrap ${rowBg}`;
                   const logTitle = [
                     emp.createdByName ? `Added by: ${emp.createdByName}` : "",
                     emp.createdAt ? `On: ${new Date(emp.createdAt).toLocaleString("en-IN", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" })}` : "",
-                  ].filter(Boolean).join("\n");
+                  ].filter(Boolean).join("\n") || "No log available";
                   return (
                     <tr key={emp.id} className="cursor-pointer transition-colors" onClick={() => setSelected(emp)}>
-                      <td className={`px-4 py-3 border-b border-r border-slate-200 font-mono text-xs font-bold text-emerald-700 sticky left-0 z-[20] ${rowBg}`}>{emp.contactCode || "—"}</td>
-                      <td className={`px-4 py-3 border-b border-r border-slate-200 min-w-[180px] sticky left-[100px] z-[20] ${rowBg}`}>
+                      <td className={`px-4 py-3 border-b border-r border-slate-200 font-mono text-xs font-semibold text-slate-700 whitespace-nowrap sticky left-0 z-[20] ${rowBg}`}>{emp.contactCode || "—"}</td>
+                      <td className={`px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap min-w-[180px] sticky left-[108px] z-[20] ${rowBg}`}>
                         <div className="flex items-center gap-2.5">
                           <Avatar name={emp.personName} size="sm" imgUrl={imgUrls[emp.id]} />
                           <span className="font-semibold text-slate-800 text-[13px]">{emp.personName}</span>
                         </div>
                       </td>
-                      <td className={`${td} font-mono text-xs text-slate-500`}>{emp.employeeId || <span className="text-slate-300">—</span>}</td>
-                      <td className={td}>{div || <span className="text-slate-300">—</span>}</td>
-                      <td className={td}>{emp.department || <span className="text-slate-300">—</span>}</td>
-                      <td className={td}>{emp.designation || <span className="text-slate-300">—</span>}</td>
+                      <td className={`${td} font-mono text-xs`}>{emp.employeeId || "—"}</td>
+                      <td className={td}>{div || "—"}</td>
+                      <td className={td}>{emp.department || "—"}</td>
+                      <td className={td}>{emp.designation || "—"}</td>
                       <td className={`${td} text-center`}><GradeBadge grade={emp.grade} /></td>
                       <td className={`${td} text-center`}><StatusBadge status={emp.status} /></td>
-                      <td className={`px-4 py-3 border-b border-l border-slate-200 text-center sticky right-0 z-[20] ${rowBg}`} onClick={e => e.stopPropagation()}>
+                      <td className={`px-4 py-3 border-b border-l border-slate-200 text-center whitespace-nowrap sticky right-0 z-[20] ${rowBg}`} onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={() => openEdit(emp)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Edit"><Edit2 size={13} /></button>
-                          {logTitle && (
-                            <button className="p-1.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors" title={logTitle}><Clock size={13} /></button>
-                          )}
+                          <button className="p-1.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors" title={logTitle}><Clock size={13} /></button>
                           <button onClick={() => handleDelete(emp.id)} className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="Delete"><Trash2 size={13} /></button>
                         </div>
                       </td>
