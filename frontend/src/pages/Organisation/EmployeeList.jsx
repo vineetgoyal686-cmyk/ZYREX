@@ -857,7 +857,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
               <thead>
                 <tr className="text-[11px] uppercase tracking-wider text-slate-500">
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap w-[110px] sticky left-0 z-[30]">Contact ID</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap min-w-[180px] sticky left-[110px] z-[30]">Name</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap min-w-[180px]">Name</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Emp ID</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Division</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Department</th>
@@ -878,7 +878,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                   return (
                     <tr key={emp.id} className="group cursor-pointer" onClick={() => setSelected(emp)}>
                       <td className="px-4 py-3 border-b border-r border-slate-200 font-mono text-xs font-semibold text-slate-700 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky left-0 z-[20] w-[110px]">{emp.contactCode || "—"}</td>
-                      <td className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap min-w-[180px] bg-white group-hover:bg-slate-50 transition-colors sticky left-[110px] z-[20]">
+                      <td className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap min-w-[180px] bg-white group-hover:bg-slate-50 transition-colors">
                         <span className="font-semibold text-slate-800 text-[13px]">{emp.personName}</span>
                       </td>
                       <td className={`${td} font-mono text-xs`}>{emp.employeeId || "—"}</td>
