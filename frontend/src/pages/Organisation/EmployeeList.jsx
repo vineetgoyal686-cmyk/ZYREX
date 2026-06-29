@@ -767,8 +767,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         </div>
       )}
 
-      {/* Filters row */}
-      <div className="bg-white rounded-lg border border-slate-200 px-4 py-3 flex items-center gap-3">
+      {/* Filters row — sticky below tab header, bleeds out of parent padding */}
+      <div className="sticky top-[64px] z-[9] bg-white border-b border-slate-200 -mx-4 sm:-mx-5 lg:-mx-6 -mt-5 px-4 sm:px-5 lg:px-6 py-3 flex items-center gap-3">
         {/* Search — left, fixed width */}
         <div className="relative w-52">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
