@@ -1066,16 +1066,23 @@ router.post("/bulk-import", async (req, res) => {
         const m = tok.match(/^([A-Z]+-\d+)(?:\/V(\d+))?$/i);
         if (m) {
           const code = m[1].toUpperCase();
-          const ver  = m[2] ? parseInt(m[2]) : 1;
-          const cl   = clauseByCode.get(code);
+          const explicitVer = m[2] ? parseInt(m[2]) : null;
+          const cl = clauseByCode.get(code);
           if (cl) {
-            const versions = versionMap.get(cl.id) || {};
-            const points = versions[ver] || (ver === 1 ? (Array.isArray(cl.points) ? cl.points : []) : []);
+            let points;
+            if (explicitVer !== null) {
+              // Specific version requested — look in clause_versions history
+              const versions = versionMap.get(cl.id) || {};
+              points = versions[explicitVer] || [];
+            } else {
+              // No version specified — use current active content (clauses.points)
+              points = Array.isArray(cl.points) ? cl.points : [];
+            }
             if (points && points.length) {
               pointsOut.push(...points);
               refs.push({
                 type: cl.type || expectedType,
-                code: ver > 1 ? `${code}/V${ver}` : code,
+                code: explicitVer ? `${code}/V${explicitVer}` : code,
                 category: cl.category || "",
                 title: cl.title || "",
                 points,
