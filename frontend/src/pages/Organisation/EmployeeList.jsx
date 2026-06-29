@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   Search, Plus, X, Edit2, Trash2, Loader2, ChevronLeft,
   BadgeCheck, Calendar, UserCheck, MapPin,
-  Briefcase, Building2, ChevronDown, Users,
+  Briefcase, Building2, ChevronDown, Users, Clock,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -468,6 +468,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const [editId,     setEditId]    = useState(null);
   const [saving,     setSaving]    = useState(false);
   const [page,       setPage]      = useState(1);
+  const [perPage,    setPerPage]   = useState(20);
   const [imgUrls,    setImgUrls]   = useState({});
   const [selectedImgUrl, setSelectedImgUrl] = useState(null);
   const [toast,      setToast]     = useState(null);
@@ -605,8 +606,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     );
   });
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+  const paginated  = filtered.slice((page - 1) * perPage, page * perPage);
 
   useEffect(() => { onCountChange?.(filtered.length); }, [filtered.length]);
 
@@ -851,56 +852,74 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
 
         /* ── TABLE VIEW ── */
         <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[11px] uppercase tracking-wide text-slate-500" style={{ background: "rgb(243,243,245)" }}>
-                <th className="px-4 py-3 text-left font-semibold w-24">Contact ID</th>
-                <th className="px-4 py-3 text-left font-semibold w-28">Emp ID</th>
-                <th className="px-4 py-3 text-left font-semibold">Name</th>
-                <th className="px-4 py-3 text-left font-semibold">Division</th>
-                <th className="px-4 py-3 text-left font-semibold">Department</th>
-                <th className="px-4 py-3 text-left font-semibold">Designation</th>
-                <th className="px-4 py-3 text-center font-semibold w-20">Grade</th>
-                <th className="px-4 py-3 text-center font-semibold w-28">Status</th>
-                <th className="px-4 py-3 text-right font-semibold w-20">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {paginated.map((emp, i) => {
-                const div = emp.division || emp.company || "";
-                return (
-                  <tr key={emp.id} className="hover:bg-slate-50 transition-colors cursor-pointer" onClick={() => setSelected(emp)}>
-                    <td className="px-4 py-3 font-mono text-xs font-bold text-emerald-700">{emp.contactCode || "—"}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{emp.employeeId || "—"}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2.5">
-                        <Avatar name={emp.personName} size="sm" imgUrl={imgUrls[emp.id]} />
-                        <span className="font-semibold text-slate-800 text-[13px]">{emp.personName}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 text-[13px]">{div || <span className="text-slate-300">—</span>}</td>
-                    <td className="px-4 py-3 text-slate-600 text-[13px]">{emp.department || <span className="text-slate-300">—</span>}</td>
-                    <td className="px-4 py-3 text-slate-600 text-[13px]">{emp.designation || <span className="text-slate-300">—</span>}</td>
-                    <td className="px-4 py-3 text-center"><GradeBadge grade={emp.grade} /></td>
-                    <td className="px-4 py-3 text-center"><StatusBadge status={emp.status} /></td>
-                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => openEdit(emp)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"><Edit2 size={13} /></button>
-                        <button onClick={() => handleDelete(emp.id)} className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 size={13} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-separate border-spacing-0 min-w-[1000px]">
+              <thead>
+                <tr className="text-[11px] uppercase tracking-wider text-slate-500">
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 w-[100px] sticky left-0 z-[30]">Contact ID</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 min-w-[180px] sticky left-[100px] z-[30]">Name</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 w-[110px]">Emp ID</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 min-w-[150px]">Division</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 min-w-[130px]">Department</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 min-w-[160px]">Designation</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 w-[80px] text-center">Grade</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 w-[100px] text-center">Status</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-l border-slate-200 w-[110px] text-center sticky right-0 z-[30]">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginated.map((emp) => {
+                  const div = emp.division || emp.company || "";
+                  const rowBg = "bg-white hover:bg-slate-50";
+                  const td = `px-4 py-3 border-b border-r border-slate-200 text-[13px] text-slate-600 ${rowBg}`;
+                  const logTitle = [
+                    emp.createdByName ? `Added by: ${emp.createdByName}` : "",
+                    emp.createdAt ? `On: ${new Date(emp.createdAt).toLocaleString("en-IN", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" })}` : "",
+                  ].filter(Boolean).join("\n");
+                  return (
+                    <tr key={emp.id} className="cursor-pointer transition-colors" onClick={() => setSelected(emp)}>
+                      <td className={`px-4 py-3 border-b border-r border-slate-200 font-mono text-xs font-bold text-emerald-700 sticky left-0 z-[20] ${rowBg}`}>{emp.contactCode || "—"}</td>
+                      <td className={`px-4 py-3 border-b border-r border-slate-200 min-w-[180px] sticky left-[100px] z-[20] ${rowBg}`}>
+                        <div className="flex items-center gap-2.5">
+                          <Avatar name={emp.personName} size="sm" imgUrl={imgUrls[emp.id]} />
+                          <span className="font-semibold text-slate-800 text-[13px]">{emp.personName}</span>
+                        </div>
+                      </td>
+                      <td className={`${td} font-mono text-xs text-slate-500`}>{emp.employeeId || <span className="text-slate-300">—</span>}</td>
+                      <td className={td}>{div || <span className="text-slate-300">—</span>}</td>
+                      <td className={td}>{emp.department || <span className="text-slate-300">—</span>}</td>
+                      <td className={td}>{emp.designation || <span className="text-slate-300">—</span>}</td>
+                      <td className={`${td} text-center`}><GradeBadge grade={emp.grade} /></td>
+                      <td className={`${td} text-center`}><StatusBadge status={emp.status} /></td>
+                      <td className={`px-4 py-3 border-b border-l border-slate-200 text-center sticky right-0 z-[20] ${rowBg}`} onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1">
+                          <button onClick={() => openEdit(emp)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Edit"><Edit2 size={13} /></button>
+                          {logTitle && (
+                            <button className="p-1.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors" title={logTitle}><Clock size={13} /></button>
+                          )}
+                          <button onClick={() => handleDelete(emp.id)} className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="Delete"><Trash2 size={13} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
           {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
-              <p className="text-[11px] text-slate-400">
-                Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, filtered.length)} of {filtered.length}
-              </p>
+          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-400">Rows per page:</span>
+              <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600 bg-white focus:outline-none">
+                {[10, 20, 30, 40, 50].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <span className="text-[11px] text-slate-400">
+                {filtered.length > 0 ? `${(page - 1) * perPage + 1}–${Math.min(page * perPage, filtered.length)} of ${filtered.length}` : "0 results"}
+              </span>
+            </div>
+            {totalPages > 1 && (
               <div className="flex items-center gap-1">
                 <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
                   className="px-2.5 py-1 text-xs border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 transition-colors">Prev</button>
@@ -916,8 +935,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                 <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
                   className="px-2.5 py-1 text-xs border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 transition-colors">Next</button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 
