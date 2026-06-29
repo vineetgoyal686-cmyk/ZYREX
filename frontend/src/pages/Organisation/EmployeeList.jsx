@@ -880,10 +880,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                     <tr key={emp.id} className="cursor-pointer transition-colors" onClick={() => setSelected(emp)}>
                       <td className={`px-4 py-3 border-b border-r border-slate-200 font-mono text-xs font-semibold text-slate-700 whitespace-nowrap sticky left-0 z-[20] ${rowBg}`}>{emp.contactCode || "—"}</td>
                       <td className={`px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap min-w-[180px] sticky left-[108px] z-[20] ${rowBg}`}>
-                        <div className="flex items-center gap-2.5">
-                          <Avatar name={emp.personName} size="sm" imgUrl={imgUrls[emp.id]} />
-                          <span className="font-semibold text-slate-800 text-[13px]">{emp.personName}</span>
-                        </div>
+                        <span className="font-semibold text-slate-800 text-[13px]">{emp.personName}</span>
                       </td>
                       <td className={`${td} font-mono text-xs`}>{emp.employeeId || "—"}</td>
                       <td className={td}>{div || "—"}</td>
