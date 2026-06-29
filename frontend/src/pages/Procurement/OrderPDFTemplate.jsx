@@ -158,6 +158,12 @@ const OrderPDFTemplate = ({ order, items = [], comp = {}, vend = {}, site = {}, 
 
   const totals = order.totals || {};
   const isSupply = order.order_type === "Supply";
+  const showSpec = isSupply && (order.items || []).some(it => {
+    const d = it.description;
+    if (!d || d === "--") return false;
+    const s = typeof d === "string" ? d.replace(/<[^>]*>/g, "").trim() : "";
+    return s.length > 0 && s !== "--";
+  });
   const FALLBACK = "--";
   const companyDisplayName = comp.companyName || comp.company_name || "Company";
   const vendorDisplayName = vend.vendorName || vend.vendor_name || "Vendor";
@@ -1071,14 +1077,14 @@ table tbody td[rowspan] {
   const totalPx = 702;
   const remainingPx = Math.max(totalPx - fixedPx, 100);
 
-  // For Supply: Item Name gets 32%, Specification gets 68%
+  // For Supply with spec: Item Name gets 39%, Specification gets 61%
   const itemNamePx = Math.round(remainingPx * 0.39);
   const specPx = remainingPx - itemNamePx;
 
   return (
     <colgroup>
       <col style={{ width: '32px' }} />
-      {isSupply ? (
+      {showSpec ? (
         <>
           <col style={{ width: `${itemNamePx}px` }} />
           <col style={{ width: `${specPx}px` }} />
@@ -1300,7 +1306,7 @@ table tbody td[rowspan] {
                   <thead className="bg-[#d4d4d8] border-b border-[#000000]">
                     <tr className="text-[#000000] text-[10px] font-black uppercase  leading-none">
                       <th className="border-r border-[#000000] px-2 py-1.5 text-center whitespace-nowrap" style={{ width: '1%' }}>Sr.</th>
-                      {isSupply ? (
+                      {showSpec ? (
                         <>
                           <th className="border-r border-[#000000] px-3 py-1.5 text-center" style={{ width: 'auto' }}>Item Name</th>
                           <th className="border-r border-[#000000] px-3 py-1.5 text-center" style={{ width: 'auto' }}>Specification</th>
@@ -1340,7 +1346,7 @@ table tbody td[rowspan] {
   </td>
 )}
 
-                        {isSupply ? (
+                        {showSpec ? (
                           /* Supply PO: separate Item Name (rowspan) + Specification columns */
                           <>
                             {!it._isSubRow && (
@@ -1567,7 +1573,7 @@ table tbody td[rowspan] {
                       <thead className="bg-[#d4d4d8] border-b border-[#000000]">
                         <tr className="text-[#000000] text-[10px] font-black uppercase leading-none">
                           <th className="border-r border-[#000000] px-2 py-1.5 text-center whitespace-nowrap" style={{ width: '1%' }}>Sr.</th>
-                          {isSupply ? (
+                          {showSpec ? (
                             <>
                               <th className="border-r border-[#000000] px-3 py-1.5 text-center" style={{ width: 'auto' }}>Item Name</th>
                               <th className="border-r border-[#000000] px-3 py-1.5 text-center" style={{ width: 'auto' }}>Specification</th>
@@ -1605,7 +1611,7 @@ table tbody td[rowspan] {
     {it._groupSrNo < 10 ? `0${it._groupSrNo}` : it._groupSrNo}
   </td>
 )}
-                            {isSupply ? (
+                            {showSpec ? (
                               <>
                                 {!it._isSubRow && (
   <td
