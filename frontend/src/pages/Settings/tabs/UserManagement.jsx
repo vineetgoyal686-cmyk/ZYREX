@@ -4,7 +4,7 @@ import {
   Users, UserPlus, ShieldCheck, Loader2, Save, Trash2,
   Mail, Phone, Building2, Briefcase, CheckCircle2, XCircle,
   Pencil, LayoutDashboard, ShieldAlert, SendHorizonal, Camera,
-  Copy, Check, Search, MoreHorizontal,
+  Copy, Check, Search, MoreHorizontal, ChevronDown,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../../../utils/api";
