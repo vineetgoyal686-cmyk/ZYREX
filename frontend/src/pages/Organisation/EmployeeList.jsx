@@ -854,17 +854,17 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         <div className="bg-white rounded-lg border border-slate-200 flex flex-col" style={{ height: "calc(100svh - 185px)" }}>
           <div className="overflow-auto flex-1">
             <table className="w-full text-left border-separate border-spacing-0 min-w-[1000px]">
-              <thead className="sticky top-0 z-[10]">
+              <thead className="sticky top-0 z-[20]">
                 <tr className="text-[11px] uppercase tracking-wider text-slate-500">
-                  <th style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[30]">Contact ID</th>
-                  <th style={{ minWidth: 180, left: 110 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[30]">Name</th>
+                  <th style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[22]">Contact ID</th>
+                  <th style={{ minWidth: 180, left: 110 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[22]">Name</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Emp ID</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Division</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Department</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Designation</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Grade</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Status</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-l border-slate-200 whitespace-nowrap text-center sticky right-0 z-[30]">Action</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-l border-slate-200 whitespace-nowrap text-center sticky right-0 z-[22]">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -877,8 +877,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                   ].filter(Boolean).join("\n") || "No log available";
                   return (
                     <tr key={emp.id} className="group cursor-pointer" onClick={() => setSelected(emp)}>
-                      <td style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 border-b border-r border-slate-200 text-xs font-medium text-slate-500 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[20]">{emp.contactCode || "—"}</td>
-                      <td style={{ minWidth: 180, left: 110 }} className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[20]">
+                      <td style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 border-b border-r border-slate-200 text-xs font-medium text-slate-500 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[5]">{emp.contactCode || "—"}</td>
+                      <td style={{ minWidth: 180, left: 110 }} className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[5]">
                         <span className="font-semibold text-slate-800 text-[13px]">{emp.personName}</span>
                       </td>
                       <td className={`${td} text-xs font-medium`}>{emp.employeeId || "—"}</td>
@@ -887,7 +887,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                       <td className={td}>{emp.designation || "—"}</td>
                       <td className={`${td} text-center`}><GradeBadge grade={emp.grade} /></td>
                       <td className={`${td} text-center`}><StatusBadge status={emp.status} /></td>
-                      <td className="px-4 py-3 border-b border-l border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky right-0 z-[20]" onClick={e => e.stopPropagation()}>
+                      <td className="px-4 py-3 border-b border-l border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky right-0 z-[5]" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           <button onClick={() => openEdit(emp)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Edit"><Edit2 size={13} /></button>
                           <button className="p-1.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors" title={logTitle}><Clock size={13} /></button>
