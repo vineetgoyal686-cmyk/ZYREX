@@ -881,7 +881,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                       <td style={{ minWidth: 180, left: 110 }} className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[20]">
                         <span className="font-semibold text-slate-800 text-[13px]">{emp.personName}</span>
                       </td>
-                      <td className={`${td} font-mono text-xs`}>{emp.employeeId || "—"}</td>
+                      <td className={`${td} text-xs font-medium`}>{emp.employeeId || "—"}</td>
                       <td className={td}>{div || "—"}</td>
                       <td className={td}>{emp.department || "—"}</td>
                       <td className={td}>{emp.designation || "—"}</td>
