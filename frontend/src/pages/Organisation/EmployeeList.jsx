@@ -856,8 +856,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
             <table className="w-full text-left border-separate border-spacing-0 min-w-[1000px]">
               <thead>
                 <tr className="text-[11px] uppercase tracking-wider text-slate-500">
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap w-[110px] sticky left-0 z-[30]">Contact ID</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap min-w-[180px]">Name</th>
+                  <th style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[30]">Contact ID</th>
+                  <th style={{ minWidth: 180, left: 110 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[30]">Name</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Emp ID</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Division</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Department</th>
@@ -877,8 +877,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                   ].filter(Boolean).join("\n") || "No log available";
                   return (
                     <tr key={emp.id} className="group cursor-pointer" onClick={() => setSelected(emp)}>
-                      <td className="px-4 py-3 border-b border-r border-slate-200 font-mono text-xs font-semibold text-slate-700 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky left-0 z-[20] w-[110px]">{emp.contactCode || "—"}</td>
-                      <td className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap min-w-[180px] bg-white group-hover:bg-slate-50 transition-colors">
+                      <td style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 border-b border-r border-slate-200 font-mono text-xs font-semibold text-slate-700 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[20]">{emp.contactCode || "—"}</td>
+                      <td style={{ minWidth: 180, left: 110 }} className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[20]">
                         <span className="font-semibold text-slate-800 text-[13px]">{emp.personName}</span>
                       </td>
                       <td className={`${td} font-mono text-xs`}>{emp.employeeId || "—"}</td>
