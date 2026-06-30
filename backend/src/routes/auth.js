@@ -62,13 +62,13 @@ router.post("/login", async (req, res) => {
     return res.status(403).json({ error: "You are blocked, contact to Administrator" });
   }
 
-  const signedAvatarPromise = createSignedStorageUrl(admin, "avatars", profile.avatar);
+  const signedAvatarPromise = createSignedStorageUrl(admin, "picture", profile.avatar);
   const signedProfilePermissions = { ...(profile.profile_permissions || {}) };
   const signedCoverPromise = signedProfilePermissions.ui?.cover_image
-    ? createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.cover_image)
+    ? createSignedStorageUrl(admin, "picture", signedProfilePermissions.ui.cover_image)
     : Promise.resolve(null);
   const signedSignaturePromise = signedProfilePermissions.ui?.signature
-    ? createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.signature)
+    ? createSignedStorageUrl(admin, "picture", signedProfilePermissions.ui.signature)
     : Promise.resolve(null);
 
   // Fetch user's permissions + access profile permissions at login so sidebar renders immediately
@@ -281,16 +281,16 @@ router.put("/profile", async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
 
   // Return signed URLs so frontend doesn't get raw filenames
-  const signedAvatar = await createSignedStorageUrl(admin, "avatars", data.avatar);
+  const signedAvatar = await createSignedStorageUrl(admin, "picture", data.avatar);
   const signedProfilePermissions = { ...(data.profile_permissions || {}) };
   let signedCover = null;
   if (signedProfilePermissions.ui?.cover_image) {
-    signedCover = await createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.cover_image);
+    signedCover = await createSignedStorageUrl(admin, "picture", signedProfilePermissions.ui.cover_image);
     signedProfilePermissions.ui = { ...signedProfilePermissions.ui, cover_image: signedCover };
   }
   let signedSig = null;
   if (signedProfilePermissions.ui?.signature) {
-    signedSig = await createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.signature);
+    signedSig = await createSignedStorageUrl(admin, "picture", signedProfilePermissions.ui.signature);
     signedProfilePermissions.ui = { ...signedProfilePermissions.ui, signature: signedSig };
   }
 
@@ -331,17 +331,17 @@ router.post("/avatar", async (req, res) => {
   const buffer     = Buffer.from(base64Data, "base64");
   const ext        = mimeType.split("/")[1] || "jpg";
 
-  const newFileName = `${dbUser.id}_${Date.now()}.${ext}`;
+  const newFileName = `avatar/${dbUser.id}_${Date.now()}.${ext}`;
   const admin       = getAdminClient();
 
   // Upload se pehle is user ki SAARI purani avatar files delete karo (cleanup)
   try {
-    const { data: existingFiles } = await admin.storage.from("avatars").list();
+    const { data: existingFiles } = await admin.storage.from("picture").list("avatar");
     if (existingFiles && existingFiles.length > 0) {
       const toDelete = existingFiles
         .filter(f => f.name.startsWith(`${dbUser.id}_`))
-        .map(f => f.name);
-      if (toDelete.length > 0) await admin.storage.from("avatars").remove(toDelete);
+        .map(f => `avatar/${f.name}`);
+      if (toDelete.length > 0) await admin.storage.from("picture").remove(toDelete);
     }
   } catch (err) {
     console.error("Cleanup failed, proceeding with upload:", err.message);
@@ -349,7 +349,7 @@ router.post("/avatar", async (req, res) => {
 
   // Naya file upload karo
   const { error: uploadError } = await admin.storage
-    .from("avatars")
+    .from("picture")
     .upload(newFileName, buffer, { contentType: mimeType, upsert: true });
 
   if (uploadError) return res.status(500).json({ error: `Storage upload failed: ${uploadError.message}` });
@@ -364,7 +364,7 @@ router.post("/avatar", async (req, res) => {
 
   // UI ke liye signed URL generate karo
   const { data: signedData, error: signedError } = await admin.storage
-    .from("avatars")
+    .from("picture")
     .createSignedUrl(newFileName, 315360000); // 10 years
 
   if (signedError || !signedData?.signedUrl)
@@ -397,26 +397,26 @@ router.post("/cover", async (req, res) => {
   const buffer     = Buffer.from(base64Data, "base64");
   const ext        = mimeType.split("/")[1] || "jpg";
 
-  const newFileName = `cover_${dbUser.id}_${Date.now()}.${ext}`;
+  const newFileName = `avatar/cover_${dbUser.id}_${Date.now()}.${ext}`;
   const admin       = getAdminClient();
 
   // Upload se pehle is user ki SAARI purani cover files delete karo
-  const { data: existingCovers } = await admin.storage.from("avatars").list("", { search: `cover_${dbUser.id}_` });
+  const { data: existingCovers } = await admin.storage.from("picture").list("avatar", { search: `cover_${dbUser.id}_` });
   if (existingCovers && existingCovers.length > 0) {
     const toDelete = existingCovers
       .filter(f => f.name.startsWith(`cover_${dbUser.id}_`))
-      .map(f => f.name);
-    if (toDelete.length > 0) await admin.storage.from("avatars").remove(toDelete);
+      .map(f => `avatar/${f.name}`);
+    if (toDelete.length > 0) await admin.storage.from("picture").remove(toDelete);
   }
 
   const { error: uploadError } = await admin.storage
-    .from("avatars")
+    .from("picture")
     .upload(newFileName, buffer, { contentType: mimeType });
 
   if (uploadError) return res.status(500).json({ error: `Storage upload failed: ${uploadError.message}` });
 
   const { data: signedData, error: signedError } = await admin.storage
-    .from("avatars")
+    .from("picture")
     .createSignedUrl(newFileName, 315360000); // 10 years
 
   if (signedError || !signedData?.signedUrl)
@@ -450,7 +450,7 @@ router.delete("/cover", async (req, res) => {
   const admin = getAdminClient();
 
   if (dbUser.profile_permissions?.ui?.cover_image) {
-    await removeStorageFile(admin, "avatars", dbUser.profile_permissions.ui.cover_image);
+    await removeStorageFile(admin, "picture", dbUser.profile_permissions.ui.cover_image);
   }
 
   const currentPerms = dbUser.profile_permissions || {};
@@ -484,26 +484,26 @@ router.post("/signature", async (req, res) => {
   const buffer     = Buffer.from(base64Data, "base64");
   const ext        = mimeType.split("/")[1] || "png";
 
-  const newFileName = `sig_${dbUser.id}_${Date.now()}.${ext}`;
+  const newFileName = `sign/sig_${dbUser.id}_${Date.now()}.${ext}`;
   const admin       = getAdminClient();
 
   // Purani signature files delete karo
   try {
-    const { data: existingFiles } = await admin.storage.from("avatars").list();
+    const { data: existingFiles } = await admin.storage.from("picture").list("sign");
     if (existingFiles?.length > 0) {
-      const toDelete = existingFiles.filter(f => f.name.startsWith(`sig_${dbUser.id}_`)).map(f => f.name);
-      if (toDelete.length > 0) await admin.storage.from("avatars").remove(toDelete);
+      const toDelete = existingFiles.filter(f => f.name.startsWith(`sig_${dbUser.id}_`)).map(f => `sign/${f.name}`);
+      if (toDelete.length > 0) await admin.storage.from("picture").remove(toDelete);
     }
   } catch { /* ignore cleanup errors */ }
 
   const { error: uploadError } = await admin.storage
-    .from("avatars")
+    .from("picture")
     .upload(newFileName, buffer, { contentType: mimeType, upsert: true });
 
   if (uploadError) return res.status(500).json({ error: `Storage upload failed: ${uploadError.message}` });
 
   const { data: signedData, error: signedError } = await admin.storage
-    .from("avatars")
+    .from("picture")
     .createSignedUrl(newFileName, 315360000);
 
   if (signedError || !signedData?.signedUrl)
@@ -535,7 +535,7 @@ router.delete("/signature", async (req, res) => {
   const admin = getAdminClient();
 
   if (dbUser.profile_permissions?.ui?.signature) {
-    await removeStorageFile(admin, "avatars", dbUser.profile_permissions.ui.signature);
+    await removeStorageFile(admin, "picture", dbUser.profile_permissions.ui.signature);
   }
 
   const currentPerms = dbUser.profile_permissions || {};
@@ -561,7 +561,7 @@ router.delete("/avatar", async (req, res) => {
 
   // Purani avatar file Storage se hatao
   if (dbUser.avatar) {
-    await removeStorageFile(admin, "avatars", dbUser.avatar);
+    await removeStorageFile(admin, "picture", dbUser.avatar);
   }
 
   // DB me null set karo
@@ -584,14 +584,16 @@ router.get("/refresh-avatar", async (req, res) => {
 
   if (!dbUser.avatar) return res.json({ url: null });
 
-  const filename = normalizeStoragePath(dbUser.avatar, "avatars");
+  const filename = normalizeStoragePath(dbUser.avatar, "picture");
   if (!filename) return res.json({ url: null });
 
   const admin = getAdminClient();
 
   // File actually exists ki nahi check karo
-  const { data: fileList } = await admin.storage.from("avatars").list("", { search: filename });
-  const fileExists = fileList?.some(f => f.name === filename);
+  const folder = filename.includes("/") ? filename.slice(0, filename.lastIndexOf("/")) : "";
+  const baseName = filename.includes("/") ? filename.slice(filename.lastIndexOf("/") + 1) : filename;
+  const { data: fileList } = await admin.storage.from("picture").list(folder, { search: baseName });
+  const fileExists = fileList?.some(f => f.name === baseName);
 
   if (!fileExists) {
     // File Storage se delete ho chuki — DB bhi clear karo
@@ -600,7 +602,7 @@ router.get("/refresh-avatar", async (req, res) => {
   }
 
   const { data, error } = await admin.storage
-    .from("avatars")
+    .from("picture")
     .createSignedUrl(filename, 315360000);
 
   if (error || !data?.signedUrl) return res.json({ url: null });
@@ -711,17 +713,17 @@ router.get("/me", async (req, res) => {
     .single();
 
   if (!profile) return res.status(401).json({ error: "User not found" });
-  const signedAvatar = await createSignedStorageUrl(admin, "avatars", profile.avatar);
+  const signedAvatar = await createSignedStorageUrl(admin, "picture", profile.avatar);
   const signedProfilePermissions = { ...(profile.profile_permissions || {}) };
   if (signedProfilePermissions.ui?.cover_image) {
     signedProfilePermissions.ui = {
       ...signedProfilePermissions.ui,
-      cover_image: await createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.cover_image),
+      cover_image: await createSignedStorageUrl(admin, "picture", signedProfilePermissions.ui.cover_image),
     };
   }
   let signedSignature = null;
   if (signedProfilePermissions.ui?.signature) {
-    signedSignature = await createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.signature);
+    signedSignature = await createSignedStorageUrl(admin, "picture", signedProfilePermissions.ui.signature);
     signedProfilePermissions.ui = { ...signedProfilePermissions.ui, signature: signedSignature };
   }
 
@@ -818,12 +820,12 @@ router.get("/init", async (req, res) => {
     return res.status(401).json({ error: "User not found or inactive" });
 
   const profile = profileRes.data;
-  const signedAvatar = await createSignedStorageUrl(admin, "avatars", profile.avatar);
+  const signedAvatar = await createSignedStorageUrl(admin, "picture", profile.avatar);
   const signedProfilePermissions = { ...(profile.profile_permissions || {}) };
   if (signedProfilePermissions.ui?.cover_image) {
     signedProfilePermissions.ui = {
       ...signedProfilePermissions.ui,
-      cover_image: await createSignedStorageUrl(admin, "avatars", signedProfilePermissions.ui.cover_image),
+      cover_image: await createSignedStorageUrl(admin, "picture", signedProfilePermissions.ui.cover_image),
     };
   }
 

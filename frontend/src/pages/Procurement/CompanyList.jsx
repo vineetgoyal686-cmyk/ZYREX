@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import {
   Building2,
@@ -213,7 +213,7 @@ const ImgUpload = ({ label, fieldKey, previewKey, form, setForm }) => {
       const res = await fetch(`${API}/api/procurement/sign-urls`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bucket: "procurement-images", paths: [path] }),
+        body: JSON.stringify({ bucket: "picture", paths: [path] }),
       });
       const data = await res.json().catch(() => ({}));
       const freshUrl = data.urls?.[path] || Object.values(data.urls || {})[0];

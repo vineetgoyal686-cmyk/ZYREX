@@ -998,7 +998,7 @@ export const FullViewCompanyModal = ({ company, onClose, onEdit }) => {
           const res = await fetch(`${API}/api/procurement/sign-urls`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ bucket: "procurement-images", paths: needSign }),
+            body: JSON.stringify({ bucket: "picture", paths: needSign }),
           });
           const data = await res.json().catch(() => ({}));
           urlsByPath = data.urls || {};

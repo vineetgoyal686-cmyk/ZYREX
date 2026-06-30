@@ -466,7 +466,7 @@ export default function ContactList() {
     fetch(`${API}/api/procurement/sign-urls`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bucket: "procurement-images", paths: withImg.map(c => c.profileImage) }),
+      body: JSON.stringify({ bucket: "picture", paths: withImg.map(c => c.profileImage) }),
     })
       .then(r => r.json())
       .then(d => {
@@ -484,7 +484,7 @@ export default function ContactList() {
     fetch(`${API}/api/procurement/sign-urls`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bucket: "procurement-images", paths: [selectedContact.profileImage] }),
+      body: JSON.stringify({ bucket: "picture", paths: [selectedContact.profileImage] }),
     })
       .then(r => r.json())
       .then(d => { const url = d.urls?.[selectedContact.profileImage]; if (url) setProfileImageUrl(url); })

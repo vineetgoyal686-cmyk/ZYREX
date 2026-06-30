@@ -179,9 +179,9 @@ const uploadToStorage = async (bucket, path, buffer, mimetype) => {
 };
 
 const signOrderDocUrl = (value) => createSignedStorageUrl(supabase, "procurement-docs", value);
-const signProcImageUrl = (value) => createSignedStorageUrl(supabase, "procurement-images", value);
+const signProcImageUrl = (value) => createSignedStorageUrl(supabase, "picture", value);
 const signVendorDocUrl = (value) => createSignedStorageUrl(supabase, "vendor-docs", value);
-const signAvatarUrl = (value) => createSignedStorageUrl(supabase, "avatars", value);
+const signAvatarUrl = (value) => createSignedStorageUrl(supabase, "picture", value);
 
 const signDocArray = async (docs = []) => Promise.all((Array.isArray(docs) ? docs : []).map(async doc => {
   const storagePath = normalizeStoragePath(doc.storage_path || doc.url, "procurement-docs");
@@ -338,12 +338,12 @@ const normalizeOrderSnapshotStoragePaths = (mainData = {}) => {
   if (snapshot.company) {
     snapshot.company = {
       ...snapshot.company,
-      logoUrl: normalizeStoragePath(snapshot.company.logoUrl || snapshot.company.logo_url, "procurement-images"),
-      logo_url: normalizeStoragePath(snapshot.company.logo_url || snapshot.company.logoUrl, "procurement-images"),
-      stampUrl: normalizeStoragePath(snapshot.company.stampUrl || snapshot.company.stamp_url, "procurement-images"),
-      stamp_url: normalizeStoragePath(snapshot.company.stamp_url || snapshot.company.stampUrl, "procurement-images"),
-      signUrl: normalizeStoragePath(snapshot.company.signUrl || snapshot.company.sign_url, "procurement-images"),
-      sign_url: normalizeStoragePath(snapshot.company.sign_url || snapshot.company.signUrl, "procurement-images"),
+      logoUrl: normalizeStoragePath(snapshot.company.logoUrl || snapshot.company.logo_url, "picture"),
+      logo_url: normalizeStoragePath(snapshot.company.logo_url || snapshot.company.logoUrl, "picture"),
+      stampUrl: normalizeStoragePath(snapshot.company.stampUrl || snapshot.company.stamp_url, "picture"),
+      stamp_url: normalizeStoragePath(snapshot.company.stamp_url || snapshot.company.stampUrl, "picture"),
+      signUrl: normalizeStoragePath(snapshot.company.signUrl || snapshot.company.sign_url, "picture"),
+      sign_url: normalizeStoragePath(snapshot.company.sign_url || snapshot.company.signUrl, "picture"),
     };
   }
   if (snapshot.vendor) {
@@ -1900,8 +1900,8 @@ const fetchAsDataUri = async (url) => {
   try {
     let rawBuf;
     if (!/^https?:/i.test(String(url)) || String(url).includes("/storage/v1/object/")) {
-      const path = normalizeStoragePath(url, "procurement-images");
-      const { data, error } = await supabase.storage.from("procurement-images").download(path);
+      const path = normalizeStoragePath(url, "picture");
+      const { data, error } = await supabase.storage.from("picture").download(path);
       if (error || !data) return "";
       rawBuf = Buffer.from(await data.arrayBuffer());
     } else {
@@ -1922,7 +1922,7 @@ const fetchAsDataUri = async (url) => {
 const fetchSignatureDataUri = async (filename) => {
   if (!filename) return "";
   try {
-    const { data, error } = await supabase.storage.from("avatars").download(filename);
+    const { data, error } = await supabase.storage.from("picture").download(filename);
     if (error || !data) return "";
     const rawBuf = Buffer.from(await data.arrayBuffer());
     const { buf, ct } = await compressImage(rawBuf);

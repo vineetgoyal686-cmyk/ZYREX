@@ -17,8 +17,8 @@ const upload = multer({ storage: multer.memoryStorage() });
 const uploadLogo = async (files) => {
   if (!files?.logo) return null;
   const file = files.logo[0];
-  const path = `projects/logo_${Date.now()}_${file.originalname}`;
-  return uploadStorageFile(supabase, "procurement-images", path, file.buffer, file.mimetype);
+  const path = `logo/projects/logo_${Date.now()}_${file.originalname}`;
+  return uploadStorageFile(supabase, "picture", path, file.buffer, file.mimetype);
 };
 
 /* ── GET all projects ── */
@@ -40,7 +40,7 @@ router.get("/", async (_req, res) => {
       state:       r.state        || "",
       pincode:     r.pincode      || "",
       address:     r.address      || "",
-      logoUrl:     r.logo_url ? await createSignedStorageUrl(supabase, "procurement-images", r.logo_url).catch(() => "") : "",
+      logoUrl:     r.logo_url ? await createSignedStorageUrl(supabase, "picture", r.logo_url).catch(() => "") : "",
       isActive:    r.is_active !== false,
     })));
     const result = { projects };
@@ -90,7 +90,7 @@ router.put("/:id", upload.fields([{ name: "logo", maxCount: 1 }]), async (req, r
       state:        b.state       || "",
       pincode:      b.pincode     || "",
       address:      b.address     || "",
-      logo_url:     newLogo || normalizeStoragePath(b.logoUrl, "procurement-images") || "",
+      logo_url:     newLogo || normalizeStoragePath(b.logoUrl, "picture") || "",
     }).eq("id", req.params.id);
     if (error) throw error;
     cache.bust(CACHE_KEY);

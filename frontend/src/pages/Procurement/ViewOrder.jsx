@@ -2312,9 +2312,9 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                   <p className="font-black text-slate-900 text-[13px] mb-8 uppercase tracking-widest">{comp.companyName || comp.company_name || FALLBACK}</p>
 
                   <div className="relative h-40 mb-8 flex items-center">
-                    {isIssuedLike && (issuer?.signatureUrl || comp.signUrl || comp.sign_url) ? (
+                    {isIssuedLike && issuer?.signatureUrl ? (
                       <div className="relative inline-block">
-                        <img src={issuer?.signatureUrl || comp.signUrl || comp.sign_url} alt="Signature"
+                        <img src={issuer.signatureUrl} alt="Signature"
                           className="block h-28 w-auto object-contain relative z-10" />
                         {(comp.stampUrl || comp.stamp_url) && (
                           <img src={comp.stampUrl || comp.stamp_url} alt="Stamp"

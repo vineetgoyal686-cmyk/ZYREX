@@ -499,7 +499,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     fetch(`${API}/api/procurement/sign-urls`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bucket: "procurement-images", paths: withImg.map(c => c.profileImage) }),
+      body: JSON.stringify({ bucket: "picture", paths: withImg.map(c => c.profileImage) }),
     }).then(r => r.json()).then(d => {
       const map = {};
       withImg.forEach(c => { const u = d.urls?.[c.profileImage]; if (u) map[c.id] = u; });
@@ -514,7 +514,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     fetch(`${API}/api/procurement/sign-urls`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bucket: "procurement-images", paths: [selected.profileImage] }),
+      body: JSON.stringify({ bucket: "picture", paths: [selected.profileImage] }),
     }).then(r => r.json()).then(d => {
       const url = d.urls?.[selected.profileImage];
       if (url) setSelectedImgUrl(url);

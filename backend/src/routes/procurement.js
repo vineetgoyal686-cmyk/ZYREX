@@ -71,7 +71,7 @@ const removeFromStorage = async (bucket, path) => {
   return removeStorageFile(supabase, bucket, path);
 };
 
-const signProcurementImageUrl = (value) => createSignedStorageUrl(supabase, "procurement-images", value);
+const signProcurementImageUrl = (value) => createSignedStorageUrl(supabase, "picture", value);
 const signVendorDocUrl = (value) => createSignedStorageUrl(supabase, "vendor-docs", value);
 
 /* ════════════════════════════════════
@@ -113,7 +113,7 @@ router.get("/items", async (_req, res) => {
       specifications: parseJsonArr(r.description),
       category:     r.category      || "",
       unit:         r.unit          || "",
-      imageUrl:     await createSignedStorageUrl(supabase, "procurement-images", r.image_url),
+      imageUrl:     await createSignedStorageUrl(supabase, "picture", r.image_url),
       remarks:      r.remarks       || "",
       createdById:  r.created_by_id || "",
       createdByName: r.created_by_name || "",
@@ -136,8 +136,8 @@ router.post("/items", upload.single("image"), async (req, res) => {
     let image_url        = "";
     if (req.file) {
       image_url = await uploadToStorage(
-        "procurement-images",
-        `items/${Date.now()}_${req.file.originalname}`,
+        "picture",
+        `item/${Date.now()}_${req.file.originalname}`,
         req.file.buffer, req.file.mimetype
       );
     }
@@ -164,16 +164,16 @@ router.put("/items/:id", upload.single("image"), async (req, res) => {
     const { materialName, category, unit, itemType, remarks } = req.body;
     const brands         = JSON.parse(req.body.brands         || "[]");
     const specifications = JSON.parse(req.body.specifications || "[]");
-    let image_url        = normalizeStoragePath(req.body.imageUrl, "procurement-images") || "";
+    let image_url        = normalizeStoragePath(req.body.imageUrl, "picture") || "";
 
     if (req.file) {
       if (req.body.imageUrl) {
-        await removeStorageFile(supabase, "procurement-images", req.body.imageUrl)
+        await removeStorageFile(supabase, "picture", req.body.imageUrl)
           .catch(err => console.warn("Item image cleanup failed:", err.message));
       }
       image_url = await uploadToStorage(
-        "procurement-images",
-        `items/${Date.now()}_${req.file.originalname}`,
+        "picture",
+        `item/${Date.now()}_${req.file.originalname}`,
         req.file.buffer, req.file.mimetype
       );
     }
@@ -256,7 +256,7 @@ router.delete("/items/:id", async (req, res) => {
     const { id } = req.params;
     const { data } = await supabase.schema("procurement").from("items").select("image_url").eq("id", id).single();
     if (data?.image_url) {
-      await removeStorageFile(supabase, "procurement-images", data.image_url)
+      await removeStorageFile(supabase, "picture", data.image_url)
         .catch(err => console.warn("Item image cleanup failed:", err.message));
     }
     const { error } = await supabase.schema("procurement").from("items").delete().eq("id", id);
@@ -1301,8 +1301,8 @@ const uploadCompanyImg = async (files, key, folder) => {
   if (!files?.[key]) return null;
   const file = files[key][0];
   return await uploadToStorage(
-    "procurement-images",
-    `companies/${folder}/${key}_${Date.now()}_${file.originalname}`,
+    "picture",
+    `${key}/${folder}/${key}_${Date.now()}_${file.originalname}`,
     file.buffer, file.mimetype
   );
 };
@@ -1381,9 +1381,9 @@ router.get("/companies", async (_req, res) => {
         bankCity:            r.bank_city             || "",
         bankState:           r.bank_state            || "",
         stateBillingProfiles: parseCompanyJsonArray(r.state_billing_profiles),
-        logoPath: normalizeStoragePath(r.logo_url, "procurement-images") || "",
-        stampPath: normalizeStoragePath(r.stamp_url, "procurement-images") || "",
-        signPath: normalizeStoragePath(r.sign_url, "procurement-images") || "",
+        logoPath: normalizeStoragePath(r.logo_url, "picture") || "",
+        stampPath: normalizeStoragePath(r.stamp_url, "picture") || "",
+        signPath: normalizeStoragePath(r.sign_url, "picture") || "",
         logoUrl,
         stampUrl,
         signUrl,
@@ -1458,9 +1458,9 @@ router.put("/companies/:id", companyUpload, async (req, res) => {
       gstin: b.gstin || "", pan: b.pan || "",
       pincode: b.pincode || "", state: b.state || "",
       district: b.district || "", address: b.address || "",
-      logo_url:  newLogo  || normalizeStoragePath(b.logoUrl, "procurement-images")  || "",
-      stamp_url: newStamp || normalizeStoragePath(b.stampUrl, "procurement-images") || "",
-      sign_url:  newSign  || normalizeStoragePath(b.signUrl, "procurement-images")  || "",
+      logo_url:  newLogo  || normalizeStoragePath(b.logoUrl, "picture")  || "",
+      stamp_url: newStamp || normalizeStoragePath(b.stampUrl, "picture") || "",
+      sign_url:  newSign  || normalizeStoragePath(b.signUrl, "picture")  || "",
     };
     const fullPayload = { ...basePayload, ...companyExtraPayload(b) };
     let { error } = await supabase.schema("procurement").from("companies").update(fullPayload).eq("id", id);
@@ -1690,9 +1690,9 @@ router.post("/contacts/:id/profile-image", upload.single("image"), async (req, r
     if (!req.file) return res.status(400).json({ error: "No image provided" });
 
     const ext = (req.file.originalname.split(".").pop() || "jpg").toLowerCase();
-    const storagePath = `contact-profiles/${id}.${ext}`;
+    const storagePath = `avatar/contact-profiles/${id}.${ext}`;
 
-    await uploadToStorage("procurement-images", storagePath, req.file.buffer, req.file.mimetype);
+    await uploadToStorage("picture", storagePath, req.file.buffer, req.file.mimetype);
 
     let { error } = await supabase.schema("procurement").from("contacts")
       .update({ profile_image: storagePath }).eq("id", id);
@@ -1713,7 +1713,7 @@ router.delete("/contacts/:id/profile-image", async (req, res) => {
     const { data: contact, error: fetchError } = await supabase.schema("procurement").from("contacts").select("profile_image").eq("id", id).single();
     if (fetchError) throw fetchError;
     if (contact?.profile_image) {
-      await removeFromStorage("procurement-images", contact.profile_image);
+      await removeFromStorage("picture", contact.profile_image);
     }
     const { error } = await supabase.schema("procurement").from("contacts").update({ profile_image: null }).eq("id", id);
     if (error) throw error;

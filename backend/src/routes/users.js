@@ -42,8 +42,8 @@ router.get("/", requireAuth, async (req, res) => {
     const pp = user.profile_permissions || {};
     const sigFile = pp.ui?.signature || null;
     const [signedAvatar, signedSignature] = await Promise.all([
-      createSignedStorageUrl(admin, "avatars", user.avatar),
-      sigFile ? createSignedStorageUrl(admin, "avatars", sigFile) : Promise.resolve(null),
+      createSignedStorageUrl(admin, "picture", user.avatar),
+      sigFile ? createSignedStorageUrl(admin, "picture", sigFile) : Promise.resolve(null),
     ]);
     return { ...user, avatar: signedAvatar, signature: signedSignature };
   }));
@@ -177,7 +177,7 @@ router.post("/:id/signature", requireAuth, requireAdminOrAbove, async (req, res)
   const base64Data = matches[2];
   const buffer     = Buffer.from(base64Data, "base64");
   const ext        = mimeType.split("/")[1] || "png";
-  const newFileName = `sig_${id}_${Date.now()}.${ext}`;
+  const newFileName = `sign/sig_${id}_${Date.now()}.${ext}`;
 
   const admin = getAdminClient();
 
@@ -186,21 +186,21 @@ router.post("/:id/signature", requireAuth, requireAdminOrAbove, async (req, res)
 
   // Cleanup old signature files for this user
   try {
-    const { data: existing } = await admin.storage.from("avatars").list();
+    const { data: existing } = await admin.storage.from("picture").list("sign");
     if (existing?.length > 0) {
-      const toDelete = existing.filter(f => f.name.startsWith(`sig_${id}_`)).map(f => f.name);
-      if (toDelete.length > 0) await admin.storage.from("avatars").remove(toDelete);
+      const toDelete = existing.filter(f => f.name.startsWith(`sig_${id}_`)).map(f => `sign/${f.name}`);
+      if (toDelete.length > 0) await admin.storage.from("picture").remove(toDelete);
     }
   } catch { /* ignore */ }
 
   const { error: uploadError } = await admin.storage
-    .from("avatars")
+    .from("picture")
     .upload(newFileName, buffer, { contentType: mimeType, upsert: true });
 
   if (uploadError) return res.status(500).json({ error: `Storage upload failed: ${uploadError.message}` });
 
   const { data: signedData, error: signedError } = await admin.storage
-    .from("avatars")
+    .from("picture")
     .createSignedUrl(newFileName, 315360000);
 
   if (signedError || !signedData?.signedUrl)
