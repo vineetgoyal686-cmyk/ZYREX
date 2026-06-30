@@ -74,6 +74,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
 
   /* On mount: sync current user data from DB */
   useEffect(() => {
+    let ignore = false;
     const syncProfile = async () => {
       try {
         const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
@@ -86,6 +87,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
         if (!meRes.ok) return;
         const meData = await meRes.json();
         const meUser = meData.user || {};
+        if (ignore) return; // a newer effect run already took over (e.g. React StrictMode)
 
         const updated = {
           ...u,
@@ -117,6 +119,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
           }
         }
 
+        if (ignore) return;
         localStorage.setItem("bms_user", JSON.stringify(updated));
         onProfileUpdate?.(updated);
       } catch {
@@ -124,6 +127,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
       }
     };
     syncProfile();
+    return () => { ignore = true; };
   }, []);
 
   /* Fetch designations when relevant sections become active */
