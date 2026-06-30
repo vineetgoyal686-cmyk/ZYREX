@@ -1853,8 +1853,8 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                 <div className="pt-1">
                   <p className={sectionLabelCls}>Bank Details</p>
                   <div className="space-y-1">
-                    <p className={bodyValueCls}>Beneficiary: {vend.beneficiaryName || vend.accountName || vend.vendorName || "N/A"}</p>
-                    <p className={bodyValueCls}>Bank: {vend.bankName || "N/A"}</p>
+                    <p className={bodyValueCls}>Beneficiary: {vend.beneficiaryName || vend.accountName || vend.accountHolder || vend.account_holder || vend.vendorName || vend.vendor_name || "N/A"}</p>
+                    <p className={bodyValueCls}>Bank: {vend.bankName || vend.bank_name || "N/A"}</p>
                     <p className={bodyValueCls}>IFSC: {vend.ifscCode || vend.ifsc_code || 'N/A'}</p>
                     <p className={bodyValueCls}>Account: {vend.accountNumber || vend.account_number || 'N/A'}</p>
                   </div>
