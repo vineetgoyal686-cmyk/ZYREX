@@ -522,7 +522,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     }
 
     try {
-      const json = await preloadOrderDetails(orderId, { force: true });
+      const json = await preloadOrderDetails(orderId, { force: true, lean: false });
       if (json) setData(json);
     } catch (err) {
       console.error(err);
