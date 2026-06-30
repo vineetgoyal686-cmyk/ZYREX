@@ -21,28 +21,32 @@ export const preloadOrderDetails = async (orderId, options = {}) => {
   if (!key) return null;
 
   const force = options.force === true;
-  const cached = orderDetailsCache.get(key);
-  if (cached && !cached.__partial && !force) return cached;
-  if (orderDetailsInflight.has(key)) return orderDetailsInflight.get(key);
-
   const lean = options.lean !== false;
+  // A lean=1 (quick-preview) fetch and a full fetch for the same order must
+  // not share an inflight slot — otherwise whichever started first "wins"
+  // and the other caller silently gets the wrong (lean) payload.
+  const inflightKey = `${key}:${lean ? "lean" : "full"}`;
+  const cached = orderDetailsCache.get(key);
+  if (cached && !cached.__partial && !force && (lean || !cached.__lean)) return cached;
+  if (orderDetailsInflight.has(inflightKey)) return orderDetailsInflight.get(inflightKey);
+
   const promise = authFetch(`${API}/api/orders/${orderId}${lean ? "?lean=1" : ""}`)
     .then(async (res) => {
       if (!res.ok) throw new Error("Failed to fetch order");
       const json = await res.json();
-      const fullDetails = { ...json, __partial: false };
+      const fullDetails = { ...json, __partial: false, __lean: lean };
       orderDetailsCache.set(key, fullDetails);
       return fullDetails;
     })
     .catch((err) => {
-      orderDetailsInflight.delete(key);
+      orderDetailsInflight.delete(inflightKey);
       throw err;
     })
     .finally(() => {
-      orderDetailsInflight.delete(key);
+      orderDetailsInflight.delete(inflightKey);
     });
 
-  orderDetailsInflight.set(key, promise);
+  orderDetailsInflight.set(inflightKey, promise);
   return promise;
 };
 
