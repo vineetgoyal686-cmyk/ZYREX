@@ -952,7 +952,7 @@ router.get("/:id", async (req, res) => {
       supabase.schema("procurement")
         .from("purchase_orders")
         .select(lean
-          ? "*, companies(id,company_name,company_code), vendors(id,vendor_name,vendor_code), contact_person:contacts(*)"
+          ? "*, companies(id,company_name,company_code), vendors(*), contact_person:contacts(*)"
           : "*, companies(*), vendors(*), contact_person:contacts(*)")
         .eq("id", req.params.id)
         .single(),
