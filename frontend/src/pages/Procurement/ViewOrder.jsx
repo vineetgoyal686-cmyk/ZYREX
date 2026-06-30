@@ -586,11 +586,15 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
           ? "No approval flow matched this order's conditions — moved to Pending Issue"
           : "No approval flow — moved to Pending Issue";
         console.warn("[ApprovalFlow skip]", reason, d.message);
-        await fetch(`${API}/api/orders/${orderId}`, {
+        const statusRes = await fetch(`${API}/api/orders/${orderId}`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ data: JSON.stringify({ mainData: { status: "Pending Issue", action_by: bmsUser.name || "" } }) }),
         });
+        if (!statusRes.ok) {
+          const statusErr = await statusRes.json().catch(() => ({}));
+          throw new Error(statusErr.error || "Failed to move order to Pending Issue");
+        }
       }
 
       showToast(
