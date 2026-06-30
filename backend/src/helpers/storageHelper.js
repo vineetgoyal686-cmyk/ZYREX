@@ -47,13 +47,13 @@ const createSignedStorageUrl = async (
       .from(bucket)
       .createSignedUrl(path, expiresIn);
 
-    if (error || !data?.signedUrl) {
-      // Fallback to public URL if signing fails
-      return getPublicStorageUrl(client, bucket, path);
-    }
+    // All our buckets are private — a public-URL fallback here would just
+    // produce a dead link (403) that still looks "truthy" to callers, so
+    // a missing/failed file must resolve to "" instead.
+    if (error || !data?.signedUrl) return "";
     return data.signedUrl;
   } catch (err) {
-    return getPublicStorageUrl(client, bucket, path);
+    return "";
   }
 };
 
