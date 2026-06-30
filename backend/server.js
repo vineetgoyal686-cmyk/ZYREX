@@ -25,6 +25,7 @@ const delegationsRoutes      = require("./src/routes/delegations");
 const sopRoutes              = require("./src/routes/sop");
 const dashboardRoutes        = require("./src/routes/dashboard");
 const historicalOrdersRoutes = require("./src/routes/historicalOrders");
+const contactRoutes          = require("./src/routes/contact");
 
 const app = express();
 
@@ -60,6 +61,7 @@ app.use("/api/delegations",       delegationsRoutes);
 app.use("/api/sop",               sopRoutes);
 app.use("/api/dashboard",          dashboardRoutes);
 app.use("/api/historical-orders",  historicalOrdersRoutes);
+app.use("/api/contact",            contactRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
