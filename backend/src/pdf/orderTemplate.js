@@ -36,10 +36,10 @@ const css = `
 
   table.order-frame { width: 100%; border-collapse: collapse; border: 1px solid #333; margin: -2mm 0 0; }
   table.order-frame td { border: 1px solid #333; vertical-align: top; }
-  table.order-frame .meta-td { padding: 5px 7px; vertical-align: middle; width: 50%; }
+  table.order-frame .meta-td { padding: 4px 7px; vertical-align: middle; width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 0; }
   table.order-frame .detail-td { padding: 9px 11px; width: 50%; }
-  .label { font-size: 12.5px; font-weight: 700; text-transform: none; display: inline-block; min-width: 100px; margin-right: 10px; }
-  .value { font-size: 13px; font-weight: 500; }
+  .label { font-size: 10.5px; font-weight: 700; text-transform: none; display: inline-block; min-width: 80px; margin-right: 6px; color: #555; }
+  .value { font-size: 11px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
   .details-tab {
     clip-path: polygon(0 0, 100% 0, 85% 100%, 0 100%);
     background: #000000 !important; color: #ffffff !important; padding: 3px 22px 3px 8px;
@@ -59,7 +59,7 @@ const css = `
   .subject-bar {
     border: var(--box-line); border-top: 0; background: #d4d4d8;
     padding: 6px 14px; text-align: center; margin: 0 0 8px 0;
-    font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px;
+    font-size: 12px; font-weight: 700; letter-spacing: .3px;
   }
   .subject-bar .lbl { margin-right: 8px; }
 
