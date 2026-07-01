@@ -3422,19 +3422,23 @@ const OrderDocumentsTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
 
     // Legacy single-quotation field
     if (order.quotation_url) {
+      const qRaw = decodeURIComponent(order.quotation_url.split("?")[0]);
+      const qName = qRaw.split("/").pop().replace(/^quotation_\d+_/, "") || "Quotation";
       map.quotations.push({
         id: "legacy-quotation",
         url: order.quotation_url,
-        name: "Quotation.pdf",
+        name: qName,
         frozen: true,
       });
     }
     // Legacy comparative sheet
     if (order.comparative_sheet_url) {
+      const cRaw = decodeURIComponent(order.comparative_sheet_url.split("?")[0]);
+      const cName = cRaw.split("/").pop().replace(/^comparative_\d+_/, "") || "Comparative_Sheet";
       map.comparative.push({
         id: "legacy-comparative",
         url: order.comparative_sheet_url,
-        name: "Comparative_Sheet.pdf",
+        name: cName,
         frozen: true,
       });
     }
