@@ -178,7 +178,7 @@ const uploadToStorage = async (bucket, path, buffer, mimetype) => {
   return uploadStorageFile(supabase, bucket, path, buffer, mimetype);
 };
 
-const signOrderDocUrl = (value) => createSignedStorageUrl(supabase, "procurement-docs", value);
+const signOrderDocUrl = (value) => createSignedStorageUrl(supabase, "procurement-docs", value, 60 * 60 * 24, { download: false });
 const signProcImageUrl = (value) => createSignedStorageUrl(supabase, "picture", value);
 const signVendorDocUrl = (value) => createSignedStorageUrl(supabase, "vendor-docs", value);
 const signAvatarUrl = (value) => createSignedStorageUrl(supabase, "picture", value);

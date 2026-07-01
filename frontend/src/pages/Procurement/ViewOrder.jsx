@@ -3700,8 +3700,9 @@ const DocSection = ({
 };
 
 const DocCard = ({ doc, readOnly = false, onDelete, formatBytes }) => {
-  const isPdf = /\.pdf(\?|$)/i.test(doc.name) || /\.pdf(\?|$)/i.test(doc.url || "");
-  const isImg = /\.(png|jpe?g|gif|webp|svg)(\?|$)/i.test(doc.name) || /\.(png|jpe?g|gif|webp|svg)/i.test(doc.url || "");
+  const isPdf   = /\.pdf(\?|$)/i.test(doc.name) || /\.pdf(\?|$)/i.test(doc.url || "");
+  const isExcel = /\.(xlsx?|xls)(\?|$)/i.test(doc.name) || /\.(xlsx?|xls)(\?|$)/i.test(doc.url || "");
+  const isImg   = /\.(png|jpe?g|gif|webp|svg)(\?|$)/i.test(doc.name) || /\.(png|jpe?g|gif|webp|svg)/i.test(doc.url || "");
   const sizeStr = formatBytes ? formatBytes(doc.size) : (doc.size ? `${Math.round(doc.size / 1024)} kb` : "");
   const dateStr = doc.uploaded_at
     ? new Date(doc.uploaded_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
@@ -3716,10 +3717,11 @@ const DocCard = ({ doc, readOnly = false, onDelete, formatBytes }) => {
             <img src={doc.url} alt={doc.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
           ) : (
             <>
-              <div className={`w-9 h-9 rounded-md flex items-center justify-center ${isPdf ? "bg-red-50 text-red-500" : "bg-slate-100 text-slate-500"}`}>
+              <div className={`w-9 h-9 rounded-md flex items-center justify-center ${isPdf ? "bg-red-50 text-red-500" : isExcel ? "bg-green-50 text-green-600" : "bg-slate-100 text-slate-500"}`}>
                 <FileText size={20} />
               </div>
-              {isPdf && <span className="text-[8px] font-bold uppercase tracking-widest text-red-400/80">PDF</span>}
+              {isPdf   && <span className="text-[8px] font-bold uppercase tracking-widest text-red-400/80">PDF</span>}
+              {isExcel && <span className="text-[8px] font-bold uppercase tracking-widest text-green-500/80">EXCEL</span>}
             </>
           )}
         </a>

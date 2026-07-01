@@ -37,7 +37,8 @@ const createSignedStorageUrl = async (
   client,
   bucket,
   value,
-  expiresIn = DEFAULT_SIGNED_URL_TTL_SECONDS
+  expiresIn = DEFAULT_SIGNED_URL_TTL_SECONDS,
+  { download = false } = {}
 ) => {
   const path = normalizeStoragePath(value, bucket);
   if (!path || /^data:|^blob:/i.test(path)) return path || "";
@@ -45,7 +46,7 @@ const createSignedStorageUrl = async (
   try {
     const { data, error } = await client.storage
       .from(bucket)
-      .createSignedUrl(path, expiresIn);
+      .createSignedUrl(path, expiresIn, { download });
 
     // All our buckets are private — a public-URL fallback here would just
     // produce a dead link (403) that still looks "truthy" to callers, so
