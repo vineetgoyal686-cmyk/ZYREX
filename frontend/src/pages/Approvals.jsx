@@ -204,10 +204,10 @@ export default function Approvals() {
   };
 
   const handleOrderAction = async (orderId, action, comments = "") => {
+    if (actionLoading === orderId) return; // prevent double-click
     setActionLoading(orderId);
     try {
       const token = localStorage.getItem("bms_token") || "";
-      // Map UI action names to issue-action endpoint action keys
       const actionMap = { "Issued": "issue", "Reverted": "revert", "Rejected": "reject" };
       const apiAction = actionMap[action];
       const res = await fetch(`${API}/api/orders/${orderId}/issue-action`, {
@@ -217,6 +217,10 @@ export default function Approvals() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        const toastMsg = action === "Issued" ? "Order Issued successfully!" : action === "Reverted" ? "Order reverted" : "Order rejected";
+        showToast(toastMsg, "success");
+        // Optimistically remove from list instantly, then background-refresh
+        setOrders(prev => prev.filter(o => o.id !== orderId));
         load();
       } else {
         showToast(data.error || "Action failed", "error");
