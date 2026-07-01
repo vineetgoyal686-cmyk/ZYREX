@@ -3700,9 +3700,10 @@ const DocSection = ({
 };
 
 const DocCard = ({ doc, readOnly = false, onDelete, formatBytes }) => {
-  const isPdf   = /\.pdf(\?|$)/i.test(doc.name) || /\.pdf(\?|$)/i.test(doc.url || "");
-  const isExcel = /\.(xlsx?|xls)(\?|$)/i.test(doc.name) || /\.(xlsx?|xls)(\?|$)/i.test(doc.url || "");
-  const isImg   = /\.(png|jpe?g|gif|webp|svg)(\?|$)/i.test(doc.name) || /\.(png|jpe?g|gif|webp|svg)/i.test(doc.url || "");
+  const isPdf      = /\.pdf(\?|$)/i.test(doc.name) || /\.pdf(\?|$)/i.test(doc.url || "");
+  const isExcel    = /\.(xlsx?|xls)(\?|$)/i.test(doc.name) || /\.(xlsx?|xls)(\?|$)/i.test(doc.url || "");
+  const isImg      = /\.(png|jpe?g|gif|webp|svg)(\?|$)/i.test(doc.name) || /\.(png|jpe?g|gif|webp|svg)/i.test(doc.url || "");
+  const isFullUrl  = /^https?:\/\//i.test(doc.url || "");
   const sizeStr = formatBytes ? formatBytes(doc.size) : (doc.size ? `${Math.round(doc.size / 1024)} kb` : "");
   const dateStr = doc.uploaded_at
     ? new Date(doc.uploaded_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
@@ -3712,7 +3713,7 @@ const DocCard = ({ doc, readOnly = false, onDelete, formatBytes }) => {
     <div className="group bg-white border border-slate-200 rounded-md overflow-hidden hover:shadow-sm hover:border-slate-300 transition-all">
       {/* Thumbnail */}
       <div className="relative h-24 bg-slate-50 overflow-hidden">
-        <a href={doc.url} target="_blank" rel="noreferrer" className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+        <a href={isFullUrl ? doc.url : undefined} target="_blank" rel="noreferrer" onClick={!isFullUrl ? e => e.preventDefault() : undefined} className="absolute inset-0 flex flex-col items-center justify-center gap-1">
           {isImg ? (
             <img src={doc.url} alt={doc.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
           ) : (
@@ -3727,8 +3728,8 @@ const DocCard = ({ doc, readOnly = false, onDelete, formatBytes }) => {
         </a>
         {/* Download button — top right inside box */}
         <a
-          href={doc.url}
-          download={doc.name}
+          href={isFullUrl ? doc.url : undefined}
+          download={isFullUrl ? doc.name : undefined}
           onClick={e => e.stopPropagation()}
           className="absolute top-1.5 right-1.5 p-1 bg-white/90 border border-slate-200 rounded text-slate-500 hover:text-slate-800 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity z-10"
           title="Download"
