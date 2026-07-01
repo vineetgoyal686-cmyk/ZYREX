@@ -2812,6 +2812,7 @@ router.post("/:id/issue-action", async (req, res) => {
     await supabase.schema("procurement").from("purchase_orders")
       .update(updatePayload).eq("id", req.params.id);
 
+    cache.bust(ORDERS_CACHE_KEY);
     broadcast({ type: "order_updated" });
     res.json({ success: true, newStatus, order_number: updatePayload.order_number });
   } catch (err) {
