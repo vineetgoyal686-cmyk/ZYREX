@@ -931,7 +931,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   // Settings / Toggles
   const [settings, setSettings] = useState({
     model: false, brand: true, remarks: false,
-    tax: true,
+    taxMode: 'line',
     discountMode: 'none',
     frightMode: 'none'
   });
@@ -1057,7 +1057,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       }
       setSettings(s => ({
         ...s,
-        tax: t.tax_mode === "line",
+        taxMode: t.tax_mode === "none" ? "none" : t.tax_mode === "total" ? "total" : "line",
         discountMode: t.discount_mode || "none",
         frightMode: t.fright_mode || "none",
         brand: t.showBrand ?? s.brand,
@@ -1406,6 +1406,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
       if (key === 'discountMode' && val === 'none') setTransactionDiscount(0);
       if (key === 'frightMode' && val === 'none') setFrightCharges(0);
+      if (key === 'taxMode' && val === 'none') setTransactionTax(0);
     }
   };
 
@@ -1429,7 +1430,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       const base = gross - dAmt;
 
       let rowGst = 0;
-      if (settings.tax) {
+      if (settings.taxMode === 'line') {
         // Item-level GST always uses the item's own base (line discount only, not global)
         rowGst = base * (tax / 100);
       }
@@ -1449,11 +1450,13 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     let finalGst = itemGstSum;
     let frightGst = 0;
 
-    if (!settings.tax) {
-      // Global Tax Mode
+    if (settings.taxMode === 'total') {
+      // Total (single) Tax Mode
       let taxableBase = itemsNet;
       if (settings.frightMode === "before") taxableBase += fAmt;
       finalGst = taxableBase * (Number(transactionTax) / 100);
+    } else if (settings.taxMode === 'none') {
+      finalGst = 0;
     } else {
       // Individual Tax Mode
       // If global discount is applied, proportionally reduce GST on items too
@@ -1569,7 +1572,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       annexures: normalizeRichTextArray(anxPoints),
       totals: {
         ...totals,
-        tax_mode: settings.tax ? "line" : "total",
+        tax_mode: settings.taxMode,
         fright_mode: settings.frightMode,
         discount_mode: settings.discountMode,
         showBrand: settings.brand,
@@ -1775,7 +1778,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
                     <div className="flex items-center justify-between">
                       <span>
-                        4) GST{settings.tax ? " (item wise)" : ` (${totals.txTaxPct || 0}%)`}{settings.frightMode === "before" ? " + Freight GST" : ""}
+                        4) GST{settings.taxMode === 'line' ? " (item wise)" : settings.taxMode === 'total' ? ` (${transactionTax || 0}%)` : " (none)"}{settings.frightMode === "before" ? " + Freight GST" : ""}
                       </span>
                       <span className="text-slate-900 font-bold">{formatINR(totals.gst)}</span>
                     </div>
@@ -1800,7 +1803,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                     <p><span className="text-slate-900 font-bold">Subtotal</span> = Σ(Qty × Rate)</p>
                     <p><span className="text-slate-900 font-bold">Discount</span> = {settings.discountMode === "line" ? "Σ(Line Discount)" : settings.discountMode === "total" ? "Subtotal × Discount%" : "0"}</p>
                     <p><span className="text-slate-900 font-bold">Taxable</span> = Subtotal − Discount</p>
-                    <p><span className="text-slate-900 font-bold">GST</span> = {settings.tax ? "Σ(Item Base × Tax%)" : "Taxable × GST%"}{settings.frightMode === "before" ? " (+ Freight × FreightTax%)" : ""}</p>
+                    <p><span className="text-slate-900 font-bold">GST</span> = {settings.taxMode === 'line' ? "Σ(Item Base × Tax%)" : settings.taxMode === 'total' ? "Taxable Base × GST%" : "0 (no GST)"}{settings.frightMode === "before" ? " (+ Freight × FreightTax%)" : ""}</p>
                     <p><span className="text-slate-900 font-bold">Grand Total</span> = Taxable + Freight + GST</p>
                   </div>
                   <div className="mt-4 rounded-md border border-slate-100 bg-slate-50 p-3">
@@ -2134,7 +2137,6 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                             {[
                               { key: 'model', label: 'Model Number' },
                               { key: 'brand', label: 'Brand' },
-                              { key: 'tax', label: 'GST (Tax)' },
                               { key: 'remarks', label: 'Remarks' }
                             ].filter(({ key }) => !settings[key]).map(({ key, label }) => (
                               <button key={key} onClick={() => setSettings(s => ({ ...s, [key]: true }))}
@@ -2143,9 +2145,22 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                 <span className="text-xs font-medium text-slate-700">{label}</span>
                               </button>
                             ))}
-                            {['model', 'remarks', 'brand', 'tax'].every(k => settings[k]) && (
+                            {['model', 'remarks', 'brand'].every(k => settings[k]) && (
                               <p className="text-xs text-slate-400 italic text-center py-1 font-medium bg-slate-50 rounded-lg">All columns added</p>
                             )}
+                          </div>
+                        </div>
+
+                        {/* GST */}
+                        <div className="p-4 border-b border-slate-100">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">GST (Tax)</p>
+                          <div className="flex gap-1 bg-slate-100 p-1 rounded-lg">
+                            {[['none', 'None'], ['line', 'Per Line'], ['total', 'Total']].map(([m, lbl]) => (
+                              <button key={m} onClick={() => updateSettingsAndClearData('taxMode', m)}
+                                className={`flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all ${settings.taxMode === m ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                                {lbl}
+                              </button>
+                            ))}
                           </div>
                         </div>
 
@@ -2235,7 +2250,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                       <th className="px-3 py-3 text-xs font-semibold text-slate-700 text-center whitespace-nowrap" style={{ width: '100px' }}>Quantity</th>
                       <th className="px-3 py-3 text-xs font-semibold text-slate-700 text-right whitespace-nowrap" style={{ width: '120px' }}>Rate (₹)</th>
                       {settings.discountMode === "line" && <th className="px-3 py-3 text-xs font-semibold text-slate-700 text-center whitespace-nowrap" style={{ width: '70px' }}>Disc (%)</th>}
-                      {settings.tax && (
+                      {settings.taxMode === 'line' && (
                         <th className="px-3 py-3 text-xs font-semibold text-slate-700 text-center whitespace-nowrap group/th" style={{ width: '80px' }}>
                           <div className="flex items-center justify-center gap-1">Tax (%)
                             <button onClick={() => updateSettingsAndClearData('tax', false)} className="opacity-0 group-hover/th:opacity-100 w-4 h-4 rounded bg-rose-500/80 text-white flex items-center justify-center transition-opacity hover:bg-rose-600" title="Move to summary"><X size={8} strokeWidth={3} /></button>
@@ -2419,7 +2434,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                     )}
 
                                     {/* Tax */}
-                                    {settings.tax && (
+                                    {settings.taxMode === 'line' && (
                                       <td className="px-1 py-2 whitespace-nowrap align-top text-center" style={{ width: '80px' }}>
                                         <div className="h-4 mb-1.5" />
                                         <div className="relative">
@@ -2482,7 +2497,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                     <td><div className="h-4 mb-1.5" /></td>
                                     <td><div className="h-4 mb-1.5" /></td>
                                     {settings.discountMode === "line" && <td><div className="h-4 mb-1.5" /></td>}
-                                    {settings.tax && <td><div className="h-4 mb-1.5" /></td>}
+                                    {settings.taxMode === 'line' && <td><div className="h-4 mb-1.5" /></td>}
                                     <td><div className="h-4 mb-1.5" /></td>
                                     {settings.remarks && <td><div className="h-4 mb-1.5" /></td>}
                                     <td className="sticky right-0 bg-white no-col-line"><div className="h-4 mb-1.5" /></td>
@@ -2531,7 +2546,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                     <td style={{ width: '90px' }} />
                                     <td style={{ width: '120px' }} />
                                     {settings.discountMode === "line" && <td style={{ width: '70px' }} />}
-                                    {settings.tax && <td style={{ width: '80px' }} />}
+                                    {settings.taxMode === 'line' && <td style={{ width: '80px' }} />}
                                     <td style={{ width: '140px' }} />
                                     {settings.remarks && <td style={{ width: '240px' }} />}
                                     <td className="sticky right-0 bg-white no-col-line" style={{ width: '32px' }} />
@@ -2634,7 +2649,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                           className="no-spin w-full text-center text-xs font-bold text-rose-500 bg-rose-50/30 border border-rose-100 rounded-[6px] px-2 py-2 outline-none focus:border-rose-300 transition-all" placeholder="%" />
                                       </td>
                                     )}
-                                    {settings.tax && (
+                                    {settings.taxMode === 'line' && (
                                       <td className="px-1 py-2 whitespace-nowrap align-top text-center" style={{ width: '80px' }}>
                                         <div className="relative">
                                           <select value={sub.taxPct} onChange={e => handleSubRowChange(group.id, sub.id, "taxPct", Number(e.target.value))}
@@ -2865,7 +2880,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                             )}
 
                             {/* GST % */}
-                            {settings.tax && (
+                            {settings.taxMode === 'line' && (
                               <td className="px-1 py-2 whitespace-nowrap align-top text-center" style={{ width: '80px' }}>
                                 <div className="relative">
                                   <select value={sub.taxPct} onChange={e => handleSubRowChange(group.id, sub.id, "taxPct", Number(e.target.value))}
@@ -2976,6 +2991,30 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                       </div>
                       <span className="text-slate-900 font-bold justify-self-end">
                         ₹{(Number(totals.txDiscountAmt) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
+
+                  {settings.taxMode === "total" && (
+                    <div className="grid grid-cols-[72px_1fr_auto] items-center gap-x-2 text-[13px] font-medium text-slate-600">
+                      <span>GST</span>
+                      <div className="flex items-center justify-start">
+                        <div className="inline-flex items-center border border-slate-200 rounded-[6px] bg-white overflow-hidden shadow-sm h-9">
+                          <input
+                            type="number"
+                            value={transactionTax}
+                            onChange={e => setTransactionTax(e.target.value)}
+                            className="no-spin w-12 text-center outline-none text-[13px] bg-transparent text-slate-700 px-2 font-bold"
+                            placeholder="18"
+                            inputMode="decimal"
+                            step="0.01"
+                            onWheel={(e) => e.currentTarget.blur()}
+                          />
+                          <span className="text-[11px] text-slate-400 font-bold px-3 bg-slate-50 border-l border-slate-100 h-full flex items-center">%</span>
+                        </div>
+                      </div>
+                      <span className="text-slate-900 font-bold justify-self-end">
+                        ₹{(Number(totals.gst) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
                       </span>
                     </div>
                   )}

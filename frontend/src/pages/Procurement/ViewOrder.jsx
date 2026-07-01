@@ -954,7 +954,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   const showModel = (totals.showModel === true || (totals.showModel !== false && groupedItems.some(it => it.model_number)));
   const showBrand = (totals.showBrand === true || (totals.showBrand !== false && groupedItems.some(it => it.make || it.brand)));
   const showDiscount = totals.discount_mode === "line";
-  const showTaxColumn = totals.tax_mode !== "total";
+  const showTaxColumn = totals.tax_mode === "line";
   const showRemarks = (totals.showRemarks === true || (totals.showRemarks !== false && groupedItems.some(it => it.remarks)));
 
 
