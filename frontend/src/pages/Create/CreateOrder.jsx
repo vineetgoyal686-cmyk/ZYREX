@@ -3049,12 +3049,14 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                   </div>
                 )}
 
-                <div className="flex justify-between items-center text-[13px] font-medium text-slate-600">
-                  <span>GST</span>
-                  <span className="text-slate-900 font-bold">
-                    ₹{(Number(totals.gst) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
-                  </span>
-                </div>
+                {settings.taxMode !== 'total' && (
+                  <div className="flex justify-between items-center text-[13px] font-medium text-slate-600">
+                    <span>GST</span>
+                    <span className="text-slate-900 font-bold">
+                      ₹{(Number(totals.gst) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                )}
 
                   <div className="pt-3 border-t border-slate-400">
                     <div className="flex justify-between items-center">
