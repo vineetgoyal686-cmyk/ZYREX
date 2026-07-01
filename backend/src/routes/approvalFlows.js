@@ -4,6 +4,8 @@ const { broadcast } = require("../sse");
 const admin = require("../helpers/supabaseHelper");
 const getAdminClient = () => admin;
 const { requireAuth } = require("../middleware/auth");
+const cache = require("../helpers/cacheHelper");
+const ORDERS_CACHE_KEY = "orders_list";
 
 const requireAdminOrAbove = (req, res, next) => {
   if (!["global_admin", "super_admin", "admin"].includes(req.user.role))
@@ -278,6 +280,7 @@ router.post("/submit", requireAuth, async (req, res) => {
         await admin.schema("procurement").from("purchase_orders")
           .update({ status: "Pending Issue", updated_at: new Date().toISOString() }).eq("id", document_id);
         await addOrderActivityLog(admin, document_id, "Auto-Approved (Below Threshold)", userName);
+        cache.bust(ORDERS_CACHE_KEY);
         broadcast({ type: "order_updated", status: "Pending Issue" });
         return res.json({ skip: true, auto_approved: true });
       }
@@ -302,6 +305,7 @@ router.post("/submit", requireAuth, async (req, res) => {
       await admin.schema("procurement").from("purchase_orders")
         .update({ status: "Pending Approval", updated_at: new Date().toISOString() }).eq("id", document_id);
       await addOrderActivityLog(admin, document_id, "Submitted for Approval", userName);
+      cache.bust(ORDERS_CACHE_KEY);
       broadcast({ type: "order_updated", status: "Pending Approval" });
     } else if (module === "intake") {
       // intake stays "submitted" — that IS the pending approval state
@@ -382,6 +386,7 @@ router.post("/action", requireAuth, async (req, res) => {
       await admin.schema("procurement").from("purchase_orders")
         .update({ status: docStatus, updated_at: new Date().toISOString() }).eq("id", request.document_id);
       await addOrderActivityLog(admin, request.document_id, logAction, userName, comments);
+      cache.bust(ORDERS_CACHE_KEY);
       broadcast({ type: "order_updated", status: docStatus });
     } else if (request.module === "intake") {
       const intakeStatusMap = {
@@ -430,6 +435,7 @@ router.post("/withdraw/:document_id", requireAuth, async (req, res) => {
       await admin.schema("procurement").from("purchase_orders")
         .update({ status: "Review", updated_at: new Date().toISOString() }).eq("id", document_id);
       await addOrderActivityLog(admin, document_id, "Approval Withdrawn — Returned to Review", userName);
+      cache.bust(ORDERS_CACHE_KEY);
       broadcast({ type: "order_updated", status: "Review" });
     } else if (request.module === "intake") {
       await admin.schema("store").from("intakes")
