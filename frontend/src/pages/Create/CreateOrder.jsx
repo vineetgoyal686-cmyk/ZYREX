@@ -939,6 +939,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const [settingsPos, setSettingsPos] = useState({ top: 0, right: 0 });
   const settingsBtnRef = useRef(null);
   const notesRef = useRef("");
+  const [notesLoadedAt, setNotesLoadedAt] = useState(null);
   const [transactionDiscount, setTransactionDiscount] = useState(0);
   const [transactionTax, setTransactionTax] = useState(18);
   const [frightCharges, setFrightCharges] = useState(0);
@@ -1014,6 +1015,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         creationDate: order.date_of_creation ? order.date_of_creation.split('T')[0] : "",
         notes: normalizeRichTextHtml(order.notes || order.snapshot?.notes || "")
       });
+      setNotesLoadedAt(Date.now());
 
       setTcPoints(normalizeRichTextArray(order.terms_conditions));
       setPayPoints(normalizeRichTextArray(order.payment_terms));
@@ -3054,7 +3056,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                   }
                 `}</style>
                 <ReactQuill
-                  key={editOrderId || "new-order"}
+                  key={`${editOrderId || "new-order"}-${notesLoadedAt || ""}`}
                   theme="snow"
                   defaultValue={header.notes}
                   onChange={(val) => {
