@@ -954,6 +954,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   const showModel = (totals.showModel === true || (totals.showModel !== false && groupedItems.some(it => it.model_number)));
   const showBrand = (totals.showBrand === true || (totals.showBrand !== false && groupedItems.some(it => it.make || it.brand)));
   const showDiscount = totals.discount_mode === "line";
+  const showTaxColumn = totals.tax_mode !== "total";
   const showRemarks = (totals.showRemarks === true || (totals.showRemarks !== false && groupedItems.some(it => it.remarks)));
 
 
@@ -1978,7 +1979,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                     {showDiscount && (
                       <th className="px-3 py-4 text-right w-[60px] border-b border-r border-slate-200 tracking-tighter">Disc%</th>
                     )}
-                    <th className="px-4 py-4 text-right w-[60px] border-b border-r border-slate-200">Tax%</th>
+                    {showTaxColumn && <th className="px-4 py-4 text-right w-[60px] border-b border-r border-slate-200">Tax%</th>}
 
                     {showRemarks && (
                       <th className="px-4 py-4 text-left w-[120px] border-b border-r border-slate-200">Remarks</th>
@@ -2064,7 +2065,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                       {showDiscount && (
                         <td className="px-3 py-3 text-right text-rose-500 font-bold text-[11px] border-b border-r border-slate-200">{Number(it.discount_pct)}%</td>
                       )}
-                      <td className="px-4 py-3 text-right text-slate-400 font-bold text-[11px] border-b border-r border-slate-200">{Number(it.tax_pct)}%</td>
+                      {showTaxColumn && <td className="px-4 py-3 text-right text-slate-400 font-bold text-[11px] border-b border-r border-slate-200">{Number(it.tax_pct)}%</td>}
 
                       {showRemarks && (
                         <td className="px-4 py-3 text-left text-slate-500 font-medium text-[10px] border-b border-r border-slate-200 whitespace-normal leading-tight">
