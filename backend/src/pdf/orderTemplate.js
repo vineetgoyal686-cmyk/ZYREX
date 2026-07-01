@@ -358,6 +358,8 @@ const renderTotals = (order) => {
   const frightTax = Number(t.frightTax ?? 18);
   const gst = Number(t.gst) || 0;
   const grand = Number(t.grandTotal) || subtotal - discAmt + fright + gst;
+  const taxMode = t.tax_mode || "line";
+  const showGstRow = taxMode !== "none";
 
   return `
     <div class="totals-wrap">
@@ -369,7 +371,7 @@ const renderTotals = (order) => {
         <div class="totals-row"><span class="lbl">Subtotal</span><span class="val">₹ ${formatINR(subtotal)}</span></div>
         ${discAmt > 0 ? `<div class="totals-row discount"><span class="lbl">Discount ${discPct ? `(${discPct}%)` : ""}</span><span class="val">- ₹ ${formatINR(discAmt)}</span></div>` : ""}
         ${fright > 0 ? `<div class="totals-row"><span class="lbl">Freight (${frightTax}%)</span><span class="val">₹ ${formatINR(fright)}</span></div>` : ""}
-        <div class="totals-row"><span class="lbl">GST Total</span><span class="val">₹ ${formatINR(gst)}</span></div>
+        ${showGstRow ? `<div class="totals-row"><span class="lbl">GST Total</span><span class="val">₹ ${formatINR(gst)}</span></div>` : ""}
         <div class="totals-row grand"><span class="lbl">Grand Total</span><span class="val">₹ ${formatINR(grand)}</span></div>
       </div>
     </div>
