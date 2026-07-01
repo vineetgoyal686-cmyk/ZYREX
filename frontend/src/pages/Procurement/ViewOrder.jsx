@@ -2002,7 +2002,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                         /* Supply: separate Item Name (rowspan) + Specification columns */
                         <>
                           {!it._isSubRow && (
-                            <td rowSpan={it._rowSpan} className="px-5 py-3 text-slate-800 font-bold uppercase whitespace-normal leading-tight border-b border-r border-slate-200 text-[11px] min-w-[200px] align-top">
+                            <td rowSpan={it._rowSpan} className="px-5 py-3 text-slate-800 font-bold whitespace-normal leading-tight border-b border-r border-slate-200 text-[11px] min-w-[200px] align-top">
                               {it._itemName}
                             </td>
                           )}
@@ -2030,7 +2030,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                         /* SITC/ITC: combined Item Name + Description in one column */
                         <td className="px-5 py-3 border-b border-r border-slate-200 align-top" style={{ minWidth: '380px' }}>
                           {!it._isSubRow && (
-                            <p className="text-[11px] font-black text-slate-800 uppercase tracking-wide leading-tight mb-2 whitespace-normal">
+                            <p className="text-[11px] font-black text-slate-800 tracking-wide leading-tight mb-2 whitespace-normal">
                               {it._itemName}
                             </p>
                           )}

@@ -75,7 +75,7 @@ const css = `
   table.items th { font-size: 10px; font-weight: 700; text-transform: uppercase; text-align: center; }
   table.items .r { text-align: right; white-space: nowrap; }
   table.items .c { text-align: center; white-space: nowrap; }
-  table.items .item-name { font-weight: 700; text-transform: uppercase; font-size: 12.5px; margin-bottom: 4px; }
+  table.items .item-name { font-weight: 700; font-size: 12.5px; margin-bottom: 4px; }
   table.items .item-name-plain { font-weight: 400; font-size: 11px; }
   table.items td.merge-first { border-bottom: 0; }
   table.items td.merge-fill { border-top: 0; border-bottom: 0; visibility: hidden; }
