@@ -96,8 +96,10 @@ export default function Departments({ actionsRef }) {
   const [deleting, setDeleting]   = useState(null);
   const importRef = useRef(null);
 
-  const divisions = React.useMemo(() => {
-    try { return JSON.parse(localStorage.getItem("bms_org_divisions") || "[]"); } catch { return []; }
+  const [divisions, setDivisions] = useState([]);
+  useEffect(() => {
+    fetch(`${API}/api/organisation/divisions`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
+      .then(r => r.json()).then(d => setDivisions(d.divisions || [])).catch(() => {});
   }, []);
 
   const load = async () => {
@@ -209,12 +211,10 @@ export default function Departments({ actionsRef }) {
     try {
       const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
       const rawRows  = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" });
-      const divisionsList = (() => { try { return JSON.parse(localStorage.getItem("bms_org_divisions") || "[]"); } catch { return []; } })();
-
       const toImport = rawRows
         .map(r => {
           const divName = String(r["Division"] || r["division"] || "").trim();
-          const divMatch = divisionsList.find(d => d.name.toLowerCase() === divName.toLowerCase());
+          const divMatch = divisions.find(d => d.name.toLowerCase() === divName.toLowerCase());
           return {
             name:        String(r["Department Name"] || r["name"] || "").trim(),
             division_id: divMatch ? String(divMatch.id) : "",

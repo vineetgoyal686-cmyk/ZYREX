@@ -449,6 +449,4 @@ export default function SubDepts({ actionsRef, onChange }) {
   );
 }
 
-export const loadSubDepts = () => {
-  try { return JSON.parse(localStorage.getItem("bms_org_subdepts") || "[]"); } catch { return []; }
-};
+export const loadSubDepts = () => [];

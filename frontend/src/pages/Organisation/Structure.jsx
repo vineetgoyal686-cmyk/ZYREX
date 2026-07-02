@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { ChevronRight, ChevronDown, LayoutList, Share2, Search, Edit2 } from "lucide-react";
 import { cx } from "./helpers";
-import { loadDivisions } from "./Divisions";
-import { loadSubDepts } from "./SubDepts";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -55,16 +53,21 @@ export default function Structure() {
   const [search, setSearch]   = useState("");
   const [expanded, setExpanded] = useState({});   // key → bool (false = collapsed)
 
-  useEffect(() => {
-    fetch(`${API}/api/departments`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
-      .then(r => r.json())
-      .then(j => setDepts(j.departments || []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  const [divisions, setDivisions] = useState([]);
+  const [subdepts,  setSubdepts]  = useState([]);
 
-  const divisions = loadDivisions();
-  const subdepts  = loadSubDepts();
+  useEffect(() => {
+    const h = { Authorization: `Bearer ${TOKEN()}` };
+    Promise.all([
+      fetch(`${API}/api/departments`, { headers: h }).then(r => r.json()),
+      fetch(`${API}/api/organisation/divisions`, { headers: h }).then(r => r.json()),
+      fetch(`${API}/api/sub-departments`, { headers: h }).then(r => r.json()),
+    ]).then(([d, div, sub]) => {
+      setDepts(d.departments || []);
+      setDivisions(div.divisions || []);
+      setSubdepts(sub.sub_departments || sub.subDepartments || []);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, []);
 
   /* ── build flat rows ─────────────────────────────────── */
   const buildRows = () => {

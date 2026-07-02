@@ -18,9 +18,6 @@ import EmployeeList  from "./EmployeeList";
 import OrgList       from "./OrgList";
 import SOPTab        from "../Settings/tabs/SOP";
 import Policy        from "./Policy";
-import { loadDivisions } from "./Divisions";
-import { loadSubDepts   } from "./SubDepts";
-import { loadGrades     } from "./Grades";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -69,11 +66,11 @@ function OrgDetail({ org, onBack, currentUser }) {
   const [showExport, setShowExport] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [tooltip,    setTooltip]    = useState(null);
-  const [divCount,    setDivCount]    = useState(() => loadDivisions().length);
-  const [subCount,    setSubCount]    = useState(() => loadSubDepts().length);
-  const [lvlCount,    setLvlCount]    = useState(() => loadGrades().length);
+  const [divCount,    setDivCount]    = useState(0);
+  const [subCount,    setSubCount]    = useState(0);
+  const [lvlCount,    setLvlCount]    = useState(0);
   const [deptCount,   setDeptCount]   = useState(0);
-  const [branchCount, setBranchCount] = useState(() => { try { return JSON.parse(localStorage.getItem("org_branches_v2") || "[]").length; } catch { return 0; } });
+  const [branchCount, setBranchCount] = useState(0);
   const [empView,  setEmpView]  = useState("card");
   const [empCount, setEmpCount] = useState(null);
 
@@ -90,11 +87,12 @@ function OrgDetail({ org, onBack, currentUser }) {
   const meta = ALL_TABS.find(t => t.id === activeTab);
 
   useEffect(() => {
-    fetch(`${API}/api/departments`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
-      .then(r => r.json())
-      .then(j => setDeptCount((j.departments || []).length))
-      .catch(() => {});
-    try { setBranchCount(JSON.parse(localStorage.getItem("org_branches_v2") || "[]").length); } catch {}
+    const h = { Authorization: `Bearer ${TOKEN()}` };
+    fetch(`${API}/api/departments`, { headers: h }).then(r => r.json()).then(j => setDeptCount((j.departments || []).length)).catch(() => {});
+    fetch(`${API}/api/organisation/divisions`, { headers: h }).then(r => r.json()).then(j => setDivCount((j.divisions || []).length)).catch(() => {});
+    fetch(`${API}/api/organisation/grades`, { headers: h }).then(r => r.json()).then(j => setLvlCount((j.grades || []).length)).catch(() => {});
+    fetch(`${API}/api/sub-departments`, { headers: h }).then(r => r.json()).then(j => setSubCount((j.sub_departments || j.subDepartments || []).length)).catch(() => {});
+    fetch(`${API}/api/organisation/branches`, { headers: h }).then(r => r.json()).then(j => setBranchCount((j.branches || []).length)).catch(() => {});
   }, [activeTab]);
 
   useEffect(() => {

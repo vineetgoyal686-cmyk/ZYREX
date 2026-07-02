@@ -109,7 +109,7 @@ router.get("/pending-for-me", requireAuth, async (req, res) => {
   let orderMap = {};
   if (orderIds.length > 0) {
     const { data: orders, error: ordErr } = await admin.schema("procurement").from("purchase_orders")
-      .select("id, order_number, status, totals, snapshot, site_id, companies(company_code), vendors(id, vendor_name), made_by")
+      .select("id, order_number, status, totals, snapshot, site_id, vendors(id, vendor_name), made_by")
       .in("id", orderIds);
     if (ordErr) console.error("[pending-for-me] orders fetch error:", ordErr);
 
@@ -123,6 +123,7 @@ router.get("/pending-for-me", requireAuth, async (req, res) => {
 
     orderMap = Object.fromEntries((orders || []).map(o => [o.id, {
       ...o,
+      companies: { company_code: o.snapshot?.company?.companyCode || o.snapshot?.company?.company_code || "CO" },
       made_by: userNameMap[o.made_by] || o.made_by || null,
       subject: o.snapshot?.subject || null,
     }]));

@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Edit2, Trash2, History, Image, MoreHorizontal } from "lucide-react";
 import { cx } from "./helpers";
-import { loadDivisions } from "./Divisions";
-import { loadSubDepts } from "./SubDepts";
 import LogPanel from "../../components/LogPanel";
 import CompanyList from "../Procurement/CompanyList";
 import { Star } from "lucide-react";
@@ -38,6 +36,8 @@ const TABS = ["Main Detail", "Billing Address", "Bank Detail", "State Billing", 
 export default function OrgOverview({ org: initialOrg, onDeleted }) {
   const [org,       setOrg]       = useState(initialOrg);
   const [deptCount, setDeptCount] = useState(0);
+  const [divCount,  setDivCount]  = useState(0);
+  const [subCount,  setSubCount]  = useState(0);
   const [activeTab, setActiveTab] = useState("Main Detail");
   const [showLog,   setShowLog]   = useState(false);
   const [showEdit,  setShowEdit]  = useState(false);
@@ -46,10 +46,10 @@ export default function OrgOverview({ org: initialOrg, onDeleted }) {
   const clRef   = useRef({});
 
   useEffect(() => {
-    fetch(`${API}/api/departments`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
-      .then(r => r.json())
-      .then(j => setDeptCount((j.departments || []).length))
-      .catch(() => {});
+    const h = { Authorization: `Bearer ${TOKEN()}` };
+    fetch(`${API}/api/departments`, { headers: h }).then(r => r.json()).then(j => setDeptCount((j.departments || []).length)).catch(() => {});
+    fetch(`${API}/api/organisation/divisions`, { headers: h }).then(r => r.json()).then(j => setDivCount((j.divisions || []).length)).catch(() => {});
+    fetch(`${API}/api/sub-departments`, { headers: h }).then(r => r.json()).then(j => setSubCount((j.sub_departments || j.subDepartments || []).length)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -69,9 +69,9 @@ export default function OrgOverview({ org: initialOrg, onDeleted }) {
   ].filter(Boolean).join(" · ").replace(/·\s*(\d)/, "— $1");
 
   const STATS = [
-    { label: "Divisions",   val: loadDivisions().length },
+    { label: "Divisions",   val: divCount },
     { label: "Departments", val: deptCount },
-    { label: "Sub-Depts",   val: loadSubDepts().length },
+    { label: "Sub-Depts",   val: subCount },
     { label: "Employees",   val: 0 },
   ];
 

@@ -2,25 +2,22 @@ import React, { useState, useEffect } from "react";
 import { Building2, Users, MapPin, Briefcase, ArrowRight, Layers, Network } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { cx, initials } from "./helpers";
-import { loadDivisions } from "./Divisions";
-import { loadSubDepts   } from "./SubDepts";
 import { DEPT_CHART_DATA, RECENT_HIRES, LEAVES_TODAY } from "./data";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
 
 export default function Overview({ onNavigate }) {
-  const [depts, setDepts] = useState([]);
+  const [depts,     setDepts]     = useState([]);
+  const [divisions, setDivisions] = useState([]);
+  const [subdepts,  setSubdepts]  = useState([]);
 
   useEffect(() => {
-    fetch(`${API}/api/departments`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
-      .then(r => r.json())
-      .then(j => setDepts(j.departments || []))
-      .catch(() => {});
+    const h = { Authorization: `Bearer ${TOKEN()}` };
+    fetch(`${API}/api/departments`, { headers: h }).then(r => r.json()).then(j => setDepts(j.departments || [])).catch(() => {});
+    fetch(`${API}/api/organisation/divisions`, { headers: h }).then(r => r.json()).then(j => setDivisions(j.divisions || [])).catch(() => {});
+    fetch(`${API}/api/sub-departments`, { headers: h }).then(r => r.json()).then(j => setSubdepts(j.sub_departments || j.subDepartments || [])).catch(() => {});
   }, []);
-
-  const divisions = loadDivisions();
-  const subdepts  = loadSubDepts();
 
   const activeDepts = depts.filter(d => d.status === "active").length;
   const activeDivs  = divisions.filter(d => d.status === "active").length;

@@ -20,7 +20,7 @@ router.get("/global-stats", requireAuth, async (req, res) => {
     const { data: orders, error: ordErr } = await supabase
       .schema("procurement")
       .from("purchase_orders")
-      .select("id, order_number, order_type, status, totals, site_id, company_id, vendor_id, category_id, created_at, updated_at, made_by, companies(company_name, company_code), vendors(vendor_name), snapshot")
+      .select("id, order_number, order_type, status, totals, site_id, company_id, vendor_id, category_id, created_at, updated_at, made_by, vendors(vendor_name), snapshot")
       .neq("status", "Deleted");
     if (ordErr) throw ordErr;
 
@@ -106,8 +106,8 @@ router.get("/global-stats", requireAuth, async (req, res) => {
       }
 
       // Entity spend — use company_code as chart key, full name for tooltip
-      const eName = o.companies?.company_name || o.snapshot?.company?.name || "Unknown";
-      const eCode = o.companies?.company_code || o.snapshot?.company?.code || "";
+      const eName = o.snapshot?.company?.companyName || o.snapshot?.company?.company_name || "Unknown";
+      const eCode = o.snapshot?.company?.companyCode || o.snapshot?.company?.company_code || "";
       const eKey  = eCode || eName;
       if (!entityMap[eKey]) entityMap[eKey] = { entity: eKey, name: eName, code: eCode, po: 0, wo: 0 };
       entityMap[eKey][type] = Math.round((entityMap[eKey][type] + valL) * 100) / 100;
@@ -177,7 +177,7 @@ router.get("/global-stats", requireAuth, async (req, res) => {
     const [vR, pR, cR, coR, iR, uR, clR] = await Promise.all([
       supabase.schema("procurement").from("vendors").select("id", { count: "exact", head: true }),
       supabase.from("projects").select("id", { count: "exact", head: true }).neq("is_active", false),
-      supabase.schema("procurement").from("companies").select("id", { count: "exact", head: true }),
+      supabase.schema("organisation").from("companies").select("id", { count: "exact", head: true }),
       supabase.schema("organisation").from("employees").select("id", { count: "exact", head: true }),
       supabase.schema("procurement").from("items").select("id", { count: "exact", head: true }),
       supabase.from("users").select("id", { count: "exact", head: true }).eq("is_active", true),
