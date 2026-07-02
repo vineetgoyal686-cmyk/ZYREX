@@ -323,7 +323,7 @@ router.get("/policies/:id/pdf", async (req, res) => {
 
     let comp = {};
     if (policy.company_id) {
-      const { data: c } = await supabase.schema("procurement").from("companies")
+      const { data: c } = await supabase.schema("organisation").from("companies")
         .select("company_name,address,logo_url").eq("id", policy.company_id).single();
       if (c) comp = c;
     }
@@ -349,6 +349,148 @@ router.get("/policies/:id/pdf", async (req, res) => {
     console.error("Policy PDF error:", err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+/* ════════════════════════════════════
+   DIVISIONS
+════════════════════════════════════ */
+const nextDivId = async () => {
+  const { data } = await supabase.schema("organisation").from("divisions").select("div_id").not("div_id", "is", null);
+  const max = (data || []).reduce((m, r) => Math.max(m, parseInt((r.div_id || "DIV-000").replace("DIV-", "")) || 0), 0);
+  return `DIV-${String(max + 1).padStart(3, "0")}`;
+};
+
+router.get("/divisions", async (_req, res) => {
+  const { data, error } = await supabase.schema("organisation").from("divisions").select("*").order("name");
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ divisions: data || [] });
+});
+router.post("/divisions", async (req, res) => {
+  const { name, status } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: "Name is required" });
+  const div_id = await nextDivId();
+  const { data, error } = await supabase.schema("organisation").from("divisions").insert({ div_id, name: name.trim(), status: status || "active" }).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, division: data });
+});
+router.put("/divisions/:id", async (req, res) => {
+  const { name, status } = req.body;
+  const { data, error } = await supabase.schema("organisation").from("divisions").update({ name: name?.trim(), status }).eq("id", req.params.id).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, division: data });
+});
+router.delete("/divisions/:id", async (req, res) => {
+  const { error } = await supabase.schema("organisation").from("divisions").delete().eq("id", req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
+/* ════════════════════════════════════
+   GRADES
+════════════════════════════════════ */
+const nextGradeId = async () => {
+  const { data } = await supabase.schema("organisation").from("grades").select("grade_id").not("grade_id", "is", null);
+  const max = (data || []).reduce((m, r) => Math.max(m, parseInt((r.grade_id || "GRD-000").replace("GRD-", "")) || 0), 0);
+  return `GRD-${String(max + 1).padStart(3, "0")}`;
+};
+
+router.get("/grades", async (_req, res) => {
+  const { data, error } = await supabase.schema("organisation").from("grades").select("*").order("sort_order");
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ grades: data || [] });
+});
+router.post("/grades", async (req, res) => {
+  const { grade, descriptions, sort_order, status } = req.body;
+  if (!grade?.trim()) return res.status(400).json({ error: "Grade is required" });
+  const grade_id = await nextGradeId();
+  const { data, error } = await supabase.schema("organisation").from("grades")
+    .insert({ grade_id, grade: grade.trim(), descriptions: descriptions || [], sort_order: sort_order || 1, status: status || "active" }).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, grade: data });
+});
+router.put("/grades/:id", async (req, res) => {
+  const { grade, descriptions, sort_order, status } = req.body;
+  const updates = {};
+  if (grade !== undefined) updates.grade = grade.trim();
+  if (descriptions !== undefined) updates.descriptions = descriptions;
+  if (sort_order !== undefined) updates.sort_order = sort_order;
+  if (status !== undefined) updates.status = status;
+  const { data, error } = await supabase.schema("organisation").from("grades").update(updates).eq("id", req.params.id).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, grade: data });
+});
+router.delete("/grades/:id", async (req, res) => {
+  const { error } = await supabase.schema("organisation").from("grades").delete().eq("id", req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
+/* ════════════════════════════════════
+   ORG DESIGNATIONS
+════════════════════════════════════ */
+const nextDesigId = async () => {
+  const { data } = await supabase.schema("organisation").from("designations").select("desig_id").not("desig_id", "is", null);
+  const max = (data || []).reduce((m, r) => Math.max(m, parseInt((r.desig_id || "DSIG-000").replace("DSIG-", "")) || 0), 0);
+  return `DSIG-${String(max + 1).padStart(3, "0")}`;
+};
+
+router.get("/org-designations", async (_req, res) => {
+  const { data, error } = await supabase.schema("organisation").from("designations").select("*").order("title");
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ designations: data || [] });
+});
+router.post("/org-designations", async (req, res) => {
+  const { title, grade, active } = req.body;
+  if (!title?.trim()) return res.status(400).json({ error: "Title is required" });
+  const desig_id = await nextDesigId();
+  const { data, error } = await supabase.schema("organisation").from("designations")
+    .insert({ desig_id, title: title.trim(), grade: grade || null, active: active !== false }).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, designation: data });
+});
+router.put("/org-designations/:id", async (req, res) => {
+  const { title, grade, active } = req.body;
+  const updates = {};
+  if (title !== undefined) updates.title = title.trim();
+  if (grade !== undefined) updates.grade = grade || null;
+  if (active !== undefined) updates.active = active;
+  const { data, error } = await supabase.schema("organisation").from("designations").update(updates).eq("id", req.params.id).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, designation: data });
+});
+router.delete("/org-designations/:id", async (req, res) => {
+  const { error } = await supabase.schema("organisation").from("designations").delete().eq("id", req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
+/* ════════════════════════════════════
+   BRANCHES
+════════════════════════════════════ */
+router.get("/branches", async (_req, res) => {
+  const { data, error } = await supabase.schema("organisation").from("branches").select("*").order("created_at");
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ branches: data || [] });
+});
+router.post("/branches", async (req, res) => {
+  const { code, label, type, status, gstin, phone, email, is_main, state, city, pincode, address, contacts } = req.body;
+  if (!label?.trim()) return res.status(400).json({ error: "Label is required" });
+  const { data, error } = await supabase.schema("organisation").from("branches")
+    .insert({ code, label: label.trim(), type: type || "Branch", status: (status || "active").toLowerCase(), gstin, phone, email, is_main: is_main || false, state, city, pincode, address, contacts: contacts || [] }).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, branch: data });
+});
+router.put("/branches/:id", async (req, res) => {
+  const { code, label, type, status, gstin, phone, email, is_main, state, city, pincode, address, contacts } = req.body;
+  const { data, error } = await supabase.schema("organisation").from("branches")
+    .update({ code, label: label?.trim(), type, status: status?.toLowerCase(), gstin, phone, email, is_main, state, city, pincode, address, contacts: contacts || [] }).eq("id", req.params.id).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, branch: data });
+});
+router.delete("/branches/:id", async (req, res) => {
+  const { error } = await supabase.schema("organisation").from("branches").delete().eq("id", req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
 });
 
 module.exports = router;

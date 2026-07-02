@@ -2,11 +2,10 @@ import React, { useState, useEffect } from "react";
 import { Eye, Edit2, Trash2, Plus, X, Star, MapPin, Phone, Mail, FileText, Building2 } from "lucide-react";
 import { INDIA_STATES } from "../../data/indiaStateCities";
 
-const STORAGE_KEY  = "org_branches_v2";
+const API          = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
+const TOKEN        = () => localStorage.getItem("bms_token") || "";
 const BRANCH_TYPES = ["Branch", "Head Quarter", "Regional Office", "Site Office", "Warehouse", "Sales Office"];
-
-const loadBranches = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; } };
-const saveBranches = d => localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+const mapBranch    = (b) => ({ ...b, isMain: b.is_main ?? b.isMain ?? false, status: b.status ? (b.status.charAt(0).toUpperCase() + b.status.slice(1)) : "Active" });
 
 const ini = n => (n || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
 
@@ -135,7 +134,7 @@ function FormModal({ initial, onSave, onClose }) {
   const handleSubmit = e => {
     e.preventDefault();
     if (!form.label.trim()) return alert("Branch label required");
-    onSave({ ...form, id: form.id || Date.now().toString() });
+    onSave({ ...form });
   };
 
   return (
@@ -369,29 +368,36 @@ function BranchCard({ branch, onView, onEdit, onDelete }) {
 
 /* ── Main ────────────────────────────────────────────── */
 export default function Locations({ actionsRef }) {
-  const [branches, setBranches] = useState(loadBranches);
+  const [branches, setBranches] = useState([]);
   const [modal,    setModal]    = useState(null);
   const [viewing,  setViewing]  = useState(null);
+
+  const fetchBranches = async () => {
+    const res = await fetch(`${API}/api/organisation/branches`, { headers: { Authorization: `Bearer ${TOKEN()}` } });
+    const d   = await res.json();
+    setBranches((d.branches || []).map(mapBranch));
+  };
+  useEffect(() => { fetchBranches(); }, []);
 
   useEffect(() => {
     if (actionsRef) actionsRef.current = { openAdd: () => setModal("add") };
     return () => { if (actionsRef) actionsRef.current = {}; };
   });
 
-  const save = branch => {
-    setBranches(prev => {
-      let next = prev.find(b => b.id === branch.id)
-        ? prev.map(b => b.id === branch.id ? branch : b)
-        : [...prev, branch];
-      if (branch.isMain) next = next.map(b => b.id === branch.id ? b : { ...b, isMain: false });
-      saveBranches(next); return next;
-    });
+  const save = async branch => {
+    const payload = { ...branch, is_main: branch.isMain, status: branch.status?.toLowerCase() };
+    delete payload.isMain;
+    const isAdd = !branch.id;
+    const url = isAdd ? `${API}/api/organisation/branches` : `${API}/api/organisation/branches/${branch.id}`;
+    await fetch(url, { method: isAdd ? "POST" : "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify(payload) });
+    await fetchBranches();
     setModal(null);
   };
 
-  const remove = id => {
+  const remove = async id => {
     if (!confirm("Delete this branch?")) return;
-    setBranches(prev => { const next = prev.filter(b => b.id !== id); saveBranches(next); return next; });
+    await fetch(`${API}/api/organisation/branches/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${TOKEN()}` } });
+    fetchBranches();
   };
 
   return (

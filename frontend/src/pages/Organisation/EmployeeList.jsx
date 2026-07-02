@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Search, Plus, X, Edit2, Trash2, Loader2, ChevronLeft,
   BadgeCheck, Calendar, UserCheck, MapPin,
@@ -7,15 +7,11 @@ import {
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { loadGrades, gradeCls, descriptionsLabel } from "./Grades";
-import { loadDesignations } from "./Designations";
+import { gradeCls, descriptionsLabel } from "./Grades";
 
-const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
+const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
+const TOKEN = () => localStorage.getItem("bms_token") || "";
 const PER_PAGE = 20;
-
-/* ── Grade letter → active grade list (user-defined order) ── */
-const loadActiveGrades = () =>
-  loadGrades().filter(g => g.status === "active").sort((a, b) => (a.order || 0) - (b.order || 0));
 
 /* ── Status config ── */
 const STATUS = {
@@ -238,9 +234,19 @@ const LBL = "block text-xs font-semibold text-slate-500 mb-1";
 function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, allEmps }) {
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
-  /* grades and designations from localStorage */
-  const gradeList = useMemo(() => loadActiveGrades(), []);
-  const desigList = useMemo(() => loadDesignations(), []);
+  const [gradeList, setGradeList] = useState([]);
+  const [desigList, setDesigList] = useState([]);
+  useEffect(() => {
+    fetch(`${API}/api/organisation/grades`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
+      .then(r => r.json()).then(d => setGradeList(
+        (d.grades || []).map(g => ({ ...g, gradeId: g.grade_id || g.gradeId, order: g.sort_order ?? g.order ?? 1 }))
+          .filter(g => g.status === "active").sort((a, b) => (a.order || 0) - (b.order || 0))
+      )).catch(() => {});
+    fetch(`${API}/api/organisation/org-designations`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
+      .then(r => r.json()).then(d => setDesigList(
+        (d.designations || []).map(x => ({ ...x, desigId: x.desig_id || x.desigId, active: x.status === "active" }))
+      )).catch(() => {});
+  }, []);
 
   /* auto-fill grade when designation is typed/picked */
   const handleDesigChange = (e) => {
@@ -476,7 +482,11 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const importRef = useRef(null);
 
-  const divisions = useMemo(() => { try { return JSON.parse(localStorage.getItem("bms_org_divisions") || "[]"); } catch { return []; } }, []);
+  const [divisions, setDivisions] = useState([]);
+  useEffect(() => {
+    fetch(`${API}/api/organisation/divisions`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
+      .then(r => r.json()).then(d => setDivisions(d.divisions || [])).catch(() => {});
+  }, []);
 
   useEffect(() => { fetchEmps(); }, []);
 

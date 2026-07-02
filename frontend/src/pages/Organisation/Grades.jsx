@@ -5,7 +5,9 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const STORAGE_KEY = "bms_org_grades";
+const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
+const TOKEN = () => localStorage.getItem("bms_token") || "";
+const mapGrade = (g) => ({ ...g, gradeId: g.grade_id || g.gradeId, order: g.sort_order ?? g.order ?? 1 });
 
 const ALL_LETTERS = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
 
@@ -31,17 +33,6 @@ const normalizeGrade = (g, i) => {
   };
 };
 
-const load = () => {
-  try {
-    return sortByGrade(JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]").map(normalizeGrade));
-  } catch { return []; }
-};
-const save = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-
-const nextGrdId = (arr) => {
-  const nums = arr.map(d => parseInt((d.gradeId || "GRD-000").replace("GRD-", ""), 10)).filter(n => !isNaN(n));
-  return `GRD-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, "0")}`;
-};
 
 /* colour by alphabetical position of the grade letter */
 const GRADE_PALETTE = [
@@ -228,7 +219,7 @@ function Modal({ item, usedLetters, onClose, onSaved }) {
 }
 
 export default function Grades({ actionsRef, onChange }) {
-  const [grades,       setGrades]       = useState(load);
+  const [grades,       setGrades]       = useState([]);
   const [search,       setSearch]       = useState("");
   const [modal,        setModal]        = useState(null);
   const [importing,    setImporting]    = useState(false);
@@ -237,12 +228,13 @@ export default function Grades({ actionsRef, onChange }) {
   const [draftSortDir, setDraftSortDir]  = useState("asc");
   const importRef = useRef(null);
 
-  const persist = (data) => {
-    const normalized = data.map(normalizeGrade);
-    setGrades(normalized);
-    save(normalized);
-    onChange?.(normalized);
+  const fetchGrades = async () => {
+    const res = await fetch(`${API}/api/organisation/grades`, { headers: { Authorization: `Bearer ${TOKEN()}` } });
+    const d   = await res.json();
+    const arr = sortByGrade((d.grades || []).map(mapGrade));
+    setGrades(arr); onChange?.(arr);
   };
+  useEffect(() => { fetchGrades(); }, []);
 
   useEffect(() => {
     if (!actionsRef) return;
@@ -259,26 +251,21 @@ export default function Grades({ actionsRef, onChange }) {
     return () => { actionsRef.current = {}; };
   });
 
-  const handleSaved = (form) => {
-    if (modal === "add") {
-      const maxOrder = grades.length ? Math.max(...grades.map(g => g.order || 0)) : 0;
-      persist([...grades, {
-        id: Date.now(),
-        gradeId: nextGrdId(grades),
-        grade: form.grade,
-        descriptions: form.descriptions,
-        order: maxOrder + 1,
-        status: form.status,
-      }]);
-    } else {
-      persist(grades.map(g => g.id === modal.id ? { ...g, descriptions: form.descriptions, status: form.status } : g));
-    }
+  const handleSaved = async (form) => {
+    const isAdd = modal === "add";
+    const maxOrder = grades.length ? Math.max(...grades.map(g => g.order || 0)) : 0;
+    const body = isAdd ? { grade: form.grade, descriptions: form.descriptions, sort_order: maxOrder + 1, status: form.status }
+                       : { descriptions: form.descriptions, status: form.status };
+    const url = isAdd ? `${API}/api/organisation/grades` : `${API}/api/organisation/grades/${modal.id}`;
+    await fetch(url, { method: isAdd ? "POST" : "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify(body) });
     setModal(null);
+    fetchGrades();
   };
 
-  const del = (id) => {
+  const del = async (id) => {
     if (!window.confirm("Delete this grade?")) return;
-    persist(grades.filter(g => g.id !== id));
+    await fetch(`${API}/api/organisation/grades/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${TOKEN()}` } });
+    fetchGrades();
   };
 
   /* Rows stay fixed — only order numbers change: asc 1,2,3… or desc n,…,1 */
@@ -293,16 +280,13 @@ export default function Grades({ actionsRef, onChange }) {
     setEditingOrder(true);
   };
 
-  const saveOrder = () => {
+  const saveOrder = async () => {
     const n = draftGrades.length;
-    const updated = draftGrades.map((g, i) => ({
-      ...g,
-      order: orderForIndex(i, n, draftSortDir),
-    }));
-    persist(updated);
-    setEditingOrder(false);
-    setDraftGrades([]);
-    setDraftSortDir("asc");
+    await Promise.all(draftGrades.map((g, i) =>
+      fetch(`${API}/api/organisation/grades/${g.id}`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify({ sort_order: orderForIndex(i, n, draftSortDir) }) })
+    ));
+    setEditingOrder(false); setDraftGrades([]); setDraftSortDir("asc");
+    fetchGrades();
   };
 
   const cancelOrder = () => {
@@ -405,13 +389,11 @@ export default function Grades({ actionsRef, onChange }) {
 
       if (!parsed.length) { alert("No valid new grades found.\nMake sure columns are: Grade, Description, Status (no duplicate letters)"); return; }
 
-      const updated = [...grades];
-      let maxOrder  = updated.length ? Math.max(...updated.map(g => g.order || 0)) : 0;
-      parsed.forEach(r => {
-        maxOrder += 1;
-        updated.push({ id: Date.now() + Math.random(), gradeId: nextGrdId(updated), ...r, order: maxOrder });
-      });
-      persist(updated);
+      let maxOrder = grades.length ? Math.max(...grades.map(g => g.order || 0)) : 0;
+      await Promise.all(parsed.map((r, i) =>
+        fetch(`${API}/api/organisation/grades`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify({ ...r, sort_order: maxOrder + i + 1 }) })
+      ));
+      await fetchGrades();
       alert(`${parsed.length} grade(s) imported successfully.`);
     } catch {
       alert("Failed to read file. Please use the template format.");
@@ -560,4 +542,4 @@ export default function Grades({ actionsRef, onChange }) {
   );
 }
 
-export { load as loadGrades };
+export const loadGrades = () => [];

@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { Plus, MapPin } from "lucide-react";
 import CompanyList from "../Procurement/CompanyList";
 
-const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
+const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
+const TOKEN = () => localStorage.getItem("bms_token") || "";
 
 const AVATAR_COLORS = [
   "bg-blue-100 text-blue-700",

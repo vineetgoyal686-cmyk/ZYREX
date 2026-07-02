@@ -5,17 +5,8 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const STORAGE_KEY = "bms_org_divisions";
-
-const load = () => {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); } catch { return []; }
-};
-const save = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-
-const nextDivId = (arr) => {
-  const nums = arr.map(d => parseInt((d.div_id || "DIV-000").replace("DIV-", ""), 10)).filter(Boolean);
-  return `DIV-${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(3, "0")}`;
-};
+const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
+const TOKEN = () => localStorage.getItem("bms_token") || "";
 
 function Modal({ item, onClose, onSaved }) {
   const [form, setForm] = useState(item ? { name: item.name, status: item.status } : { name: "", status: "active" });
@@ -63,13 +54,19 @@ function Modal({ item, onClose, onSaved }) {
 }
 
 export default function Divisions({ actionsRef, onChange }) {
-  const [divs, setDivs]         = useState(load);
-  const [search, setSearch]     = useState("");
-  const [modal, setModal]       = useState(null);
+  const [divs, setDivs]           = useState([]);
+  const [search, setSearch]       = useState("");
+  const [modal, setModal]         = useState(null);
   const [importing, setImporting] = useState(false);
   const importRef = useRef(null);
 
-  const persist = (data) => { setDivs(data); save(data); onChange?.(data); };
+  const fetchDivs = async () => {
+    const res = await fetch(`${API}/api/organisation/divisions`, { headers: { Authorization: `Bearer ${TOKEN()}` } });
+    const d   = await res.json();
+    const arr = d.divisions || [];
+    setDivs(arr); onChange?.(arr);
+  };
+  useEffect(() => { fetchDivs(); }, []);
 
   /* ── actionsRef wiring ── */
   useEffect(() => {
@@ -84,18 +81,18 @@ export default function Divisions({ actionsRef, onChange }) {
     return () => { actionsRef.current = {}; };
   });
 
-  const handleSaved = (form) => {
-    if (modal === "add") {
-      persist([...divs, { id: Date.now(), div_id: nextDivId(divs), name: form.name, status: form.status }]);
-    } else {
-      persist(divs.map(d => d.id === modal.id ? { ...d, ...form } : d));
-    }
+  const handleSaved = async (form) => {
+    const isAdd = modal === "add";
+    const url    = isAdd ? `${API}/api/organisation/divisions` : `${API}/api/organisation/divisions/${modal.id}`;
+    await fetch(url, { method: isAdd ? "POST" : "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify(form) });
     setModal(null);
+    fetchDivs();
   };
 
-  const del = (id) => {
+  const del = async (id) => {
     if (!window.confirm("Delete this division?")) return;
-    persist(divs.filter(d => d.id !== id));
+    await fetch(`${API}/api/organisation/divisions/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${TOKEN()}` } });
+    fetchDivs();
   };
 
   const rows = divs.filter(d => d.name?.toLowerCase().includes(search.toLowerCase()));
@@ -171,11 +168,10 @@ export default function Divisions({ actionsRef, onChange }) {
 
       if (!parsed.length) { alert("No valid rows found.\nMake sure column is: Division Name"); return; }
 
-      const updated = [...divs];
-      parsed.forEach(r => {
-        updated.push({ id: Date.now() + Math.random(), div_id: nextDivId(updated), name: r.name, status: r.status });
-      });
-      persist(updated);
+      await Promise.all(parsed.map(r =>
+        fetch(`${API}/api/organisation/divisions`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify(r) })
+      ));
+      await fetchDivs();
       alert(`${parsed.length} division(s) imported successfully.`);
     } catch {
       alert("Failed to read file. Please use the template format.");
@@ -245,4 +241,4 @@ export default function Divisions({ actionsRef, onChange }) {
   );
 }
 
-export { load as loadDivisions };
+export const loadDivisions = () => [];

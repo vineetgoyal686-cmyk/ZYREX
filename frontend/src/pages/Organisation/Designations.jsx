@@ -1,28 +1,20 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Search, Edit2, Trash2, X, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 import { StatusBadge, TableHead, cx } from "./helpers";
-import { DESIG_ALL } from "./data";
-import { loadGrades, gradeCls, descriptionsLabel, parseDescriptions } from "./Grades";
+import { gradeCls, parseDescriptions } from "./Grades";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-const STORAGE_KEY      = "bms_org_designations";
+const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
+const TOKEN = () => localStorage.getItem("bms_token") || "";
+const mapDesig = (d) => ({ ...d, desigId: d.desig_id || d.desigId, active: d.status !== undefined ? d.status === "active" : !!d.active });
 const TEMPLATE_HEADERS = ["Designation Name", "Grade", "Status"];
-
-const loadDesigs = () => {
-  try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return Array.isArray(stored) ? stored : DESIG_ALL;
-  } catch { return DESIG_ALL; }
-};
-
-const saveDesigs = (data) => localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-
 const EMPTY_FORM = { title: "", grade: "", active: true };
 
 export default function Designations({ actionsRef }) {
-  const [rows,      setRows]      = useState(loadDesigs);
+  const [rows,      setRows]      = useState([]);
+  const [grades,    setGrades]    = useState([]);
   const [search,    setSearch]    = useState("");
   const [modal,     setModal]     = useState(null);
   const [form,      setForm]      = useState(EMPTY_FORM);
@@ -34,6 +26,19 @@ export default function Designations({ actionsRef }) {
   const importRef   = useRef(null);
   const gradeDropRef = useRef(null);
 
+  const fetchDesigs = async () => {
+    const res = await fetch(`${API}/api/organisation/org-designations`, { headers: { Authorization: `Bearer ${TOKEN()}` } });
+    const d   = await res.json();
+    setRows((d.designations || []).map(mapDesig));
+  };
+  useEffect(() => { fetchDesigs(); }, []);
+
+  useEffect(() => {
+    fetch(`${API}/api/organisation/grades`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
+      .then(r => r.json())
+      .then(d => setGrades((d.grades || []).map(g => ({ ...g, gradeId: g.grade_id || g.gradeId, order: g.sort_order ?? g.order ?? 1 })).filter(g => g.status === "active").sort((a, b) => (a.order || 0) - (b.order || 0))));
+  }, []);
+
   useEffect(() => {
     if (!gradeDropOpen) return;
     const handler = (e) => {
@@ -43,16 +48,9 @@ export default function Designations({ actionsRef }) {
     return () => document.removeEventListener("mousedown", handler);
   }, [gradeDropOpen]);
 
-  /* active grades from localStorage, sorted by user-defined order */
-  const grades = useMemo(() =>
-    loadGrades().filter(g => g.status === "active").sort((a, b) => (a.order || 0) - (b.order || 0)),
-  []);
-
-  const persist = (data) => { setRows(data); saveDesigs(data); };
-
   const filtered = rows.filter(d =>
     d.title.toLowerCase().includes(search.toLowerCase()) ||
-    d.desigId.toLowerCase().includes(search.toLowerCase())
+    (d.desigId || "").toLowerCase().includes(search.toLowerCase())
   );
 
   /* ── actionsRef wiring ── */
@@ -142,13 +140,15 @@ export default function Designations({ actionsRef }) {
 
       if (!parsed.length) { alert("No valid rows found.\nMake sure columns are: Designation Name, Grade, Status"); return; }
 
-      let startId = Math.max(0, ...rows.map(r => r.id));
-      const newRows = parsed.map(r => {
-        startId += 1;
-        return { id: startId, desigId: `DSIG-${String(startId).padStart(3, "0")}`, ...r };
-      });
-      persist([...rows, ...newRows]);
-      alert(`${newRows.length} designation(s) imported successfully.`);
+      await Promise.all(parsed.map(r =>
+        fetch(`${API}/api/organisation/org-designations`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` },
+          body: JSON.stringify({ title: r.title, grade: r.grade, status: r.active ? "active" : "inactive" }),
+        })
+      ));
+      await fetchDesigs();
+      alert(`${parsed.length} designation(s) imported successfully.`);
     } catch {
       alert("Failed to read file. Please use the template format.");
     } finally {
@@ -158,17 +158,14 @@ export default function Designations({ actionsRef }) {
   };
 
   /* ── Modal save ── */
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!form.title.trim()) { setFormErr("Designation name is required."); return; }
-    if (modal.mode === "add") {
-      const id = Math.max(0, ...rows.map(r => r.id)) + 1;
-      persist([...rows, { id, desigId: `DSIG-${String(id).padStart(3, "0")}`, title: form.title.trim(), grade: form.grade, active: form.active }]);
-    } else {
-      persist(rows.map(r =>
-        r.id === modal.data.id ? { ...r, title: form.title.trim(), grade: form.grade, active: form.active } : r
-      ));
-    }
+    const payload = { title: form.title.trim(), grade: form.grade, status: form.active ? "active" : "inactive" };
+    const isAdd = modal.mode === "add";
+    const url = isAdd ? `${API}/api/organisation/org-designations` : `${API}/api/organisation/org-designations/${modal.data.id}`;
+    await fetch(url, { method: isAdd ? "POST" : "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify(payload) });
     setModal(null);
+    fetchDesigs();
   };
 
   return (
@@ -365,8 +362,11 @@ export default function Designations({ actionsRef }) {
                 className="px-4 py-1.5 text-xs font-semibold border border-slate-200 rounded text-slate-600 hover:bg-slate-50 transition-colors">
                 Cancel
               </button>
-              <button onClick={() => { persist(rows.filter(r => r.id !== deleteId)); setDeleteId(null); }}
-                className="px-4 py-1.5 text-xs font-semibold bg-red-600 text-white rounded hover:bg-red-700 transition-colors">
+              <button onClick={async () => {
+                await fetch(`${API}/api/organisation/org-designations/${deleteId}`, { method: "DELETE", headers: { Authorization: `Bearer ${TOKEN()}` } });
+                setDeleteId(null);
+                fetchDesigs();
+              }} className="px-4 py-1.5 text-xs font-semibold bg-red-600 text-white rounded hover:bg-red-700 transition-colors">
                 Delete
               </button>
             </div>
@@ -425,4 +425,4 @@ export default function Designations({ actionsRef }) {
   );
 }
 
-export { loadDesigs as loadDesignations };
+export const loadDesignations = () => [];
