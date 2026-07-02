@@ -26,7 +26,10 @@ router.get("/events", (req, res) => {
   req.on("close", () => removeClient(res));
 });
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fieldSize: 10 * 1024 * 1024 }, // 10 MB for the JSON data field
+});
 
 // Draft number helpers — PO-N / WO-N assigned on create, replaced with full number on issue
 const isDraftNumber = (n) => /^(PO|WO)-\d+$/.test(n || '') || (n || '').startsWith('PENDING-');
@@ -860,7 +863,7 @@ router.delete("/:id/permanent", async (req, res) => {
 });
 
 router.post("/", requirePerm("order", "can_add"), upload.fields([
-  { name: "quotation", maxCount: 1 },
+  { name: "quotation", maxCount: 6 },
   { name: "comparative", maxCount: 1 }
 ]), async (req, res) => {
   try {
@@ -1467,7 +1470,7 @@ router.post("/bulk-import", async (req, res) => {
 });
 
 router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
-  { name: "quotation", maxCount: 1 },
+  { name: "quotation", maxCount: 6 },
   { name: "comparative", maxCount: 1 }
 ]), async (req, res) => {
   try {
@@ -2819,6 +2822,12 @@ router.post("/:id/issue-action", async (req, res) => {
     console.error("POST /orders/:id/issue-action failed:", err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// Multer / busboy errors return HTML by default — catch them and return JSON
+router.use((err, req, res, _next) => {
+  console.error("Order route error:", err.code, err.message);
+  res.status(err.status || 400).json({ error: err.message || "Upload or server error" });
 });
 
 module.exports = router;

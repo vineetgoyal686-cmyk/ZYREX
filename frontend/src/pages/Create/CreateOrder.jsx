@@ -2069,7 +2069,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                   </div>
                 </div>
                 {files.proof.type && (
-                  <MultiDocUpload label={`${files.proof.type} *`} files={files.proof.files} max={3} required
+                  <MultiDocUpload label={`${files.proof.type} *`} files={files.proof.files} max={1} required
                     onAdd={e => {
                       const f = e.target.files[0];
                       if (f) setFiles(prev => ({ ...prev, proof: { ...prev.proof, files: [...prev.proof.files, f] } }));
