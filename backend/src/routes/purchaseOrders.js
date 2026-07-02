@@ -1852,7 +1852,7 @@ const loadOrderForRender = async (orderId) => {
     ...row,
     material_name: row.material_name || row.items?.material_name,
   }));
-  const comp = cleanOrder.companies || {};
+  const comp = cleanOrder.companies || cleanOrder.snapshot?.company || {};
   const vend = cleanOrder.vendors || {};
   const site = cleanOrder.sites || cleanOrder.snapshot?.site || {};
   // Mirror ViewOrder logic: snapshot contacts first, fallback to live JOIN
