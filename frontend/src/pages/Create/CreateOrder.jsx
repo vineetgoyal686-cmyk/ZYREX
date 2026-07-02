@@ -1025,11 +1025,14 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       // Map Existing Files
       const existingQuotations = [];
       if (order.quotation_url) {
-        existingQuotations.push({
-          name: order.quotation_url.split('/').pop().split('?')[0].replace(/^quotation_\d+_/, '') || "Existing Quotation",
-          url: order.quotation_url,
+        let qUrls = [];
+        try { const p = JSON.parse(order.quotation_url); if (Array.isArray(p)) qUrls = p.filter(Boolean); else throw 0; }
+        catch { qUrls = [order.quotation_url]; }
+        qUrls.forEach(url => existingQuotations.push({
+          name: decodeURIComponent(url.split('/').pop().split('?')[0]).replace(/^quotation_\d+_/, '') || "Existing Quotation",
+          url,
           isExisting: true
-        });
+        }));
       }
 
       const existingProof = [];

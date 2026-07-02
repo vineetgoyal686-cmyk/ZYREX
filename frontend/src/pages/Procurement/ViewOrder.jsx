@@ -3421,15 +3421,15 @@ const OrderDocumentsTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
   const preDocsByCategory = React.useMemo(() => {
     const map = { quotations: [], comparative: [], "vendor-docs": [], other: [] };
 
-    // Legacy single-quotation field
+    // quotation_url — plain string or JSON array of URLs
     if (order.quotation_url) {
-      const qRaw = decodeURIComponent(order.quotation_url.split("?")[0]);
-      const qName = qRaw.split("/").pop().replace(/^quotation_\d+_/, "") || "Quotation";
-      map.quotations.push({
-        id: "legacy-quotation",
-        url: order.quotation_url,
-        name: qName,
-        frozen: true,
+      let qUrls = [];
+      try { const p = JSON.parse(order.quotation_url); if (Array.isArray(p)) qUrls = p.filter(Boolean); else throw 0; }
+      catch { qUrls = [order.quotation_url]; }
+      qUrls.forEach((url, idx) => {
+        const qRaw = decodeURIComponent(url.split("?")[0]);
+        const qName = qRaw.split("/").pop().replace(/^quotation_\d+_/, "") || `Quotation ${idx + 1}`;
+        map.quotations.push({ id: `legacy-quotation-${idx}`, url, name: qName, frozen: true });
       });
     }
     // Legacy comparative sheet

@@ -181,7 +181,26 @@ const uploadToStorage = async (bucket, path, buffer, mimetype) => {
   return uploadStorageFile(supabase, bucket, path, buffer, mimetype);
 };
 
-const signOrderDocUrl = (value) => createSignedStorageUrl(supabase, "procurement-docs", value, 60 * 60 * 24, { download: false });
+const expandUrls = (value) => {
+  if (!value) return [];
+  try { const arr = JSON.parse(value); if (Array.isArray(arr)) return arr.filter(Boolean); } catch {}
+  return [value];
+};
+
+const signOrderDocUrl = async (value) => {
+  if (!value) return "";
+  try {
+    const arr = JSON.parse(value);
+    if (Array.isArray(arr)) {
+      const signed = await Promise.all(arr.filter(Boolean).map(u =>
+        createSignedStorageUrl(supabase, "procurement-docs", u, 60 * 60 * 24, { download: false })
+      ));
+      const valid = signed.filter(Boolean);
+      return valid.length === 1 ? valid[0] : JSON.stringify(valid);
+    }
+  } catch {}
+  return createSignedStorageUrl(supabase, "procurement-docs", value, 60 * 60 * 24, { download: false });
+};
 const signProcImageUrl = (value) => createSignedStorageUrl(supabase, "picture", value);
 const signVendorDocUrl = (value) => createSignedStorageUrl(supabase, "vendor-docs", value);
 const signAvatarUrl = (value) => createSignedStorageUrl(supabase, "picture", value);
@@ -847,7 +866,8 @@ router.delete("/:id/permanent", async (req, res) => {
     }
     try {
       const filesToDelete = [
-        order.quotation_url, order.comparative_sheet_url,
+        ...expandUrls(order.quotation_url),
+        ...expandUrls(order.comparative_sheet_url),
         ...((Array.isArray(order.pre_documents)  ? order.pre_documents  : []).map(d => d?.url).filter(Boolean)),
         ...((Array.isArray(order.post_documents) ? order.post_documents : []).map(d => d?.url).filter(Boolean)),
       ].filter(Boolean);
@@ -877,14 +897,16 @@ router.post("/", requirePerm("order", "can_add"), upload.fields([
     let quotationUrl = "";
     let comparativeUrl = "";
 
-    if (files.quotation) {
-      quotationUrl = await uploadToStorage(
-        "procurement-docs",
-        `orders/${mainData.order_number}/quotations/quotation_${Date.now()}_${files.quotation[0].originalname}`,
-        files.quotation[0].buffer, files.quotation[0].mimetype
-      );
+    if (files.quotation?.length) {
+      const ts = Date.now();
+      const urls = await Promise.all(files.quotation.map((f, i) =>
+        uploadToStorage("procurement-docs",
+          `orders/${mainData.order_number}/quotations/quotation_${ts + i}_${f.originalname}`,
+          f.buffer, f.mimetype)
+      ));
+      quotationUrl = urls.length === 1 ? urls[0] : JSON.stringify(urls);
     }
-    if (files.comparative) {
+    if (files.comparative?.length) {
       comparativeUrl = await uploadToStorage(
         "procurement-docs",
         `orders/${mainData.order_number}/comparative/comparative_${Date.now()}_${files.comparative[0].originalname}`,
@@ -1578,14 +1600,16 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
     let quotationUrl    = existing?.quotation_url    || "";
     let comparativeUrl  = existing?.comparative_sheet_url || "";
 
-    if (files.quotation) {
-      quotationUrl = await uploadToStorage(
-        "procurement-docs",
-        `orders/${mainData.order_number}/quotations/quotation_${Date.now()}_${files.quotation[0].originalname}`,
-        files.quotation[0].buffer, files.quotation[0].mimetype
-      );
+    if (files.quotation?.length) {
+      const ts = Date.now();
+      const urls = await Promise.all(files.quotation.map((f, i) =>
+        uploadToStorage("procurement-docs",
+          `orders/${mainData.order_number}/quotations/quotation_${ts + i}_${f.originalname}`,
+          f.buffer, f.mimetype)
+      ));
+      quotationUrl = urls.length === 1 ? urls[0] : JSON.stringify(urls);
     }
-    if (files.comparative) {
+    if (files.comparative?.length) {
       comparativeUrl = await uploadToStorage(
         "procurement-docs",
         `orders/${mainData.order_number}/comparative/comparative_${Date.now()}_${files.comparative[0].originalname}`,
@@ -1699,12 +1723,15 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
         }
       };
 
-      const [movedQuotation, movedComparative] = await Promise.all([
-        moveStorageFile(existing.quotation_url, 'quotations'),
+      const existingQuotUrls = expandUrls(existing.quotation_url);
+      const movedQuotUrls = await Promise.all(existingQuotUrls.map(u => moveStorageFile(u, 'quotations')));
+      if (movedQuotUrls.some((u, i) => u !== existingQuotUrls[i]))
+        quotationUrl = movedQuotUrls.length === 1 ? movedQuotUrls[0] : JSON.stringify(movedQuotUrls);
+
+      const [movedComparative] = await Promise.all([
         moveStorageFile(existing.comparative_sheet_url, 'comparative'),
       ]);
-      if (movedQuotation   !== existing.quotation_url)          quotationUrl   = movedQuotation;
-      if (movedComparative !== existing.comparative_sheet_url)  comparativeUrl = movedComparative;
+      if (movedComparative !== existing.comparative_sheet_url) comparativeUrl = movedComparative;
     }
 
     // If this is a status-only update and totals are missing, auto-calculate from existing items
