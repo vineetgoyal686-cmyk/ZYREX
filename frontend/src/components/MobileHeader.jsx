@@ -21,10 +21,9 @@ export default function MobileHeader({ onMenuOpen, onInbox, onProfile, currentUs
         <Menu size={22} />
       </button>
 
-      {/* Logo + name */}
-      <div className="flex items-center gap-2 flex-1 min-w-0">
-        <img src="/Z.png" alt="Zyhawk" className="h-7 object-contain shrink-0" />
-        <span className="text-white font-bold text-[15px] tracking-tight">Zyhawk</span>
+      {/* Logo only */}
+      <div className="flex items-center flex-1 min-w-0">
+        <img src="/Z.png" alt="Zyhawk" className="h-8 object-contain shrink-0" />
       </div>
 
       {/* Bell — goes to inbox */}
