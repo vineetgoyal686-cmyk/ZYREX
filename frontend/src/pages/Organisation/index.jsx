@@ -17,6 +17,7 @@ import Grades        from "./Grades";
 import EmployeeList  from "./EmployeeList";
 import OrgList       from "./OrgList";
 import SOPTab        from "../Settings/tabs/SOP";
+import Policy        from "./Policy";
 import { loadDivisions } from "./Divisions";
 import { loadSubDepts   } from "./SubDepts";
 import { loadGrades     } from "./Grades";
@@ -32,6 +33,7 @@ const NAV_SECTIONS = [
       { id: "structure",  label: "Structure",  icon: FolderTree,    hasAdd: false, hasExport: false },
       { id: "org_chart",  label: "Org Chart",  icon: GitBranch,     hasAdd: false, hasExport: false },
       { id: "sop",        label: "SOP",        icon: ClipboardList, hasAdd: false, hasExport: false },
+      { id: "policy",     label: "Policy",     icon: FileText,      hasAdd: true,  hasExport: false, btnLabel: "Add Policy" },
     ],
   },
   {
@@ -125,6 +127,7 @@ function OrgDetail({ org, onBack, currentUser }) {
       case "designations":    return <Designations actionsRef={actionsRef} />;
       case "employees":       return <EmployeeList actionsRef={actionsRef} view={empView} onViewChange={setEmpView} onCountChange={setEmpCount} />;
       case "locations":       return <Locations   actionsRef={actionsRef} />;
+      case "policy":          return <Policy actionsRef={actionsRef} companyId={org?.id} orgName={org?.companyName || org?.company_name} />;
       default:                return null;
     }
   };

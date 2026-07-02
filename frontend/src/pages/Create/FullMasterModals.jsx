@@ -1481,7 +1481,7 @@ export const FullContactModal = ({ onClose, onSuccess, editData, companies = [] 
     try {
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
       const payload = { ...form, createdById: u.id || "", createdByName: u.name || "" };
-      const url = editId ? `${API}/api/procurement/contacts/${editId}` : `${API}/api/procurement/contacts`;
+      const url = editId ? `${API}/api/organisation/employees/${editId}` : `${API}/api/organisation/employees`;
       const method = editId ? "PUT" : "POST";
       const res = await fetch(url, { 
         method, 

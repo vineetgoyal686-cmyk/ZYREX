@@ -51,9 +51,6 @@ const TAB_MODULE_KEY = {
   master_data__intakes:  "master_data_intakes",
   master_data__clauses:  "master_data_clauses",
   audit: "audit",
-  proc_setup__contact_list: "contact_list",
-  proc_setup__company_list: "company_list",
-
   proc_setup__vendor_list: "vendor_list",
   proc_setup__item_list: "item_list",
   proc_setup__category_list: "category_list",
@@ -185,11 +182,8 @@ const projectSections = [
 ];
 
 const iconById = {
-  proc_setup__company_list: Users,
-
   proc_setup__vendor_list: Users,
   proc_setup__item_list: Package,
-  proc_setup__contact_list: Contact,
   proc_setup__category_list: Database,
   proc_setup__uom: FileText,
   proc_setup__term_condition: ClipboardEdit,

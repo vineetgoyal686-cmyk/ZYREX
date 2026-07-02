@@ -473,6 +473,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const [selectedImgUrl, setSelectedImgUrl] = useState(null);
   const [toast,      setToast]     = useState(null);
   const [importing,  setImporting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
   const importRef = useRef(null);
 
   const divisions = useMemo(() => { try { return JSON.parse(localStorage.getItem("bms_org_divisions") || "[]"); } catch { return []; } }, []);
@@ -524,7 +525,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const fetchEmps = async () => {
     setLoading(true);
     try {
-      const res  = await fetch(`${API}/api/procurement/contacts`);
+      const res  = await fetch(`${API}/api/organisation/employees`);
       const data = await res.json();
       setEmps(data.contacts || []);
     } catch { setEmps([]); }
@@ -563,7 +564,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     try {
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
       const payload = { ...form, company: form.division || form.company, createdById: u.id || "", createdByName: u.name || "" };
-      const url    = editId ? `${API}/api/procurement/contacts/${editId}` : `${API}/api/procurement/contacts`;
+      const url    = editId ? `${API}/api/organisation/employees/${editId}` : `${API}/api/organisation/employees`;
       const method = editId ? "PUT" : "POST";
       const res    = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data   = await res.json();
@@ -581,10 +582,16 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     finally { setSaving(false); }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("Delete this employee?")) return;
+  const handleDelete = (id) => {
+    const emp = emps.find(e => e.id === id);
+    setDeleteConfirm({ id, name: emp?.personName || "this employee" });
+  };
+
+  const confirmDelete = async () => {
+    const { id } = deleteConfirm;
+    setDeleteConfirm(null);
     try {
-      await fetch(`${API}/api/procurement/contacts/${id}`, { method: "DELETE" });
+      await fetch(`${API}/api/organisation/employees/${id}`, { method: "DELETE" });
       setEmps(prev => prev.filter(e => e.id !== id));
       if (selected?.id === id) setSelected(null);
       showToast("Employee deleted");
@@ -710,7 +717,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
 
       let imported = 0, failed = 0;
       for (const row of rows) {
-        const res = await fetch(`${API}/api/procurement/contacts`, {
+        const res = await fetch(`${API}/api/organisation/employees`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(row),
@@ -744,6 +751,31 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
             {toast.msg}
           </div>
         )}
+        {deleteConfirm && (
+          <div className="fixed inset-0 z-[300] bg-black/40 flex items-center justify-center">
+            <div className="bg-white rounded-xl shadow-2xl w-80 p-6 flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
+                  <Trash2 size={16} className="text-red-500" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">Delete Employee</p>
+                  <p className="text-xs text-slate-500 mt-0.5">"{deleteConfirm.name}" ko permanently delete kiya jaayega.</p>
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end">
+                <button onClick={() => setDeleteConfirm(null)}
+                  className="px-4 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+                  Cancel
+                </button>
+                <button onClick={confirmDelete}
+                  className="px-4 py-1.5 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors font-medium">
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -764,6 +796,32 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         <div className={`fixed top-5 right-5 z-[200] px-4 py-3 rounded-lg text-sm font-medium shadow-lg border
           ${toast.type === "error" ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
           {toast.msg}
+        </div>
+      )}
+
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-[300] bg-black/40 flex items-center justify-center">
+          <div className="bg-white rounded-xl shadow-2xl w-80 p-6 flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-full bg-red-50 flex items-center justify-center flex-shrink-0">
+                <Trash2 size={16} className="text-red-500" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Delete Employee</p>
+                <p className="text-xs text-slate-500 mt-0.5">"{deleteConfirm.name}" ko permanently delete kiya jaayega.</p>
+              </div>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setDeleteConfirm(null)}
+                className="px-4 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={confirmDelete}
+                className="px-4 py-1.5 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors font-medium">
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

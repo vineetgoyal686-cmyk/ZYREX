@@ -178,7 +178,7 @@ router.get("/global-stats", requireAuth, async (req, res) => {
       supabase.schema("procurement").from("vendors").select("id", { count: "exact", head: true }),
       supabase.from("projects").select("id", { count: "exact", head: true }).neq("is_active", false),
       supabase.schema("procurement").from("companies").select("id", { count: "exact", head: true }),
-      supabase.schema("procurement").from("contacts").select("id", { count: "exact", head: true }),
+      supabase.schema("organisation").from("employees").select("id", { count: "exact", head: true }),
       supabase.schema("procurement").from("items").select("id", { count: "exact", head: true }),
       supabase.from("users").select("id", { count: "exact", head: true }).eq("is_active", true),
       supabase.schema("procurement").from("clauses").select("id, type"),

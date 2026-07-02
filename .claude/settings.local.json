@@ -83,7 +83,32 @@
       "Bash(curl -s http://localhost:3000/api/procurement/categories)",
       "Bash(curl -s \"http://localhost:3000/api/orders\")",
       "Bash(node -e \"const d=require\\('fs'\\);let s='';process.stdin.on\\('data',c=>s+=c\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(s\\);const o=j.orders?.[0];console.log\\('notes field:',JSON.stringify\\(o?.notes\\)\\);console.log\\('snapshot.notes:',JSON.stringify\\(o?.snapshot?.notes\\)\\);}\\)\")",
-      "Bash(node -e \"const s=[];process.stdin.on\\('data',c=>s.push\\(c\\)\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(Buffer.concat\\(s\\)\\);const id=j.orders?.[0]?.id;if\\(id\\){const http=require\\('http'\\);http.get\\('http://localhost:3000/api/orders/'+id,\\(r\\)=>{const d=[];r.on\\('data',c=>d.push\\(c\\)\\);r.on\\('end',\\(\\)=>{const o=JSON.parse\\(Buffer.concat\\(d\\)\\);console.log\\('notes:',JSON.stringify\\(o.order?.notes\\)\\);console.log\\('snapshot.notes:',JSON.stringify\\(o.order?.snapshot?.notes\\)\\);}\\)}\\);}}\\);\")"
+      "Bash(node -e \"const s=[];process.stdin.on\\('data',c=>s.push\\(c\\)\\);process.stdin.on\\('end',\\(\\)=>{const j=JSON.parse\\(Buffer.concat\\(s\\)\\);const id=j.orders?.[0]?.id;if\\(id\\){const http=require\\('http'\\);http.get\\('http://localhost:3000/api/orders/'+id,\\(r\\)=>{const d=[];r.on\\('data',c=>d.push\\(c\\)\\);r.on\\('end',\\(\\)=>{const o=JSON.parse\\(Buffer.concat\\(d\\)\\);console.log\\('notes:',JSON.stringify\\(o.order?.notes\\)\\);console.log\\('snapshot.notes:',JSON.stringify\\(o.order?.snapshot?.notes\\)\\);}\\)}\\);}}\\);\")",
+      "Bash(tasklist /v /fi \"imagename eq node.exe\")",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"name = 'node.exe'\")",
+      "Bash(curl -s \"http://127.0.0.1:3000/api/orders/5c93902b-3a12-4851-98d7-00a49560c07c\")",
+      "Bash(curl -s \"http://127.0.0.1:3000/api/orders/5c93902b-3a12-4851-98d7-00a49560c07c\" -o /tmp/local_probe.json)",
+      "Bash(curl -s \"http://127.0.0.1:3000/api/orders/5c93902b-3a12-4851-98d7-00a49560c07c\" -o /tmp/local_probe2.json -w \"http_status %{http_code}\\\\n\")",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"boot check status %{http_code}\\\\n\" http://127.0.0.1:3000/ --max-time 3)",
+      "Bash(curl -s \"http://127.0.0.1:3000/api/orders/5c93902b-3a12-4851-98d7-00a49560c07c\" -o /tmp/local_probe3.json -w \"http_status %{http_code}\\\\n\")",
+      "Bash(curl -s -o /dev/null -w \"backend status: %{http_code}\\\\n\" http://127.0.0.1:3000/ --max-time 3)",
+      "Bash(tasklist)",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Id 11716 -Force -ErrorAction SilentlyContinue)",
+      "Bash(git commit -m ' *)",
+      "Bash(node --check backend/src/helpers/storageHelper.js)",
+      "Bash(node --check backend/src/routes/approvalFlows.js)",
+      "Bash(grep -v \"^[0-9]*:\\\\s*//\")",
+      "Bash(grep -v \"^\\\\s*//\")",
+      "Bash(powershell -NoProfile -Command \"\\(Get-Content 'frontend/src/pages/Create/CreateOrder.jsx' -Raw\\) -replace 'settings\\\\.tax &&', 'settings.taxMode === ''line'' &&' -replace 'settings\\\\.tax\\\\b\\(?! ===\\)', 'settings.taxMode === ''line''' | Set-Content -NoNewline 'frontend/src/pages/Create/CreateOrder.jsx'\")",
+      "Bash(node --check backend/src/pdf/orderTemplate.js)",
+      "Bash(xargs grep -l \"Organisation\\\\|EmployeeList\\\\|CompanyList\\\\|ContactList\")",
+      "Bash(powershell -NoProfile -Command ' *)",
+      "Bash(grep -n \"router\\\\.\\\\\\(get\\\\|post\\\\|put\\\\|delete\\\\|patch\\\\\\).*contact\\\\|\\\\/contacts\" backend/src/routes/procurement.js)",
+      "Bash(node --check backend/src/routes/organisation.js)",
+      "Bash(node --check backend/server.js)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' https://lhxgohcxcslbtnuubrsg.supabase.co/rest/v1/employees?limit=1 -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxoeGdvaGN4Y3NsYnRudXVicnNnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTMyMjgwOSwiZXhwIjoyMDkwODk4ODA5fQ.Iz07eHk5x5IostQk7aKd04y8azhVYoP8i4fH8n_Djx8' -H 'Accept-Profile: organisation')"
     ]
   }
 }

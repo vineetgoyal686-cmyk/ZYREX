@@ -1127,7 +1127,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         fetch(`${API}/api/projects`),
         fetch(`${API}/api/procurement/companies`),
         fetch(`${API}/api/procurement/vendors`),
-        fetch(`${API}/api/procurement/contacts`),
+        fetch(`${API}/api/organisation/employees`),
         fetch(`${API}/api/procurement/items`),
         fetch(`${API}/api/procurement/clauses`),
         fetch(`${API}/api/procurement/categories`),

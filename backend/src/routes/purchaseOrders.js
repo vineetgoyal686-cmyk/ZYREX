@@ -94,7 +94,7 @@ const makeHistoryListOrder = (order, history) => {
 const loadHistoryOrder = async (historyId) => {
   const { data: orders, error } = await supabase.schema("procurement")
     .from("purchase_orders")
-    .select("*, companies(*), vendors(*), contact_person:contacts(*)");
+    .select("*, companies(*), vendors(*), contact_person:employees(*)");
   if (error) throw error;
 
   for (const order of orders || []) {
@@ -128,7 +128,7 @@ const appendStatusHistorySnapshot = async ({ orderId, action, comments = "", act
   const [orderRes, itemRes] = await Promise.all([
     supabase.schema("procurement")
       .from("purchase_orders")
-      .select("*, companies(*), vendors(*), contact_person:contacts(*)")
+      .select("*, companies(*), vendors(*), contact_person:employees(*)")
       .eq("id", orderId)
       .single(),
     supabase.schema("procurement")
@@ -952,8 +952,8 @@ router.get("/:id", async (req, res) => {
       supabase.schema("procurement")
         .from("purchase_orders")
         .select(lean
-          ? "*, companies(id,company_name,company_code), vendors(*), contact_person:contacts(*)"
-          : "*, companies(*), vendors(*), contact_person:contacts(*)")
+          ? "*, companies(id,company_name,company_code), vendors(*), contact_person:employees(*)"
+          : "*, companies(*), vendors(*), contact_person:employees(*)")
         .eq("id", req.params.id)
         .single(),
       supabase.schema("procurement")
@@ -1014,7 +1014,7 @@ router.post("/bulk-import", async (req, res) => {
       supabase.schema("procurement").from("vendors").select("*"),
       supabase.schema("procurement").from("clauses").select("*"),
       supabase.schema("procurement").from("clause_versions").select("*"),
-      supabase.schema("procurement").from("contacts").select("*"),
+      supabase.schema("organisation").from("employees").select("*"),
       supabase.from("users").select("id, name, email, designation, profile_permissions"),
     ]);
     const companyByCode = new Map((companies || []).map(c => [String(c.company_code || "").toUpperCase().trim(), c]));
@@ -1791,7 +1791,7 @@ const loadOrderForRender = async (orderId) => {
   const [orderRes, itemRes] = await Promise.all([
     supabase.schema("procurement")
       .from("purchase_orders")
-      .select("*, companies(*), vendors(*), contact_person:contacts(*)")
+      .select("*, companies(*), vendors(*), contact_person:employees(*)")
       .eq("id", orderId)
       .single(),
     supabase.schema("procurement")

@@ -225,13 +225,10 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
   ];
 
   const SETUP_ROW_ORDER = [
-    "company_list",
-    "site_list",
     { group: "Vendor", keys: ["vendor_list", "vendor_pool"] },
     { group: "Item",   keys: ["item_supply", "item_sitc"]   },
     "uom",
     "category_list",
-    "contact_list",
     "term_condition",
     "payment_terms",
     "government_laws",
