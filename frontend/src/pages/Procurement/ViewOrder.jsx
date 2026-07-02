@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { ArrowLeft, Search, Building2, User, Landmark, MapPin, Receipt, ShieldQuestion, FileText, CheckCircle2, Phone, Mail, FileDown, Download, Eye, X, Upload, Trash2, FileCheck, Lock, ShoppingCart, Package, GitMerge, Calendar, Undo2, Folder, Plus, Clock, Pencil, ChevronDown } from "lucide-react";
+import { ArrowLeft, Search, Building2, User, Landmark, MapPin, Receipt, ShieldQuestion, FileText, CheckCircle2, Phone, Mail, FileDown, Download, Eye, X, Upload, Trash2, FileCheck, Lock, ShoppingCart, Package, GitMerge, Calendar, Undo2, Folder, Plus, Clock, Pencil, ChevronDown, FileSpreadsheet, Image as ImageIcon, File as FileIcon } from "lucide-react";
 import { getCachedOrderDetails, preloadOrderDetails, seedOrderDetails } from "./orderDetailsCache";
 import { normalizeOrderSite } from "../../utils/orderSite";
 

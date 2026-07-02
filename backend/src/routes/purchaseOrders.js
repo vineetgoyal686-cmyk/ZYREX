@@ -181,6 +181,8 @@ const uploadToStorage = async (bucket, path, buffer, mimetype) => {
   return uploadStorageFile(supabase, bucket, path, buffer, mimetype);
 };
 
+const safeFilename = (name) => (name || "file").replace(/[^a-zA-Z0-9._-]/g, "_");
+
 const expandUrls = (value) => {
   if (!value) return [];
   try { const arr = JSON.parse(value); if (Array.isArray(arr)) return arr.filter(Boolean); } catch {}
@@ -192,9 +194,11 @@ const signOrderDocUrl = async (value) => {
   try {
     const arr = JSON.parse(value);
     if (Array.isArray(arr)) {
-      const signed = await Promise.all(arr.filter(Boolean).map(u =>
-        createSignedStorageUrl(supabase, "procurement-docs", u, 60 * 60 * 24, { download: false })
-      ));
+      const signed = await Promise.all(arr.filter(Boolean).map(async (u, i) => {
+        const s = await createSignedStorageUrl(supabase, "procurement-docs", u, 60 * 60 * 24, { download: false });
+        if (!s) console.error(`[signOrderDocUrl] Failed to sign URL[${i}]:`, u);
+        return s;
+      }));
       const valid = signed.filter(Boolean);
       return valid.length === 1 ? valid[0] : JSON.stringify(valid);
     }
@@ -901,7 +905,7 @@ router.post("/", requirePerm("order", "can_add"), upload.fields([
       const ts = Date.now();
       const urls = await Promise.all(files.quotation.map((f, i) =>
         uploadToStorage("procurement-docs",
-          `orders/${mainData.order_number}/quotations/quotation_${ts + i}_${f.originalname}`,
+          `orders/${mainData.order_number}/quotations/quotation_${ts + i}_${safeFilename(f.originalname)}`,
           f.buffer, f.mimetype)
       ));
       quotationUrl = urls.length === 1 ? urls[0] : JSON.stringify(urls);
@@ -909,7 +913,7 @@ router.post("/", requirePerm("order", "can_add"), upload.fields([
     if (files.comparative?.length) {
       comparativeUrl = await uploadToStorage(
         "procurement-docs",
-        `orders/${mainData.order_number}/comparative/comparative_${Date.now()}_${files.comparative[0].originalname}`,
+        `orders/${mainData.order_number}/comparative/comparative_${Date.now()}_${safeFilename(files.comparative[0].originalname)}`,
         files.comparative[0].buffer, files.comparative[0].mimetype
       );
     }
@@ -1604,7 +1608,7 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
       const ts = Date.now();
       const urls = await Promise.all(files.quotation.map((f, i) =>
         uploadToStorage("procurement-docs",
-          `orders/${mainData.order_number}/quotations/quotation_${ts + i}_${f.originalname}`,
+          `orders/${mainData.order_number}/quotations/quotation_${ts + i}_${safeFilename(f.originalname)}`,
           f.buffer, f.mimetype)
       ));
       quotationUrl = urls.length === 1 ? urls[0] : JSON.stringify(urls);
@@ -1612,7 +1616,7 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
     if (files.comparative?.length) {
       comparativeUrl = await uploadToStorage(
         "procurement-docs",
-        `orders/${mainData.order_number}/comparative/comparative_${Date.now()}_${files.comparative[0].originalname}`,
+        `orders/${mainData.order_number}/comparative/comparative_${Date.now()}_${safeFilename(files.comparative[0].originalname)}`,
         files.comparative[0].buffer, files.comparative[0].mimetype
       );
     }
