@@ -97,7 +97,7 @@ const makeHistoryListOrder = (order, history) => {
 const loadHistoryOrder = async (historyId) => {
   const { data: orders, error } = await supabase.schema("procurement")
     .from("purchase_orders")
-    .select("*, companies(*), vendors(*)");
+    .select("*, vendors(*)");
   if (error) throw error;
 
   for (const order of orders || []) {
@@ -131,7 +131,7 @@ const appendStatusHistorySnapshot = async ({ orderId, action, comments = "", act
   const [orderRes, itemRes] = await Promise.all([
     supabase.schema("procurement")
       .from("purchase_orders")
-      .select("*, companies(*), vendors(*)")
+      .select("*, vendors(*)")
       .eq("id", orderId)
       .single(),
     supabase.schema("procurement")
@@ -580,7 +580,7 @@ router.get("/", async (req, res) => {
     if (hit) return res.json(hit);
     const { data, error } = await supabase.schema("procurement")
       .from("purchase_orders")
-      .select("*, companies(*), vendors(*)")
+      .select("*, vendors(*)")
       .neq("status", "Deleted")
       .order("created_at", { ascending: false });
     
@@ -684,7 +684,7 @@ router.get("/master/vendor-data", async (_req, res) => {
     const [ordersRes, vendorsRes] = await Promise.all([
       supabase.schema("procurement")
         .from("purchase_orders")
-        .select("id, order_number, order_type, status, totals, vendor_id, site_id, snapshot, created_at, date_of_creation, companies(company_code), vendors(id, vendor_code, vendor_name, email, mobile, bank_city, bank_state, address, company_codes)")
+        .select("id, order_number, order_type, status, totals, vendor_id, site_id, snapshot, created_at, date_of_creation, vendors(id, vendor_code, vendor_name, email, mobile, bank_city, bank_state, address, company_codes)")
         .in("status", ["Issued", "Amended"])
         .order("created_at", { ascending: false }),
       supabase.schema("procurement")
@@ -801,7 +801,7 @@ router.get("/trash", async (req, res) => {
   try {
     const { data, error } = await supabase.schema("procurement")
       .from("purchase_orders")
-      .select("*, companies(*), vendors(*)")
+      .select("*, vendors(*)")
       .eq("status", "Deleted")
       .order("updated_at", { ascending: false });
     if (error) throw error;
@@ -980,9 +980,7 @@ router.get("/:id", async (req, res) => {
     const [orderRes, itemRes] = await Promise.all([
       supabase.schema("procurement")
         .from("purchase_orders")
-        .select(lean
-          ? "*, companies(id,company_name,company_code), vendors(*)"
-          : "*, companies(*), vendors(*)")
+        .select("*, vendors(*)")
         .eq("id", req.params.id)
         .single(),
       supabase.schema("procurement")
@@ -1038,7 +1036,7 @@ router.post("/bulk-import", async (req, res) => {
 
     // Preload masters
     const [{ data: companies }, { data: sites }, { data: vendors }, { data: clauses }, { data: clauseVersions }, { data: contacts }, { data: users }] = await Promise.all([
-      supabase.schema("procurement").from("companies").select("*"),
+      supabase.schema("organisation").from("companies").select("*"),
       supabase.from("projects").select("*"),
       supabase.schema("procurement").from("vendors").select("*"),
       supabase.schema("procurement").from("clauses").select("*"),
@@ -1669,7 +1667,7 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
 
       const { data: curr } = await supabase.schema("procurement")
         .from("purchase_orders")
-        .select("order_number, order_type, site_id, companies(company_code)")
+        .select("order_number, order_type, site_id, snapshot")
         .eq("id", req.params.id)
         .single();
       const { data: currProject } = curr?.site_id
@@ -1705,7 +1703,7 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
           if (serialObj) {
             const nextSerial = (serialObj.current_number || 0) + 1;
             const typeCode  = (curr.order_type === 'Supply') ? 'PO' : 'WO';
-            const compCode  = curr.companies?.company_code || 'CO';
+            const compCode  = curr.snapshot?.company?.companyCode || curr.snapshot?.company?.company_code || 'CO';
             const siteCode  = currProject?.project_code || 'SITE';
             mainData.order_number = `${compCode}/${siteCode}/${typeCode}/${fy}/${nextSerial}`;
 
@@ -1836,7 +1834,7 @@ const loadOrderForRender = async (orderId) => {
   const [orderRes, itemRes] = await Promise.all([
     supabase.schema("procurement")
       .from("purchase_orders")
-      .select("*, companies(*), vendors(*)")
+      .select("*, vendors(*)")
       .eq("id", orderId)
       .single(),
     supabase.schema("procurement")
@@ -2785,7 +2783,7 @@ router.post("/:id/issue-action", async (req, res) => {
     }
 
     const { data: order } = await supabase.schema("procurement").from("purchase_orders")
-      .select("status, snapshot, totals, order_number, order_type, site_id, companies(company_code)")
+      .select("status, snapshot, totals, order_number, order_type, site_id")
       .eq("id", req.params.id).single();
     if (!order || !["Pending Issue", "To Issue"].includes(order.status)) {
       return res.status(400).json({ error: "Order is not in Pending Issue state" });
@@ -2839,7 +2837,7 @@ router.post("/:id/issue-action", async (req, res) => {
           if (serialObj) {
             const nextSerial = (serialObj.current_number || 0) + 1;
             const typeCode  = order.order_type === "Supply" ? "PO" : "WO";
-            const compCode  = order.companies?.company_code || "CO";
+            const compCode  = order.snapshot?.company?.companyCode || order.snapshot?.company?.company_code || "CO";
             const { data: issueProject } = order.site_id
               ? await supabase.from("projects").select("project_code").eq("id", order.site_id).single()
               : { data: null };
