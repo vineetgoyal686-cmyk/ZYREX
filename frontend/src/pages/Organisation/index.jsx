@@ -311,6 +311,16 @@ function OrgDetail({ org, onBack, currentUser }) {
 export default function Organisation({ currentUser }) {
   const [selectedOrg,  setSelectedOrg]  = useState(null);
   const [showAddOrg,   setShowAddOrg]   = useState(false);
+  const [showMore,     setShowMore]     = useState(null); // null | "export" | "import"
+  const orgActionsRef = useRef({});
+  const moreRef       = useRef(null);
+
+  useEffect(() => {
+    if (!showMore) return;
+    const h = e => { if (moreRef.current && !moreRef.current.contains(e.target)) setShowMore(null); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [showMore]);
 
   return (
     <div className="w-full min-w-0 min-h-full flex flex-col bg-[#f0f2f5]">
@@ -328,17 +338,54 @@ export default function Organisation({ currentUser }) {
               </div>
               <h1 className="text-[15px] font-bold text-slate-800">Organisations</h1>
             </div>
-            <button
-              onClick={() => setShowAddOrg(true)}
-              className="inline-flex items-center gap-1.5 text-sm font-semibold bg-slate-900 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors">
-              <Plus size={14} /> Add Organisation
-            </button>
+
+            <div className="flex items-center gap-2">
+              {/* More dropdown */}
+              <div className="relative" ref={moreRef}>
+                <button
+                  onClick={() => setShowMore(v => v ? null : "open")}
+                  className="inline-flex items-center gap-1.5 text-sm font-semibold border border-slate-200 bg-white text-slate-700 px-3 py-2 rounded hover:bg-slate-50 transition-colors">
+                  More <ChevronDown size={13} className={`transition-transform ${showMore ? "rotate-180" : ""}`} />
+                </button>
+
+                {showMore && (
+                  <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-slate-200 rounded shadow-lg z-50 overflow-hidden">
+                    <p className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">Export</p>
+                    <button onClick={() => { orgActionsRef.current?.exportExcel?.(); setShowMore(null); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors">
+                      <FileSpreadsheet size={14} className="text-emerald-600" /> Export Excel
+                    </button>
+                    <button onClick={() => { orgActionsRef.current?.exportPDF?.(); setShowMore(null); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors">
+                      <FileText size={14} className="text-red-500" /> Export PDF
+                    </button>
+                    <p className="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-t border-b border-slate-100 mt-1">Import</p>
+                    <button onClick={() => { orgActionsRef.current?.downloadTemplate?.(); setShowMore(null); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors">
+                      <Download size={14} className="text-blue-500" /> Download Template
+                    </button>
+                    <button onClick={() => { orgActionsRef.current?.openUpload?.(); setShowMore(null); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors">
+                      <Upload size={14} className="text-violet-500" /> Upload File
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <button
+                onClick={() => setShowAddOrg(true)}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold bg-slate-900 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors">
+                <Plus size={14} /> Add Organisation
+              </button>
+            </div>
           </div>
+
           <div className="min-w-0 flex-1 px-4 sm:px-6 py-5">
             <OrgList
               onSelectOrg={setSelectedOrg}
               showAdd={showAddOrg}
               onAddDone={() => setShowAddOrg(false)}
+              actionsRef={orgActionsRef}
             />
           </div>
         </>

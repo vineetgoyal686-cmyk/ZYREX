@@ -1,29 +1,25 @@
-import React, { useState, useEffect } from "react";
-import { Plus, MapPin } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { Plus, MapPin, LayoutGrid, Table2, ChevronDown, FileSpreadsheet, FileText, Upload, Download, Loader2 } from "lucide-react";
 import CompanyList from "../Procurement/CompanyList";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
 
 const AVATAR_COLORS = [
-  "bg-blue-100 text-blue-700",
-  "bg-violet-100 text-violet-700",
-  "bg-cyan-100 text-cyan-700",
-  "bg-emerald-100 text-emerald-700",
-  "bg-amber-100 text-amber-700",
-  "bg-rose-100 text-rose-700",
-  "bg-indigo-100 text-indigo-700",
-  "bg-teal-100 text-teal-700",
+  "bg-blue-100 text-blue-700", "bg-violet-100 text-violet-700",
+  "bg-cyan-100 text-cyan-700", "bg-emerald-100 text-emerald-700",
+  "bg-amber-100 text-amber-700", "bg-rose-100 text-rose-700",
+  "bg-indigo-100 text-indigo-700", "bg-teal-100 text-teal-700",
 ];
-
 const avatarColor = (name = "") => {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
 };
-
-const initials = (name = "") =>
-  name.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
+const initials = (name = "") => name.split(/\s+/).map(w => w[0]).join("").slice(0, 2).toUpperCase() || "?";
 
 /* ── Logo Modal ───────────────────────────────────────── */
 function LogoModal({ company, name, onClose }) {
@@ -45,88 +41,52 @@ function LogoModal({ company, name, onClose }) {
 /* ── Single Org Card ──────────────────────────────────── */
 function OrgCard({ company, onOpen }) {
   const [showLogo, setShowLogo] = useState(false);
-  const name    = company.companyName || company.company_name || "";
-  const code    = company.companyCode || company.company_code || "";
-  const gstin   = company.gstin    || "";
+  const name     = company.companyName || company.company_name || "";
+  const code     = company.companyCode || company.company_code || "";
+  const gstin    = company.gstin || "";
   const district = (company.district || "").trim();
-  const state   = (company.state    || "").trim();
-  const pincode = (company.pincode  || "").trim();
-  const status  = (company.status   || "active").toLowerCase();
-
-  const locationParts = [district, state].filter(Boolean).join(", ");
-  const location = locationParts ? (pincode ? `${locationParts} — ${pincode}` : locationParts) : "";
+  const state    = (company.state || "").trim();
+  const pincode  = (company.pincode || "").trim();
+  const status   = (company.status || "active").toLowerCase();
+  const location = [district, state].filter(Boolean).join(", ");
+  const locStr   = location ? (pincode ? `${location} — ${pincode}` : location) : "";
 
   return (
     <div className="bg-white rounded border border-slate-200 shadow-sm hover:shadow-md transition-shadow flex flex-col">
-      {/* Header */}
       {showLogo && <LogoModal company={company} name={name} onClose={() => setShowLogo(false)} />}
       <div className="flex items-center gap-3 px-4 pt-4 pb-3">
-        <div
-          onClick={() => setShowLogo(true)}
-          className="shrink-0 cursor-pointer rounded ring-2 ring-transparent hover:ring-blue-400 transition-all">
-          {company.logoUrl ? (
-            <img src={company.logoUrl} alt="" className="w-11 h-11 rounded object-contain border border-slate-100 bg-slate-50 p-1" />
-          ) : (
-            <div className={`w-11 h-11 rounded flex items-center justify-center text-sm font-black ${avatarColor(name)}`}>
-              {initials(name)}
-            </div>
-          )}
+        <div onClick={() => setShowLogo(true)} className="shrink-0 cursor-pointer rounded ring-2 ring-transparent hover:ring-blue-400 transition-all">
+          {company.logoUrl
+            ? <img src={company.logoUrl} alt="" className="w-11 h-11 rounded object-contain border border-slate-100 bg-slate-50 p-1" />
+            : <div className={`w-11 h-11 rounded flex items-center justify-center text-sm font-black ${avatarColor(name)}`}>{initials(name)}</div>
+          }
         </div>
         <div className="min-w-0">
           <p className="text-[14px] font-bold text-slate-900 leading-snug truncate">{name}</p>
           <p className="text-[11px] font-semibold text-blue-600 mt-0.5">{code}</p>
         </div>
       </div>
-
       <div className="border-t border-slate-100" />
-
-      {/* Stats */}
       <div className="grid grid-cols-3 divide-x divide-slate-100">
-        {[
-          { label: "Divisions",  val: company._divCount  ?? 0 },
-          { label: "Depts",      val: company._deptCount ?? 0 },
-          { label: "Employees",  val: company._empCount  ?? 0 },
-        ].map(s => (
+        {[{ label: "Divisions", val: company._divCount ?? 0 }, { label: "Depts", val: company._deptCount ?? 0 }, { label: "Employees", val: company._empCount ?? 0 }].map(s => (
           <div key={s.label} className="text-center py-3">
             <p className="text-[17px] font-bold text-slate-800 leading-none">{s.val}</p>
             <p className="text-[10px] text-slate-400 mt-1 font-medium">{s.label}</p>
           </div>
         ))}
       </div>
-
       <div className="border-t border-slate-100" />
-
-      {/* Location + GSTIN */}
       <div className="px-4 py-3 space-y-2">
-        {location ? (
-          <div className="flex items-start gap-1.5">
-            <MapPin size={12} className="shrink-0 text-slate-400 mt-0.5" />
-            <p className="text-[12px] font-medium text-slate-600 leading-tight">{location}</p>
-          </div>
-        ) : null}
-        {gstin ? (
-          <p className="text-[12px]">
-            <span className="text-slate-400 font-medium">GSTIN:  </span>
-            <span className="text-slate-800 font-bold">{gstin}</span>
-          </p>
-        ) : (
-          <p className="text-[12px] text-slate-400 italic">No GSTIN</p>
-        )}
+        {locStr && <div className="flex items-start gap-1.5"><MapPin size={12} className="shrink-0 text-slate-400 mt-0.5" /><p className="text-[12px] font-medium text-slate-600 leading-tight">{locStr}</p></div>}
+        {gstin ? <p className="text-[12px]"><span className="text-slate-400 font-medium">GSTIN: </span><span className="text-slate-800 font-bold">{gstin}</span></p>
+               : <p className="text-[12px] text-slate-400 italic">No GSTIN</p>}
       </div>
-
       <div className="border-t border-slate-100" />
-
-      {/* Footer */}
       <div className="flex items-center justify-between px-4 py-3">
         <span className={`inline-flex items-center gap-1.5 text-[12px] font-semibold ${status === "active" ? "text-emerald-600" : "text-slate-400"}`}>
-          <span className={`w-1.5 h-1.5 rounded-full ${status === "active" ? "bg-emerald-500" : "bg-slate-300"}`} />
-          {status === "active" ? "Active" : "Inactive"}
+          <span className={`w-1.5 h-1.5 rounded-full ${status === "active" ? "bg-emerald-500" : "bg-slate-300"}`} /> {status === "active" ? "Active" : "Inactive"}
         </span>
-        <button
-          onClick={() => onOpen(company)}
-          className="flex items-center gap-1 px-4 py-1.5 bg-slate-900 text-white text-[12px] font-semibold rounded hover:bg-blue-600 transition-colors">
-          Open →
-        </button>
+        <button onClick={() => onOpen(company)} className="flex items-center gap-1 px-4 py-1.5 bg-slate-900 text-white text-[12px] font-semibold rounded hover:bg-blue-600 transition-colors">Open →</button>
       </div>
     </div>
   );
@@ -135,9 +95,7 @@ function OrgCard({ company, onOpen }) {
 /* ── Add Card ─────────────────────────────────────────── */
 function AddCard({ onClick }) {
   return (
-    <button
-      onClick={onClick}
-      className="bg-white rounded border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-2 min-h-[180px] hover:border-blue-400 hover:bg-blue-50/30 transition-all group">
+    <button onClick={onClick} className="bg-white rounded border-2 border-dashed border-slate-200 flex flex-col items-center justify-center gap-2 min-h-[180px] hover:border-blue-400 hover:bg-blue-50/30 transition-all group">
       <div className="w-10 h-10 rounded border-2 border-dashed border-slate-300 group-hover:border-blue-400 flex items-center justify-center">
         <Plus size={18} className="text-slate-400 group-hover:text-blue-500" />
       </div>
@@ -147,15 +105,18 @@ function AddCard({ onClick }) {
 }
 
 /* ── Main OrgList ─────────────────────────────────────── */
-export default function OrgList({ onSelectOrg, showAdd, onAddDone }) {
+export default function OrgList({ onSelectOrg, showAdd, onAddDone, actionsRef }) {
   const [companies,   setCompanies]   = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [showAddFlow, setShowAddFlow] = useState(false);
+  const [view,        setView]        = useState("card");
+  const [importing,   setImporting]   = useState(false);
+  const importRef = useRef(null);
 
   const fetchCompanies = async () => {
     setLoading(true);
     try {
-      const res  = await fetch(`${API}/api/procurement/companies`);
+      const res  = await fetch(`${API}/api/procurement/companies`, { headers: { Authorization: `Bearer ${TOKEN()}` } });
       const data = await res.json();
       setCompanies(data.companies || []);
     } catch { setCompanies([]); }
@@ -163,43 +124,212 @@ export default function OrgList({ onSelectOrg, showAdd, onAddDone }) {
   };
 
   useEffect(() => { fetchCompanies(); }, []);
+  useEffect(() => { if (showAdd) setShowAddFlow(true); }, [showAdd]);
 
+  /* ── Export Excel ── */
+  const exportExcel = () => {
+    const rows = companies.map((c, i) => ({
+      "#":             i + 1,
+      "Company Name":  c.companyName || c.company_name || "",
+      "Code":          c.companyCode || c.company_code || "",
+      "GSTIN":         c.gstin || "",
+      "PAN":           c.pan || "",
+      "State":         c.state || "",
+      "District":      c.district || "",
+      "Pincode":       c.pincode || "",
+      "Phone":         c.phone || "",
+      "Email":         c.email || "",
+      "Status":        (c.status || "active"),
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws["!cols"] = [{ wch: 5 }, { wch: 28 }, { wch: 10 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 24 }, { wch: 10 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Organisations");
+    XLSX.writeFile(wb, "organisations.xlsx");
+  };
+
+  /* ── Export PDF ── */
+  const exportPDF = () => {
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageW = doc.internal.pageSize.getWidth();
+    doc.setFontSize(16); doc.setFont("helvetica", "bold"); doc.setTextColor(30, 41, 59);
+    doc.text("Organisations", 14, 16);
+    doc.setFontSize(9); doc.setFont("helvetica", "normal"); doc.setTextColor(100, 116, 139);
+    doc.text(`Total: ${companies.length}  |  ${new Date().toLocaleDateString("en-IN")}`, 14, 23);
+    doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.4); doc.line(14, 26, pageW - 14, 26);
+    autoTable(doc, {
+      startY: 30,
+      head: [["#", "Company Name", "Code", "GSTIN", "State", "District", "Phone", "Status"]],
+      body: companies.map((c, i) => [
+        i + 1,
+        c.companyName || c.company_name || "",
+        c.companyCode || c.company_code || "",
+        c.gstin || "—",
+        c.state || "—",
+        c.district || "—",
+        c.phone || "—",
+        c.status || "active",
+      ]),
+      styles: { fontSize: 8, cellPadding: 2.5, lineColor: [203, 213, 225], lineWidth: 0.3, textColor: [51, 65, 85] },
+      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: "bold" },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: { 0: { halign: "center", cellWidth: 10 }, 7: { halign: "center", cellWidth: 18 } },
+      didDrawPage: d => { doc.setFontSize(7); doc.setTextColor(148, 163, 184); doc.text(`Page ${d.pageNumber}`, pageW - 14, doc.internal.pageSize.getHeight() - 8, { align: "right" }); },
+    });
+    doc.save("organisations.pdf");
+  };
+
+  /* ── Download Template ── */
+  const downloadTemplate = () => {
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Company Name", "Code", "GSTIN", "PAN", "State", "District", "Pincode", "Phone", "Email", "Status"],
+      ["Bootes Impex Tech Pvt Ltd", "BITL", "06AAJCB6841Q1Z2", "AAJCB6841Q", "Haryana", "Gurgaon", "122101", "", "", "active"],
+      ["", "", "", "", "", "", "", "", "", ""],
+      ["Valid Status: active / inactive", "", "", "", "", "", "", "", "", ""],
+    ]);
+    ws["!cols"] = [{ wch: 30 }, { wch: 10 }, { wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 14 }, { wch: 24 }, { wch: 10 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "organisations_template.xlsx");
+  };
+
+  /* ── Bulk Import ── */
+  const handleImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const rawRows  = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" });
+      const parsed   = rawRows.map(r => ({
+        company_name: String(r["Company Name"] || r["company_name"] || "").trim(),
+        company_code: String(r["Code"] || r["company_code"] || "").trim().toUpperCase(),
+        gstin:        String(r["GSTIN"] || r["gstin"] || "").trim(),
+        pan:          String(r["PAN"] || r["pan"] || "").trim(),
+        state:        String(r["State"] || r["state"] || "").trim(),
+        district:     String(r["District"] || r["district"] || "").trim(),
+        pincode:      String(r["Pincode"] || r["pincode"] || "").trim(),
+        phone:        String(r["Phone"] || r["phone"] || "").trim(),
+        email:        String(r["Email"] || r["email"] || "").trim(),
+        status:       String(r["Status"] || "active").toLowerCase().includes("inactive") ? "inactive" : "active",
+      })).filter(r => r.company_name);
+
+      if (!parsed.length) { alert("No valid rows found.\nCheck column: Company Name"); return; }
+
+      await Promise.all(parsed.map(r =>
+        fetch(`${API}/api/procurement/companies`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` },
+          body: JSON.stringify(r),
+        })
+      ));
+      await fetchCompanies();
+      alert(`${parsed.length} organisation(s) imported successfully.`);
+    } catch { alert("Failed to read file. Use the template format."); }
+    finally { setImporting(false); e.target.value = ""; }
+  };
+
+  /* ── expose actions to parent ── */
   useEffect(() => {
-    if (showAdd) setShowAddFlow(true);
-  }, [showAdd]);
+    if (!actionsRef) return;
+    actionsRef.current = { exportExcel, exportPDF, downloadTemplate, openUpload: () => importRef.current?.click(), setView };
+  });
 
-  const closeAdd = () => {
-    setShowAddFlow(false);
-    onAddDone?.();
-  };
-
-  const handleDataChange = () => {
-    closeAdd();
-    fetchCompanies();
-  };
+  const closeAdd = () => { setShowAddFlow(false); onAddDone?.(); };
+  const handleDataChange = () => { closeAdd(); fetchCompanies(); };
 
   return (
     <>
-      {/* Cards grid */}
+      {importing && (
+        <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center">
+          <div className="bg-white rounded px-10 py-8 shadow-2xl flex flex-col items-center gap-4">
+            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+            <p className="text-slate-700 font-semibold text-sm">Importing organisations…</p>
+          </div>
+        </div>
+      )}
+
+      <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
+
+      {/* View toggle */}
+      <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center border border-slate-200 rounded overflow-hidden bg-white">
+          <button onClick={() => setView("card")} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${view === "card" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+            <LayoutGrid size={13} /> Card
+          </button>
+          <button onClick={() => setView("table")} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${view === "table" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+            <Table2 size={13} /> Table
+          </button>
+        </div>
+        <p className="text-xs text-slate-400">{companies.length} organisation{companies.length !== 1 ? "s" : ""}</p>
+      </div>
+
       {loading ? (
         <div className="text-center py-16 text-slate-400 text-sm">Loading organisations…</div>
-      ) : (
+      ) : view === "card" ? (
+        /* ── Card View ── */
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {companies.map(c => (
-            <OrgCard key={c.id} company={c} onOpen={onSelectOrg} />
-          ))}
+          {companies.map(c => <OrgCard key={c.id} company={c} onOpen={onSelectOrg} />)}
           <AddCard onClick={() => setShowAddFlow(true)} />
+        </div>
+      ) : (
+        /* ── Table View ── */
+        <div className="bg-white rounded border border-slate-200 overflow-hidden">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="text-[11px] uppercase tracking-wide text-slate-500" style={{ background: "rgb(243,243,245)" }}>
+                <th className="px-4 py-3 text-left font-semibold w-10">S.No</th>
+                <th className="px-4 py-3 text-left font-semibold">Company Name</th>
+                <th className="px-4 py-3 text-left font-semibold w-20">Code</th>
+                <th className="px-4 py-3 text-left font-semibold w-40">GSTIN</th>
+                <th className="px-4 py-3 text-left font-semibold">Location</th>
+                <th className="px-4 py-3 text-center font-semibold w-24">Status</th>
+                <th className="px-4 py-3 text-right font-semibold w-24">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {companies.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-xs">No organisations yet</td></tr>
+              ) : companies.map((c, i) => {
+                const name    = c.companyName || c.company_name || "";
+                const code    = c.companyCode || c.company_code || "";
+                const status  = (c.status || "active").toLowerCase();
+                const loc     = [c.district, c.state].filter(Boolean).join(", ");
+                return (
+                  <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        {c.logoUrl
+                          ? <img src={c.logoUrl} alt="" className="w-7 h-7 rounded object-contain border border-slate-100 bg-slate-50 p-0.5 shrink-0" />
+                          : <div className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black shrink-0 ${avatarColor(name)}`}>{initials(name)}</div>
+                        }
+                        <span className="font-semibold text-slate-800 text-[13px]">{name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-blue-600 font-semibold">{code}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-slate-600">{c.gstin || "—"}</td>
+                    <td className="px-4 py-3 text-xs text-slate-600">{loc || "—"}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${status === "active" ? "text-emerald-600" : "text-slate-400"}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${status === "active" ? "bg-emerald-500" : "bg-slate-300"}`} />
+                        {status === "active" ? "Active" : "Inactive"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <button onClick={() => onSelectOrg(c)} className="px-3 py-1 text-[11px] font-semibold bg-slate-900 text-white rounded hover:bg-blue-600 transition-colors">Open →</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
       {showAddFlow && (
         <div className="fixed inset-0 z-[90]">
-          <CompanyList
-            formOnlyMode
-            autoOpenAdd
-            onDataChange={handleDataChange}
-            onModalClose={closeAdd}
-          />
+          <CompanyList formOnlyMode autoOpenAdd onDataChange={handleDataChange} onModalClose={closeAdd} />
         </div>
       )}
     </>
