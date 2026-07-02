@@ -3723,11 +3723,13 @@ const DocCard = ({ doc, readOnly = false, onDelete, formatBytes }) => {
             <img src={doc.url} alt={doc.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
           ) : (
             <>
-              <div className={`w-9 h-9 rounded-md flex items-center justify-center ${isPdf ? "bg-red-50 text-red-500" : isExcel ? "bg-green-50 text-green-600" : "bg-slate-100 text-slate-500"}`}>
-                <FileText size={20} />
+              <div className={`w-9 h-9 rounded-md flex items-center justify-center
+                ${isPdf ? "bg-red-50 text-red-500" : isExcel ? "bg-green-50 text-green-600" : isImg ? "bg-blue-50 text-blue-500" : "bg-slate-100 text-slate-500"}`}>
+                {isPdf ? <FileText size={20} /> : isExcel ? <FileSpreadsheet size={20} /> : isImg ? <ImageIcon size={20} /> : <FileIcon size={20} />}
               </div>
               {isPdf   && <span className="text-[8px] font-bold uppercase tracking-widest text-red-400/80">PDF</span>}
               {isExcel && <span className="text-[8px] font-bold uppercase tracking-widest text-green-500/80">EXCEL</span>}
+              {!isPdf && !isExcel && !isImg && <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400/80">FILE</span>}
             </>
           )}
         </a>

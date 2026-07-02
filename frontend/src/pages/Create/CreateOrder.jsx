@@ -787,9 +787,17 @@ const MultiDocUpload = ({ label, files, onAdd, onRemove, onPreview, max = 6, req
             className={`flex items-center gap-2 min-w-0 ${onPreview ? 'cursor-pointer hover:opacity-80' : ''}`}
             onClick={() => onPreview && onPreview(f)}
           >
-            <div className="w-7 h-7 rounded-md bg-emerald-50 flex items-center justify-center shrink-0">
-              <FileText size={14} className="text-emerald-500" />
-            </div>
+            {(() => {
+              const n = ((f instanceof File ? f.name : f.name) || "").toLowerCase();
+              const isPdf = n.endsWith(".pdf");
+              const isXls = /\.(xlsx?|csv)$/.test(n);
+              const isImg = /\.(png|jpe?g|gif|webp|svg)$/.test(n);
+              return (
+                <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${isPdf ? "bg-red-50" : isXls ? "bg-green-50" : isImg ? "bg-blue-50" : "bg-emerald-50"}`}>
+                  {isPdf ? <FileText size={14} className="text-red-500" /> : isXls ? <FileSpreadsheet size={14} className="text-green-600" /> : <FileText size={14} className="text-emerald-500" />}
+                </div>
+              );
+            })()}
             <span className={`text-xs font-medium text-slate-700 truncate ${onPreview ? 'hover:text-emerald-600 hover:underline' : ''}`}>{f.name}</span>
           </div>
           <button onClick={() => onRemove(i)} className="p-1 hover:text-red-500 text-slate-400 transition-colors">
@@ -1607,6 +1615,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
     setSaving(true);
     try {
       const fd = new FormData();
+      // Send URLs of existing quotation files the user kept (not deleted) so backend can merge
+      const keptQuotUrls = files.quotations.filter(f => !(f instanceof File)).map(f => f.url);
+      fd.append("keptQuotations", JSON.stringify(keptQuotUrls));
+
       // Only append new files if they are actually File objects (not urls)
       files.quotations.forEach(f => { if (f instanceof File) fd.append("quotation", f); });
       files.proof.files.forEach(f => { if (f instanceof File) fd.append("comparative", f); });

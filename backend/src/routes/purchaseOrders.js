@@ -897,7 +897,12 @@ router.post("/", requirePerm("order", "can_add"), upload.fields([
     mainData = normalizeOrderSnapshotStoragePaths(sanitizeRichTextDeep(mainData || {}));
     items = sanitizeRichTextDeep(items || []);
 
-    // 1. Handle File Uploads
+    // 1. Assign draft number first so storage paths are clean (e.g. orders/PO-3/quotations/...)
+    if (mainData.status !== 'Issued') {
+      mainData.order_number = await getNextDraftNumber(mainData.order_type || 'Supply');
+    }
+
+    // 1.1 Handle File Uploads
     let quotationUrl = "";
     let comparativeUrl = "";
 
@@ -916,11 +921,6 @@ router.post("/", requirePerm("order", "can_add"), upload.fields([
         `orders/${mainData.order_number}/comparative/comparative_${Date.now()}_${safeFilename(files.comparative[0].originalname)}`,
         files.comparative[0].buffer, files.comparative[0].mimetype
       );
-    }
-
-    // 1.1 Assign draft number (PO-N / WO-N) on create; final number assigned on Issue.
-    if (mainData.status !== 'Issued') {
-      mainData.order_number = await getNextDraftNumber(mainData.order_type || 'Supply');
     }
 
     // These are not purchase_orders DB columns. They are only used by
@@ -1604,14 +1604,25 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
     let quotationUrl    = existing?.quotation_url    || "";
     let comparativeUrl  = existing?.comparative_sheet_url || "";
 
-    if (files.quotation?.length) {
-      const ts = Date.now();
-      const urls = await Promise.all(files.quotation.map((f, i) =>
-        uploadToStorage("procurement-docs",
-          `orders/${mainData.order_number}/quotations/quotation_${ts + i}_${safeFilename(f.originalname)}`,
-          f.buffer, f.mimetype)
-      ));
-      quotationUrl = urls.length === 1 ? urls[0] : JSON.stringify(urls);
+    if (files.quotation?.length || req.body.keptQuotations !== undefined) {
+      // Normalize kept existing URLs back to raw storage paths
+      const keptRaw = JSON.parse(req.body.keptQuotations || "[]");
+      const keptPaths = keptRaw
+        .map(u => normalizeStoragePath(u, "procurement-docs"))
+        .filter(Boolean);
+
+      let newUrls = [];
+      if (files.quotation?.length) {
+        const ts = Date.now();
+        newUrls = await Promise.all(files.quotation.map((f, i) =>
+          uploadToStorage("procurement-docs",
+            `orders/${mainData.order_number}/quotations/quotation_${ts + i}_${safeFilename(f.originalname)}`,
+            f.buffer, f.mimetype)
+        ));
+      }
+
+      const allUrls = [...keptPaths, ...newUrls];
+      quotationUrl = allUrls.length === 0 ? "" : allUrls.length === 1 ? allUrls[0] : JSON.stringify(allUrls);
     }
     if (files.comparative?.length) {
       comparativeUrl = await uploadToStorage(
