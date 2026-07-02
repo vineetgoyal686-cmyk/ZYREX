@@ -6,7 +6,7 @@ const { requireAuth } = require("../middleware/auth");
 
 const generateTeamId = async (admin) => {
   const { data } = await admin
-    .from("teams")
+    .schema("organisation").from("teams")
     .select("team_id")
     .not("team_id", "is", null)
     .order("team_id", { ascending: false })
@@ -21,7 +21,7 @@ const generateTeamId = async (admin) => {
 router.get("/", requireAuth, async (req, res) => {
   const admin = getAdminClient();
   const { data, error } = await admin
-    .from("teams")
+    .schema("organisation").from("teams")
     .select("*")
     .order("created_at", { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
@@ -36,7 +36,7 @@ router.post("/", requireAuth, async (req, res) => {
   const admin   = getAdminClient();
   const team_id = await generateTeamId(admin);
 
-  const { data, error } = await admin.from("teams").insert({
+  const { data, error } = await admin.schema("organisation").from("teams").insert({
     name:          name.trim(),
     team_id,
     department_id: department_id || null,
@@ -60,7 +60,7 @@ router.put("/:id", requireAuth, async (req, res) => {
   if (status        !== undefined) updates.status        = status;
 
   const admin = getAdminClient();
-  const { data, error } = await admin.from("teams").update(updates).eq("id", req.params.id).select().single();
+  const { data, error } = await admin.schema("organisation").from("teams").update(updates).eq("id", req.params.id).select().single();
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, team: data });
 });
@@ -68,7 +68,7 @@ router.put("/:id", requireAuth, async (req, res) => {
 /* DELETE /api/teams/:id */
 router.delete("/:id", requireAuth, async (req, res) => {
   const admin = getAdminClient();
-  const { error } = await admin.from("teams").delete().eq("id", req.params.id);
+  const { error } = await admin.schema("organisation").from("teams").delete().eq("id", req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
 });

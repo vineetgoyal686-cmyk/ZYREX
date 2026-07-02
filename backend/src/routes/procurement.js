@@ -1344,7 +1344,7 @@ router.get("/companies", async (_req, res) => {
     const hit = cache.get("companies");
     if (hit) return res.json(hit);
     const { data, error } = await supabase
-      .schema("procurement").from("companies").select("*").order("company_name", { ascending: true });
+      .schema("organisation").from("companies").select("*").order("company_name", { ascending: true });
     if (error) throw error;
     const companies = await Promise.all((data || []).map(async r => {
       const [logoUrl, stampUrl, signUrl] = await Promise.all([
@@ -1424,10 +1424,10 @@ router.post("/companies", companyUpload, async (req, res) => {
       created_by_name: b.createdByName || null,
     };
     const fullPayload = { ...basePayload, ...companyExtraPayload(b) };
-    let { data, error } = await supabase.schema("procurement").from("companies").insert(fullPayload).select().single();
+    let { data, error } = await supabase.schema("organisation").from("companies").insert(fullPayload).select().single();
     if (error && missingCompanyExtraColumns(error)) {
       console.warn("Company extra columns missing; saving base entity fields only. Apply company entity migration.");
-      ({ data, error } = await supabase.schema("procurement").from("companies").insert(basePayload).select().single());
+      ({ data, error } = await supabase.schema("organisation").from("companies").insert(basePayload).select().single());
     }
     if (error) throw error;
     cache.bust("companies");
@@ -1463,10 +1463,10 @@ router.put("/companies/:id", companyUpload, async (req, res) => {
       sign_url:  newSign  || normalizeStoragePath(b.signUrl, "picture")  || "",
     };
     const fullPayload = { ...basePayload, ...companyExtraPayload(b) };
-    let { error } = await supabase.schema("procurement").from("companies").update(fullPayload).eq("id", id);
+    let { error } = await supabase.schema("organisation").from("companies").update(fullPayload).eq("id", id);
     if (error && missingCompanyExtraColumns(error)) {
       console.warn("Company extra columns missing; updating base entity fields only. Apply company entity migration.");
-      ({ error } = await supabase.schema("procurement").from("companies").update(basePayload).eq("id", id));
+      ({ error } = await supabase.schema("organisation").from("companies").update(basePayload).eq("id", id));
     }
     if (error) throw error;
     cache.bust("companies");
@@ -1479,7 +1479,7 @@ router.put("/companies/:id", companyUpload, async (req, res) => {
 
 router.delete("/companies/:id", async (req, res) => {
   try {
-    const { error } = await supabase.schema("procurement").from("companies").delete().eq("id", req.params.id);
+    const { error } = await supabase.schema("organisation").from("companies").delete().eq("id", req.params.id);
     if (error) throw error;
     cache.bust("companies");
     res.json({ success: true });

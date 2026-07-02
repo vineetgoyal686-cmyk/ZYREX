@@ -7,7 +7,7 @@ const { requireAuth } = require("../middleware/auth");
 /* Auto-generate next dept_id e.g. DEPT-001 */
 const generateDeptId = async (admin) => {
   const { data } = await admin
-    .from("departments")
+    .schema("organisation").from("departments")
     .select("dept_id")
     .not("dept_id", "is", null)
     .order("dept_id", { ascending: false })
@@ -22,7 +22,7 @@ const generateDeptId = async (admin) => {
 router.get("/", requireAuth, async (req, res) => {
   const admin = getAdminClient();
   const { data, error } = await admin
-    .from("departments")
+    .schema("organisation").from("departments")
     .select("*")
     .order("name", { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
@@ -36,12 +36,12 @@ router.post("/", requireAuth, async (req, res) => {
 
   const admin = getAdminClient();
 
-  const { data: existing } = await admin.from("departments").select("id").ilike("name", name.trim()).single();
+  const { data: existing } = await admin.schema("organisation").from("departments").select("id").ilike("name", name.trim()).single();
   if (existing) return res.status(400).json({ error: "Department with this name already exists" });
 
   const dept_id = await generateDeptId(admin);
 
-  const { data, error } = await admin.from("departments").insert({
+  const { data, error } = await admin.schema("organisation").from("departments").insert({
     name:        name.trim(),
     dept_id,
     head:        head?.trim()  || null,
@@ -63,7 +63,7 @@ router.put("/:id", requireAuth, async (req, res) => {
   if (division_id !== undefined) updates.division_id = division_id || null;
 
   const admin = getAdminClient();
-  const { data, error } = await admin.from("departments").update(updates).eq("id", req.params.id).select().single();
+  const { data, error } = await admin.schema("organisation").from("departments").update(updates).eq("id", req.params.id).select().single();
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, department: data });
 });
@@ -71,7 +71,7 @@ router.put("/:id", requireAuth, async (req, res) => {
 /* DELETE /api/departments/:id */
 router.delete("/:id", requireAuth, async (req, res) => {
   const admin = getAdminClient();
-  const { error } = await admin.from("departments").delete().eq("id", req.params.id);
+  const { error } = await admin.schema("organisation").from("departments").delete().eq("id", req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
 });
