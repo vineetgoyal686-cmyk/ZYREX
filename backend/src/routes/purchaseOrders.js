@@ -94,7 +94,7 @@ const makeHistoryListOrder = (order, history) => {
 const loadHistoryOrder = async (historyId) => {
   const { data: orders, error } = await supabase.schema("procurement")
     .from("purchase_orders")
-    .select("*, companies(*), vendors(*), contact_person:employees(*)");
+    .select("*, companies(*), vendors(*)");
   if (error) throw error;
 
   for (const order of orders || []) {
@@ -128,7 +128,7 @@ const appendStatusHistorySnapshot = async ({ orderId, action, comments = "", act
   const [orderRes, itemRes] = await Promise.all([
     supabase.schema("procurement")
       .from("purchase_orders")
-      .select("*, companies(*), vendors(*), contact_person:employees(*)")
+      .select("*, companies(*), vendors(*)")
       .eq("id", orderId)
       .single(),
     supabase.schema("procurement")
@@ -952,8 +952,8 @@ router.get("/:id", async (req, res) => {
       supabase.schema("procurement")
         .from("purchase_orders")
         .select(lean
-          ? "*, companies(id,company_name,company_code), vendors(*), contact_person:employees(*)"
-          : "*, companies(*), vendors(*), contact_person:employees(*)")
+          ? "*, companies(id,company_name,company_code), vendors(*)"
+          : "*, companies(*), vendors(*)")
         .eq("id", req.params.id)
         .single(),
       supabase.schema("procurement")
@@ -1791,7 +1791,7 @@ const loadOrderForRender = async (orderId) => {
   const [orderRes, itemRes] = await Promise.all([
     supabase.schema("procurement")
       .from("purchase_orders")
-      .select("*, companies(*), vendors(*), contact_person:employees(*)")
+      .select("*, companies(*), vendors(*)")
       .eq("id", orderId)
       .single(),
     supabase.schema("procurement")
