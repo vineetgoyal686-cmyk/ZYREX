@@ -410,6 +410,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
   const [activeTab,        setActiveTab]        = useState("overview");
   const [activeModule,     setActiveModule]     = useState("orders");
   const [showMore,         setShowMore]         = useState(false);
+  const [moreStatsOpen,    setMoreStatsOpen]    = useState(false);
   const [hoveredEntity,    setHoveredEntity]    = useState(null);
   const [hoveredSite,      setHoveredSite]      = useState(null);
   const [selectedOrder,    setSelectedOrder]    = useState(null);
@@ -456,7 +457,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
   const d        = stats.orders;
 
   return (
-    <div style={{ fontFamily: "'Inter','DM Sans',sans-serif", paddingBottom: 24, width: "100%", boxSizing: "border-box", overflowX: "hidden" }}>
+    <div style={{ fontFamily: "'Inter','DM Sans',sans-serif", paddingBottom: 24, paddingTop: isMobile ? 0 : 0, width: "100%", boxSizing: "border-box", overflowX: "hidden", padding: isMobile ? "12px 10px 24px" : undefined }}>
 
       {/* ── HEADER CARD ── */}
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, marginBottom: 16 }}>
@@ -607,8 +608,55 @@ const GlobalDashboard = memo(function GlobalDashboard() {
               </div>
             );
 
+            /* ── MOBILE: 4 key cards + inline More stats ── */
+            if (isMobile) return (
+              <div style={{ marginBottom: 16 }}>
+                {/* 2×2 key cards */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+                  <SC label="Total Orders" total={d.total.po + d.total.wo}   totalVal={d.total.poValue + d.total.woValue}   po={d.total.po}   wo={d.total.wo}   poVal={d.total.poValue}   woVal={d.total.woValue}   accent="#0f172a" />
+                  <SC label="Issued"       total={d.issued.po + d.issued.wo} totalVal={d.issued.poValue + d.issued.woValue} po={d.issued.po}  wo={d.issued.wo}  poVal={d.issued.poValue}  woVal={d.issued.woValue}  accent="#16a34a" />
+                  <SC label="In Review"    total={d.review.po + d.review.wo} totalVal={d.review.poValue + d.review.woValue} po={d.review.po}  wo={d.review.wo}  poVal={d.review.poValue}  woVal={d.review.woValue}  accent={CP} />
+                  <SC label="Draft"        total={d.draft.po + d.draft.wo}   po={d.draft.po}  wo={d.draft.wo}  accent="#64748b" />
+                </div>
+
+                {/* More stats toggle */}
+                <button
+                  onClick={() => setMoreStatsOpen(v => !v)}
+                  style={{ width: "100%", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, color: "#475569", fontSize: 12, fontWeight: 600 }}
+                >
+                  More stats {moreStatsOpen ? "▲" : "▼"}
+                </button>
+
+                {/* Inline expanded more stats */}
+                {moreStatsOpen && (
+                  <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <SC label="Pending Issue" total={d.pendingIssue.po + d.pendingIssue.wo} totalVal={d.pendingIssue.poValue + d.pendingIssue.woValue} po={d.pendingIssue.po} wo={d.pendingIssue.wo} poVal={d.pendingIssue.poValue} woVal={d.pendingIssue.woValue} accent="#d97706" />
+                    <SC label="Amend Request" total={d.amendPending.po + d.amendPending.wo} totalVal={d.amendPending.poValue + d.amendPending.woValue} po={d.amendPending.po} wo={d.amendPending.wo} poVal={d.amendPending.poValue} woVal={d.amendPending.woValue} accent="#f59e0b" />
+                    <SC label="Amended"       total={d.amended.po + d.amended.wo}           totalVal={d.amended.poValue + d.amended.woValue}           po={d.amended.po}      wo={d.amended.wo}      poVal={d.amended.poValue}      woVal={d.amended.woValue}      accent={CW} />
+                    <Mini label="Total Clauses" value={stats.counts.clauses.total} accent="#7c3aed" sub="clauses" />
+                  </div>
+                )}
+
+                {/* Always-visible: Entity / Sites / Vendors / Users count tiles */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 8 }}>
+                  {[
+                    { label: "Entity",  value: stats.counts.entities,                                        color: "#7c3aed" },
+                    { label: "Sites",   value: isGlobal ? stats.counts.sites : selectedSites.length,         color: CW },
+                    { label: "Vendors", value: stats.counts.vendors,                                         color: CP },
+                    { label: "Users",   value: stats.counts.users,                                           color: "#0ea5e9" },
+                  ].map((it, i) => (
+                    <div key={i} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 4px", textAlign: "center" }}>
+                      <div style={{ color: it.color, fontSize: 18, fontWeight: 800, lineHeight: 1 }}>{it.value}</div>
+                      <div style={{ color: "#94a3b8", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginTop: 4 }}>{it.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+
+            /* ── DESKTOP: original layout ── */
             return (
-              <div style={{ display: isMobile ? "grid" : "flex", gridTemplateColumns: isMobile ? "1fr 1fr" : undefined, flexWrap: "wrap", gap: 8, marginBottom: 16, alignItems: "stretch" }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16, alignItems: "stretch" }}>
 
                 {/* Full cards */}
                 <SC label="Total Orders"  total={d.total.po + d.total.wo}               totalVal={d.total.poValue + d.total.woValue}             po={d.total.po}        wo={d.total.wo}        poVal={d.total.poValue}        woVal={d.total.woValue}        accent="#0f172a" />
@@ -619,7 +667,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                 <SC label="Amend Request" total={d.amendPending.po + d.amendPending.wo} totalVal={d.amendPending.poValue + d.amendPending.woValue} po={d.amendPending.po} wo={d.amendPending.wo} poVal={d.amendPending.poValue} woVal={d.amendPending.woValue} accent="#f59e0b" />
 
                 {/* Stacked column: Draft + More */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: isMobile ? "unset" : "0 0 auto", minWidth: isMobile ? 0 : 120 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: "0 0 auto", minWidth: 120 }}>
                   <Mini label="Draft" value={d.draft.po + d.draft.wo} accent="#64748b" po={d.draft.po} wo={d.draft.wo} />
                   <button onClick={() => setShowMore(true)} style={{
                     flex: 1, background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: 12,
@@ -631,19 +679,19 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                 </div>
 
                 {/* Stacked column: Total Vendors + Total Sites */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: isMobile ? "unset" : "0 0 auto", minWidth: isMobile ? 0 : 110 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: "0 0 auto", minWidth: 110 }}>
                   <Mini label="Total Vendors" value={stats.counts.vendors}  accent={CP} sub="registered" />
                   <Mini label="Total Sites"   value={isGlobal ? stats.counts.sites : selectedSites.length} accent={CW} sub="active" />
                 </div>
 
                 {/* Stacked column: Total Entity + Total Contact */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: isMobile ? "unset" : "0 0 auto", minWidth: isMobile ? 0 : 110 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: "0 0 auto", minWidth: 110 }}>
                   <Mini label="Total Entity"  value={stats.counts.entities} accent="#7c3aed" sub="registered" />
                   <Mini label="Total Contact" value={stats.counts.contacts} accent="#0ea5e9" sub="active" />
                 </div>
 
                 {/* Total Clauses — standalone card */}
-                <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "10px 13px", flex: isMobile ? "unset" : "0 0 auto", minWidth: isMobile ? 0 : 115, display: "flex", flexDirection: "column" }}>
+                <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "10px 13px", flex: "0 0 auto", minWidth: 115, display: "flex", flexDirection: "column" }}>
                   <div style={{ color: "#94a3b8", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Total Clauses</div>
                   <div style={{ color: "#7c3aed", fontSize: 22, fontWeight: 800, lineHeight: 1, marginBottom: 7, whiteSpace: "nowrap" }}>{stats.counts.clauses.total}</div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: "auto" }}>
@@ -661,7 +709,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                 </div>
 
                 {/* Stacked column: Item Register + Total Users */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: isMobile ? "unset" : "0 0 auto", minWidth: isMobile ? 0 : 105 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: "0 0 auto", minWidth: 105 }}>
                   <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, padding: "8px 10px", flex: 1, display: "flex", flexDirection: "column" }}>
                     <div style={{ color: "#94a3b8", fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 3 }}>Item Register</div>
                     <div style={{ color: "#0ea5e9", fontSize: 18, fontWeight: 800, lineHeight: 1, whiteSpace: "nowrap" }}>{stats.counts.items}</div>
