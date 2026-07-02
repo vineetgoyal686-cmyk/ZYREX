@@ -3,6 +3,8 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import Sidebar from "./components/Sidebar";
+import MobileHeader from "./components/MobileHeader";
+import MobileBottomNav from "./components/MobileBottomNav";
 
 // ── Route ↔ Tab mapping ──────────────────────────────────────────────────────
 
@@ -136,6 +138,7 @@ function AppLayout({
 }) {
   const [isMobile, setIsMobile] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [approvalCount, setApprovalCount] = useState(0);
 
   useEffect(() => {
     const check = () => {
@@ -227,7 +230,7 @@ function AppLayout({
   const isMobileVal = isMobile;
 
   const mainPaddingClass = (() => {
-    if (isMobileVal) return "pt-4 px-3 pb-4";
+    if (isMobileVal) return "pt-14 pb-[60px] px-0";
     if (activeTab === "profile") return "pt-0 px-0 pb-4 bg-[#f0f2f5]";
     if (activeTab === "organisation") return "pt-0 px-0 pb-0";
     if (["create__order","procurement__orders","master_data__orders",
@@ -239,15 +242,19 @@ function AppLayout({
 
   return (
     <div className="flex h-svh min-h-0 overflow-hidden bg-[#f8fafc]">
-      {isMobileVal && !mobileOpen && (
-        <button
-          onClick={() => setMobileOpen(true)}
-          className="fixed top-3 left-3 z-50 bg-[#0b1022] text-white w-10 h-10 rounded-lg flex items-center justify-center shadow-lg text-lg"
-        >
-          ☰
-        </button>
+
+      {/* Mobile header — only on small screens */}
+      {isMobileVal && (
+        <MobileHeader
+          currentUser={currentUser}
+          approvalCount={approvalCount}
+          onMenuOpen={() => setMobileOpen(true)}
+          onInbox={() => { onTabChange("approvals"); setMobileOpen(false); }}
+          onProfile={() => { onTabChange("profile"); setMobileOpen(false); }}
+        />
       )}
 
+      {/* Sidebar drawer */}
       <div
         className={`fixed top-0 left-0 h-full z-40 transition-transform duration-300 ${
           isMobileVal ? (mobileOpen ? "translate-x-0" : "-translate-x-full") : "translate-x-0"
@@ -255,7 +262,7 @@ function AppLayout({
       >
         <Sidebar
           activeTab={activeTab}
-          setActiveTab={onTabChange}
+          setActiveTab={(tab) => { onTabChange(tab); if (isMobileVal) setMobileOpen(false); }}
           userRole={userRole}
           onLogout={onLogout}
           selectedProject={selectedProject}
@@ -267,11 +274,18 @@ function AppLayout({
           currentUser={currentUser}
           projects={projects}
           userTabPermissions={userTabPermissions}
+          onApprovalCountChange={setApprovalCount}
         />
       </div>
 
+      {/* Sidebar backdrop on mobile */}
       {isMobileVal && mobileOpen && (
         <div className="fixed inset-0 bg-black/50 z-30" onClick={() => setMobileOpen(false)} />
+      )}
+
+      {/* Mobile bottom navigation */}
+      {isMobileVal && (
+        <MobileBottomNav activeTab={activeTab} onTabChange={(tab) => { onTabChange(tab); setMobileOpen(false); }} />
       )}
 
       <div

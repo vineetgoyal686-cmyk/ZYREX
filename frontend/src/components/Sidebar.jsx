@@ -233,6 +233,7 @@ export default React.memo(function Sidebar({
   currentUser: currentUserProp = null,
   projects: projectsProp = null,
   userTabPermissions = null,
+  onApprovalCountChange = null,
 }) {
   const currentUser = useMemo(() => currentUserProp || (() => {
     try { return JSON.parse(localStorage.getItem("bms_user") || "{}"); } catch { return {}; }
@@ -320,6 +321,7 @@ export default React.memo(function Sidebar({
         const newTotal = orderCount + intakeCount + amendmentCount + actionRequestCount + approvalCount;
         if (alive) {
           setApprovalCount(newTotal);
+          onApprovalCountChange?.(newTotal);
           localStorage.setItem("last_approval_count", newTotal.toString());
         }
       } catch (err) {
