@@ -637,6 +637,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       showToast(`Moving to ${newStatus}...`);
 
       const bmsUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
+      const token = localStorage.getItem("bms_token") || "";
       const issuedBy = newStatus === 'Issued' ? {
         id: bmsUser.id,
         name: bmsUser.name || "",
@@ -645,7 +646,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       } : undefined;
       const res = await fetch(`${API}/api/orders/${orderId}`, {
         method: "PUT",
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ data: JSON.stringify({ mainData: { status: newStatus, action_by: bmsUser.name || "", ...(comments ? { comments } : {}), ...(issuedBy ? { issuedBy } : {}) } }) })
       });
       if (!res.ok) throw new Error("Status update failed");
