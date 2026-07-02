@@ -9,9 +9,19 @@ export function normalizeOrderSite(site) {
   };
 }
 
+/** Strip hyphens/underscores for loose comparison (e.g. "B-47" === "B47"). */
+export function normalizeSiteCode(code = "") {
+  return code.replace(/[-_]/g, "").toUpperCase();
+}
+
 export function getOrderSiteCode(order) {
   const s = order?.snapshot?.site || {};
   return s.siteCode || s.site_code || s.projectCode || s.project_code || "";
+}
+
+/** Returns true if two site codes refer to the same site (ignoring hyphens/underscores/case). */
+export function siteCodeMatch(a = "", b = "") {
+  return normalizeSiteCode(a) === normalizeSiteCode(b);
 }
 
 export function getOrderSiteName(order) {

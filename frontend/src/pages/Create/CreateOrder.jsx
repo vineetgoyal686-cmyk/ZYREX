@@ -9,7 +9,7 @@ import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 import ViewOrder from "../Procurement/ViewOrder";
 import { preloadOrderDetails, seedOrderDetails, getCachedOrderDetails } from "../Procurement/orderDetailsCache";
-import { normalizeOrderSite, getOrderSiteCode } from "../../utils/orderSite";
+import { normalizeOrderSite, getOrderSiteCode, siteCodeMatch } from "../../utils/orderSite";
 import { authFetch, getValidToken } from "../../utils/authFetch";
 
 // Module-level master data cache — avoids re-fetching on every form open (TTL: 2 min)
@@ -4642,7 +4642,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   };
 
   const getSiteCodeForOrder = (o) => getOrderSiteCode(o);
-  const projectScoped = (o) => !project || getSiteCodeForOrder(o) === project;
+  const projectScoped = (o) => !project || siteCodeMatch(getSiteCodeForOrder(o), project);
 
   const getTabCount = (tabName) => {
     if (tabName === "Trash") return trashedOrders.filter(projectScoped).length;
@@ -4662,7 +4662,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const getVendorName = (o) => o.snapshot?.vendor?.vendorName || o.vendors?.vendor_name || "";
   const optionOrders = activeTab === "Trash" ? trashedOrders : orders;
   const scopedOptionOrders = optionOrders.filter(projectScoped);
-  const siteOptions = Array.from(new Set(scopedOptionOrders.map(getSiteCode).filter(Boolean))).sort();
+  const siteOptions = Array.from(
+    new Map(scopedOptionOrders.map(getSiteCode).filter(Boolean).map(c => [c.replace(/[-_]/g, "").toUpperCase(), c])).values()
+  ).sort();
   const companyOptions = Array.from(new Set(scopedOptionOrders.map(getCompanyCode).filter(Boolean))).sort();
   const vendorOptions = Array.from(new Set(scopedOptionOrders.map(getVendorName).filter(Boolean))).sort();
   const madeByOptions = Array.from(new Set(scopedOptionOrders.map(o => o.made_by).filter(Boolean))).sort();
@@ -4704,7 +4706,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       }
       return projectScoped(o)
         && searchMatch(o, search.toLowerCase())
-        && (!filterSite.length || filterSite.includes(getSiteCode(o)))
+        && (!filterSite.length || filterSite.some(s => siteCodeMatch(s, getSiteCode(o))))
         && (!filterCompany.length || filterCompany.includes(getCompanyCode(o)))
         && (!filterType.length || filterType.includes(o.order_type))
         && (!filterMadeBy.length || filterMadeBy.includes(o.made_by))
@@ -4740,7 +4742,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
               : activeTab === "Amend Request"
                 ? ["Amendment Request", "Amend Request"].includes(o.status)
                 : o.status === activeTab;
-      const matchSite = !filterSite.length || filterSite.includes(getSiteCode(o));
+      const matchSite = !filterSite.length || filterSite.some(s => siteCodeMatch(s, getSiteCode(o)));
       const matchCompany = !filterCompany.length || filterCompany.includes(getCompanyCode(o));
       const matchType = !filterType.length || filterType.includes(o.order_type);
       const matchMadeBy = !filterMadeBy.length || filterMadeBy.includes(o.made_by);
@@ -4761,7 +4763,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         if (to && created > to) matchDate = false;
       }
 
-      const matchProject = !project || getSiteCode(o) === project;
+      const matchProject = !project || siteCodeMatch(getSiteCode(o), project);
       return matchProject && matchSearch && matchTab && matchSite && matchCompany && matchType && matchMadeBy && matchVendor && matchStatus && matchDate;
     });
 
@@ -5304,7 +5306,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                         <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-normal min-w-[280px] leading-relaxed bg-white group-hover:bg-slate-50 transition-colors">
                           {o.subject || "-"}
                         </td>
-                        <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-normal min-w-[200px] leading-relaxed bg-white group-hover:bg-slate-50 transition-colors">
+                        <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">
                           {vName}
                         </td>
                         <td className="px-5 py-1 border-b border-r border-slate-200 text-slate-500 text-[13.5px] whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors">

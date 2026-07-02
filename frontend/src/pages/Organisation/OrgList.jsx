@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Plus, MapPin, LayoutGrid, Table2, ChevronDown, FileSpreadsheet, FileText, Upload, Download, Loader2 } from "lucide-react";
+import { Plus, MapPin, ChevronDown, FileSpreadsheet, FileText, Upload, Download, Loader2 } from "lucide-react";
 import CompanyList from "../Procurement/CompanyList";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -105,11 +105,10 @@ function AddCard({ onClick }) {
 }
 
 /* ── Main OrgList ─────────────────────────────────────── */
-export default function OrgList({ onSelectOrg, showAdd, onAddDone, actionsRef }) {
+export default function OrgList({ onSelectOrg, showAdd, onAddDone, actionsRef, view = "card", onCountChange }) {
   const [companies,   setCompanies]   = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [showAddFlow, setShowAddFlow] = useState(false);
-  const [view,        setView]        = useState("card");
   const [importing,   setImporting]   = useState(false);
   const importRef = useRef(null);
 
@@ -118,8 +117,10 @@ export default function OrgList({ onSelectOrg, showAdd, onAddDone, actionsRef })
     try {
       const res  = await fetch(`${API}/api/procurement/companies`, { headers: { Authorization: `Bearer ${TOKEN()}` } });
       const data = await res.json();
-      setCompanies(data.companies || []);
-    } catch { setCompanies([]); }
+      const list = data.companies || [];
+      setCompanies(list);
+      onCountChange?.(list.length);
+    } catch { setCompanies([]); onCountChange?.(0); }
     finally { setLoading(false); }
   };
 
@@ -232,7 +233,7 @@ export default function OrgList({ onSelectOrg, showAdd, onAddDone, actionsRef })
   /* ── expose actions to parent ── */
   useEffect(() => {
     if (!actionsRef) return;
-    actionsRef.current = { exportExcel, exportPDF, downloadTemplate, openUpload: () => importRef.current?.click(), setView };
+    actionsRef.current = { exportExcel, exportPDF, downloadTemplate, openUpload: () => importRef.current?.click() };
   });
 
   const closeAdd = () => { setShowAddFlow(false); onAddDone?.(); };
@@ -251,19 +252,6 @@ export default function OrgList({ onSelectOrg, showAdd, onAddDone, actionsRef })
 
       <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
 
-      {/* View toggle */}
-      <div className="flex items-center gap-2 mb-4">
-        <div className="flex items-center border border-slate-200 rounded overflow-hidden bg-white">
-          <button onClick={() => setView("card")} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${view === "card" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
-            <LayoutGrid size={13} /> Card
-          </button>
-          <button onClick={() => setView("table")} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${view === "table" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
-            <Table2 size={13} /> Table
-          </button>
-        </div>
-        <p className="text-xs text-slate-400">{companies.length} organisation{companies.length !== 1 ? "s" : ""}</p>
-      </div>
-
       {loading ? (
         <div className="text-center py-16 text-slate-400 text-sm">Loading organisations…</div>
       ) : view === "card" ? (
@@ -274,50 +262,43 @@ export default function OrgList({ onSelectOrg, showAdd, onAddDone, actionsRef })
         </div>
       ) : (
         /* ── Table View ── */
-        <div className="bg-white rounded border border-slate-200 overflow-hidden">
-          <table className="w-full text-sm border-collapse">
+        <div className="bg-white rounded-lg border border-slate-200 overflow-x-auto">
+          <table className="w-full text-left border-separate border-spacing-0">
             <thead>
-              <tr className="text-[11px] uppercase tracking-wide text-slate-500" style={{ background: "rgb(243,243,245)" }}>
-                <th className="px-4 py-3 text-left font-semibold w-10">S.No</th>
-                <th className="px-4 py-3 text-left font-semibold">Company Name</th>
-                <th className="px-4 py-3 text-left font-semibold w-20">Code</th>
-                <th className="px-4 py-3 text-left font-semibold w-40">GSTIN</th>
-                <th className="px-4 py-3 text-left font-semibold">Location</th>
-                <th className="px-4 py-3 text-center font-semibold w-24">Status</th>
-                <th className="px-4 py-3 text-right font-semibold w-24">Action</th>
+              <tr className="text-[11px] uppercase tracking-wider text-slate-500">
+                <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap w-14">S.No</th>
+                <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Company Name</th>
+                <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap w-28">Code</th>
+                <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap w-48">GSTIN</th>
+                <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Location</th>
+                <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap w-28">Status</th>
+                <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-slate-200 whitespace-nowrap text-center w-28">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {companies.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-xs">No organisations yet</td></tr>
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400 text-xs">No organisations yet</td></tr>
               ) : companies.map((c, i) => {
-                const name    = c.companyName || c.company_name || "";
-                const code    = c.companyCode || c.company_code || "";
-                const status  = (c.status || "active").toLowerCase();
-                const loc     = [c.district, c.state].filter(Boolean).join(", ");
+                const name   = c.companyName || c.company_name || "";
+                const code   = c.companyCode || c.company_code || "";
+                const status = (c.status || "active").toLowerCase();
+                const loc    = [c.district, c.state].filter(Boolean).join(", ");
+                const td     = "px-4 py-3 border-b border-r border-slate-200 text-[13px] text-slate-600 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors";
                 return (
-                  <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 text-slate-400 text-xs">{i + 1}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2.5">
-                        {c.logoUrl
-                          ? <img src={c.logoUrl} alt="" className="w-7 h-7 rounded object-contain border border-slate-100 bg-slate-50 p-0.5 shrink-0" />
-                          : <div className={`w-7 h-7 rounded flex items-center justify-center text-[10px] font-black shrink-0 ${avatarColor(name)}`}>{initials(name)}</div>
-                        }
-                        <span className="font-semibold text-slate-800 text-[13px]">{name}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-blue-600 font-semibold">{code}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-600">{c.gstin || "—"}</td>
-                    <td className="px-4 py-3 text-xs text-slate-600">{loc || "—"}</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${status === "active" ? "text-emerald-600" : "text-slate-400"}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${status === "active" ? "bg-emerald-500" : "bg-slate-300"}`} />
+                  <tr key={c.id} className="group">
+                    <td className={`${td} text-xs text-slate-400`}>{i + 1}</td>
+                    <td className={`${td} font-semibold text-slate-800`}>{name}</td>
+                    <td className={`${td} text-blue-600 font-semibold`}>{code}</td>
+                    <td className={td}>{c.gstin || "—"}</td>
+                    <td className={td}>{loc || "—"}</td>
+                    <td className={td}>
+                      <span className={`inline-flex items-center gap-1.5 text-[12px] font-semibold ${status === "active" ? "text-emerald-600" : "text-slate-400"}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${status === "active" ? "bg-emerald-500" : "bg-slate-300"}`} />
                         {status === "active" ? "Active" : "Inactive"}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <button onClick={() => onSelectOrg(c)} className="px-3 py-1 text-[11px] font-semibold bg-slate-900 text-white rounded hover:bg-blue-600 transition-colors">Open →</button>
+                    <td className="px-4 py-3 border-b border-slate-200 text-center bg-white group-hover:bg-slate-50 transition-colors">
+                      <button onClick={() => onSelectOrg(c)} className="px-3 py-1.5 text-[11px] font-semibold bg-slate-900 text-white rounded hover:bg-blue-600 transition-colors">Open →</button>
                     </td>
                   </tr>
                 );

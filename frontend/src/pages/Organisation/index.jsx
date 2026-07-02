@@ -311,7 +311,9 @@ function OrgDetail({ org, onBack, currentUser }) {
 export default function Organisation({ currentUser }) {
   const [selectedOrg,  setSelectedOrg]  = useState(null);
   const [showAddOrg,   setShowAddOrg]   = useState(false);
-  const [showMore,     setShowMore]     = useState(null); // null | "export" | "import"
+  const [showMore,     setShowMore]     = useState(null);
+  const [orgView,      setOrgView]      = useState("card");
+  const [orgCount,     setOrgCount]     = useState(0);
   const orgActionsRef = useRef({});
   const moreRef       = useRef(null);
 
@@ -340,6 +342,21 @@ export default function Organisation({ currentUser }) {
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Card / Table toggle */}
+              <div className="flex items-center border border-slate-200 rounded overflow-hidden bg-white">
+                <button onClick={() => setOrgView("card")}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors ${orgView === "card" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+                  <LayoutGrid size={13} /> Card
+                </button>
+                <button onClick={() => setOrgView("table")}
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors ${orgView === "table" ? "bg-slate-900 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+                  <Table2 size={13} /> Table
+                </button>
+              </div>
+              {orgCount > 0 && (
+                <span className="text-xs text-slate-400 font-medium">{orgCount} organisation{orgCount !== 1 ? "s" : ""}</span>
+              )}
+
               {/* More dropdown */}
               <div className="relative" ref={moreRef}>
                 <button
@@ -386,6 +403,8 @@ export default function Organisation({ currentUser }) {
               showAdd={showAddOrg}
               onAddDone={() => setShowAddOrg(false)}
               actionsRef={orgActionsRef}
+              view={orgView}
+              onCountChange={setOrgCount}
             />
           </div>
         </>
