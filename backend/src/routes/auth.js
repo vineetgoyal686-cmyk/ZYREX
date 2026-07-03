@@ -95,9 +95,13 @@ router.post("/login", async (req, res) => {
   const profilePerms = (designationsRes.data || []).flatMap(d => d.app_permissions || []);
   const appPermissions = (modulesRes.data || []).map(mod => {
     const explicit = (permsRes.data || []).find(p => p.module_id === mod.id) || {};
+    const hasExplicit = !!explicit.user_id;
     const profMatches = profilePerms.filter(p => p.module_id === mod.id);
     const merged = { module_id: mod.id, module_key: mod.module_key, module_name: mod.module_name };
-    BOOL_KEYS.forEach(k => { merged[k] = !!(explicit[k]) || profMatches.some(p => !!p[k]); });
+    // Once a user has their own saved row for a module, it fully overrides the
+    // Access Profile for that module (even to restrict below it) — the profile
+    // only fills in modules the user has never explicitly had set.
+    BOOL_KEYS.forEach(k => { merged[k] = hasExplicit ? !!explicit[k] : profMatches.some(p => !!p[k]); });
     return merged;
   });
 
@@ -780,18 +784,20 @@ router.get("/my-permissions", async (req, res) => {
 
   const result = (modules || []).map(mod => {
     const explicit = (perms || []).find(p => p.module_id === mod.id) || {};
-    // Union with profile permissions — true if either explicit OR any linked designation says true
+    const hasExplicit = !!explicit.user_id;
+    // A saved per-user row fully overrides the Access Profile for that module
+    // (even to restrict below it); profile only fills in untouched modules.
     const profMatches = profilePerms.filter(p => p.module_id === mod.id);
     const merged = {};
     BOOL_KEYS.forEach(k => {
-      merged[k] = !!(explicit[k]) || profMatches.some(p => !!p[k]);
+      merged[k] = hasExplicit ? !!explicit[k] : profMatches.some(p => !!p[k]);
     });
     return {
       module_id:   mod.id,
       module_key:  mod.module_key,
       module_name: mod.module_name,
       ...merged,
-      has_explicit_entry: !!explicit.user_id,
+      has_explicit_entry: hasExplicit,
     };
   });
 

@@ -363,9 +363,12 @@ router.get("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
 
   const result = (modules || []).map(mod => {
     const perm = perms?.find(p => p.module_id === mod.id) || {};
+    const hasExplicit = !!perm.user_id;
+    // A saved per-user row fully overrides the Access Profile for that module
+    // (even to restrict below it); profile only fills in untouched modules.
     const profMatches = profilePerms.filter(p => p.module_id === mod.id);
     const merged = { module_id: mod.id, module_key: mod.module_key, module_name: mod.module_name };
-    PERM_BOOL_KEYS.forEach(k => { merged[k] = !!(perm[k]) || profMatches.some(p => !!p[k]); });
+    PERM_BOOL_KEYS.forEach(k => { merged[k] = hasExplicit ? !!perm[k] : profMatches.some(p => !!p[k]); });
     return merged;
   });
 
@@ -421,8 +424,10 @@ router.put("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
       order_intake:          p.order_intake          || false,
       order_payment:         p.order_payment         || false,
     }));
-    const { error: permError } = await admin.from("permissions").upsert(rows, { onConflict: "user_id,module_id" });
-    if (permError) return res.status(500).json({ error: permError.message });
+    if (rows.length > 0) {
+      const { error: permError } = await admin.from("permissions").upsert(rows, { onConflict: "user_id,module_id" });
+      if (permError) return res.status(500).json({ error: permError.message });
+    }
   }
 
   const userUpdates = {};

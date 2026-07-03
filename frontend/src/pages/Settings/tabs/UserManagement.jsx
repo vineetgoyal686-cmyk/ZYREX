@@ -57,6 +57,7 @@ export default function UserManagement({
   /* Permissions panel */
   const [permUser,             setPermUser]             = useState(null);
   const [permissions,          setPermissions]          = useState([]);
+  const [touchedModuleIds,     setTouchedModuleIds]     = useState(() => new Set());
   const [editingProfilePerms,  setEditingProfilePerms]  = useState(DEFAULT_PROFILE_PERMS);
   const [permLoading,          setPermLoading]          = useState(false);
   const [pickedTemplate,       setPickedTemplate]       = useState(null);
@@ -340,6 +341,7 @@ export default function UserManagement({
   const viewPerms = async (member) => {
     setPermUser(member);
     setPermFilter("all");
+    setTouchedModuleIds(new Set());
     setPermLoading(true);
     setPermissions([]);
     setEditingProfilePerms(DEFAULT_PROFILE_PERMS);
@@ -375,7 +377,8 @@ export default function UserManagement({
     setPermUser(null);
   };
 
-  const updatePerm = (moduleId, key, value) =>
+  const updatePerm = (moduleId, key, value) => {
+    setTouchedModuleIds((prev) => (prev.has(moduleId) ? prev : new Set(prev).add(moduleId)));
     setPermissions((prev) => prev.map((p) => {
       if (p.module_id !== moduleId) return p;
       const updated = { ...p, [key]: value };
@@ -386,12 +389,15 @@ export default function UserManagement({
       }
       return updated;
     }));
+  };
 
   const savePerms = async () => {
     setPermLoading(true);
     try {
-      const validIds = new Set(permissions.map(p => p.module_id).filter(Boolean));
-      const cleanPerms = permissions.filter(p => p.module_id && validIds.has(p.module_id));
+      // Only send modules the admin actually touched this session — everything
+      // else keeps live-inheriting from the user's Access Profile instead of
+      // being frozen as an explicit per-user override.
+      const cleanPerms = permissions.filter(p => p.module_id && touchedModuleIds.has(p.module_id));
       const designationPatch = pickedTemplate ? { designation: pickedTemplate.name, designation_id: pickedTemplate.id } : {};
       await api.put(`/api/users/${permUser.id}/permissions`, {
         permissions: cleanPerms,
@@ -401,7 +407,9 @@ export default function UserManagement({
         ...designationPatch,
       });
       if (permUser.id === currentUser.id) {
-        const updatedSelf = { ...currentUser, app_permissions: cleanPerms, profile_permissions: editingProfilePerms };
+        // Use the full (merged) permissions list for the local cache, not just
+        // the touched subset — untouched modules still resolve via the profile.
+        const updatedSelf = { ...currentUser, app_permissions: permissions, profile_permissions: editingProfilePerms };
         localStorage.setItem("bms_user", JSON.stringify(updatedSelf));
         onProfileUpdate?.(updatedSelf);
       }
@@ -598,10 +606,10 @@ export default function UserManagement({
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input type="checkbox"
                         checked={permissions.length > 0 && permissions.every(m => getModulePermKeysFull(m).every(k => m[k]))}
-                        onChange={e => setPermissions(prev => prev.map(m => {
+                        onChange={e => { setTouchedModuleIds(new Set(permissions.map(m => m.module_id))); setPermissions(prev => prev.map(m => {
                           const keys = getModulePermKeysFull(m);
                           return { ...m, ...Object.fromEntries(keys.map(k => [k, e.target.checked])) };
-                        }))}
+                        })); }}
                         className="w-3.5 h-3.5 rounded accent-blue-600" />
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Select All</span>
                     </label>
