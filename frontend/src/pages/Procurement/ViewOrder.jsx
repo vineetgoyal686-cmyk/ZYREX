@@ -2315,13 +2315,13 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
 
                   <div className="relative h-40 mb-8 flex items-center">
                     {isIssuedLike && issuer?.signatureUrl ? (
-                      <div className="relative inline-block">
-                        <img src={issuer.signatureUrl} alt="Signature"
-                          className="block h-28 w-auto object-contain relative z-10" />
+                      <div className="inline-grid">
                         {(comp.stampUrl || comp.stamp_url) && (
                           <img src={comp.stampUrl || comp.stamp_url} alt="Stamp"
-                            className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-28 w-auto object-contain opacity-70 mix-blend-multiply z-0" />
+                            className="col-start-1 row-start-1 place-self-center h-28 w-auto object-contain opacity-70 mix-blend-multiply z-0" />
                         )}
+                        <img src={issuer.signatureUrl} alt="Signature"
+                          className="col-start-1 row-start-1 place-self-center block h-28 w-auto object-contain z-10" />
                       </div>
                     ) : (
                       (comp.stampUrl || comp.stamp_url) && (
