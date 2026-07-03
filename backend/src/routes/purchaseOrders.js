@@ -207,7 +207,31 @@ const signOrderDocUrl = async (value) => {
 };
 const signProcImageUrl = (value) => createSignedStorageUrl(supabase, "picture", value);
 const signVendorDocUrl = (value) => createSignedStorageUrl(supabase, "vendor-docs", value);
-const signAvatarUrl = (value) => createSignedStorageUrl(supabase, "picture", value);
+
+const MIME_BY_EXT = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
+
+// Signed URLs occasionally fail for a handful of files even though the
+// object exists (a Supabase quirk that swallows without a usable error).
+// A signature must not silently disappear on the order view, so fall back
+// to fetching the file directly (bypasses URL signing entirely) and embed
+// it as a data URI when signing comes back empty.
+const signAvatarUrl = async (value) => {
+  const signed = await createSignedStorageUrl(supabase, "picture", value);
+  if (signed) return signed;
+
+  try {
+    const path = normalizeStoragePath(value, "picture");
+    if (!path) return "";
+    const { data, error } = await supabase.storage.from("picture").download(path);
+    if (error || !data) return "";
+    const buf = Buffer.from(await data.arrayBuffer());
+    const ext = (path.split(".").pop() || "").toLowerCase();
+    const mime = MIME_BY_EXT[ext] || "image/jpeg";
+    return `data:${mime};base64,${buf.toString("base64")}`;
+  } catch {
+    return "";
+  }
+};
 
 const signDocArray = async (docs = []) => Promise.all((Array.isArray(docs) ? docs : []).map(async doc => {
   const storagePath = normalizeStoragePath(doc.storage_path || doc.url, "procurement-docs");
