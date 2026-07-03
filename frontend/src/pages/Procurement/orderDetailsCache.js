@@ -30,7 +30,8 @@ export const preloadOrderDetails = async (orderId, options = {}) => {
   if (cached && !cached.__partial && !force && (lean || !cached.__lean)) return cached;
   if (orderDetailsInflight.has(inflightKey)) return orderDetailsInflight.get(inflightKey);
 
-  const promise = authFetch(`${API}/api/orders/${orderId}${lean ? "?lean=1" : ""}`)
+  const cacheBust = force ? `${lean ? "&" : "?"}t=${Date.now()}` : "";
+  const promise = authFetch(`${API}/api/orders/${orderId}${lean ? "?lean=1" : ""}${cacheBust}`, force ? { cache: "no-store" } : {})
     .then(async (res) => {
       if (!res.ok) throw new Error("Failed to fetch order");
       const json = await res.json();

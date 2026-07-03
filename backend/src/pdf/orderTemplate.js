@@ -137,8 +137,8 @@ const css = `
   .sig-box { width: 100%; max-width: 400px; }
   .sig-top { font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 18px; }
   .sig-area { position: relative; height: 110px; margin-bottom: 12px; }
-  .sig-stamp { position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 90px; width: auto; object-fit: contain; opacity: 0.75; }
-  .sig-sign { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); height: 70px; width: auto; object-fit: contain; z-index: 2; }
+  .sig-stamp { position: absolute; left: 60px; top: 50%; transform: translate(-50%, -50%); height: 90px; width: auto; object-fit: contain; opacity: 0.75; }
+  .sig-sign { position: absolute; left: 60px; top: 50%; transform: translate(-50%, -50%); height: 70px; width: auto; object-fit: contain; z-index: 2; }
   .sig-italic { font-size: 12px; font-weight: 600; color: #111827; font-style: italic; margin-bottom: 8px; }
   .sig-kv { font-size: 11px; line-height: 1.6; }
   .sig-kv b { font-weight: 700; color: #111827; }
