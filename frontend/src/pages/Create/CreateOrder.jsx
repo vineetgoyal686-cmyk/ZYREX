@@ -1006,7 +1006,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       setHeader({
         orderType: order.order_type,
         orderNumber: order.order_number,
-        refNumber: order.ref_number,
+        refNumber: order.ref_number || "",
         subject: order.subject,
         orderName: order.order_name,
         siteId: order.site_id,
@@ -1185,6 +1185,26 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
     return `${c?.companyCode || "COMP"} / ${s?.projectCode || "SITE"} / ${type}`;
   }, [header.orderNumber, header.siteId, header.companyId, header.orderType, companies, sites]);
+
+  // Reference No prefix: Company/Proc/Site/Type/FY/ — auto-derived, user only types the trailing number
+  const computedRefPrefix = useMemo(() => {
+    if (!header.siteId || !header.companyId || !header.orderType) return "";
+    const c = companies.find(x => x.id === header.companyId);
+    const s = sites.find(x => x.id === header.siteId);
+    const type = header.orderType === "Supply" ? "PO" : "WO";
+    const d = new Date(), m = d.getMonth(), y = d.getFullYear();
+    const fyStart = m >= 3 ? y : y - 1;
+    const fy = `${fyStart}-${String(fyStart + 1).slice(-2)}`;
+    return `${c?.companyCode || "COMP"}/Proc/${s?.projectCode || "SITE"}/${type}/${fy}/`;
+  }, [header.siteId, header.companyId, header.orderType, companies, sites]);
+
+  const refSuffix = computedRefPrefix && header.refNumber.startsWith(computedRefPrefix)
+    ? header.refNumber.slice(computedRefPrefix.length)
+    : header.refNumber;
+
+  const handleRefSuffixChange = (val) => {
+    setHeader(h => ({ ...h, refNumber: (computedRefPrefix || "") + val }));
+  };
 
 
   // Reset items + brand setting when order type changes (skip during edit load)
@@ -1527,7 +1547,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       if (!header.subject) {
         return showToast("Order Subject is required for submission.", "error");
       }
-      if (!header.refNumber) {
+      if (!refSuffix?.trim()) {
         return showToast("Reference Number is required for submission.", "error");
       }
       if (files.quotations.length === 0) {
@@ -1936,7 +1956,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
             className="px-5 py-2.5 rounded border border-slate-200 bg-slate-50 text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-100 transition-all disabled:opacity-50 text-sm">
             <Save size={16} /> {saving ? "..." : "Save as Draft"}
           </button>
-          <button onClick={() => handleSave("Review")} disabled={saving || !header.companyId || !header.siteId || !header.vendorId || !header.categoryId || !header.subject || !header.orderName || !header.refNumber}
+          <button onClick={() => handleSave("Review")} disabled={saving || !header.companyId || !header.siteId || !header.vendorId || !header.categoryId || !header.subject || !header.orderName || !refSuffix?.trim()}
             className="px-6 py-2.5 rounded bg-indigo-600 text-white font-semibold flex items-center gap-2 hover:bg-indigo-700 shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50 text-sm">
             <Check size={16} /> {saving ? "..." : "Submit for Review"}
           </button>
@@ -2047,8 +2067,20 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                   multiline rows={4} required />
               </div>
               <div className="lg:col-span-2">
-                <Input label="Reference No" value={header.refNumber} onChange={e => setHeader(h => ({ ...h, refNumber: e.target.value }))} placeholder="e.g. BMS/PRO/2026/001"
-                  className="font-bold text-slate-800" required />
+                <label className={FIELD_LABEL_CLASS}>Reference No <span className="text-red-500">*</span></label>
+                <div className="flex items-stretch gap-2">
+                  {computedRefPrefix && (
+                    <span className="shrink-0 border border-slate-300 rounded px-4 h-14 flex items-center font-mono text-[13px] whitespace-nowrap bg-[#f7f7f7] text-slate-500">
+                      {computedRefPrefix}
+                    </span>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <Input value={refSuffix} onChange={e => handleRefSuffixChange(e.target.value)}
+                      placeholder={computedRefPrefix ? "e.g. 001" : "Select Company & Site first"}
+                      disabled={!computedRefPrefix}
+                      className="font-bold text-slate-800" />
+                  </div>
+                </div>
               </div>
               <Input label="Date of Delivery" type="date" value={header.deliveryDate} onChange={e => setHeader(h => ({ ...h, deliveryDate: e.target.value }))} />
               <Select label="Priority" value={header.priority} onChange={e => setHeader(h => ({ ...h, priority: e.target.value }))}
