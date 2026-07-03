@@ -1445,11 +1445,18 @@ router.put("/companies/:id", companyUpload, async (req, res) => {
     const files = req.files || {};
     const folder = b.companyCode || b.companyName || "company";
 
+    const { data: existing } = await supabase.schema("organisation")
+      .from("companies").select("logo_url, stamp_url, sign_url").eq("id", id).maybeSingle();
+
     const [newLogo, newStamp, newSign] = await Promise.all([
       uploadCompanyImg(files, "logo",  folder),
       uploadCompanyImg(files, "stamp", folder),
       uploadCompanyImg(files, "sign",  folder),
     ]);
+
+    const logoUrl  = newLogo  || normalizeStoragePath(b.logoUrl, "picture")  || "";
+    const stampUrl = newStamp || normalizeStoragePath(b.stampUrl, "picture") || "";
+    const signUrl  = newSign  || normalizeStoragePath(b.signUrl, "picture")  || "";
 
     const basePayload = {
       company_name: b.companyName || "", company_code: b.companyCode || "",
@@ -1458,9 +1465,9 @@ router.put("/companies/:id", companyUpload, async (req, res) => {
       gstin: b.gstin || "", pan: b.pan || "",
       pincode: b.pincode || "", state: b.state || "",
       district: b.district || "", address: b.address || "",
-      logo_url:  newLogo  || normalizeStoragePath(b.logoUrl, "picture")  || "",
-      stamp_url: newStamp || normalizeStoragePath(b.stampUrl, "picture") || "",
-      sign_url:  newSign  || normalizeStoragePath(b.signUrl, "picture")  || "",
+      logo_url:  logoUrl,
+      stamp_url: stampUrl,
+      sign_url:  signUrl,
     };
     const fullPayload = { ...basePayload, ...companyExtraPayload(b) };
     let { error } = await supabase.schema("organisation").from("companies").update(fullPayload).eq("id", id);
@@ -1470,6 +1477,17 @@ router.put("/companies/:id", companyUpload, async (req, res) => {
     }
     if (error) throw error;
     cache.bust("companies");
+
+    // Clean up the old file in storage whenever it's been replaced or removed,
+    // so removed/re-uploaded logo/stamp/signature don't pile up as orphans.
+    if (existing) {
+      await Promise.all([
+        existing.logo_url  && existing.logo_url  !== logoUrl  ? removeStorageFile(supabase, "picture", existing.logo_url)  : null,
+        existing.stamp_url && existing.stamp_url !== stampUrl ? removeStorageFile(supabase, "picture", existing.stamp_url) : null,
+        existing.sign_url  && existing.sign_url  !== signUrl  ? removeStorageFile(supabase, "picture", existing.sign_url)  : null,
+      ]);
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error("Company update error:", err.message);
