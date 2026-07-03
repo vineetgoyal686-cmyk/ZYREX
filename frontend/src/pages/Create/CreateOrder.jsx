@@ -4042,7 +4042,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
         try {
           const user = JSON.parse(localStorage.getItem("bms_user") || "{}");
           const deleted_by = encodeURIComponent(user.name || user.id || "Unknown");
-          const res = await fetch(`${API}/api/orders/${id}?deleted_by=${deleted_by}`, { method: "DELETE" });
+          const res = await authFetch(`${API}/api/orders/${id}?deleted_by=${deleted_by}`, { method: "DELETE" });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) { showToast(data.error || `Delete failed (${res.status})`, "error"); return; }
           showToast("Order moved to Trash");
