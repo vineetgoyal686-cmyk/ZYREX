@@ -64,6 +64,16 @@ export default function UserManagement({
   const [editingAllowedProjects, setEditingAllowedProjects] = useState([]);
   const [allProjects,          setAllProjects]          = useState([]);
   const [permAccessProfileIds, setPermAccessProfileIds] = useState([]);
+  const [liveRoleDefaults,     setLiveRoleDefaults]     = useState(ROLE_DEFAULT_PERMS);
+
+  /* Role-level defaults are editable via Settings > Roles — fetch the live
+     values so new users are seeded from whatever an admin last configured
+     there, falling back to the static defaults if the call fails. */
+  useEffect(() => {
+    api.get("/api/users/role-defaults/all")
+      .then(({ data }) => { if (data?.roleDefaults) setLiveRoleDefaults(data.roleDefaults); })
+      .catch(() => { /* keep static fallback */ });
+  }, []);
 
   /* Add user */
   const [showAddUser,           setShowAddUser]           = useState(false);
@@ -910,7 +920,7 @@ export default function UserManagement({
                           <select className={`${inp} appearance-none pr-10`} value={newUser.role} onChange={(e) => {
                               const role = e.target.value;
                               setNewUser((p) => ({ ...p, role }));
-                              setNewUserProfilePerms(ROLE_DEFAULT_PERMS[role] || DEFAULT_PROFILE_PERMS);
+                              setNewUserProfilePerms(liveRoleDefaults[role] || ROLE_DEFAULT_PERMS[role] || DEFAULT_PROFILE_PERMS);
                             }}>
                             {getManageableRoles(currentUser.role).includes("super_admin") && <option value="super_admin">Super Admin (Organization)</option>}
                             {getManageableRoles(currentUser.role).includes("admin") && <option value="admin">Administrator (Team)</option>}

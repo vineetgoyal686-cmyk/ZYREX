@@ -36,6 +36,10 @@ export default function Delegation({ showToast }) {
   const token       = localStorage.getItem("bms_token");
   const headers     = { Authorization: `Bearer ${token}` };
   const currentUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
+  const isAdmin  = ["global_admin", "super_admin", "admin"].includes(currentUser?.role);
+  const canAdd    = isAdmin || !!currentUser?.profile_permissions?.delegation?.add;
+  const canEdit   = isAdmin || !!currentUser?.profile_permissions?.delegation?.edit;
+  const canDelete = isAdmin || !!currentUser?.profile_permissions?.delegation?.delete;
 
   const [powers,      setPowers]      = useState([]);
   const [delegations, setDelegations] = useState([]);
@@ -203,7 +207,7 @@ export default function Delegation({ showToast }) {
             </p>
           </div>
         </div>
-        {powers.length > 0 && !showForm && (
+        {powers.length > 0 && !showForm && canAdd && (
           <button
             onClick={openNew}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-[13px] font-semibold rounded hover:bg-indigo-700 transition-colors shrink-0"
@@ -385,29 +389,34 @@ export default function Delegation({ showToast }) {
 
                 <div className="flex items-center gap-1 shrink-0">
                   {/* Edit */}
-                  <button
-                    onClick={() => openEdit(d)}
-                    className="px-2.5 py-1.5 text-[12px] font-medium text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                  >
-                    Edit
-                  </button>
+                  {canEdit && (
+                    <button
+                      onClick={() => openEdit(d)}
+                      className="px-2.5 py-1.5 text-[12px] font-medium text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                    >
+                      Edit
+                    </button>
+                  )}
 
                   {/* Toggle active */}
-                  <button
-                    onClick={() => toggleActive(d)}
-                    disabled={!!toggling[d.id]}
-                    className="p-1.5 rounded hover:bg-slate-50 transition-colors disabled:opacity-50"
-                    title={d.is_active ? "Disable delegation" : "Enable delegation"}
-                  >
-                    {toggling[d.id]
-                      ? <Loader2 size={16} className="animate-spin text-slate-400" />
-                      : d.is_active
-                        ? <ToggleRight size={18} className="text-indigo-500" />
-                        : <ToggleLeft  size={18} className="text-slate-300" />
-                    }
-                  </button>
+                  {canEdit && (
+                    <button
+                      onClick={() => toggleActive(d)}
+                      disabled={!!toggling[d.id]}
+                      className="p-1.5 rounded hover:bg-slate-50 transition-colors disabled:opacity-50"
+                      title={d.is_active ? "Disable delegation" : "Enable delegation"}
+                    >
+                      {toggling[d.id]
+                        ? <Loader2 size={16} className="animate-spin text-slate-400" />
+                        : d.is_active
+                          ? <ToggleRight size={18} className="text-indigo-500" />
+                          : <ToggleLeft  size={18} className="text-slate-300" />
+                      }
+                    </button>
+                  )}
 
                   {/* Delete */}
+                  {canDelete && (
                   <button
                     onClick={() => handleDelete(d.id)}
                     disabled={!!deleting[d.id]}
@@ -419,6 +428,7 @@ export default function Delegation({ showToast }) {
                       : <Trash2 size={14} />
                     }
                   </button>
+                  )}
                 </div>
               </div>
             ))}

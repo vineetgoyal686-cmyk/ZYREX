@@ -464,4 +464,71 @@ router.post("/modules", requireAuth, requireGlobalAdmin, async (req, res) => {
   res.json({ success: true, module: data });
 });
 
+/* ─────────────────────────────────────────
+   Role-level default permissions (Settings > Roles)
+───────────────────────────────────────── */
+const FALLBACK_ROLE_DEFAULTS = {
+  super_admin: {
+    manage_user:     { view: true, add: true, edit: true, delete: true, manage_permissions: true },
+    manage_project:  { view: true, add: true, edit: true, delete: true },
+    designation:     { view: true, add: true, edit: true, delete: true },
+    approval_flow:   { view: true, add: true, edit: true, delete: true },
+    serialization:   { view: true, add: true, edit: true, delete: true },
+    request_handler: { view: true, edit: true },
+    delegation:      { view: true, add: true, edit: true, delete: true },
+    mail_management: { view: true, add: true, edit: true, delete: true },
+  },
+  admin: {
+    manage_user:     { view: true, add: true, edit: true, delete: false, manage_permissions: false },
+    manage_project:  { view: true, add: true, edit: true, delete: false },
+    designation:     { view: true, add: true, edit: true, delete: false },
+    approval_flow:   { view: true, add: true, edit: true, delete: false },
+    serialization:   { view: true, add: false, edit: true, delete: false },
+    request_handler: { view: true, edit: true },
+    delegation:      { view: true, add: true, edit: true, delete: false },
+    mail_management: { view: true, add: true, edit: true, delete: false },
+  },
+  user: {
+    manage_user:     { view: false, add: false, edit: false, delete: false, manage_permissions: false },
+    manage_project:  { view: false, add: false, edit: false, delete: false },
+    designation:     { view: false, add: false, edit: false, delete: false },
+    approval_flow:   { view: false, add: false, edit: false, delete: false },
+    serialization:   { view: false, add: false, edit: false, delete: false },
+    request_handler: { view: false, edit: false },
+    delegation:      { view: false, add: false, edit: false, delete: false },
+    mail_management: { view: false, add: false, edit: false, delete: false },
+  },
+};
+
+/* GET /api/role-defaults — Admin+ can view */
+router.get("/role-defaults/all", requireAuth, requireAdminOrAbove, async (req, res) => {
+  const admin = getAdminClient();
+  const { data, error } = await admin.from("role_defaults").select("role, profile_permissions");
+  if (error) return res.status(500).json({ error: error.message });
+
+  const result = { ...FALLBACK_ROLE_DEFAULTS };
+  (data || []).forEach(row => { result[row.role] = row.profile_permissions || result[row.role]; });
+  res.json({ roleDefaults: result });
+});
+
+/* PUT /api/role-defaults/:role — only Global/Super Admin can edit role-level defaults */
+router.put("/role-defaults/:role", requireAuth, async (req, res) => {
+  if (!["global_admin", "super_admin"].includes(req.user.role))
+    return res.status(403).json({ error: "Only Global/Super Admin can edit role defaults" });
+
+  const { role } = req.params;
+  if (!["super_admin", "admin", "user"].includes(role))
+    return res.status(400).json({ error: "Invalid role" });
+
+  const { profile_permissions } = req.body;
+  if (!profile_permissions || typeof profile_permissions !== "object")
+    return res.status(400).json({ error: "profile_permissions object required" });
+
+  const admin = getAdminClient();
+  const { error } = await admin.from("role_defaults")
+    .upsert({ role, profile_permissions, updated_at: new Date().toISOString() }, { onConflict: "role" });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
 module.exports = router;
