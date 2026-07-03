@@ -105,7 +105,7 @@ function AddCard({ onClick }) {
 }
 
 /* ── Main OrgList ─────────────────────────────────────── */
-export default function OrgList({ onSelectOrg, showAdd, onAddDone, actionsRef, view = "card", onCountChange }) {
+export default function OrgList({ onSelectOrg, showAdd, onAddDone, actionsRef, view = "card" }) {
   const [companies,   setCompanies]   = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [showAddFlow, setShowAddFlow] = useState(false);
@@ -117,10 +117,8 @@ export default function OrgList({ onSelectOrg, showAdd, onAddDone, actionsRef, v
     try {
       const res  = await fetch(`${API}/api/procurement/companies`, { headers: { Authorization: `Bearer ${TOKEN()}` } });
       const data = await res.json();
-      const list = data.companies || [];
-      setCompanies(list);
-      onCountChange?.(list.length);
-    } catch { setCompanies([]); onCountChange?.(0); }
+      setCompanies(data.companies || []);
+    } catch { setCompanies([]); }
     finally { setLoading(false); }
   };
 
