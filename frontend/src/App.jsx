@@ -126,6 +126,52 @@ const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const SIDEBAR_EXPANDED_WIDTH = 220;
 const SIDEBAR_COLLAPSED_WIDTH = 60;
 
+// ── Chunk load error boundary ────────────────────────────────────────────────
+// After a new deploy, a tab left open on the old bundle can try to fetch a
+// lazy-loaded chunk that no longer exists (404). Suspense doesn't catch that
+// rejection, so it crashes to a blank screen. Reload once to pick up the
+// fresh bundle instead of leaving the user stuck.
+class ChunkErrorBoundary extends React.Component {
+  state = { hasError: false, isChunkError: false };
+
+  static getDerivedStateFromError(error) {
+    const msg = String(error?.message || "");
+    const isChunkError = /dynamically imported module|Failed to fetch|Loading chunk|import\(\)/i.test(msg);
+    return { hasError: true, isChunkError };
+  }
+
+  componentDidCatch() {
+    const reloadedKey = "bms_chunk_error_reloaded";
+    if (this.state.isChunkError && !sessionStorage.getItem(reloadedKey)) {
+      sessionStorage.setItem(reloadedKey, "1");
+      window.location.reload();
+    }
+  }
+
+  render() {
+    if (this.state.hasError) {
+      if (this.state.isChunkError) {
+        return (
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-slate-500">
+            <div className="w-8 h-8 border-2 border-slate-200 border-t-slate-700 rounded-full animate-spin" />
+            <p className="text-sm">Loading latest version…</p>
+          </div>
+        );
+      }
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-3 text-slate-500">
+          <p className="text-sm">Something went wrong loading this page.</p>
+          <button onClick={() => window.location.reload()}
+            className="px-4 py-2 text-sm font-semibold bg-slate-700 text-white rounded hover:bg-slate-800 transition-colors">
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ── AppLayout (authenticated shell) ─────────────────────────────────────────
 
 function AppLayout({
@@ -298,9 +344,11 @@ function AppLayout({
             activeTab === "profile" ? "flex flex-col" : ""
           } ${mainPaddingClass}`}
         >
-          <Suspense fallback={<div className="flex h-full items-center justify-center"><div className="w-8 h-8 border-2 border-slate-200 border-t-slate-700 rounded-full animate-spin" /></div>}>
-            {renderPage()}
-          </Suspense>
+          <ChunkErrorBoundary>
+            <Suspense fallback={<div className="flex h-full items-center justify-center"><div className="w-8 h-8 border-2 border-slate-200 border-t-slate-700 rounded-full animate-spin" /></div>}>
+              {renderPage()}
+            </Suspense>
+          </ChunkErrorBoundary>
         </main>
       </div>
     </div>
@@ -324,6 +372,12 @@ function ComingSoon({ label }) {
 function App() {
   const navigate  = useNavigate();
   const location  = useLocation();
+
+  // App mounted successfully — clear the one-shot chunk-error reload guard
+  // so a future deploy's chunk mismatch can still trigger an auto-reload.
+  useEffect(() => {
+    sessionStorage.removeItem("bms_chunk_error_reloaded");
+  }, []);
 
   // Detect Supabase auth redirects (password reset / invite) in URL
   // and redirect to /reset-password so auth is handled at a dedicated route.
