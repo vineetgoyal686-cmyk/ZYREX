@@ -319,6 +319,18 @@ router.delete("/:id", requireAuth, requireGlobalAdmin, async (req, res) => {
   if (targetUser?.role === "global_admin")
     return res.status(403).json({ error: "Global Admin users can only be removed directly in the database" });
 
+  // request_handlers.users is a denormalized JSONB snapshot ([{id, name}]),
+  // not a real foreign key — deleting the user row here has no effect on it,
+  // so a stale {id, name} entry would otherwise sit there forever, silently
+  // never matching if the same person is re-invited with a new user id.
+  const { data: handlerRows } = await admin.from("request_handlers").select("id, users");
+  const staleRows = (handlerRows || []).filter(r => (r.users || []).some(u => String(u.id) === String(id)));
+  await Promise.all(staleRows.map(r =>
+    admin.from("request_handlers")
+      .update({ users: (r.users || []).filter(u => String(u.id) !== String(id)) })
+      .eq("id", r.id)
+  ));
+
   // Remove from our users table first
   const { error: dbError } = await admin.from("users").delete().eq("id", id);
   if (dbError) return res.status(500).json({ error: dbError.message });

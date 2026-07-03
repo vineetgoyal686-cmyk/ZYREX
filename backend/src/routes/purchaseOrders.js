@@ -562,16 +562,30 @@ router.get("/pending-count", async (req, res) => {
   try {
     const { userId, isGlobalAdmin } = req.query;
 
-    const { data: handlerRows } = await supabase
-      .from("request_handlers")
-      .select("users")
-      .eq("module_key", "order")
-      .eq("action_key", "issue");
+    // The badge just signals "something is pending" — it's not restricted to
+    // whoever is assigned to act on it. Anyone with view access to the Orders
+    // inbox (directly, or via their Access Profile) should see the count.
+    let canView = isGlobalAdmin === "true";
+    if (!canView && userId) {
+      const { data: mod } = await supabase.from("modules").select("id").eq("module_key", "inbox_orders").maybeSingle();
+      if (mod) {
+        const { data: perm } = await supabase.from("permissions")
+          .select("can_view, user_id").eq("user_id", userId).eq("module_id", mod.id).maybeSingle();
+        if (perm) {
+          canView = !!perm.can_view;
+        } else {
+          const { data: user } = await supabase.from("users").select("access_profile_ids").eq("id", userId).maybeSingle();
+          if (user?.access_profile_ids?.length > 0) {
+            const { data: designations } = await supabase.from("designations")
+              .select("app_permissions").in("id", user.access_profile_ids);
+            const profilePerms = (designations || []).flatMap(d => d.app_permissions || []);
+            canView = profilePerms.some(p => p.module_id === mod.id && !!p.can_view);
+          }
+        }
+      }
+    }
 
-    const issueUsers = (handlerRows || []).flatMap(r => r.users || []);
-    const isIssueHandler = isGlobalAdmin === "true" || issueUsers.some(u => String(u.id) === String(userId));
-
-    if (!isIssueHandler) return res.json({ count: 0 });
+    if (!canView) return res.json({ count: 0 });
 
     const { count, error } = await supabase.schema("procurement")
       .from("purchase_orders")
