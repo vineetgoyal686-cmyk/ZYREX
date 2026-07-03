@@ -88,6 +88,8 @@ router.post("/login", async (req, res) => {
     "can_download_document","can_issue","can_recall","can_reject","can_revert",
     "can_cancel","can_manage_amend","can_log","can_trash","can_take_action",
     "can_submit","can_approve","can_request","can_withdraw",
+    "can_request_recall","can_request_amend","can_request_cancel",
+    "can_withdraw_recall","can_withdraw_amend","can_withdraw_cancel","can_withdraw_submission",
     "order_overview_aging","order_intake","order_payment",
   ];
   const profilePerms = (designationsRes.data || []).flatMap(d => d.app_permissions || []);
@@ -771,6 +773,8 @@ router.get("/my-permissions", async (req, res) => {
     "can_download_document","can_issue","can_recall","can_reject","can_revert",
     "can_cancel","can_manage_amend","can_log","can_trash","can_take_action",
     "can_submit","can_approve","can_request","can_withdraw",
+    "can_request_recall","can_request_amend","can_request_cancel",
+    "can_withdraw_recall","can_withdraw_amend","can_withdraw_cancel","can_withdraw_submission",
     "order_overview_aging","order_intake","order_payment",
   ];
 
@@ -829,7 +833,7 @@ router.get("/init", async (req, res) => {
     };
   }
 
-  const projects = (projectsRes.data || []).map(r => ({
+  let projects = (projectsRes.data || []).map(r => ({
     id:          r.id,
     projectName: r.project_name || "",
     projectCode: r.project_code || "",
@@ -838,6 +842,26 @@ router.get("/init", async (req, res) => {
     isActive:    r.is_active !== false,
     logoUrl:     "",
   }));
+
+  // Project Access restriction: union of the user's own allowed_projects and
+  // any linked access profile's project_access. An empty effective list means
+  // no restriction has ever been configured, so every project stays visible
+  // (keeps existing users working exactly as before this was enforced).
+  const isPrivileged = profile.role === "global_admin" || profile.role === "super_admin";
+  if (!isPrivileged) {
+    const profileIds = profile.access_profile_ids || [];
+    let profileProjectAccess = [];
+    if (profileIds.length > 0) {
+      const { data: designations } = await admin.from("designations").select("project_access").in("id", profileIds);
+      profileProjectAccess = (designations || []).flatMap(d => d.project_access || []);
+    }
+    const ownAllowedProjects = profile.profile_permissions?.allowed_projects || [];
+    const effectiveAllowedProjects = [...new Set([...ownAllowedProjects, ...profileProjectAccess])];
+    if (effectiveAllowedProjects.length > 0) {
+      const allowedSet = new Set(effectiveAllowedProjects);
+      projects = projects.filter(p => allowedSet.has(p.id));
+    }
+  }
 
   res.json({
     user: {

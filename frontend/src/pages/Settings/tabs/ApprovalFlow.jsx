@@ -800,6 +800,12 @@ function FlowDetail({ flow, onBack, onEdit }) {
    MAIN COMPONENT
 ══════════════════════════════════════════════ */
 export default function ApprovalFlow({ showToast }) {
+  const currentUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
+  const isAdmin  = ["global_admin", "super_admin", "admin"].includes(currentUser?.role);
+  const canAdd    = isAdmin || !!currentUser?.profile_permissions?.approval_flow?.add;
+  const canEdit   = isAdmin || !!currentUser?.profile_permissions?.approval_flow?.edit;
+  const canDelete = isAdmin || !!currentUser?.profile_permissions?.approval_flow?.delete;
+
   const [activeTab, setActiveTab]       = useState("overview"); // overview | module key
   const [activeModule, setActiveModule] = useState("order");
   const [flows, setFlows]               = useState([]);
@@ -890,7 +896,7 @@ export default function ApprovalFlow({ showToast }) {
             <p className="text-[11px] text-slate-400 mt-0.5">Configure multi-level approval workflows per module</p>
           </div>
         </div>
-        {activeTab !== "overview" && (
+        {activeTab !== "overview" && canAdd && (
           <button type="button"
             onClick={() => { setSelected(null); setView("edit"); }}
             className="inline-flex items-center gap-2 h-8 px-4 rounded-sm bg-indigo-600 text-white text-[12px] font-bold hover:bg-indigo-700 transition">
@@ -973,8 +979,8 @@ export default function ApprovalFlow({ showToast }) {
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-1 justify-end">
                         <button type="button" onClick={() => { setSelected(flow); setView("detail"); }} className="w-7 h-7 flex items-center justify-center rounded-sm text-slate-500 hover:bg-slate-200 transition"><Eye size={14} /></button>
-                        <button type="button" onClick={() => { setSelected(flow); setView("edit"); }} className="w-7 h-7 flex items-center justify-center rounded-sm text-slate-500 hover:bg-slate-200 transition"><Pencil size={13} /></button>
-                        <button type="button" onClick={() => handleDelete(flow.id)} className="w-7 h-7 flex items-center justify-center rounded-sm text-rose-400 hover:bg-rose-50 transition"><Trash2 size={13} /></button>
+                        {canEdit && <button type="button" onClick={() => { setSelected(flow); setView("edit"); }} className="w-7 h-7 flex items-center justify-center rounded-sm text-slate-500 hover:bg-slate-200 transition"><Pencil size={13} /></button>}
+                        {canDelete && <button type="button" onClick={() => handleDelete(flow.id)} className="w-7 h-7 flex items-center justify-center rounded-sm text-rose-400 hover:bg-rose-50 transition"><Trash2 size={13} /></button>}
                       </div>
                     </td>
                   </tr>
@@ -1007,10 +1013,10 @@ export default function ApprovalFlow({ showToast }) {
                   <div className="flex items-center gap-1">
                     <button type="button" onClick={() => { setSelected(flow); setView("detail"); }}
                       className="w-8 h-8 flex items-center justify-center rounded-sm text-slate-500 hover:bg-slate-100 transition"><Eye size={15} /></button>
-                    <button type="button" onClick={() => { setSelected(flow); setView("edit"); }}
-                      className="w-8 h-8 flex items-center justify-center rounded-sm text-slate-500 hover:bg-slate-100 transition"><Pencil size={14} /></button>
-                    <button type="button" onClick={() => handleDelete(flow.id)}
-                      className="w-8 h-8 flex items-center justify-center rounded-sm text-rose-400 hover:bg-rose-50 transition"><Trash2 size={14} /></button>
+                    {canEdit && <button type="button" onClick={() => { setSelected(flow); setView("edit"); }}
+                      className="w-8 h-8 flex items-center justify-center rounded-sm text-slate-500 hover:bg-slate-100 transition"><Pencil size={14} /></button>}
+                    {canDelete && <button type="button" onClick={() => handleDelete(flow.id)}
+                      className="w-8 h-8 flex items-center justify-center rounded-sm text-rose-400 hover:bg-rose-50 transition"><Trash2 size={14} /></button>}
                   </div>
                 </div>
               ))}

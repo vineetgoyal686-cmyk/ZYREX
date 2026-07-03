@@ -143,16 +143,20 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
   }, [section]);
 
   /* ── Nav groups ── */
-  const isSuperOrGlobal = isGlobalAdmin || currentUser.role === "super_admin";
-  const showProjectsTab = isSuperOrGlobal || !!pp.manage_project?.view;
-  const showTeamTab     = isSuperOrGlobal || !!pp.manage_user?.view;
+  const isSuperOrGlobal   = isGlobalAdmin || currentUser.role === "super_admin";
+  const showProjectsTab   = isSuperOrGlobal || !!pp.manage_project?.view;
+  const showTeamTab       = isSuperOrGlobal || !!pp.manage_user?.view;
+  const showDelegationTab = isSuperOrGlobal || !!pp.delegation?.view;
+  const showApprovalFlowTab   = isSuperOrGlobal || !!pp.approval_flow?.view;
+  const showRequestHandlerTab = isSuperOrGlobal || !!pp.request_handler?.view;
+  const showMailManagementTab = isSuperOrGlobal || !!pp.mail_management?.view;
   const adminSettings   = isGlobalAdmin || currentUser.role === "super_admin";
 
   const settingsNavGroups = (() => {
     const general = [
       { id: "profile",    label: "Personal Info",      icon: UserCircle },
       { id: "security",   label: "Security",            icon: Lock       },
-      { id: "delegation", label: "Delegation",          icon: UserCheck  },
+      ...(showDelegationTab ? [{ id: "delegation", label: "Delegation", icon: UserCheck }] : []),
       ...(showProjectsTab ? [{ id: "projects", label: "Project Management", icon: FolderOpen }] : []),
     ];
     const access = [
@@ -165,12 +169,12 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
         : []),
     ];
     const workflow = [
-      { id: "approval_flow",   label: "Approval Flow",   icon: Workflow },
+      ...(showApprovalFlowTab ? [{ id: "approval_flow", label: "Approval Flow", icon: Workflow }] : []),
       ...(isGlobalAdmin || currentUser.role === "super_admin" || !!pp.serialization?.view
         ? [{ id: "serialization", label: "Serialization", icon: KeyRound }]
         : []),
-      { id: "request_handler",  label: "Request Handler",  icon: Inbox },
-      { id: "mail_management",  label: "Mail Management",  icon: Mail  },
+      ...(showRequestHandlerTab ? [{ id: "request_handler", label: "Request Handler", icon: Inbox }] : []),
+      ...(showMailManagementTab ? [{ id: "mail_management", label: "Mail Management", icon: Mail }] : []),
     ];
     const groups = [{ title: null, items: general }];
     if (access.length) groups.push({ title: "Access control", items: access });

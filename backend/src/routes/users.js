@@ -337,39 +337,43 @@ router.get("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
   const { data: user }   = await admin.from("users").select("profile_permissions, access_profile_ids").eq("id", req.params.id).single();
   const { data: perms }   = await admin.from("permissions").select("*").eq("user_id", req.params.id);
 
+  // Effective project access = user's own explicit list unioned with all linked
+  // access profiles' project_access, so the panel reflects what the user can
+  // actually reach today (not just per-user overrides).
+  const profileIds = user?.access_profile_ids || [];
+  let designations = [];
+  if (profileIds.length > 0) {
+    ({ data: designations } = await admin.from("designations").select("project_access, app_permissions").in("id", profileIds));
+    designations = designations || [];
+  }
+  const profileProjectAccess = designations.flatMap(d => d.project_access || []);
+  const profilePerms = designations.flatMap(d => d.app_permissions || []);
+  const ownAllowedProjects = user?.profile_permissions?.allowed_projects || [];
+  const effectiveAllowedProjects = [...new Set([...ownAllowedProjects, ...profileProjectAccess])];
+
+  const PERM_BOOL_KEYS = [
+    "can_view","can_add","can_edit","can_delete","can_bulk_upload","can_export",
+    "can_download_document","can_issue","can_recall","can_reject","can_revert",
+    "can_cancel","can_manage_amend","can_log","can_trash","can_take_action",
+    "can_submit","can_approve","can_request","can_withdraw",
+    "can_request_recall","can_request_amend","can_request_cancel",
+    "can_withdraw_recall","can_withdraw_amend","can_withdraw_cancel","can_withdraw_submission",
+    "order_overview_aging","order_intake","order_payment",
+  ];
+
   const result = (modules || []).map(mod => {
     const perm = perms?.find(p => p.module_id === mod.id) || {};
-    return {
-      module_id:             mod.id,
-      module_key:            mod.module_key,
-      module_name:           mod.module_name,
-      can_view:              perm.can_view              || false,
-      can_add:               perm.can_add               || false,
-      can_edit:              perm.can_edit              || false,
-      can_delete:            perm.can_delete            || false,
-      can_bulk_upload:       perm.can_bulk_upload       || false,
-      can_export:            perm.can_export            || false,
-      can_download_document: perm.can_download_document || false,
-      can_issue:             perm.can_issue             || false,
-      can_recall:            perm.can_recall            || false,
-      can_reject:            perm.can_reject            || false,
-      can_revert:            perm.can_revert            || false,
-      can_cancel:            perm.can_cancel            || false,
-      can_manage_amend:      perm.can_manage_amend      || false,
-      can_log:               perm.can_log               || false,
-      can_trash:             perm.can_trash             || false,
-      can_take_action:       perm.can_take_action       || false,
-      can_submit:            perm.can_submit            || false,
-      can_approve:           perm.can_approve           || false,
-      can_request:           perm.can_request           || false,
-      can_withdraw:          perm.can_withdraw          || false,
-      order_overview_aging:  perm.order_overview_aging  || false,
-      order_intake:          perm.order_intake          || false,
-      order_payment:         perm.order_payment         || false,
-    };
+    const profMatches = profilePerms.filter(p => p.module_id === mod.id);
+    const merged = { module_id: mod.id, module_key: mod.module_key, module_name: mod.module_name };
+    PERM_BOOL_KEYS.forEach(k => { merged[k] = !!(perm[k]) || profMatches.some(p => !!p[k]); });
+    return merged;
   });
 
-  res.json({ permissions: result, profile_permissions: user?.profile_permissions || {}, access_profile_ids: user?.access_profile_ids || [] });
+  res.json({
+    permissions: result,
+    profile_permissions: { ...(user?.profile_permissions || {}), allowed_projects: effectiveAllowedProjects },
+    access_profile_ids: user?.access_profile_ids || [],
+  });
 });
 
 /* PUT /api/users/:id/permissions */
@@ -406,6 +410,13 @@ router.put("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
       can_approve:           p.can_approve           || false,
       can_request:           p.can_request           || false,
       can_withdraw:          p.can_withdraw          || false,
+      can_request_recall:    p.can_request_recall    || false,
+      can_request_amend:     p.can_request_amend     || false,
+      can_request_cancel:    p.can_request_cancel    || false,
+      can_withdraw_recall:   p.can_withdraw_recall   || false,
+      can_withdraw_amend:    p.can_withdraw_amend    || false,
+      can_withdraw_cancel:   p.can_withdraw_cancel   || false,
+      can_withdraw_submission: p.can_withdraw_submission || false,
       order_overview_aging:  p.order_overview_aging  || false,
       order_intake:          p.order_intake          || false,
       order_payment:         p.order_payment         || false,
