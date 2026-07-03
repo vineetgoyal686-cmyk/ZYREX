@@ -131,7 +131,24 @@
       "Bash(grep -c \"fetch\\(\\\\`\\\\${API}\" src/pages/Approvals.jsx)",
       "Bash(./node_modules/.bin/eslint src/pages/Approvals.jsx --quiet)",
       "Bash(./node_modules/.bin/eslint src/App.jsx --quiet)",
-      "Bash(./node_modules/.bin/eslint src/pages/Procurement/VendorList.jsx --quiet)"
+      "Bash(./node_modules/.bin/eslint src/pages/Procurement/VendorList.jsx --quiet)",
+      "Bash(git fetch *)",
+      "Bash(curl -s \"https://api.zyhawk.in/api/orders\")",
+      "Bash(curl -s \"https://api.zyhawk.in/api/orders/373f9b31-85cd-45eb-ac10-90e82d6d64ba\")",
+      "Bash(awk 'NR<=2306 && /^\\(const|function\\) [A-Z][A-Za-z]* ?=|^function [A-Z]/{print NR\": \"$0}' src/pages/Procurement/ViewOrder.jsx)",
+      "Bash(awk 'NR>=68 && NR<=908 && /const order|order = data|order:/' src/pages/Procurement/ViewOrder.jsx)",
+      "Bash(awk 'NR>=68 && NR<=908 && /^  const \\\\{|order,items|order, items/' src/pages/Procurement/ViewOrder.jsx)",
+      "Bash(curl -sI \"https://api.zyhawk.in/api/orders/373f9b31-85cd-45eb-ac10-90e82d6d64ba\")",
+      "Read(//c/Users/jiten/AppData/Local/Temp/stampcheck/**)",
+      "Bash(node --check backend/src/routes/procurement.js)",
+      "Bash(curl -s \"https://app.zyhawk.in/\")",
+      "Bash(curl -s \"https://app.zyhawk.in/?cb=$\\(date +%s\\)\" -H \"Cache-Control: no-cache\" -I)",
+      "Bash(curl -s \"https://app.zyhawk.in/?cb=$\\(date +%s\\)\" -H \"Cache-Control: no-cache\")",
+      "Bash(node \"C:/Users/jiten/AppData/Local/Temp/claude/d--Zyhawk/77cdfa38-ec50-49f1-ba7d-3ce64e671138/scratchpad/screenshot_test.js\")",
+      "Bash(node _tmp_screenshot_test.js)",
+      "Read(//c/Users/jiten/AppData/Local/Temp/**)",
+      "Bash(node _tmp_screenshot_test2.js)",
+      "Bash(node _tmp_screenshot_test3.js)"
     ]
   }
 }
