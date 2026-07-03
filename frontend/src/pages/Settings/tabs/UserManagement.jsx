@@ -47,6 +47,7 @@ export default function UserManagement({
   const [viewType,    setViewType]    = useState("list");
   const [editingRoleId, setEditingRoleId] = useState(null);
   const [confirmRoleChange, setConfirmRoleChange] = useState(null);
+  const [confirmRemoveUser, setConfirmRemoveUser] = useState(null);
   const [loading, setLoading] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -313,8 +314,12 @@ export default function UserManagement({
     } catch (err) { showToast(err.response?.data?.error || "Failed to resend invite", "error"); }
   };
 
-  const removeUser = async (member) => {
-    if (!window.confirm(`Are you sure you want to permanently delete "${member.name}"? This action cannot be undone.`)) return;
+  const removeUser = (member) => setConfirmRemoveUser(member);
+
+  const executeRemoveUser = async () => {
+    const member = confirmRemoveUser;
+    if (!member) return;
+    setConfirmRemoveUser(null);
     try {
       await api.delete(`/api/users/${member.id}`);
       setMembers(prev => prev.filter(m => m.id !== member.id));
@@ -1088,6 +1093,39 @@ export default function UserManagement({
                   Also Wipe Permissions (Advanced)
                 </button>
                 <button onClick={() => setConfirmRoleChange(null)}
+                  className="w-full py-2 text-xs font-bold text-slate-400 hover:text-slate-600 transition-all">
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Remove User Modal ── */}
+      <AnimatePresence>
+        {confirmRemoveUser && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={() => setConfirmRemoveUser(null)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-md" />
+            <motion.div initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="relative w-full max-w-md bg-white rounded-none shadow-2xl overflow-hidden border border-white/20">
+              <div className="p-6 text-center">
+                <div className="w-16 h-16 rounded-sm bg-rose-50 flex items-center justify-center mx-auto mb-4 border border-rose-100">
+                  <Trash2 size={32} className="text-rose-500" />
+                </div>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight mb-2">Remove User?</h3>
+                <p className="text-sm font-medium text-slate-500 leading-relaxed px-4">
+                  Are you sure you want to permanently delete <span className="font-bold text-slate-800">"{confirmRemoveUser.name}"</span>? This action cannot be undone.
+                </p>
+              </div>
+              <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-2">
+                <button onClick={executeRemoveUser}
+                  className="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-sm text-sm font-bold shadow-lg shadow-rose-200 transition-all active:scale-95">
+                  Yes, Delete Permanently
+                </button>
+                <button onClick={() => setConfirmRemoveUser(null)}
                   className="w-full py-2 text-xs font-bold text-slate-400 hover:text-slate-600 transition-all">
                   Cancel
                 </button>
