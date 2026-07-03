@@ -9,7 +9,6 @@ import LogPanel from "../../components/LogPanel";
 import VendorPool from "./VendorPool";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
-const PER_PAGE = 15;
 
 const emptyForm = {
   vendorName: "", email: "", contactPerson: "", mobile: "",
@@ -174,6 +173,7 @@ export default function VendorList() {
   const [logTarget, setLogTarget] = useState(null);
   const [mainTab, setMainTab]     = useState("vendors");
   const [page, setPage]           = useState(1);
+  const [perPage, setPerPage]     = useState(20);
   const [showBulk, setShowBulk]   = useState(false);
   const [bulkRows, setBulkRows]   = useState([]);
   const [bulkFile, setBulkFile]   = useState("");
@@ -469,8 +469,8 @@ export default function VendorList() {
       v.email?.toLowerCase().includes(t)
     );
   });
-  const totalPages = Math.ceil(filtered.length / PER_PAGE) || 1;
-  const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const totalPages = Math.ceil(filtered.length / perPage) || 1;
+  const paginated  = filtered.slice((page - 1) * perPage, page * perPage);
 
   return (
     <div className="p-3 sm:p-4 lg:p-6 w-full pb-32">
@@ -831,7 +831,16 @@ export default function VendorList() {
         {/* Pagination */}
         {!loading && filtered.length > 0 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
-            <p className="text-xs text-slate-400">{filtered.length} vendors · Page {page} of {totalPages}</p>
+            <div className="flex items-center gap-3">
+              <p className="text-xs text-slate-400">{filtered.length} vendors · Page {page} of {totalPages}</p>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-400">Rows per page:</span>
+                <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                  className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600 bg-white focus:outline-none">
+                  {[10, 20, 30, 40, 50].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+            </div>
             {totalPages > 1 && (
               <div className="flex items-center gap-1">
                 <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
