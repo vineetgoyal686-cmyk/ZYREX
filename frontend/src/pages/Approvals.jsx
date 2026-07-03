@@ -4,6 +4,7 @@ import {
   ChevronDown, Building2, CircleCheck, CircleX, RotateCcw,
   ClipboardList, Clock, IndianRupee, Search, Undo2, User, FileDown
 } from "lucide-react";
+import { authFetch } from "../utils/authFetch";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -78,16 +79,15 @@ export default function Approvals() {
     }
 
     try {
-      const token = localStorage.getItem("bms_token") || "";
       const [ordersRes, intakesRes, amendRes, capRes, arRes, arCapRes, pendingApprovalsRes, handlersRes] = await Promise.all([
-        fetch(`${API}/api/orders`),
-        fetch(`${API}/api/intakes`),
-        fetch(`${API}/api/amendments/requests`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API}/api/amendments/can-manage`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API}/api/action-requests/pending`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API}/api/action-requests/can-manage`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API}/api/approval-flows/pending-for-me`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API}/api/request-handlers`, { headers: { Authorization: `Bearer ${token}` } }),
+        authFetch(`${API}/api/orders`),
+        authFetch(`${API}/api/intakes`),
+        authFetch(`${API}/api/amendments/requests`),
+        authFetch(`${API}/api/amendments/can-manage`),
+        authFetch(`${API}/api/action-requests/pending`),
+        authFetch(`${API}/api/action-requests/can-manage`),
+        authFetch(`${API}/api/approval-flows/pending-for-me`),
+        authFetch(`${API}/api/request-handlers`),
       ]);
       const [ordersData, intakesData, amendData, capData, arData, arCapData, pendingApprovalsData, handlersData] = await Promise.all([
         ordersRes.json().catch(() => ({})),
@@ -174,7 +174,7 @@ export default function Approvals() {
       return;
     }
     let cancelled = false;
-    fetch(`${API}/api/orders/${pdfPreviewId}/pdf?t=${Date.now()}`)
+    authFetch(`${API}/api/orders/${pdfPreviewId}/pdf?t=${Date.now()}`)
       .then(r => r.blob())
       .then(blob => {
         if (cancelled) return;
@@ -190,7 +190,7 @@ export default function Approvals() {
     if (!pdfPreviewId || pdfDownloading) return;
     setPdfDownloading(true);
     try {
-      const res = await fetch(`${API}/api/orders/${pdfPreviewId}/pdf?download=1&t=${Date.now()}`);
+      const res = await authFetch(`${API}/api/orders/${pdfPreviewId}/pdf?download=1&t=${Date.now()}`);
       if (!res.ok) throw new Error("PDF failed");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -207,12 +207,11 @@ export default function Approvals() {
     if (actionLoading === orderId) return; // prevent double-click
     setActionLoading(orderId);
     try {
-      const token = localStorage.getItem("bms_token") || "";
       const actionMap = { "Issued": "issue", "Reverted": "revert", "Rejected": "reject" };
       const apiAction = actionMap[action];
-      const res = await fetch(`${API}/api/orders/${orderId}/issue-action`, {
+      const res = await authFetch(`${API}/api/orders/${orderId}/issue-action`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: apiAction, comment: comments }),
       });
       const data = await res.json();
@@ -235,10 +234,9 @@ export default function Approvals() {
   const handleActionRequest = async (requestId, action, comment = "") => {
     setArActionLoading(requestId);
     try {
-      const token = localStorage.getItem("bms_token") || "";
-      const res = await fetch(`${API}/api/action-requests/${requestId}/action`, {
+      const res = await authFetch(`${API}/api/action-requests/${requestId}/action`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, comment }),
       });
       const d = await res.json();
@@ -252,10 +250,10 @@ export default function Approvals() {
     setActionLoading(intakeId);
     try {
       const endpoint = action === "Approved" ? "approve" : "reject";
-      const res = await fetch(`${API}/api/intakes/${intakeId}/${endpoint}`, {
+      const res = await authFetch(`${API}/api/intakes/${intakeId}/${endpoint}`, {
         method: "PATCH",
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem("bms_token") || ""}` },
-        body: JSON.stringify({ 
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           approved_by: JSON.parse(localStorage.getItem("bms_user") || "{}").name,
           rejected_by: JSON.parse(localStorage.getItem("bms_user") || "{}").name,
           reject_reason: action === "Rejected" ? "Rejected via dashboard" : ""
@@ -277,10 +275,9 @@ export default function Approvals() {
   const handleApprovalFlowAction = async (requestId, action, comments = "") => {
     setActionLoading(requestId);
     try {
-      const token = localStorage.getItem("bms_token") || "";
-      const res = await fetch(`${API}/api/approval-flows/action`, {
+      const res = await authFetch(`${API}/api/approval-flows/action`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ request_id: requestId, action, comments }),
       });
       const d = await res.json();
@@ -293,9 +290,9 @@ export default function Approvals() {
   const handleAmendAction = async (request_id, action) => {
     setActionLoading(request_id);
     try {
-      const res = await fetch(`${API}/api/amendments/action`, {
+      const res = await authFetch(`${API}/api/amendments/action`, {
         method: "POST",
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem("bms_token") || ""}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ request_id, action })
       });
       const data = await res.json();
