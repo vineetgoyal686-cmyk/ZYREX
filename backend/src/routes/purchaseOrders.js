@@ -1016,6 +1016,32 @@ router.get("/:id", async (req, res) => {
     const order = orderRes.data;
     const items = itemRes.data;
 
+    // Logo/stamp/signature are branding assets, not legal terms frozen at
+    // order creation — always show the company's current versions, even on
+    // orders created before they were uploaded to Company Master.
+    if (!lean && order.company_id && order.snapshot?.company) {
+      const { data: liveComp } = await supabase.schema("organisation")
+        .from("companies")
+        .select("logo_url, stamp_url, sign_url")
+        .eq("id", order.company_id)
+        .maybeSingle();
+      if (liveComp) {
+        const sc = order.snapshot.company;
+        order.snapshot = {
+          ...order.snapshot,
+          company: {
+            ...sc,
+            logo_url:  liveComp.logo_url  || sc.logo_url  || sc.logoUrl,
+            logoUrl:   liveComp.logo_url  || sc.logoUrl   || sc.logo_url,
+            stamp_url: liveComp.stamp_url || sc.stamp_url || sc.stampUrl,
+            stampUrl:  liveComp.stamp_url || sc.stampUrl  || sc.stamp_url,
+            sign_url:  liveComp.sign_url  || sc.sign_url  || sc.signUrl,
+            signUrl:   liveComp.sign_url  || sc.signUrl   || sc.sign_url,
+          },
+        };
+      }
+    }
+
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const needsUserLookup = order.made_by && UUID_RE.test(order.made_by);
 
@@ -1904,7 +1930,31 @@ const loadOrderForRender = async (orderId) => {
     ...row,
     material_name: row.material_name || row.items?.material_name,
   }));
-  const comp = cleanOrder.companies || cleanOrder.snapshot?.company || {};
+  const snapComp = cleanOrder.snapshot?.company || {};
+  let comp = cleanOrder.companies || snapComp;
+
+  // Logo/stamp/signature are branding assets, not legal terms frozen at order
+  // creation — always show the company's current versions, even on orders
+  // created before they were uploaded to Company Master.
+  if (cleanOrder.company_id) {
+    const { data: liveComp } = await supabase.schema("organisation")
+      .from("companies")
+      .select("logo_url, stamp_url, sign_url")
+      .eq("id", cleanOrder.company_id)
+      .maybeSingle();
+    if (liveComp) {
+      comp = {
+        ...comp,
+        logo_url:  liveComp.logo_url  || comp.logo_url  || comp.logoUrl,
+        logoUrl:   liveComp.logo_url  || comp.logoUrl   || comp.logo_url,
+        stamp_url: liveComp.stamp_url || comp.stamp_url || comp.stampUrl,
+        stampUrl:  liveComp.stamp_url || comp.stampUrl  || comp.stamp_url,
+        sign_url:  liveComp.sign_url  || comp.sign_url  || comp.signUrl,
+        signUrl:   liveComp.sign_url  || comp.signUrl   || comp.sign_url,
+      };
+    }
+  }
+
   const vend = cleanOrder.vendors || {};
   const site = cleanOrder.sites || cleanOrder.snapshot?.site || {};
   // Mirror ViewOrder logic: snapshot contacts first, fallback to live JOIN
