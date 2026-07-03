@@ -208,8 +208,8 @@ const cleanQuillHTML = (html) => {
 
 /* Get single clean HTML string from a points array (Quill v2 or legacy format) */
 const getCleanHTML = (points) => {
-  // Strip legacy __sp: style prefix if present
-  const pts = points?.[0]?.startsWith?.("__sp:") ? points.slice(1) : points;
+  // Strip legacy __sp: style prefix from the first element if present
+  const pts = points?.[0]?.startsWith?.("__sp:") ? [points[0].slice(5), ...points.slice(1)] : points;
   if (!pts || !pts.length) return "";
   if (pts.length === 1 && pts[0].includes('<')) return cleanQuillHTML(normalizeRichTextHtml(pts[0]));
   return `<ol>${pts.map(p => `<li>${normalizeRichTextHtml(p)}</li>`).join('')}</ol>`;
@@ -1716,8 +1716,11 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   /* ── Clause Component ── */
   const renderClauses = (title, type, ptsState, setPtsState) => {
     const list = clauses.filter(c => c.type === type);
-    // Find the template that matches the current points to show its ID and Title
-    const selectedTemplate = ptsState.length > 0 ? list.find(x => getCleanHTML(x.points) === ptsState[0]) : null;
+    const hasSavedContent = ptsState.length > 0;
+    // Find the template that matches the current points, just to show its code/title —
+    // saved content still counts as "selected" even if no live master clause matches it
+    // (e.g. the master clause was edited/re-versioned after this order was saved).
+    const selectedTemplate = hasSavedContent ? list.find(x => getCleanHTML(x.points) === ptsState[0]) : null;
 
     return (
       <div className="bg-slate-50/50 border border-slate-100 p-4 rounded-lg flex flex-col gap-3 min-h-[140px]">
@@ -1732,7 +1735,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
           )}
         </div>
 
-        {!selectedTemplate ? (
+        {!hasSavedContent ? (
           <div className="flex-1 flex flex-col justify-end">
             <Select
               value=""
@@ -1752,7 +1755,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
               onView={(c) => setActionModal({ type: 'manageClause', clauseType: type, initialViewId: c.id, initialAction: 'view', setPoints: setPtsState })}
             />
           </div>
-        ) : (
+        ) : selectedTemplate ? (
           <div className="flex-1 flex flex-col justify-end">
             <div className="bg-white border border-slate-200 rounded-md p-2.5 flex items-center justify-between gap-3 shadow-sm group">
               <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -1772,6 +1775,26 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                 <button
                   onClick={() => setPtsState([])}
                   className="p-1.5 rounded-md text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col justify-end">
+            <div className="bg-white border border-slate-200 rounded-md p-2.5 flex items-center justify-between gap-3 shadow-sm group">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded-sm shrink-0 uppercase tracking-tight">
+                  Saved
+                </span>
+                <span className="text-xs font-bold text-slate-700 truncate">{title} added with this order</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPtsState([])}
+                  className="p-1.5 rounded-md text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                  title="Remove"
                 >
                   <X size={14} />
                 </button>

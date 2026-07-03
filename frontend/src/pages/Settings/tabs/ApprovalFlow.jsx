@@ -862,7 +862,7 @@ export default function ApprovalFlow({ showToast }) {
       await api.delete(`/api/approval-flows/${id}`);
       showToast?.("Flow deleted");
       fetchFlows(activeModule, activeTab);
-    } catch { showToast?.("Failed to delete", "error"); }
+    } catch (err) { showToast?.(err.response?.data?.error || "Failed to delete", "error"); }
   };
 
   /* ── Render ── */

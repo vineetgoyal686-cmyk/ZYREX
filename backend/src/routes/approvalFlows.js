@@ -212,7 +212,14 @@ router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
 router.delete("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
   const admin = getAdminClient();
   const { error } = await admin.from("approval_flows").delete().eq("id", req.params.id);
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    if (error.code === "23503") {
+      return res.status(409).json({
+        error: "Cannot delete — this flow already has approval history attached. Set its status to Inactive instead.",
+      });
+    }
+    return res.status(500).json({ error: error.message });
+  }
   res.json({ success: true });
 });
 

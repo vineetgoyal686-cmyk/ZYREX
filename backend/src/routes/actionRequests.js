@@ -14,8 +14,8 @@ const extractUserId = (token) => {
 // Check if userId is listed in request_handlers for given module+action
 const isHandlerUser = async (admin, userId, moduleKey, actionKey) => {
   const { data } = await admin.from("request_handlers")
-    .select("users").eq("module_key", moduleKey).eq("action_key", actionKey).maybeSingle();
-  return (data?.users || []).some(u => String(u.id) === String(userId));
+    .select("users").eq("module_key", moduleKey).eq("action_key", actionKey);
+  return (data || []).flatMap(r => r.users || []).some(u => String(u.id) === String(userId));
 };
 
 const requireAuth = (req, res, next) => {

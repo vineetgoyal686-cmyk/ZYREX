@@ -47,8 +47,8 @@ const nextAmendNumber = async (admin, currentNumber) => {
 const canManageAmend = async (admin, userId, role) => {
   if (role === "global_admin") return true;
   const { data } = await admin.from("request_handlers")
-    .select("users").eq("module_key", "order").eq("action_key", "amend").maybeSingle();
-  return (data?.users || []).some(u => String(u.id) === String(userId));
+    .select("users").eq("module_key", "order").eq("action_key", "amend");
+  return (data || []).flatMap(r => r.users || []).some(u => String(u.id) === String(userId));
 };
 
 // True if the user is allowed to REQUEST an amendment.

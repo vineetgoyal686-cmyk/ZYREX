@@ -21,7 +21,7 @@ const requirePerm = (moduleKey, permKey) => async (req, res, next) => {
   if (!payload?.sub) return res.status(401).json({ error: "Invalid token" });
   if (payload.exp && payload.exp * 1000 < Date.now()) return res.status(401).json({ error: "Token expired" });
 
-  const { data: user } = await admin.from("users").select("id, role, is_active").eq("id", payload.sub).single();
+  const { data: user } = await admin.from("users").select("id, role, is_active, access_profile_ids").eq("id", payload.sub).single();
   if (!user || !user.is_active) return res.status(403).json({ error: "Account inactive" });
 
   // Admin roles bypass all module-level permission checks
@@ -31,14 +31,32 @@ const requirePerm = (moduleKey, permKey) => async (req, res, next) => {
     return next();
   }
 
+  const { data: mod } = await admin.from("modules").select("id").eq("module_key", moduleKey).maybeSingle();
+  if (!mod) {
+    return res.status(403).json({ error: `Permission denied: you don't have '${permKey}' access on '${moduleKey}'` });
+  }
+
   const { data: perm } = await admin
     .from("permissions")
-    .select(permKey)
+    .select(permKey + ", user_id")
     .eq("user_id", user.id)
-    .eq("module_key", moduleKey)
+    .eq("module_id", mod.id)
     .maybeSingle();
 
-  if (!perm?.[permKey]) {
+  // A saved per-user row fully decides the outcome for this module (even to
+  // restrict below what the Access Profile grants); only fall back to the
+  // profile when the user has never had this module explicitly set.
+  let allowed = perm ? !!perm[permKey] : false;
+  if (!perm && user.access_profile_ids?.length > 0) {
+    const { data: designations } = await admin
+      .from("designations")
+      .select("app_permissions")
+      .in("id", user.access_profile_ids);
+    const profilePerms = (designations || []).flatMap(d => d.app_permissions || []);
+    allowed = profilePerms.some(p => p.module_id === mod.id && !!p[permKey]);
+  }
+
+  if (!allowed) {
     return res.status(403).json({
       error: `Permission denied: you don't have '${permKey}' access on '${moduleKey}'`,
     });

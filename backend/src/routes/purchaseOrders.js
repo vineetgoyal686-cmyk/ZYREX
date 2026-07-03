@@ -562,14 +562,13 @@ router.get("/pending-count", async (req, res) => {
   try {
     const { userId, isGlobalAdmin } = req.query;
 
-    const { data: handlerRow } = await supabase
+    const { data: handlerRows } = await supabase
       .from("request_handlers")
       .select("users")
       .eq("module_key", "order")
-      .eq("action_key", "issue")
-      .maybeSingle();
+      .eq("action_key", "issue");
 
-    const issueUsers = handlerRow?.users || [];
+    const issueUsers = (handlerRows || []).flatMap(r => r.users || []);
     const isIssueHandler = isGlobalAdmin === "true" || issueUsers.some(u => String(u.id) === String(userId));
 
     if (!isIssueHandler) return res.json({ count: 0 });
