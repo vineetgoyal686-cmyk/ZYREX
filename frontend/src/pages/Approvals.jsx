@@ -782,8 +782,14 @@ export default function Approvals() {
                                 {req.attachment_url && (
                                   <a href={req.attachment_url} target="_blank" rel="noreferrer" title="View Attachment" className="h-8 w-8 flex items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm"><FileText size={16} /></a>
                                 )}
-                                <button disabled={actionLoading === req.id || !canManageAmend || !canOrderAct} onClick={() => handleAmendAction(req.id, "Approved")} title="Approve" className="h-8 w-8 rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 shadow-sm transition-all flex items-center justify-center"><CircleCheck size={18} /></button>
-                                <button disabled={actionLoading === req.id || !canManageAmend || !canOrderAct} onClick={() => handleAmendAction(req.id, "Rejected")} title="Reject" className="h-8 w-8 rounded-md bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-40 shadow-sm transition-all flex items-center justify-center"><CircleX size={18} /></button>
+                                {(canManageAmend && canOrderAct) ? (
+                                  <>
+                                    <button disabled={actionLoading === req.id} onClick={() => handleAmendAction(req.id, "Approved")} title="Approve" className="h-8 w-8 rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 shadow-sm transition-all flex items-center justify-center"><CircleCheck size={18} /></button>
+                                    <button disabled={actionLoading === req.id} onClick={() => handleAmendAction(req.id, "Rejected")} title="Reject" className="h-8 w-8 rounded-md bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-40 shadow-sm transition-all flex items-center justify-center"><CircleX size={18} /></button>
+                                  </>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400 italic px-2">Awaiting approval</span>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -831,9 +837,17 @@ export default function Approvals() {
                             </div>
                           </div>
                           <div className="flex gap-2 pt-2 border-t border-slate-50">
-                            <button onClick={() => setPdfPreviewId(ord.id)} className="h-9 w-9 flex items-center justify-center bg-white border border-slate-300 text-slate-500 hover:text-indigo-600 transition-all shadow-sm shrink-0"><FileText size={16} /></button>
-                            <button disabled={actionLoading === req.id || !canManageAmend || !canOrderAct} onClick={() => handleAmendAction(req.id, "Rejected")} className="flex-1 h-9 bg-white border border-rose-200 text-rose-600 font-bold text-[11px] hover:bg-rose-50 transition-all uppercase">REJECT</button>
-                            <button disabled={actionLoading === req.id || !canManageAmend || !canOrderAct} onClick={() => handleAmendAction(req.id, "Approved")} className="flex-1 h-9 bg-emerald-500 text-white font-bold text-[11px] hover:bg-emerald-600 shadow-sm transition-all uppercase">APPROVE</button>
+                            {req.attachment_url && (
+                              <a href={req.attachment_url} target="_blank" rel="noreferrer" title="View Attachment" className="h-9 w-9 flex items-center justify-center bg-white border border-slate-300 text-slate-500 hover:text-indigo-600 transition-all shadow-sm shrink-0"><FileText size={16} /></a>
+                            )}
+                            {(canManageAmend && canOrderAct) ? (
+                              <>
+                                <button disabled={actionLoading === req.id} onClick={() => handleAmendAction(req.id, "Rejected")} className="flex-1 h-9 bg-white border border-rose-200 text-rose-600 font-bold text-[11px] hover:bg-rose-50 transition-all uppercase disabled:opacity-40">REJECT</button>
+                                <button disabled={actionLoading === req.id} onClick={() => handleAmendAction(req.id, "Approved")} className="flex-1 h-9 bg-emerald-500 text-white font-bold text-[11px] hover:bg-emerald-600 shadow-sm transition-all uppercase disabled:opacity-40">APPROVE</button>
+                              </>
+                            ) : (
+                              <span className="flex-1 h-9 flex items-center justify-center text-[11px] text-slate-400 italic">Awaiting approval</span>
+                            )}
                           </div>
                         </div>
                       </div>
