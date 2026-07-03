@@ -61,7 +61,11 @@ export default function ResetPassword({ onComplete, isInvite = false }) {
   }, []);
 
   // Token extraction
+  const tokenExtractedRef = useRef(false);
   useEffect(() => {
+    if (tokenExtractedRef.current) return; // guard against StrictMode double-invoke clearing the URL before the 2nd run
+    tokenExtractedRef.current = true;
+
     const hashParams   = new URLSearchParams(window.location.hash.slice(1));
     const searchParams = new URLSearchParams(window.location.search);
 

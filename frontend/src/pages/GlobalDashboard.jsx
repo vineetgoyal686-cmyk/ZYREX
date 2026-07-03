@@ -3,6 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Area, Cell, Line,
 } from "recharts";
+import { useModulePermissions } from "../hooks/useModulePermissions";
 
 // ─── API ─────────────────────────────────────────────────────────────────────
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
@@ -407,8 +408,22 @@ const GlobalDashboard = memo(function GlobalDashboard() {
   const [selectedSites,    setSelectedSites]    = useState([]);
   const [selectedEntities, setSelectedEntities] = useState([]);
   const [dateRange,        setDateRange]        = useState("This Year");
+  const gdPerms = useModulePermissions("global_dashboard");
+  const MODULE_TABS = useMemo(() => [
+    { key: "orders",  label: "Orders",  icon: "📦", allowed: gdPerms.canViewOverviewAging },
+    { key: "intake",  label: "Intake",  icon: "📋", allowed: gdPerms.canViewIntake },
+    { key: "payment", label: "Payment", icon: "💳", allowed: gdPerms.canViewPayment },
+  ].filter(m => m.allowed), [gdPerms.canViewOverviewAging, gdPerms.canViewIntake, gdPerms.canViewPayment]);
+
   const [activeTab,        setActiveTab]        = useState("overview");
-  const [activeModule,     setActiveModule]     = useState("orders");
+  const [activeModule,     setActiveModule]     = useState(() => MODULE_TABS[0]?.key || "orders");
+
+  // Keep activeModule valid if permissions change or the current tab isn't allowed
+  useEffect(() => {
+    if (MODULE_TABS.length && !MODULE_TABS.some(m => m.key === activeModule)) {
+      setActiveModule(MODULE_TABS[0].key);
+    }
+  }, [MODULE_TABS, activeModule]);
   const [showMore,         setShowMore]         = useState(false);
   const [moreStatsOpen,    setMoreStatsOpen]    = useState(false);
   const [hoveredEntity,    setHoveredEntity]    = useState(null);
@@ -468,11 +483,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
             <h1 style={{ color: "#0f172a", fontSize: isMobile ? 16 : 18, fontWeight: 800, margin: 0, letterSpacing: "-0.02em" }}>Global Dashboard</h1>
           </div>
           <div style={{ display: "flex", gap: 2, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 3 }}>
-            {[
-              { key: "orders",  label: "Orders",  icon: "📦" },
-              { key: "intake",  label: "Intake",  icon: "📋" },
-              { key: "payment", label: "Payment", icon: "💳" },
-            ].map(m => (
+            {MODULE_TABS.map(m => (
               <button key={m.key} onClick={() => setActiveModule(m.key)} style={{
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                 padding: isMobile ? "8px 0" : "8px 20px", borderRadius: 8, border: "none", cursor: "pointer",

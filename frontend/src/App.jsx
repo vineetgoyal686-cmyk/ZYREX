@@ -387,9 +387,10 @@ function App() {
     const type         = hashParams.get("type") || searchParams.get("type");
     const tokenHash    = searchParams.get("token_hash");
     const accessToken  = hashParams.get("access_token");
+    const code         = searchParams.get("code") || hashParams.get("inv");
     const authError    = hashParams.get("error") || searchParams.get("error");
 
-    const isAuth = type === "recovery" || type === "invite" || !!tokenHash || !!accessToken || !!authError;
+    const isAuth = type === "recovery" || type === "invite" || !!tokenHash || !!accessToken || !!code || !!authError;
     if (isAuth && location.pathname !== "/reset-password" && location.pathname !== "/invite") {
       navigate("/reset-password" + location.search + location.hash, { replace: true });
     }
@@ -439,8 +440,10 @@ function App() {
       if (!res.ok) return;
       const data = await res.json();
       if (data.user) {
-        setCurrentUser(data.user);
-        localStorage.setItem("bms_user", JSON.stringify(data.user));
+        const stored = JSON.parse(localStorage.getItem("bms_user") || "{}");
+        const merged = { ...stored, ...data.user, app_permissions: stored.app_permissions };
+        setCurrentUser(merged);
+        localStorage.setItem("bms_user", JSON.stringify(merged));
       }
       if (data.projects) {
         const active = data.projects
