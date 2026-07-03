@@ -95,10 +95,14 @@ function OrgDetail({ org, onBack, currentUser }) {
   const permEmployees    = useModulePermissions("employees");
   const permLocations    = useModulePermissions("locations");
   const permPolicy       = useModulePermissions("policy");
+  const permStructure    = useModulePermissions("structure");
+  const permOrgChart     = useModulePermissions("org_chart");
+  const permSop          = useModulePermissions("sop");
 
   const TAB_PERMS = {
     departments: permDepartments, sub_departments: permTeams, divisions: permDivisions,
     grades: permGrades, designations: permDesignations, employees: permEmployees,
+    structure: permStructure, org_chart: permOrgChart, sop: permSop,
     locations: permLocations, policy: permPolicy,
   };
 
@@ -269,7 +273,7 @@ function OrgDetail({ org, onBack, currentUser }) {
                 </button>
               </div>
             )}
-            {meta?.hasExport && (
+            {meta?.hasExport && (TAB_PERMS[activeTab]?.canExport ?? true) && (
               <div className="relative" ref={exportDropRef}>
                 <button onClick={() => { setShowExport(v => !v); setShowUpload(false); }}
                   className="inline-flex items-center gap-1.5 text-sm font-medium border border-slate-200 text-slate-600 px-3 py-2 rounded hover:bg-slate-50 transition-colors">
@@ -289,7 +293,7 @@ function OrgDetail({ org, onBack, currentUser }) {
                 )}
               </div>
             )}
-            {meta?.hasExport && (
+            {meta?.hasExport && (TAB_PERMS[activeTab]?.canBulk ?? true) && (
               <div className="relative" ref={uploadDropRef}>
                 <button onClick={() => { setShowUpload(v => !v); setShowExport(false); }}
                   className="inline-flex items-center gap-1.5 text-sm font-medium border border-slate-200 text-slate-600 px-3 py-2 rounded hover:bg-slate-50 transition-colors">

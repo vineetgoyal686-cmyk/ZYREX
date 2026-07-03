@@ -323,26 +323,82 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
   };
 
   const ORG_COLUMNS = [
-    { key: "can_view",   label: "View"   },
-    { key: "can_add",    label: "Add"    },
-    { key: "can_edit",   label: "Edit"   },
-    { key: "can_delete", label: "Delete" },
+    { key: "can_view",        label: "View"        },
+    { key: "can_add",         label: "Add"         },
+    { key: "can_edit",        label: "Edit"        },
+    { key: "can_delete",      label: "Delete"      },
+    { key: "can_bulk_upload", label: "Bulk Upload" },
+    { key: "can_export",      label: "Export"      },
+    { key: "can_log",         label: "Log"         },
   ];
 
   const ORG_ROW_ORDER = [
-    "organisation", "departments", "teams", "divisions", "grades",
-    "designations", "employees", "locations", "policy",
+    { group: "Organisation", keys: ["company_list", "structure", "org_chart", "sop", "policy"] },
+    { group: "Master Data",  keys: ["divisions", "departments", "teams", "grades", "designations"] },
+    { group: "People",       keys: ["employees"] },
+    { group: "Settings",     keys: ["locations"] },
   ];
+
+  const ORG_TOTAL_COLS = ORG_COLUMNS.length + (readOnly ? 0 : 1);
 
   const renderOrganisationTable = (groupMods) => {
     const byKey = Object.fromEntries(groupMods.map(m => [m.module_key, m]));
-    const rows = ORG_ROW_ORDER.map(key => byKey[key]).filter(Boolean);
+
+    const renderModRow = (mod) => {
+      const availKeys = getModulePerms(mod.module_key);
+      const allChecked = availKeys.every(k => mod[k]);
+      const anyChecked = availKeys.some(k => mod[k]);
+      return (
+        <tr key={mod.module_id}
+          className={`transition-colors ${anyChecked ? "bg-blue-50/40" : "bg-white"} hover:bg-blue-50/50`}>
+          <td className="border border-slate-200 px-3 py-2.5">
+            <span className="text-[12px] font-semibold text-slate-700">{mod.module_name}</span>
+          </td>
+          {ORG_COLUMNS.map(col => {
+            const applicable = availKeys.includes(col.key);
+            return (
+              <td key={col.key} className="border border-slate-200 text-center px-2 py-2.5">
+                {applicable ? (
+                  <input type="checkbox" checked={mod[col.key] || false} disabled={readOnly}
+                    onChange={e => !readOnly && onChange(mod.module_id, col.key, e.target.checked)}
+                    className="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer disabled:cursor-not-allowed" />
+                ) : (
+                  <span className="text-slate-300 text-[10px] select-none">—</span>
+                )}
+              </td>
+            );
+          })}
+          {!readOnly && (
+            <td className="border border-slate-200 text-center px-2 py-2.5">
+              <input type="checkbox" checked={allChecked}
+                ref={el => { if (el) el.indeterminate = anyChecked && !allChecked; }}
+                onChange={e => availKeys.forEach(k => onChange(mod.module_id, k, e.target.checked))}
+                className="w-3.5 h-3.5 rounded accent-indigo-600 cursor-pointer" />
+            </td>
+          )}
+        </tr>
+      );
+    };
+
+    const rows = [];
+    ORG_ROW_ORDER.forEach(entry => {
+      const groupMods2 = entry.keys.map(k => byKey[k]).filter(Boolean);
+      if (groupMods2.length === 0) return;
+      rows.push(
+        <tr key={`org-grp-${entry.group}`} className="bg-slate-100">
+          <td className="border border-slate-200 px-3 py-1.5" colSpan={ORG_TOTAL_COLS + 1}>
+            <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">{entry.group}</span>
+          </td>
+        </tr>
+      );
+      groupMods2.forEach(mod => rows.push(renderModRow(mod)));
+    });
+
     return (
       <div className="rounded-sm border border-slate-300 overflow-hidden">
         <table className="w-full border-collapse">
           <thead>
             <tr className="bg-slate-100">
-              <th className="border border-slate-300 px-3 py-2 text-center text-[11px] font-bold text-slate-900 w-10">S.No</th>
               <th className="border border-slate-300 px-3 py-2 text-left text-[11px] font-bold text-slate-900 w-44">Module</th>
               {ORG_COLUMNS.map(col => (
                 <th key={col.key} className="border border-slate-300 px-2 py-2 text-center text-[11px] font-bold text-slate-900 whitespace-nowrap">
@@ -352,44 +408,7 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
               {!readOnly && <th className="border border-slate-300 px-2 py-2 text-[11px] font-bold text-slate-900 text-center">All</th>}
             </tr>
           </thead>
-          <tbody>
-            {rows.map((mod, i) => {
-              const availKeys = getModulePerms(mod.module_key);
-              const allChecked = availKeys.every(k => mod[k]);
-              const anyChecked = availKeys.some(k => mod[k]);
-              return (
-                <tr key={mod.module_id}
-                  className={`transition-colors ${anyChecked ? "bg-blue-50/40" : i % 2 === 0 ? "bg-white" : "bg-slate-50/30"} hover:bg-blue-50/50`}>
-                  <td className="border border-slate-200 px-3 py-2.5 text-center text-[12px] font-semibold text-slate-500 tabular-nums">{i + 1}</td>
-                  <td className="border border-slate-200 px-3 py-2.5">
-                    <span className="text-[12px] font-semibold text-slate-700">{mod.module_name}</span>
-                  </td>
-                  {ORG_COLUMNS.map(col => {
-                    const applicable = availKeys.includes(col.key);
-                    return (
-                      <td key={col.key} className="border border-slate-200 text-center px-2 py-2.5">
-                        {applicable ? (
-                          <input type="checkbox" checked={mod[col.key] || false} disabled={readOnly}
-                            onChange={e => !readOnly && onChange(mod.module_id, col.key, e.target.checked)}
-                            className="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer disabled:cursor-not-allowed" />
-                        ) : (
-                          <span className="text-slate-300 text-[10px] select-none">—</span>
-                        )}
-                      </td>
-                    );
-                  })}
-                  {!readOnly && (
-                    <td className="border border-slate-200 text-center px-2 py-2.5">
-                      <input type="checkbox" checked={allChecked}
-                        ref={el => { if (el) el.indeterminate = anyChecked && !allChecked; }}
-                        onChange={e => availKeys.forEach(k => onChange(mod.module_id, k, e.target.checked))}
-                        className="w-3.5 h-3.5 rounded accent-indigo-600 cursor-pointer" />
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
+          <tbody>{rows}</tbody>
         </table>
       </div>
     );
@@ -731,19 +750,7 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
                     {group.label === "Inbox" ? renderInboxGroup(groupMods)
                       : group.label === "Setup" ? renderSetupTable(groupMods)
                       : group.label === "Historical Data" ? renderHistoricalDataCard(groupMods)
-                      : group.label === "Organisation" ? (() => {
-                          const companyList = groupMods.find(m => m.module_key === "company_list");
-                          return (
-                            <div className="w-full space-y-3">
-                              {renderOrganisationTable(groupMods)}
-                              {companyList && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                                  {renderRow(companyList)}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })()
+                      : group.label === "Organisation" ? renderOrganisationTable(groupMods)
                       : group.label === "Audit" ? renderSimpleCard(groupMods, "Audit", [{ key: "can_view", label: "View" }])
                       : group.label === "Master Data" ? renderMasterDataTable(groupMods)
                       : group.label === "Procurement" ? (() => {
