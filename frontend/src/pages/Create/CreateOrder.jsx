@@ -1052,13 +1052,22 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         });
       }
 
+      const existingOthers = (Array.isArray(order.pre_documents) ? order.pre_documents : [])
+        .filter(d => d.category === "other")
+        .map(d => ({
+          id: d.id,
+          name: d.name || decodeURIComponent((d.storage_path || d.url || "").split('/').pop().split('?')[0]) || "Other Document",
+          url: d.url,
+          isExisting: true
+        }));
+
       setFiles({
         quotations: existingQuotations,
         proof: {
           type: order.comparative_sheet_url ? "Comparative Docs" : "",
           files: existingProof
         },
-        others: []
+        others: existingOthers
       });
 
       // 2. Map Settings & Totals
@@ -1622,6 +1631,11 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       // Only append new files if they are actually File objects (not urls)
       files.quotations.forEach(f => { if (f instanceof File) fd.append("quotation", f); });
       files.proof.files.forEach(f => { if (f instanceof File) fd.append("comparative", f); });
+
+      // Other Documents — send kept existing docs (by id) plus any new files
+      const keptOthers = files.others.filter(f => !(f instanceof File)).map(f => ({ id: f.id }));
+      fd.append("keptOthers", JSON.stringify(keptOthers));
+      files.others.forEach(f => { if (f instanceof File) fd.append("other", f); });
 
       const payload = {
         mainData: mappedMain,

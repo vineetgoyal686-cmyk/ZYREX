@@ -888,7 +888,8 @@ router.delete("/:id/permanent", async (req, res) => {
 
 router.post("/", requirePerm("order", "can_add"), upload.fields([
   { name: "quotation", maxCount: 6 },
-  { name: "comparative", maxCount: 1 }
+  { name: "comparative", maxCount: 1 },
+  { name: "other", maxCount: 2 }
 ]), async (req, res) => {
   try {
     const bodyData = JSON.parse(req.body.data || "{}");
@@ -923,6 +924,26 @@ router.post("/", requirePerm("order", "can_add"), upload.fields([
       );
     }
 
+    let preDocuments = [];
+    if (files.other?.length) {
+      const ts = Date.now();
+      const otherUrls = await Promise.all(files.other.map((f, i) =>
+        uploadToStorage("procurement-docs",
+          `orders/${mainData.order_number}/other/other_${ts + i}_${safeFilename(f.originalname)}`,
+          f.buffer, f.mimetype)
+      ));
+      preDocuments = otherUrls.map((storagePath, i) => ({
+        id: `${ts + i}_${Math.random().toString(36).slice(2, 8)}`,
+        category: "other",
+        url: storagePath,
+        storage_path: storagePath,
+        name: files.other[i].originalname,
+        size: files.other[i].size,
+        mimetype: files.other[i].mimetype,
+        uploaded_at: new Date().toISOString(),
+      }));
+    }
+
     // These are not purchase_orders DB columns. They are only used by
     // status/timeline flows and must not be sent to Supabase on create.
     delete mainData.action_by;
@@ -936,7 +957,8 @@ router.post("/", requirePerm("order", "can_add"), upload.fields([
       .insert({
         ...mainData,
         quotation_url: quotationUrl,
-        comparative_sheet_url: comparativeUrl
+        comparative_sheet_url: comparativeUrl,
+        pre_documents: preDocuments
       })
       .select().single();
 
@@ -1495,7 +1517,8 @@ router.post("/bulk-import", async (req, res) => {
 
 router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
   { name: "quotation", maxCount: 6 },
-  { name: "comparative", maxCount: 1 }
+  { name: "comparative", maxCount: 1 },
+  { name: "other", maxCount: 2 }
 ]), async (req, res) => {
   try {
     const bodyData = JSON.parse(req.body.data || "{}");
@@ -1510,7 +1533,7 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
 
     // Fetch existing urls/status before any mutation so locked orders remain read-only.
     const { data: existing } = await supabase.schema("procurement")
-      .from("purchase_orders").select("quotation_url, comparative_sheet_url, status, snapshot, subject, ref_number, delivery_date, priority, totals, site_id, company_id, date_of_creation")
+      .from("purchase_orders").select("quotation_url, comparative_sheet_url, pre_documents, status, snapshot, subject, ref_number, delivery_date, priority, totals, site_id, company_id, date_of_creation")
       .eq("id", req.params.id).single();
 
     const wasRecalled = hasRecallHistory(existing);
@@ -1628,6 +1651,35 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
         `orders/${mainData.order_number}/comparative/comparative_${Date.now()}_${safeFilename(files.comparative[0].originalname)}`,
         files.comparative[0].buffer, files.comparative[0].mimetype
       );
+    }
+
+    let preDocuments = Array.isArray(existing?.pre_documents) ? existing.pre_documents : [];
+    if (files.other?.length || req.body.keptOthers !== undefined) {
+      const keptOthersRaw = JSON.parse(req.body.keptOthers || "[]");
+      const keptIds = new Set(keptOthersRaw.map(d => d?.id).filter(Boolean));
+      const otherCategoryDocs = preDocuments.filter(d => d.category !== "other");
+      const keptDocs = preDocuments.filter(d => d.category === "other" && keptIds.has(d.id));
+
+      let newDocs = [];
+      if (files.other?.length) {
+        const ts = Date.now();
+        const otherUrls = await Promise.all(files.other.map((f, i) =>
+          uploadToStorage("procurement-docs",
+            `orders/${mainData.order_number}/other/other_${ts + i}_${safeFilename(f.originalname)}`,
+            f.buffer, f.mimetype)
+        ));
+        newDocs = otherUrls.map((storagePath, i) => ({
+          id: `${ts + i}_${Math.random().toString(36).slice(2, 8)}`,
+          category: "other",
+          url: storagePath,
+          storage_path: storagePath,
+          name: files.other[i].originalname,
+          size: files.other[i].size,
+          mimetype: files.other[i].mimetype,
+          uploaded_at: new Date().toISOString(),
+        }));
+      }
+      preDocuments = [...otherCategoryDocs, ...keptDocs, ...newDocs];
     }
 
     // 2.1 Override order_number to DRAFT if not Issued (prevent premature numbering on Edit)
@@ -1785,7 +1837,7 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
 
     const { error: orderErr } = await supabase.schema("procurement")
       .from("purchase_orders")
-      .update({ ...mainData, quotation_url: quotationUrl, comparative_sheet_url: comparativeUrl, updated_at: new Date().toISOString() })
+      .update({ ...mainData, quotation_url: quotationUrl, comparative_sheet_url: comparativeUrl, pre_documents: preDocuments, updated_at: new Date().toISOString() })
       .eq("id", req.params.id);
     if (orderErr) throw orderErr;
     cache.bust(ORDERS_CACHE_KEY);
