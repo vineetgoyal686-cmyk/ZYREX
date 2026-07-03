@@ -8,6 +8,8 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { gradeCls, descriptionsLabel } from "./Grades";
+import { authFetch } from "../../utils/authFetch";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -86,14 +88,18 @@ function EmployeeDetail({ emp, imgUrl, onBack, onEdit, onDelete }) {
           <ChevronLeft size={15} /> Back to Employees
         </button>
         <div className="flex items-center gap-2">
-          <button onClick={onEdit}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 font-medium transition-colors">
-            <Edit2 size={13} /> Edit
-          </button>
-          <button onClick={onDelete}
-            className="p-1.5 border border-slate-200 rounded-lg text-slate-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors">
-            <Trash2 size={14} />
-          </button>
+          {onEdit && (
+            <button onClick={onEdit}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 font-medium transition-colors">
+              <Edit2 size={13} /> Edit
+            </button>
+          )}
+          {onDelete && (
+            <button onClick={onDelete}
+              className="p-1.5 border border-slate-200 rounded-lg text-slate-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors">
+              <Trash2 size={14} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -462,6 +468,7 @@ const EMPTY_FORM = {
    MAIN COMPONENT
 ═══════════════════════════════ */
 export default function EmployeeList({ actionsRef, view = "card", onViewChange, onCountChange }) {
+  const { canEdit, canDelete } = useModulePermissions("employees");
   const [emps,    setEmps]    = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -535,7 +542,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const fetchEmps = async () => {
     setLoading(true);
     try {
-      const res  = await fetch(`${API}/api/organisation/employees`);
+      const res  = await authFetch(`${API}/api/organisation/employees`);
       const data = await res.json();
       setEmps(data.contacts || []);
     } catch { setEmps([]); }
@@ -576,7 +583,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       const payload = { ...form, company: form.division || form.company, createdById: u.id || "", createdByName: u.name || "" };
       const url    = editId ? `${API}/api/organisation/employees/${editId}` : `${API}/api/organisation/employees`;
       const method = editId ? "PUT" : "POST";
-      const res    = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const res    = await authFetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data   = await res.json();
       if (!data.success) throw new Error(data.error);
       if (editId) {
@@ -601,7 +608,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     const { id } = deleteConfirm;
     setDeleteConfirm(null);
     try {
-      await fetch(`${API}/api/organisation/employees/${id}`, { method: "DELETE" });
+      await authFetch(`${API}/api/organisation/employees/${id}`, { method: "DELETE" });
       setEmps(prev => prev.filter(e => e.id !== id));
       if (selected?.id === id) setSelected(null);
       showToast("Employee deleted");
@@ -727,7 +734,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
 
       let imported = 0, failed = 0;
       for (const row of rows) {
-        const res = await fetch(`${API}/api/organisation/employees`, {
+        const res = await authFetch(`${API}/api/organisation/employees`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(row),
@@ -748,8 +755,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
           emp={selected}
           imgUrl={selectedImgUrl}
           onBack={() => setSelected(null)}
-          onEdit={() => openEdit(selected)}
-          onDelete={() => handleDelete(selected.id)}
+          onEdit={canEdit ? () => openEdit(selected) : undefined}
+          onDelete={canDelete ? () => handleDelete(selected.id) : undefined}
         />
         {modal && (
           <EmpModal form={form} setForm={setForm} editId={editId} saving={saving}
@@ -957,9 +964,9 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                       <td className={`${td} text-center`}><StatusBadge status={emp.status} /></td>
                       <td className="px-4 py-3 border-b border-l border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky right-0 z-[5]" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => openEdit(emp)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Edit"><Edit2 size={13} /></button>
+                          {canEdit && <button onClick={() => openEdit(emp)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Edit"><Edit2 size={13} /></button>}
                           <button className="p-1.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors" title={logTitle}><Clock size={13} /></button>
-                          <button onClick={() => handleDelete(emp.id)} className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="Delete"><Trash2 size={13} /></button>
+                          {canDelete && <button onClick={() => handleDelete(emp.id)} className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="Delete"><Trash2 size={13} /></button>}
                         </div>
                       </td>
                     </tr>

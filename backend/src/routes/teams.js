@@ -3,6 +3,7 @@ const router  = express.Router();
 const admin = require("../helpers/supabaseHelper");
 const getAdminClient = () => admin;
 const { requireAuth } = require("../middleware/auth");
+const { requirePerm } = require("../helpers/permHelper");
 
 const generateTeamId = async (admin) => {
   const { data } = await admin
@@ -29,7 +30,7 @@ router.get("/", requireAuth, async (req, res) => {
 });
 
 /* POST /api/teams */
-router.post("/", requireAuth, async (req, res) => {
+router.post("/", requirePerm("teams", "can_add"), async (req, res) => {
   const { name, department_id, leader_id, member_ids, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: "Team name is required" });
 
@@ -50,7 +51,7 @@ router.post("/", requireAuth, async (req, res) => {
 });
 
 /* PUT /api/teams/:id */
-router.put("/:id", requireAuth, async (req, res) => {
+router.put("/:id", requirePerm("teams", "can_edit"), async (req, res) => {
   const { name, department_id, leader_id, member_ids, status } = req.body;
   const updates = {};
   if (name          !== undefined) updates.name          = name.trim();
@@ -66,7 +67,7 @@ router.put("/:id", requireAuth, async (req, res) => {
 });
 
 /* DELETE /api/teams/:id */
-router.delete("/:id", requireAuth, async (req, res) => {
+router.delete("/:id", requirePerm("teams", "can_delete"), async (req, res) => {
   const admin = getAdminClient();
   const { error } = await admin.schema("organisation").from("teams").delete().eq("id", req.params.id);
   if (error) return res.status(500).json({ error: error.message });

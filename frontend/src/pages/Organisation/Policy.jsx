@@ -3,6 +3,8 @@ import {
   Plus, Search, FileText, Download, Pencil, Trash2, X, Loader2,
   ChevronDown, FolderOpen, Folder, Eye, Calendar, Tag, User, Building2,
 } from "lucide-react";
+import { authFetch } from "../../utils/authFetch";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -144,6 +146,7 @@ function PolicyModal({ form, setForm, editId, saving, onClose, onSave, allCatego
 
 /* ── Main Policy component ── */
 export default function Policy({ actionsRef, companyId, orgName }) {
+  const { canAdd, canEdit, canDelete } = useModulePermissions("policy");
   const [policies,    setPolicies]    = useState([]);
   const [loading,     setLoading]     = useState(true);
   const [search,      setSearch]      = useState("");
@@ -169,7 +172,7 @@ export default function Policy({ actionsRef, companyId, orgName }) {
       const url = companyId
         ? `${API}/api/organisation/policies?company_id=${companyId}`
         : `${API}/api/organisation/policies`;
-      const res  = await fetch(url);
+      const res  = await authFetch(url);
       const data = await res.json();
       setPolicies(data.policies || []);
     } catch { showToast("Failed to load policies", "error"); }
@@ -233,7 +236,7 @@ export default function Policy({ actionsRef, companyId, orgName }) {
       const payload = { ...form, companyId: companyId || null, createdById: u.id || "", createdByName: u.name || "" };
       const url    = editId ? `${API}/api/organisation/policies/${editId}` : `${API}/api/organisation/policies`;
       const method = editId ? "PUT" : "POST";
-      const res    = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const res    = await authFetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data   = await res.json();
       if (!data.success) throw new Error(data.error || "Failed");
       await fetchPolicies();
@@ -249,7 +252,7 @@ export default function Policy({ actionsRef, companyId, orgName }) {
     const { id } = deleteConfirm;
     setDeleteConfirm(null);
     try {
-      await fetch(`${API}/api/organisation/policies/${id}`, { method: "DELETE" });
+      await authFetch(`${API}/api/organisation/policies/${id}`, { method: "DELETE" });
       setPolicies(prev => prev.filter(p => p.id !== id));
       showToast("Policy deleted");
     } catch { showToast("Failed to delete", "error"); }
@@ -403,10 +406,12 @@ export default function Policy({ actionsRef, companyId, orgName }) {
           </div>
           <div className="ml-auto flex items-center gap-2">
             <span className="text-xs text-slate-500">{filtered.length} {filtered.length === 1 ? "policy" : "policies"}</span>
-            <button onClick={() => { setForm(EMPTY_FORM); setEditId(null); setModal(true); }}
-              className="inline-flex items-center gap-1.5 text-sm font-semibold bg-blue-600 text-white px-4 py-1.5 rounded-lg hover:bg-blue-700 transition-colors">
-              <Plus size={14} /> Add Policy
-            </button>
+            {canAdd && (
+              <button onClick={() => { setForm(EMPTY_FORM); setEditId(null); setModal(true); }}
+                className="inline-flex items-center gap-1.5 text-sm font-semibold bg-blue-600 text-white px-4 py-1.5 rounded-lg hover:bg-blue-700 transition-colors">
+                <Plus size={14} /> Add Policy
+              </button>
+            )}
           </div>
         </div>
 
@@ -475,14 +480,18 @@ export default function Policy({ actionsRef, companyId, orgName }) {
                             className="p-1.5 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-50">
                             {pdfLoading === p.id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
                           </button>
-                          <button onClick={() => openEdit(p)} title="Edit"
-                            className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-                            <Pencil size={13} />
-                          </button>
-                          <button onClick={() => handleDelete(p)} title="Delete"
-                            className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                            <Trash2 size={13} />
-                          </button>
+                          {canEdit && (
+                            <button onClick={() => openEdit(p)} title="Edit"
+                              className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                              <Pencil size={13} />
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button onClick={() => handleDelete(p)} title="Delete"
+                              className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

@@ -5,6 +5,7 @@ const supabase = require("../helpers/supabaseHelper");
 const { uploadStorageFile, removeStorageFile, createSignedStorageUrl } = require("../helpers/storageHelper");
 const { renderPdf } = require("../services/pdfService");
 const { renderPolicyHtml, renderPolicyHeader, renderPolicyFooter } = require("../pdf/policyTemplate");
+const { requirePerm } = require("../helpers/permHelper");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -68,7 +69,7 @@ router.get("/employees", async (_req, res) => {
 });
 
 /* POST /api/organisation/employees */
-router.post("/employees", async (req, res) => {
+router.post("/employees", requirePerm("employees", "can_add"), async (req, res) => {
   try {
     const { personName, contactNumber, designation, company, email, department, reportingTo, status,
             workLocation, role, team, bio, tags, employeeId,
@@ -118,7 +119,7 @@ router.post("/employees", async (req, res) => {
 });
 
 /* PUT /api/organisation/employees/:id */
-router.put("/employees/:id", async (req, res) => {
+router.put("/employees/:id", requirePerm("employees", "can_edit"), async (req, res) => {
   try {
     const { personName, contactNumber, designation, company, email, department, reportingTo, status,
             workLocation, role, team, bio, tags, employeeId,
@@ -145,7 +146,7 @@ router.put("/employees/:id", async (req, res) => {
 });
 
 /* POST /api/organisation/employees/:id/profile-image */
-router.post("/employees/:id/profile-image", upload.single("image"), async (req, res) => {
+router.post("/employees/:id/profile-image", requirePerm("employees", "can_edit"), upload.single("image"), async (req, res) => {
   try {
     const { id } = req.params;
     if (!req.file) return res.status(400).json({ error: "No image provided" });
@@ -162,7 +163,7 @@ router.post("/employees/:id/profile-image", upload.single("image"), async (req, 
 });
 
 /* DELETE /api/organisation/employees/:id/profile-image */
-router.delete("/employees/:id/profile-image", async (req, res) => {
+router.delete("/employees/:id/profile-image", requirePerm("employees", "can_edit"), async (req, res) => {
   try {
     const { id } = req.params;
     const { data: emp } = await supabase.schema("organisation").from("employees").select("profile_image").eq("id", id).single();
@@ -176,7 +177,7 @@ router.delete("/employees/:id/profile-image", async (req, res) => {
 });
 
 /* DELETE /api/organisation/employees/:id */
-router.delete("/employees/:id", async (req, res) => {
+router.delete("/employees/:id", requirePerm("employees", "can_delete"), async (req, res) => {
   try {
     const { error } = await supabase.schema("organisation").from("employees").delete().eq("id", req.params.id);
     if (error) throw error;
@@ -188,7 +189,7 @@ router.delete("/employees/:id", async (req, res) => {
 });
 
 /* POST /api/organisation/employees/bulk */
-router.post("/employees/bulk", async (req, res) => {
+router.post("/employees/bulk", requirePerm("employees", "can_add"), async (req, res) => {
   try {
     const { rows } = req.body;
     if (!rows?.length) return res.status(400).json({ error: "No rows provided" });
@@ -261,7 +262,7 @@ router.get("/policies", async (req, res) => {
   }
 });
 
-router.post("/policies", async (req, res) => {
+router.post("/policies", requirePerm("policy", "can_add"), async (req, res) => {
   try {
     const { title, category, version, status, effectiveDate, reviewDate,
             department, content, approvedBy, companyId, createdById, createdByName } = req.body;
@@ -284,7 +285,7 @@ router.post("/policies", async (req, res) => {
   }
 });
 
-router.put("/policies/:id", async (req, res) => {
+router.put("/policies/:id", requirePerm("policy", "can_edit"), async (req, res) => {
   try {
     const { title, category, version, status, effectiveDate, reviewDate,
             department, content, approvedBy } = req.body;
@@ -303,7 +304,7 @@ router.put("/policies/:id", async (req, res) => {
   }
 });
 
-router.delete("/policies/:id", async (req, res) => {
+router.delete("/policies/:id", requirePerm("policy", "can_delete"), async (req, res) => {
   try {
     const { error } = await supabase.schema("organisation").from("policies").delete().eq("id", req.params.id);
     if (error) throw error;
@@ -365,7 +366,7 @@ router.get("/divisions", async (_req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   res.json({ divisions: data || [] });
 });
-router.post("/divisions", async (req, res) => {
+router.post("/divisions", requirePerm("divisions", "can_add"), async (req, res) => {
   const { name, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: "Name is required" });
   const div_id = await nextDivId();
@@ -373,13 +374,13 @@ router.post("/divisions", async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, division: data });
 });
-router.put("/divisions/:id", async (req, res) => {
+router.put("/divisions/:id", requirePerm("divisions", "can_edit"), async (req, res) => {
   const { name, status } = req.body;
   const { data, error } = await supabase.schema("organisation").from("divisions").update({ name: name?.trim(), status }).eq("id", req.params.id).select().single();
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, division: data });
 });
-router.delete("/divisions/:id", async (req, res) => {
+router.delete("/divisions/:id", requirePerm("divisions", "can_delete"), async (req, res) => {
   const { error } = await supabase.schema("organisation").from("divisions").delete().eq("id", req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
@@ -399,7 +400,7 @@ router.get("/grades", async (_req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   res.json({ grades: data || [] });
 });
-router.post("/grades", async (req, res) => {
+router.post("/grades", requirePerm("grades", "can_add"), async (req, res) => {
   const { grade, descriptions, sort_order, status } = req.body;
   if (!grade?.trim()) return res.status(400).json({ error: "Grade is required" });
   const grade_id = await nextGradeId();
@@ -408,7 +409,7 @@ router.post("/grades", async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, grade: data });
 });
-router.put("/grades/:id", async (req, res) => {
+router.put("/grades/:id", requirePerm("grades", "can_edit"), async (req, res) => {
   const { grade, descriptions, sort_order, status } = req.body;
   const updates = {};
   if (grade !== undefined) updates.grade = grade.trim();
@@ -419,7 +420,7 @@ router.put("/grades/:id", async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, grade: data });
 });
-router.delete("/grades/:id", async (req, res) => {
+router.delete("/grades/:id", requirePerm("grades", "can_delete"), async (req, res) => {
   const { error } = await supabase.schema("organisation").from("grades").delete().eq("id", req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
@@ -439,7 +440,7 @@ router.get("/org-designations", async (_req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   res.json({ designations: data || [] });
 });
-router.post("/org-designations", async (req, res) => {
+router.post("/org-designations", requirePerm("designations", "can_add"), async (req, res) => {
   const { title, grade, active } = req.body;
   if (!title?.trim()) return res.status(400).json({ error: "Title is required" });
   const desig_id = await nextDesigId();
@@ -448,7 +449,7 @@ router.post("/org-designations", async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, designation: data });
 });
-router.put("/org-designations/:id", async (req, res) => {
+router.put("/org-designations/:id", requirePerm("designations", "can_edit"), async (req, res) => {
   const { title, grade, active } = req.body;
   const updates = {};
   if (title !== undefined) updates.title = title.trim();
@@ -458,7 +459,7 @@ router.put("/org-designations/:id", async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, designation: data });
 });
-router.delete("/org-designations/:id", async (req, res) => {
+router.delete("/org-designations/:id", requirePerm("designations", "can_delete"), async (req, res) => {
   const { error } = await supabase.schema("organisation").from("designations").delete().eq("id", req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
@@ -472,7 +473,7 @@ router.get("/branches", async (_req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   res.json({ branches: data || [] });
 });
-router.post("/branches", async (req, res) => {
+router.post("/branches", requirePerm("locations", "can_add"), async (req, res) => {
   const { code, label, type, status, gstin, phone, email, is_main, state, city, pincode, address, contacts } = req.body;
   if (!label?.trim()) return res.status(400).json({ error: "Label is required" });
   const { data, error } = await supabase.schema("organisation").from("branches")
@@ -480,14 +481,14 @@ router.post("/branches", async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, branch: data });
 });
-router.put("/branches/:id", async (req, res) => {
+router.put("/branches/:id", requirePerm("locations", "can_edit"), async (req, res) => {
   const { code, label, type, status, gstin, phone, email, is_main, state, city, pincode, address, contacts } = req.body;
   const { data, error } = await supabase.schema("organisation").from("branches")
     .update({ code, label: label?.trim(), type, status: status?.toLowerCase(), gstin, phone, email, is_main, state, city, pincode, address, contacts: contacts || [] }).eq("id", req.params.id).select().single();
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, branch: data });
 });
-router.delete("/branches/:id", async (req, res) => {
+router.delete("/branches/:id", requirePerm("locations", "can_delete"), async (req, res) => {
   const { error } = await supabase.schema("organisation").from("branches").delete().eq("id", req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });

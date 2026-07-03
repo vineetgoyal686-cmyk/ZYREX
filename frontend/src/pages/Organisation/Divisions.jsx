@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Search, Edit2, Trash2, X, Loader2 } from "lucide-react";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { StatusBadge } from "./helpers";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -54,6 +55,7 @@ function Modal({ item, onClose, onSaved }) {
 }
 
 export default function Divisions({ actionsRef, onChange }) {
+  const { canEdit, canDelete } = useModulePermissions("divisions");
   const [divs, setDivs]           = useState([]);
   const [search, setSearch]       = useState("");
   const [modal, setModal]         = useState(null);
@@ -226,8 +228,8 @@ export default function Divisions({ actionsRef, onChange }) {
                 <td className="px-4 py-3 text-center"><StatusBadge active={d.status === "active"} /></td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1">
-                    <button onClick={() => setModal(d)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"><Edit2 size={13} /></button>
-                    <button onClick={() => del(d.id)} className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 size={13} /></button>
+                    {canEdit && <button onClick={() => setModal(d)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"><Edit2 size={13} /></button>}
+                    {canDelete && <button onClick={() => del(d.id)} className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"><Trash2 size={13} /></button>}
                   </div>
                 </td>
               </tr>

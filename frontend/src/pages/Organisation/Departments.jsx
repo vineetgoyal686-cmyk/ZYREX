@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Search, Edit2, Trash2, X, Loader2 } from "lucide-react";
 import { StatusBadge, TableHead } from "./helpers";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -88,6 +89,7 @@ function DeptModal({ dept, divisions, onClose, onSaved }) {
 }
 
 export default function Departments({ actionsRef }) {
+  const { canEdit, canDelete } = useModulePermissions("departments");
   const [depts, setDepts]         = useState([]);
   const [loading, setLoading]     = useState(true);
   const [importing, setImporting] = useState(false);
@@ -300,14 +302,18 @@ export default function Departments({ actionsRef }) {
                 <td className="px-4 py-3 text-center"><StatusBadge active={d.status === "active"} /></td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1">
-                    <button onClick={() => setModal(d)}
-                      className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-                      <Edit2 size={13} />
-                    </button>
-                    <button onClick={() => handleDelete(d.id)} disabled={deleting === d.id}
-                      className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                      {deleting === d.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                    </button>
+                    {canEdit && (
+                      <button onClick={() => setModal(d)}
+                        className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                        <Edit2 size={13} />
+                      </button>
+                    )}
+                    {canDelete && (
+                      <button onClick={() => handleDelete(d.id)} disabled={deleting === d.id}
+                        className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                        {deleting === d.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

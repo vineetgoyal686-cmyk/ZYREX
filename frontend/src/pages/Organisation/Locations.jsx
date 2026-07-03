@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Eye, Edit2, Trash2, Plus, X, Star, MapPin, Phone, Mail, FileText, Building2 } from "lucide-react";
 import { INDIA_STATES } from "../../data/indiaStateCities";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 
 const API          = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN        = () => localStorage.getItem("bms_token") || "";
@@ -45,9 +46,11 @@ function ViewModal({ branch, onClose, onEdit }) {
             <p className="text-[14px] font-medium text-slate-800">{branch.label}</p>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={onEdit} className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium border border-slate-200 rounded text-slate-600 hover:bg-slate-50">
-              <Edit2 size={11}/> Edit
-            </button>
+            {onEdit && (
+              <button onClick={onEdit} className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium border border-slate-200 rounded text-slate-600 hover:bg-slate-50">
+                <Edit2 size={11}/> Edit
+              </button>
+            )}
             <button onClick={onClose} className="text-slate-400 hover:text-slate-700 ml-1"><X size={15}/></button>
           </div>
         </div>
@@ -293,8 +296,8 @@ function BranchCard({ branch, onView, onEdit, onDelete }) {
         </div>
         <div className="flex items-center gap-3 text-slate-400">
           <button onClick={onView}  className="hover:text-blue-600 transition-colors"><Eye size={15}/></button>
-          <button onClick={onEdit}  className="hover:text-blue-600 transition-colors"><Edit2 size={15}/></button>
-          <button onClick={onDelete} className="hover:text-red-500 transition-colors"><Trash2 size={15}/></button>
+          {onEdit && <button onClick={onEdit}  className="hover:text-blue-600 transition-colors"><Edit2 size={15}/></button>}
+          {onDelete && <button onClick={onDelete} className="hover:text-red-500 transition-colors"><Trash2 size={15}/></button>}
         </div>
       </div>
 
@@ -368,6 +371,7 @@ function BranchCard({ branch, onView, onEdit, onDelete }) {
 
 /* ── Main ────────────────────────────────────────────── */
 export default function Locations({ actionsRef }) {
+  const { canAdd, canEdit, canDelete } = useModulePermissions("locations");
   const [branches, setBranches] = useState([]);
   const [modal,    setModal]    = useState(null);
   const [viewing,  setViewing]  = useState(null);
@@ -404,7 +408,7 @@ export default function Locations({ actionsRef }) {
     <>
       {viewing && (
         <ViewModal branch={viewing} onClose={() => setViewing(null)}
-          onEdit={() => { setModal(viewing); setViewing(null); }}/>
+          onEdit={canEdit ? () => { setModal(viewing); setViewing(null); } : undefined}/>
       )}
       {modal && (
         <FormModal initial={modal === "add" ? null : modal} onSave={save} onClose={() => setModal(null)}/>
@@ -415,17 +419,19 @@ export default function Locations({ actionsRef }) {
           <div className="bg-white rounded border border-slate-200 flex flex-col items-center justify-center py-16 gap-3">
             <Building2 size={32} className="text-slate-200"/>
             <p className="text-[13px] text-slate-400">No branches added yet</p>
-            <button onClick={() => setModal("add")}
-              className="inline-flex items-center gap-1.5 text-[12px] font-medium bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700">
-              <Plus size={13}/> Add Branch
-            </button>
+            {canAdd && (
+              <button onClick={() => setModal("add")}
+                className="inline-flex items-center gap-1.5 text-[12px] font-medium bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700">
+                <Plus size={13}/> Add Branch
+              </button>
+            )}
           </div>
         ) : (
           branches.map(b => (
             <BranchCard key={b.id} branch={b}
               onView={() => setViewing(b)}
-              onEdit={() => setModal(b)}
-              onDelete={() => remove(b.id)}/>
+              onEdit={canEdit ? () => setModal(b) : undefined}
+              onDelete={canDelete ? () => remove(b.id) : undefined}/>
           ))
         )}
       </div>

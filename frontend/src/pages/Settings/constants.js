@@ -117,6 +117,14 @@ export const PERM_LABELS = {
 export const MODULE_PERM_CONFIG = {
   global_dashboard:        ["can_view"],
   organisation:            ["can_view"],
+  departments:             ["can_view", "can_add", "can_edit", "can_delete"],
+  teams:                   ["can_view", "can_add", "can_edit", "can_delete"],
+  divisions:               ["can_view", "can_add", "can_edit", "can_delete"],
+  grades:                  ["can_view", "can_add", "can_edit", "can_delete"],
+  designations:            ["can_view", "can_add", "can_edit", "can_delete"],
+  employees:               ["can_view", "can_add", "can_edit", "can_delete"],
+  locations:               ["can_view", "can_add", "can_edit", "can_delete"],
+  policy:                  ["can_view", "can_add", "can_edit", "can_delete"],
   audit:                   ["can_view"],
   inbox_orders:            ["can_view", "can_take_action"],
   inbox_intakes:           ["can_view", "can_take_action"],
@@ -165,6 +173,8 @@ export const DEFAULT_MODULE_PERMS = ["can_view", "can_add", "can_edit", "can_del
 
 export const MODULE_BUILT_STATUS = {
   global_dashboard: true, inbox: true, audit: true, annexure: true,
+  departments: true, teams: true, divisions: true, grades: true,
+  designations: true, employees: true, locations: true, policy: true,
   master_data_vendor: true, master_data_products: true,
   master_data_orders: true, master_data_intakes: true, master_data_clauses: true,
   dashboard: true, view_3d: true,
@@ -193,7 +203,7 @@ export const MODULE_SECTIONS = [
       { label: "Setup", keys: ["vendor_list","vendor_pool","item_supply","item_sitc","uom","category_list","term_condition","payment_terms","government_laws","annexure"] },
       { label: "Master Data",       keys: ["master_data_vendor","master_data_products","master_data_orders_tab","master_data_intakes","master_data_clauses"] },
       { label: "Historical Data", keys: ["historical_data"], single: true },
-      { label: "Organisation", keys: ["organisation","company_list"] },
+      { label: "Organisation", keys: ["organisation","departments","teams","divisions","grades","designations","employees","locations","policy","company_list"] },
       { label: "Audit",        keys: ["audit"],        single: true },
     ],
   },

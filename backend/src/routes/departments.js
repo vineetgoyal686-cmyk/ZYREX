@@ -3,6 +3,7 @@ const router  = express.Router();
 const admin = require("../helpers/supabaseHelper");
 const getAdminClient = () => admin;
 const { requireAuth } = require("../middleware/auth");
+const { requirePerm } = require("../helpers/permHelper");
 
 /* Auto-generate next dept_id e.g. DEPT-001 */
 const generateDeptId = async (admin) => {
@@ -30,7 +31,7 @@ router.get("/", requireAuth, async (req, res) => {
 });
 
 /* POST /api/departments */
-router.post("/", requireAuth, async (req, res) => {
+router.post("/", requirePerm("departments", "can_add"), async (req, res) => {
   const { name, head, status, division_id } = req.body;
   if (!name || !name.trim()) return res.status(400).json({ error: "Department name is required" });
 
@@ -54,7 +55,7 @@ router.post("/", requireAuth, async (req, res) => {
 });
 
 /* PUT /api/departments/:id */
-router.put("/:id", requireAuth, async (req, res) => {
+router.put("/:id", requirePerm("departments", "can_edit"), async (req, res) => {
   const { name, head, status, division_id } = req.body;
   const updates = {};
   if (name        !== undefined) updates.name        = name.trim();
@@ -69,7 +70,7 @@ router.put("/:id", requireAuth, async (req, res) => {
 });
 
 /* DELETE /api/departments/:id */
-router.delete("/:id", requireAuth, async (req, res) => {
+router.delete("/:id", requirePerm("departments", "can_delete"), async (req, res) => {
   const admin = getAdminClient();
   const { error } = await admin.schema("organisation").from("departments").delete().eq("id", req.params.id);
   if (error) return res.status(500).json({ error: error.message });

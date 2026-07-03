@@ -18,6 +18,7 @@ import EmployeeList  from "./EmployeeList";
 import OrgList       from "./OrgList";
 import SOPTab        from "../Settings/tabs/SOP";
 import Policy        from "./Policy";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -85,6 +86,21 @@ function OrgDetail({ org, onBack, currentUser }) {
   const actionsRef    = useRef({});
 
   const meta = ALL_TABS.find(t => t.id === activeTab);
+
+  const permDepartments  = useModulePermissions("departments");
+  const permTeams        = useModulePermissions("teams");
+  const permDivisions    = useModulePermissions("divisions");
+  const permGrades       = useModulePermissions("grades");
+  const permDesignations = useModulePermissions("designations");
+  const permEmployees    = useModulePermissions("employees");
+  const permLocations    = useModulePermissions("locations");
+  const permPolicy       = useModulePermissions("policy");
+
+  const TAB_PERMS = {
+    departments: permDepartments, sub_departments: permTeams, divisions: permDivisions,
+    grades: permGrades, designations: permDesignations, employees: permEmployees,
+    locations: permLocations, policy: permPolicy,
+  };
 
   useEffect(() => {
     const h = { Authorization: `Bearer ${TOKEN()}` };
@@ -186,14 +202,17 @@ function OrgDetail({ org, onBack, currentUser }) {
 
           {/* Nav */}
           <nav className="flex flex-col gap-0 w-full flex-1">
-            {NAV_SECTIONS.map(section => (
+            {NAV_SECTIONS.map(section => {
+              const visibleItems = section.items.filter(t => !TAB_PERMS[t.id] || TAB_PERMS[t.id].canView);
+              if (visibleItems.length === 0) return null;
+              return (
               <div key={section.label} className="py-2 border-b border-slate-200/70 last:border-0">
                 {!collapsed && (
                   <p className="px-4 pb-1 pt-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">
                     {section.label}
                   </p>
                 )}
-                {section.items.map(t => {
+                {visibleItems.map(t => {
                   const Icon   = t.icon;
                   const active = activeTab === t.id;
                   const badge  = badges[t.id];
@@ -212,7 +231,8 @@ function OrgDetail({ org, onBack, currentUser }) {
                   );
                 })}
               </div>
-            ))}
+              );
+            })}
           </nav>
         </aside>
       </div>
@@ -290,7 +310,7 @@ function OrgDetail({ org, onBack, currentUser }) {
                 )}
               </div>
             )}
-            {meta?.hasAdd && (
+            {meta?.hasAdd && (TAB_PERMS[activeTab]?.canAdd ?? true) && (
               <button onClick={() => actionsRef.current?.openAdd?.()}
                 className="inline-flex items-center gap-1.5 text-sm font-semibold bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors">
                 <Plus size={14} /> {meta.btnLabel}

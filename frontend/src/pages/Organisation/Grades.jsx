@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Search, Edit2, Trash2, X, Loader2, ChevronUp, ChevronDown, Plus } from "lucide-react";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { StatusBadge } from "./helpers";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -219,6 +220,7 @@ function Modal({ item, usedLetters, onClose, onSaved }) {
 }
 
 export default function Grades({ actionsRef, onChange }) {
+  const { canEdit, canDelete } = useModulePermissions("grades");
   const [grades,       setGrades]       = useState([]);
   const [search,       setSearch]       = useState("");
   const [modal,        setModal]        = useState(null);
@@ -436,7 +438,7 @@ export default function Grades({ actionsRef, onChange }) {
                 Save Order
               </button>
             </div>
-          ) : (
+          ) : canEdit && (
             <button onClick={startEditOrder}
               className="px-3 py-1.5 text-xs border border-slate-200 rounded text-slate-600 hover:bg-slate-50 hover:border-slate-300 flex items-center gap-1.5">
               <Edit2 size={12} />
@@ -514,14 +516,18 @@ export default function Grades({ actionsRef, onChange }) {
                 <td className="px-4 py-3 text-center"><StatusBadge active={g.status === "active"} /></td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1">
-                    <button onClick={() => setModal(g)} disabled={editingOrder}
-                      className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-30 disabled:pointer-events-none">
-                      <Edit2 size={13} />
-                    </button>
-                    <button onClick={() => del(g.id)} disabled={editingOrder}
-                      className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-30 disabled:pointer-events-none">
-                      <Trash2 size={13} />
-                    </button>
+                    {canEdit && (
+                      <button onClick={() => setModal(g)} disabled={editingOrder}
+                        className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors disabled:opacity-30 disabled:pointer-events-none">
+                        <Edit2 size={13} />
+                      </button>
+                    )}
+                    {canDelete && (
+                      <button onClick={() => del(g.id)} disabled={editingOrder}
+                        className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-30 disabled:pointer-events-none">
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

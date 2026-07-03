@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Search, Edit2, Trash2, X, Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { StatusBadge, TableHead, cx } from "./helpers";
 import { gradeCls, parseDescriptions } from "./Grades";
 import * as XLSX from "xlsx";
@@ -13,6 +14,7 @@ const TEMPLATE_HEADERS = ["Designation Name", "Grade", "Status"];
 const EMPTY_FORM = { title: "", grade: "", active: true };
 
 export default function Designations({ actionsRef }) {
+  const { canEdit, canDelete } = useModulePermissions("designations");
   const [rows,      setRows]      = useState([]);
   const [grades,    setGrades]    = useState([]);
   const [search,    setSearch]    = useState("");
@@ -218,15 +220,19 @@ export default function Designations({ actionsRef }) {
                 <td className="px-4 py-3 text-center"><StatusBadge active={d.active} /></td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1">
-                    <button
-                      onClick={() => { setForm({ title: d.title, grade: d.grade || "", active: d.active }); setFormErr(""); setModal({ mode: "edit", data: d }); }}
-                      className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-                      <Edit2 size={13} />
-                    </button>
-                    <button onClick={() => setDeleteId(d.id)}
-                      className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                      <Trash2 size={13} />
-                    </button>
+                    {canEdit && (
+                      <button
+                        onClick={() => { setForm({ title: d.title, grade: d.grade || "", active: d.active }); setFormErr(""); setModal({ mode: "edit", data: d }); }}
+                        className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                        <Edit2 size={13} />
+                      </button>
+                    )}
+                    {canDelete && (
+                      <button onClick={() => setDeleteId(d.id)}
+                        className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
