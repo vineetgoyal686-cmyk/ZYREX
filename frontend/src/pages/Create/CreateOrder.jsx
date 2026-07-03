@@ -3796,7 +3796,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     catch { return {}; }
   });
   const isGlobalAdmin = currentUser.role === "global_admin";
-  const orderPermissionKeys = project ? ["order", "create_order"] : ["master_data_orders", "order", "create_order"];
+  const orderPermissionKeys = project ? ["order", "create_order"] : ["master_data_orders_tab", "order", "create_order"];
   const myPerms = currentUser.app_permissions?.find(p => orderPermissionKeys.includes(p.module_key)) || {};
   const canEdit = isGlobalAdmin || !!myPerms.can_edit || !!myPerms.can_add;
   const canDelete = isGlobalAdmin || !!myPerms.can_delete;

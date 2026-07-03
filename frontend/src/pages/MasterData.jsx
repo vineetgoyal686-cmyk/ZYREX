@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import ViewOrder from "./Procurement/ViewOrder";
+import { useModulePermissions } from "../hooks/useModulePermissions";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const LOCAL_ROWS_KEY = "bms_vendor_master_manual_rows";
@@ -49,8 +50,17 @@ const emptyForm = {
   orderValue: 0,
 };
 
+const MASTER_DATA_MODULE_KEY = {
+  vendor:   "master_data_vendor",
+  products: "master_data_products",
+  orders:   "master_data_orders_tab",
+  intakes:  "master_data_intakes",
+  clauses:  "master_data_clauses",
+};
+
 export default function MasterData({ view = "vendor" }) {
   const activeView = view;
+  const { canExport } = useModulePermissions(MASTER_DATA_MODULE_KEY[activeView] || "master_data_vendor");
   const [rows, setRows] = useState([]);
   const [manualRows, setManualRows] = useState(() => {
     try { return JSON.parse(localStorage.getItem(LOCAL_ROWS_KEY) || "[]"); } catch { return []; }
@@ -449,7 +459,7 @@ export default function MasterData({ view = "vendor" }) {
             <div>
               <h1 className="text-lg font-black tracking-tight text-slate-900">Vendor Master Data</h1>
             </div>
-            {activeView === "vendor" && (
+            {activeView === "vendor" && canExport && (
               <div className="relative shrink-0" ref={exportRef}>
                 <button
                   onClick={() => setExportOpen(o => !o)}

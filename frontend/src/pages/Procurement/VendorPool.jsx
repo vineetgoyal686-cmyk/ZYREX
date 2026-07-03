@@ -219,7 +219,7 @@ function SearchableLocationSelect({ label, value, onChange, options, disabled, p
   );
 }
 
-const VendorPool = forwardRef(function VendorPool({ onPromoted }, ref) {
+const VendorPool = forwardRef(function VendorPool({ onPromoted, canEdit = true, canDelete = true }, ref) {
   const [pools,      setPools]      = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [showModal,  setShowModal]  = useState(false);
@@ -731,7 +731,7 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted }, ref) {
                             className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all">
                             <Eye size={13} />
                           </button>
-                          {p.status !== "Promoted" && <>
+                          {p.status !== "Promoted" && canEdit && <>
                             <button type="button" onClick={() => openEdit(p)} title="Edit"
                               className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all">
                               <Pencil size={13} />
@@ -745,10 +745,12 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted }, ref) {
                             className="p-1.5 rounded-lg text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-all">
                             <History size={13} />
                           </button>
-                          <button type="button" onClick={() => handleDelete(p.id)} title="Delete"
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
-                            <Trash2 size={13} />
-                          </button>
+                          {canDelete && (
+                            <button type="button" onClick={() => handleDelete(p.id)} title="Delete"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

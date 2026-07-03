@@ -34,6 +34,7 @@ export function useModulePermissions(moduleKey) {
     canRevert:           isSuperOrGlobal || !!p.can_revert,
     canCancel:           isSuperOrGlobal || !!p.can_cancel,
     canManageAmend:      isSuperOrGlobal || !!p.can_manage_amend,
+    canTakeAction:       isSuperOrGlobal || !!p.can_take_action,
     canViewOverviewAging: isSuperOrGlobal || !!p.order_overview_aging,
     canViewIntake:        isSuperOrGlobal || !!p.order_intake,
     canViewPayment:        isSuperOrGlobal || !!p.order_payment,

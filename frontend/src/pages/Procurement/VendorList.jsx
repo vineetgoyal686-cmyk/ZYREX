@@ -115,6 +115,7 @@ let cachedCompanies = null;
 
 export default function VendorList() {
   const { isGlobalAdmin, canAdd, canEdit, canDelete, canExport } = useModulePermissions("vendor_list");
+  const { canAdd: poolCanAdd, canEdit: poolCanEdit, canDelete: poolCanDelete, canExport: poolCanExport } = useModulePermissions("vendor_pool");
 
   const [vendors, setVendors]     = useState(cachedVendors || []);
   const [loading, setLoading]     = useState(!cachedVendors);
@@ -559,7 +560,7 @@ export default function VendorList() {
               </button>
               {poolMoreOpen && (
                 <div className="absolute right-0 top-full mt-1 z-30 bg-white rounded-lg shadow-xl border border-slate-100 py-1 w-48">
-                  {canExport && <>
+                  {poolCanExport && <>
                     <p className="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">Export As</p>
                     <button type="button" onClick={() => { vendorPoolRef.current?.exportExcel?.(); setPoolMoreOpen(false); }}
                       className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
@@ -571,7 +572,7 @@ export default function VendorList() {
                     </button>
                     <div className="border-t border-slate-100 my-1" />
                   </>}
-                  {canEdit && (
+                  {poolCanEdit && (
                     <button type="button" onClick={() => { vendorPoolRef.current?.openBulkUpload?.(); setPoolMoreOpen(false); }}
                       className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
                       <Upload size={14} className="text-slate-500" /> Bulk Upload
@@ -587,7 +588,7 @@ export default function VendorList() {
             </div>
           )}
 
-          {mainTab === "pool" && canAdd && (
+          {mainTab === "pool" && poolCanAdd && (
             <button type="button" onClick={() => vendorPoolRef.current?.openAdd?.()}
               className="inline-flex h-9 select-none items-center gap-2 rounded-md border border-indigo-700 bg-gradient-to-b from-indigo-600 to-indigo-700 px-3.5 text-xs font-bold text-white shadow-sm transition-all hover:border-indigo-800 hover:from-indigo-500 hover:to-indigo-600 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/55 focus-visible:ring-offset-1">
               <Plus size={14} className="shrink-0" /> Add
@@ -598,7 +599,7 @@ export default function VendorList() {
 
       {/* Vendor Pool tab */}
       {mainTab === "pool" && (
-        <VendorPool ref={vendorPoolRef} onPromoted={() => { cachedVendors = null; fetchVendors(true); }} />
+        <VendorPool ref={vendorPoolRef} onPromoted={() => { cachedVendors = null; fetchVendors(true); }} canEdit={poolCanEdit} canDelete={poolCanDelete} />
       )}
 
       {/* Vendor List tab content */}

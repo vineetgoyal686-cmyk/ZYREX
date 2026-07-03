@@ -5,6 +5,7 @@ import {
   ClipboardList, Clock, IndianRupee, Search, Undo2, User, FileDown
 } from "lucide-react";
 import { authFetch } from "../utils/authFetch";
+import { useModulePermissions } from "../hooks/useModulePermissions";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -34,6 +35,10 @@ export default function Approvals() {
 
   const [toast, setToast] = useState(null);
   const showToast = (msg, type = "success") => { setToast({ msg, type }); setTimeout(() => setToast(null), 3500); };
+
+  const permIntake  = useModulePermissions("inbox_intakes");
+  const permOrders  = useModulePermissions("inbox_orders");
+  const permPayment = useModulePermissions("inbox_payments");
 
   const [activeTab, setActiveTab] = useState(readApprovalTabFromHash);
   const [orderSubTab, setOrderSubTab] = useState("pending_approval");
@@ -313,6 +318,11 @@ export default function Approvals() {
   const [amendView, setAmendView] = useState("tile"); // 'table' or 'tile'
   const [orderView, setOrderView] = useState("tile"); // 'table' or 'tile'
 
+  // Being the assigned responsible person is not enough on its own — the user's
+  // Inbox "Action" permission (inbox_orders.can_take_action) must also be granted.
+  const canOrderAct = isGlobalAdmin || permOrders.canTakeAction;
+  const canIntakeAct = isGlobalAdmin || permIntake.canTakeAction;
+
   const pendingOrders = useMemo(() => (
     orders.filter((o) => ["Pending Issue", "To Issue"].includes(o.status))
   ), [orders]);
@@ -322,10 +332,17 @@ export default function Approvals() {
   ), [intakes]);
 
   const tabs = [
-    { key: "intake", label: "Intake", icon: FileText, count: pendingIntakes.length },
-    { key: "orders", label: "Orders", icon: ClipboardList, count: pendingOrders.length + amendments.length + actionRequests.length + pendingApprovals.length },
-    { key: "payments", label: "Payments", icon: IndianRupee, count: 0 },
-  ];
+    { key: "intake", label: "Intake", icon: FileText, count: pendingIntakes.length, allowed: isGlobalAdmin || permIntake.canView },
+    { key: "orders", label: "Orders", icon: ClipboardList, count: pendingOrders.length + amendments.length + actionRequests.length + pendingApprovals.length, allowed: isGlobalAdmin || permOrders.canView },
+    { key: "payments", label: "Payments", icon: IndianRupee, count: 0, allowed: isGlobalAdmin || permPayment.canView },
+  ].filter(t => t.allowed);
+
+  // Keep activeTab valid if it isn't allowed (e.g. user only has Orders view)
+  useEffect(() => {
+    if (tabs.length && !tabs.some(t => t.key === activeTab)) {
+      setActiveTab(tabs[0].key);
+    }
+  }, [tabs.map(t => t.key).join(","), activeTab]);
 
   const query = search.trim().toLowerCase();
   const filteredOrders = pendingOrders.filter((o) => {
@@ -559,7 +576,7 @@ export default function Approvals() {
                             <td className="px-5 py-4 border-r border-slate-100 text-slate-600 font-bold text-[11px] whitespace-nowrap">{o.made_by || o.snapshot?.madeBy || "—"}</td>
                             <td className="px-5 py-4 border-r border-slate-100 text-slate-800 font-black text-[12px] whitespace-nowrap">Rs {money(o.totals?.grandTotal || 0)}</td>
                             <td className="px-5 py-4">
-                              {isIssueHandler ? (
+                              {(isIssueHandler && canOrderAct) ? (
                                 <div className="flex items-center justify-center gap-1.5">
                                   <button disabled={actionLoading === o.id} onClick={() => handleOrderAction(o.id, "Issued")} title="Issue Order"
                                     className="h-8 w-8 rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 shadow-sm flex items-center justify-center transition-all"><CircleCheck size={18} /></button>
@@ -601,7 +618,7 @@ export default function Approvals() {
                           <p className="text-[12px] text-slate-900 font-black">Rs {money(o.totals?.grandTotal || 0)}</p>
                         </div>
                       </div>
-                      {isIssueHandler && <div className="flex gap-1.5 pt-3 border-t border-slate-100">
+                      {(isIssueHandler && canOrderAct) && <div className="flex gap-1.5 pt-3 border-t border-slate-100">
                         <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Reverted" }); setCommentText(""); }}
                           className="flex-1 h-8 bg-white border border-amber-200 text-amber-600 font-bold text-[10px] hover:bg-amber-500 hover:text-white transition-all uppercase">REVERT</button>
                         <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Rejected" }); setCommentText(""); }}
@@ -667,7 +684,7 @@ export default function Approvals() {
                             </div>
                           )}
                           <div className="flex gap-2 pt-2 border-t border-slate-50">
-                            {canManageActionRequests ? (
+                            {(canManageActionRequests && canOrderAct) ? (
                               <>
                                 <button disabled={arActionLoading === ar.id}
                                   onClick={() => setArCommentModal({ open: true, requestId: ar.id, action: "Rejected" })}
@@ -765,8 +782,8 @@ export default function Approvals() {
                                 {req.attachment_url && (
                                   <a href={req.attachment_url} target="_blank" rel="noreferrer" title="View Attachment" className="h-8 w-8 flex items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm"><FileText size={16} /></a>
                                 )}
-                                <button disabled={actionLoading === req.id || !canManageAmend} onClick={() => handleAmendAction(req.id, "Approved")} title="Approve" className="h-8 w-8 rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 shadow-sm transition-all flex items-center justify-center"><CircleCheck size={18} /></button>
-                                <button disabled={actionLoading === req.id || !canManageAmend} onClick={() => handleAmendAction(req.id, "Rejected")} title="Reject" className="h-8 w-8 rounded-md bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-40 shadow-sm transition-all flex items-center justify-center"><CircleX size={18} /></button>
+                                <button disabled={actionLoading === req.id || !canManageAmend || !canOrderAct} onClick={() => handleAmendAction(req.id, "Approved")} title="Approve" className="h-8 w-8 rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 shadow-sm transition-all flex items-center justify-center"><CircleCheck size={18} /></button>
+                                <button disabled={actionLoading === req.id || !canManageAmend || !canOrderAct} onClick={() => handleAmendAction(req.id, "Rejected")} title="Reject" className="h-8 w-8 rounded-md bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-40 shadow-sm transition-all flex items-center justify-center"><CircleX size={18} /></button>
                               </div>
                             </td>
                           </tr>
@@ -815,8 +832,8 @@ export default function Approvals() {
                           </div>
                           <div className="flex gap-2 pt-2 border-t border-slate-50">
                             <button onClick={() => setPdfPreviewId(ord.id)} className="h-9 w-9 flex items-center justify-center bg-white border border-slate-300 text-slate-500 hover:text-indigo-600 transition-all shadow-sm shrink-0"><FileText size={16} /></button>
-                            <button disabled={actionLoading === req.id || !canManageAmend} onClick={() => handleAmendAction(req.id, "Rejected")} className="flex-1 h-9 bg-white border border-rose-200 text-rose-600 font-bold text-[11px] hover:bg-rose-50 transition-all uppercase">REJECT</button>
-                            <button disabled={actionLoading === req.id || !canManageAmend} onClick={() => handleAmendAction(req.id, "Approved")} className="flex-1 h-9 bg-emerald-500 text-white font-bold text-[11px] hover:bg-emerald-600 shadow-sm transition-all uppercase">APPROVE</button>
+                            <button disabled={actionLoading === req.id || !canManageAmend || !canOrderAct} onClick={() => handleAmendAction(req.id, "Rejected")} className="flex-1 h-9 bg-white border border-rose-200 text-rose-600 font-bold text-[11px] hover:bg-rose-50 transition-all uppercase">REJECT</button>
+                            <button disabled={actionLoading === req.id || !canManageAmend || !canOrderAct} onClick={() => handleAmendAction(req.id, "Approved")} className="flex-1 h-9 bg-emerald-500 text-white font-bold text-[11px] hover:bg-emerald-600 shadow-sm transition-all uppercase">APPROVE</button>
                           </div>
                         </div>
                       </div>
@@ -833,6 +850,7 @@ export default function Approvals() {
           onAction={handleIntakeAction}
           actionLoading={actionLoading}
           loading={loading}
+          canAct={canIntakeAct}
           rows={filteredIntakes.map((i) => ({
             id: i.id,
             number: intakeTitle(i),
@@ -1020,7 +1038,7 @@ export default function Approvals() {
   );
 }
 
-function ApprovalTable({ rows, emptyText, onAction, actionLoading, loading }) {
+function ApprovalTable({ rows, emptyText, onAction, actionLoading, loading, canAct = true }) {
   if (!rows.length) {
     return <div className={`${cardCls} p-8 text-center text-sm font-semibold text-slate-400`}>{emptyText}</div>;
   }
@@ -1062,20 +1080,26 @@ function ApprovalTable({ rows, emptyText, onAction, actionLoading, loading }) {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-center gap-2">
-                    <button 
-                      disabled={actionLoading === row.id}
-                      onClick={() => onAction && onAction(row.id, "Approved")}
-                      className="px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-md hover:bg-emerald-700 transition-all disabled:opacity-50"
-                    >
-                      APPROVE
-                    </button>
-                    <button 
-                      disabled={actionLoading === row.id}
-                      onClick={() => onAction && onAction(row.id, "Rejected")}
-                      className="px-3 py-1 bg-rose-600 text-white text-[10px] font-bold rounded-md hover:bg-rose-700 transition-all disabled:opacity-50"
-                    >
-                      REJECT
-                    </button>
+                    {canAct ? (
+                      <>
+                        <button
+                          disabled={actionLoading === row.id}
+                          onClick={() => onAction && onAction(row.id, "Approved")}
+                          className="px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-md hover:bg-emerald-700 transition-all disabled:opacity-50"
+                        >
+                          APPROVE
+                        </button>
+                        <button
+                          disabled={actionLoading === row.id}
+                          onClick={() => onAction && onAction(row.id, "Rejected")}
+                          className="px-3 py-1 bg-rose-600 text-white text-[10px] font-bold rounded-md hover:bg-rose-700 transition-all disabled:opacity-50"
+                        >
+                          REJECT
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-[11px] text-slate-400 italic">Awaiting approval</span>
+                    )}
                   </div>
                 </td>
               </tr>

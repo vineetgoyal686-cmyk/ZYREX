@@ -47,7 +47,7 @@ const TAB_MODULE_KEY = {
   approvals__payments: "payment_request",
   master_data__vendor:   "master_data_vendor",
   master_data__products: "master_data_products",
-  master_data__orders:   "master_data_orders",
+  master_data__orders:   "master_data_orders_tab",
   master_data__intakes:  "master_data_intakes",
   master_data__clauses:  "master_data_clauses",
   audit: "audit",
@@ -358,6 +358,18 @@ export default React.memo(function Sidebar({
     if (tabId === "profile") return true;
     if (isGlobalAdmin) return true;
     if (!userTabPermissions) return false;
+    // Inbox visibility is driven by its three sub-modules (Orders/Intake/Payment),
+    // not the standalone "inbox" module_key, which the Settings UI never exposes a checkbox for.
+    if (tabId === "approvals") {
+      const map = userTabPermissions.map || {};
+      return ["inbox_orders", "inbox_intakes", "inbox_payments"].some(k => map[k]?.can_view === true);
+    }
+    // Item was split into item_supply/item_sitc; the standalone "item_list" key
+    // is no longer exposed in Settings, so it can never be granted to a non-admin.
+    if (tabId === "proc_setup__item_list") {
+      const map = userTabPermissions.map || {};
+      return ["item_supply", "item_sitc"].some(k => map[k]?.can_view === true);
+    }
     const moduleKey = TAB_MODULE_KEY[tabId];
     if (!moduleKey) return true;
     const perm = userTabPermissions.map?.[moduleKey];

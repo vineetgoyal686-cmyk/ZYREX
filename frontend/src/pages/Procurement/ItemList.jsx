@@ -96,13 +96,17 @@ function SearchableSelect({ options, value, onChange, placeholder }) {
 }
 
 export default function ItemList() {
-  const { isGlobalAdmin, canAdd, canEdit, canDelete, canBulk: canBulkUpload, canExport } = useModulePermissions("item_list");
+  const permSupply = useModulePermissions("item_supply");
+  const permSitc   = useModulePermissions("item_sitc");
 
   const [items, setItems]         = useState([]);
   const [categories, setCategories] = useState([]);
   const [uoms, setUoms]           = useState([]);
   const [loading, setLoading]     = useState(true);
   const [activeTab, setActiveTab] = useState("Supply");
+
+  const activePerm = activeTab === "SITC" ? permSitc : permSupply;
+  const { isGlobalAdmin, canAdd, canEdit, canDelete, canBulk: canBulkUpload, canExport } = activePerm;
   const [showModal, setShowModal] = useState(false);
   const [viewItem, setViewItem]   = useState(null);
   const [form, setForm]           = useState(emptyForm);

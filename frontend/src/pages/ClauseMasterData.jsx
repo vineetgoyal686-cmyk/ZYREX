@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Database, Download, Eye, FileText, Loader2, Plus, Search, Upload, X } from "lucide-react";
 import * as XLSX from "xlsx";
+import { useModulePermissions } from "../hooks/useModulePermissions";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const LOCAL_ROWS_KEY = "bms_clause_master_manual_rows";
@@ -145,6 +146,7 @@ const buildRowsFromOrders = (orders, clauses) => {
 };
 
 export default function ClauseMasterData() {
+  const { canExport } = useModulePermissions("master_data_clauses");
   const [orders, setOrders] = useState([]);
   const [clauses, setClauses] = useState([]);
   const [manualRows, setManualRows] = useState(() => {
@@ -348,9 +350,11 @@ export default function ClauseMasterData() {
             <button onClick={() => setShowAdd(true)} className="inline-flex h-10 items-center gap-2 rounded-lg bg-slate-900 px-3 text-xs font-bold text-white shadow-sm hover:bg-slate-800">
               <Plus size={15} /> Add
             </button>
-            <button onClick={exportRows} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50">
-              <Download size={15} /> Export
-            </button>
+            {canExport && (
+              <button onClick={exportRows} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50">
+                <Download size={15} /> Export
+              </button>
+            )}
             <button onClick={() => importRef.current?.click()} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50">
               <Upload size={15} /> Import
             </button>
