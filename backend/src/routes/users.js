@@ -511,14 +511,19 @@ router.get("/role-defaults/all", requireAuth, requireAdminOrAbove, async (req, r
   res.json({ roleDefaults: result });
 });
 
-/* PUT /api/role-defaults/:role — only Global/Super Admin can edit role-level defaults */
-router.put("/role-defaults/:role", requireAuth, async (req, res) => {
-  if (!["global_admin", "super_admin"].includes(req.user.role))
-    return res.status(403).json({ error: "Only Global/Super Admin can edit role defaults" });
+// Hierarchy: global_admin > super_admin > admin > user. A role may only edit
+// (or sync) defaults for a role strictly below it — never its own row or above.
+const ROLE_RANK = { global_admin: 3, super_admin: 2, admin: 1, user: 0 };
+const canEditRoleDefaults = (actorRole, targetRole) =>
+  (ROLE_RANK[actorRole] ?? -1) > (ROLE_RANK[targetRole] ?? -1);
 
+/* PUT /api/role-defaults/:role — edit that role's stored defaults */
+router.put("/role-defaults/:role", requireAuth, async (req, res) => {
   const { role } = req.params;
   if (!["super_admin", "admin", "user"].includes(role))
     return res.status(400).json({ error: "Invalid role" });
+  if (!canEditRoleDefaults(req.user.role, role))
+    return res.status(403).json({ error: "You cannot edit this role's defaults" });
 
   const { profile_permissions } = req.body;
   if (!profile_permissions || typeof profile_permissions !== "object")
@@ -529,6 +534,36 @@ router.put("/role-defaults/:role", requireAuth, async (req, res) => {
     .upsert({ role, profile_permissions, updated_at: new Date().toISOString() }, { onConflict: "role" });
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
+});
+
+/* POST /api/role-defaults/:role/sync — apply this role's saved defaults onto
+   every EXISTING user with that role (only the management-permission keys;
+   everything else in their profile_permissions, e.g. allowed_projects, stays untouched). */
+router.post("/role-defaults/:role/sync", requireAuth, async (req, res) => {
+  const { role } = req.params;
+  if (!["super_admin", "admin", "user"].includes(role))
+    return res.status(400).json({ error: "Invalid role" });
+  if (!canEditRoleDefaults(req.user.role, role))
+    return res.status(403).json({ error: "You cannot sync this role's defaults" });
+
+  const admin = getAdminClient();
+  const { data: roleRow, error: roleErr } = await admin.from("role_defaults")
+    .select("profile_permissions").eq("role", role).single();
+  if (roleErr || !roleRow) return res.status(404).json({ error: "No saved defaults for this role yet" });
+
+  const { data: targetUsers, error: usersErr } = await admin.from("users")
+    .select("id, profile_permissions").eq("role", role);
+  if (usersErr) return res.status(500).json({ error: usersErr.message });
+
+  const results = await Promise.all((targetUsers || []).map(u =>
+    admin.from("users")
+      .update({ profile_permissions: { ...(u.profile_permissions || {}), ...roleRow.profile_permissions } })
+      .eq("id", u.id)
+  ));
+  const failed = results.find(r => r.error);
+  if (failed) return res.status(500).json({ error: failed.error.message });
+
+  res.json({ success: true, updatedCount: (targetUsers || []).length });
 });
 
 module.exports = router;
