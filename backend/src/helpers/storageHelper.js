@@ -58,6 +58,31 @@ const createSignedStorageUrl = async (
   }
 };
 
+const MIME_BY_EXT = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
+
+// createSignedUrl occasionally comes back empty for a file that still exists
+// (a Supabase quirk with no usable error attached). For small image assets
+// (avatars, signatures, logos, stamps) that must never silently disappear,
+// fall back to downloading the object directly and embedding it as a data
+// URI — bypasses URL signing entirely.
+const createSignedImageUrl = async (client, bucket, value, expiresIn = DEFAULT_SIGNED_URL_TTL_SECONDS) => {
+  const signed = await createSignedStorageUrl(client, bucket, value, expiresIn);
+  if (signed) return signed;
+
+  try {
+    const path = normalizeStoragePath(value, bucket);
+    if (!path) return "";
+    const { data, error } = await client.storage.from(bucket).download(path);
+    if (error || !data) return "";
+    const buf = Buffer.from(await data.arrayBuffer());
+    const ext = (path.split(".").pop() || "").toLowerCase();
+    const mime = MIME_BY_EXT[ext] || "image/jpeg";
+    return `data:${mime};base64,${buf.toString("base64")}`;
+  } catch {
+    return "";
+  }
+};
+
 const removeStorageFile = async (client, bucket, value) => {
   const path = normalizeStoragePath(value, bucket);
   if (!path || /^data:|^blob:/i.test(path)) return;
@@ -75,6 +100,7 @@ module.exports = {
   normalizeStoragePath,
   uploadStorageFile,
   createSignedStorageUrl,
+  createSignedImageUrl,
   removeStorageFile,
   getPublicStorageUrl,
 };

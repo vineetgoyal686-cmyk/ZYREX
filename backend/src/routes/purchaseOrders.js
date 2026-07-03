@@ -10,6 +10,7 @@ const {
   normalizeStoragePath,
   uploadStorageFile,
   createSignedStorageUrl,
+  createSignedImageUrl,
   removeStorageFile,
 } = require("../helpers/storageHelper");
 const { addClient, removeClient, broadcast } = require("../sse");
@@ -208,30 +209,7 @@ const signOrderDocUrl = async (value) => {
 const signProcImageUrl = (value) => createSignedStorageUrl(supabase, "picture", value);
 const signVendorDocUrl = (value) => createSignedStorageUrl(supabase, "vendor-docs", value);
 
-const MIME_BY_EXT = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif" };
-
-// Signed URLs occasionally fail for a handful of files even though the
-// object exists (a Supabase quirk that swallows without a usable error).
-// A signature must not silently disappear on the order view, so fall back
-// to fetching the file directly (bypasses URL signing entirely) and embed
-// it as a data URI when signing comes back empty.
-const signAvatarUrl = async (value) => {
-  const signed = await createSignedStorageUrl(supabase, "picture", value);
-  if (signed) return signed;
-
-  try {
-    const path = normalizeStoragePath(value, "picture");
-    if (!path) return "";
-    const { data, error } = await supabase.storage.from("picture").download(path);
-    if (error || !data) return "";
-    const buf = Buffer.from(await data.arrayBuffer());
-    const ext = (path.split(".").pop() || "").toLowerCase();
-    const mime = MIME_BY_EXT[ext] || "image/jpeg";
-    return `data:${mime};base64,${buf.toString("base64")}`;
-  } catch {
-    return "";
-  }
-};
+const signAvatarUrl = (value) => createSignedImageUrl(supabase, "picture", value);
 
 const signDocArray = async (docs = []) => Promise.all((Array.isArray(docs) ? docs : []).map(async doc => {
   const storagePath = normalizeStoragePath(doc.storage_path || doc.url, "procurement-docs");
@@ -314,6 +292,7 @@ const signOrderStorageUrls = async (order = {}) => {
   // Enrich issuedBy with current user profile data if id is present.
   // This guarantees designation/name/signature show up even for older orders
   // where these fields were not captured at issue time.
+  let currentProfileSignature = null;
   if (issuedBy?.id) {
     try {
       const { data: profile } = await supabase
@@ -324,8 +303,9 @@ const signOrderStorageUrls = async (order = {}) => {
       if (profile) {
         if (!issuedBy.name && profile.name) issuedBy.name = profile.name;
         if (!issuedBy.designation && profile.designation) issuedBy.designation = profile.designation;
-        if (!issuedBy.signatureFile && profile.profile_permissions?.ui?.signature) {
-          issuedBy.signatureFile = profile.profile_permissions.ui.signature;
+        currentProfileSignature = profile.profile_permissions?.ui?.signature || null;
+        if (!issuedBy.signatureFile && currentProfileSignature) {
+          issuedBy.signatureFile = currentProfileSignature;
         }
       }
     } catch { /* silent — fallback to whatever was stored */ }
@@ -356,7 +336,15 @@ const signOrderStorageUrls = async (order = {}) => {
   if (snapshot.company) snapshot.company = snapshotCompany;
   if (snapshot.vendor) snapshot.vendor = snapshotVendor;
   if (issuedBy) {
-    if (issuerSignatureUrl) issuedBy.signatureUrl = issuerSignatureUrl;
+    // The order's frozen signature file can go missing if the user later
+    // replaces their profile signature (the old file gets cleaned up).
+    // Rather than show nothing, fall back to whatever signature they
+    // currently have on file.
+    let finalSignatureUrl = issuerSignatureUrl;
+    if (!finalSignatureUrl && currentProfileSignature && currentProfileSignature !== issuedBy.signatureFile) {
+      finalSignatureUrl = await signAvatarUrl(currentProfileSignature);
+    }
+    if (finalSignatureUrl) issuedBy.signatureUrl = finalSignatureUrl;
     totals.issuedBy = issuedBy;
   }
 
@@ -1989,7 +1977,18 @@ const loadOrderForRender = async (orderId) => {
     : liveContact ? [liveContact] : [];
 
   const issuedByRaw = cleanOrder.totals?.issuedBy || null;
-  return { cleanOrder, cleanItems, comp, vend, site, contacts: finalContacts, issuedByRaw };
+
+  // The order's frozen signature file can go missing if the user later
+  // replaces their profile signature (the old file gets cleaned up). Fetch
+  // their current one so callers can fall back to it instead of showing none.
+  let currentProfileSignature = null;
+  if (issuedByRaw?.id) {
+    const { data: profile } = await supabase
+      .from("users").select("profile_permissions").eq("id", issuedByRaw.id).maybeSingle();
+    currentProfileSignature = profile?.profile_permissions?.ui?.signature || null;
+  }
+
+  return { cleanOrder, cleanItems, comp, vend, site, contacts: finalContacts, issuedByRaw, currentProfileSignature };
 };
 
 const previewHtmlCache = new Map();
@@ -1997,18 +1996,22 @@ const PREVIEW_CACHE_MAX = 50;
 
 router.get("/:id/preview", async (req, res) => {
   try {
-    const { cleanOrder, cleanItems, comp, vend, site, contacts, issuedByRaw } = await loadOrderForRender(req.params.id);
+    const { cleanOrder, cleanItems, comp, vend, site, contacts, issuedByRaw, currentProfileSignature } = await loadOrderForRender(req.params.id);
 
-    const cacheKey = `${cleanOrder.id}__${cleanOrder.updated_at || cleanOrder.created_at || ""}`;
+    const cacheKey = `${cleanOrder.id}__${cleanOrder.updated_at || cleanOrder.created_at || ""}__${currentProfileSignature || ""}`;
     let html = previewHtmlCache.get(cacheKey);
 
     if (!html) {
-      const [logoDataUri, stampDataUri, signDataUri, issuerSignDataUri] = await Promise.all([
+      const [logoDataUri, stampDataUri, signDataUri, issuerSignDataUriRaw] = await Promise.all([
         fetchAsDataUri(comp.logo_url || comp.logoUrl),
         fetchAsDataUri(comp.stamp_url || comp.stampUrl),
         fetchAsDataUri(comp.sign_url || comp.signUrl),
         fetchSignatureDataUri(issuedByRaw?.signatureFile),
       ]);
+      const issuerSignDataUri = issuerSignDataUriRaw
+        || (currentProfileSignature && currentProfileSignature !== issuedByRaw?.signatureFile
+          ? await fetchSignatureDataUri(currentProfileSignature)
+          : "");
       const compWithImages = { ...comp, stampDataUri, signDataUri };
       const issuer = issuedByRaw ? { ...issuedByRaw, signDataUri: issuerSignDataUri } : null;
       html = renderOrderHtml(
@@ -2107,13 +2110,17 @@ const PDF_CACHE_MAX = 50;
 
 router.get("/:id/pdf", async (req, res) => {
   try {
-    const { cleanOrder, cleanItems, comp, vend, site, contacts, issuedByRaw } = await loadOrderForRender(req.params.id);
-    const [logoDataUri, stampDataUri, signDataUri, issuerSignDataUri] = await Promise.all([
+    const { cleanOrder, cleanItems, comp, vend, site, contacts, issuedByRaw, currentProfileSignature } = await loadOrderForRender(req.params.id);
+    const [logoDataUri, stampDataUri, signDataUri, issuerSignDataUriRaw] = await Promise.all([
       fetchAsDataUri(comp.logo_url || comp.logoUrl),
       fetchAsDataUri(comp.stamp_url || comp.stampUrl),
       fetchAsDataUri(comp.sign_url || comp.signUrl),
       fetchSignatureDataUri(issuedByRaw?.signatureFile),
     ]);
+    const issuerSignDataUri = issuerSignDataUriRaw
+      || (currentProfileSignature && currentProfileSignature !== issuedByRaw?.signatureFile
+        ? await fetchSignatureDataUri(currentProfileSignature)
+        : "");
     const compWithImages = { ...comp, stampDataUri, signDataUri };
     const issuer = issuedByRaw ? { ...issuedByRaw, signDataUri: issuerSignDataUri } : null;
     const html = renderOrderHtml({ order: cleanOrder, items: cleanItems, comp: compWithImages, vend, site, contacts, issuer });
