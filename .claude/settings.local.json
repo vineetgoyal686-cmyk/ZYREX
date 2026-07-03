@@ -111,7 +111,27 @@
       "Bash(curl -s -o /dev/null -w '%{http_code}' https://lhxgohcxcslbtnuubrsg.supabase.co/rest/v1/employees?limit=1 -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxoeGdvaGN4Y3NsYnRudXVicnNnIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTMyMjgwOSwiZXhwIjoyMDkwODk4ODA5fQ.Iz07eHk5x5IostQk7aKd04y8azhVYoP8i4fH8n_Djx8' -H 'Accept-Profile: organisation')",
       "Bash(git add *)",
       "Bash(git push *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(node --check backend/src/routes/purchaseOrders.js)",
+      "Bash(npx --no-install eslint frontend/src/pages/Create/CreateOrder.jsx --quiet)",
+      "Bash(./node_modules/.bin/eslint src/pages/Create/CreateOrder.jsx --quiet)",
+      "Bash(./node_modules/.bin/eslint src/pages/Procurement/ViewOrder.jsx --quiet)",
+      "Bash(./node_modules/.bin/eslint src/pages/Organisation/index.jsx src/pages/Organisation/OrgList.jsx --quiet)",
+      "Bash(find . -maxdepth 2 -iname \"vercel.json\" -o -iname \"railway.json\" -o -iname \"netlify.toml\")",
+      "Bash(find .github -type f)",
+      "Bash(./node_modules/.bin/eslint src/pages/Settings/tabs/UserManagement.jsx --quiet)",
+      "Bash(./node_modules/.bin/eslint src/pages/Settings/components/GroupedPermissions.jsx src/pages/Settings/constants.js --quiet)",
+      "Bash(./node_modules/.bin/eslint src/pages/Organisation/index.jsx --quiet)",
+      "Bash(./node_modules/.bin/eslint src/pages/Organisation/Departments.jsx --quiet)",
+      "Bash(./node_modules/.bin/eslint src/pages/Organisation/Divisions.jsx src/pages/Organisation/Grades.jsx src/pages/Organisation/Designations.jsx src/pages/Organisation/Locations.jsx src/pages/Organisation/SubDepts.jsx --quiet)",
+      "Bash(./node_modules/.bin/eslint src/pages/Organisation/EmployeeList.jsx --quiet)",
+      "Bash(./node_modules/.bin/eslint src/pages/Organisation/Policy.jsx --quiet)",
+      "Bash(node --check backend/src/routes/departments.js)",
+      "Bash(node --check backend/src/routes/teams.js)",
+      "Bash(grep -c \"fetch\\(\\\\`\\\\${API}\" src/pages/Approvals.jsx)",
+      "Bash(./node_modules/.bin/eslint src/pages/Approvals.jsx --quiet)",
+      "Bash(./node_modules/.bin/eslint src/App.jsx --quiet)",
+      "Bash(./node_modules/.bin/eslint src/pages/Procurement/VendorList.jsx --quiet)"
     ]
   }
 }
