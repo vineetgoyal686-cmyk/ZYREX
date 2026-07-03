@@ -3272,7 +3272,6 @@ const POST_CATEGORIES = [
   { key: "comparative", label: "Comparative Sheet" },
   { key: "vendor-docs", label: "Vendor Documents" },
   { key: "other", label: "Other" },
-  { key: "vendor-acceptance", label: "Vendor Acceptance" },
 ];
 
 const SignedCopySection = ({ order, orderId, canUpload, onRefresh, showToast }) => {
@@ -3405,22 +3404,24 @@ const SignedCopySection = ({ order, orderId, canUpload, onRefresh, showToast }) 
   );
 };
 
-const PRE_CATEGORIES = [
-  { key: "quotations", label: "Quotations" },
-  { key: "comparative", label: "Comparative Sheet" },
-  { key: "vendor-docs", label: "Vendor Documents" },
-  { key: "other", label: "Other" },
-];
-
 const OrderDocumentsTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh, showToast }) => {
   const [preTab, setPreTab] = useState("quotations");
   const [postTab, setPostTab] = useState("quotations");
   const [uploading, setUploading] = useState(false);
+  const [postSectionRevealed, setPostSectionRevealed] = useState(false);
   const fileInputRef = useRef();
+
+  const preCategories = React.useMemo(() => [
+    { key: "quotations", label: "Quotations" },
+    { key: "comparative", label: "Comparative Sheet" },
+    { key: "mail-proof", label: "Mail Proof Doc" },
+    { key: "vendor-docs", label: "Vendor Documents" },
+    { key: "other", label: "Other" },
+  ], []);
 
   // ── Build Pre-PO docs map (read-only, derived from order data) ──
   const preDocsByCategory = React.useMemo(() => {
-    const map = { quotations: [], comparative: [], "vendor-docs": [], other: [] };
+    const map = { quotations: [], comparative: [], "mail-proof": [], "vendor-docs": [], other: [] };
 
     // quotation_url — plain string or JSON array of URLs
     if (order.quotation_url) {
@@ -3433,11 +3434,12 @@ const OrderDocumentsTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
         map.quotations.push({ id: `legacy-quotation-${idx}`, url, name: qName, frozen: true });
       });
     }
-    // Legacy comparative sheet
+    // Legacy comparative/proof sheet — filed under whichever tab matches the proof type chosen at creation
     if (order.comparative_sheet_url) {
       const cRaw = decodeURIComponent(order.comparative_sheet_url.split("?")[0]);
       const cName = cRaw.split("/").pop().replace(/^comparative_\d+_/, "") || "Comparative_Sheet";
-      map.comparative.push({
+      const proofCat = order.snapshot?.proof_type === "Mail Proof Doc" ? "mail-proof" : "comparative";
+      map[proofCat].push({
         id: "legacy-comparative",
         url: order.comparative_sheet_url,
         name: cName,
@@ -3541,6 +3543,7 @@ const OrderDocumentsTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
 
   const totalPreDocs = Object.values(preDocsByCategory).reduce((n, a) => n + a.length, 0);
   const totalPostDocs = Object.values(postDocsByCategory).reduce((n, a) => n + a.length, 0);
+  const showPostSection = totalPostDocs > 0 || postSectionRevealed;
 
   const signedDoc = (Array.isArray(order.post_documents) ? order.post_documents : [])
     .find(d => d.category === "signed-copy") || null;
@@ -3575,7 +3578,7 @@ const OrderDocumentsTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
       <DocSection
         title="Pre-order documents"
         totalDocs={totalPreDocs}
-        categories={PRE_CATEGORIES}
+        categories={preCategories}
         docsByCategory={preDocsByCategory}
         activeTab={preTab}
         setActiveTab={setPreTab}
@@ -3584,19 +3587,29 @@ const OrderDocumentsTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
       />
 
       {/* ── POST-PO SECTION ── */}
-      <DocSection
-        title="Post-order documents"
-        totalDocs={totalPostDocs}
-        categories={POST_CATEGORIES}
-        docsByCategory={postDocsByCategory}
-        activeTab={postTab}
-        setActiveTab={setPostTab}
-        canUpload={canUpload}
-        onUploadClick={handleUploadClick}
-        onDelete={handleDelete}
-        uploading={uploading}
-        formatBytes={formatBytes}
-      />
+      {showPostSection ? (
+        <DocSection
+          title="Post-order documents"
+          totalDocs={totalPostDocs}
+          categories={POST_CATEGORIES}
+          docsByCategory={postDocsByCategory}
+          activeTab={postTab}
+          setActiveTab={setPostTab}
+          canUpload={canUpload}
+          onUploadClick={handleUploadClick}
+          onDelete={handleDelete}
+          uploading={uploading}
+          formatBytes={formatBytes}
+          onClose={() => setPostSectionRevealed(false)}
+        />
+      ) : canUpload && (
+        <button
+          onClick={() => setPostSectionRevealed(true)}
+          className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 border border-dashed border-slate-300 text-slate-500 text-[12px] font-semibold rounded-lg hover:bg-slate-50 hover:text-slate-700 transition-all"
+        >
+          <Plus size={13} /> Add Post-Order Documents
+        </button>
+      )}
       <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
 
       {/* ── VENDOR SIGNED COPY (last) ── */}
@@ -3615,7 +3628,7 @@ const DocSection = ({
   title, totalDocs, categories, docsByCategory,
   activeTab, setActiveTab, readOnly = false,
   canUpload = false, onUploadClick, onDelete, uploading = false,
-  formatBytes,
+  formatBytes, onClose,
 }) => {
   const docs = docsByCategory[activeTab] || [];
   const activeLabel = categories.find(c => c.key === activeTab)?.label || "";
@@ -3651,6 +3664,12 @@ const DocSection = ({
           <button onClick={handleDownloadAll}
             className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 text-slate-600 text-[12px] font-semibold rounded-md hover:bg-slate-50 transition-all">
             <Download size={13} /> Download All
+          </button>
+        )}
+        {totalDocs === 0 && onClose && (
+          <button onClick={onClose}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-slate-400 text-[12px] font-semibold rounded-md hover:bg-slate-50 hover:text-slate-600 transition-all">
+            <X size={13} /> Hide
           </button>
         )}
       </div>

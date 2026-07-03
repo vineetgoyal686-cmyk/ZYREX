@@ -2126,10 +2126,10 @@ router.delete("/:id", requirePerm("order", "can_delete"), async (req, res) => {
 
 /* ════════════════════════════════════
    POST-PO DOCUMENTS  (live, editable after issue)
-   Categories: quotations, comparative, vendor-docs, other, vendor-acceptance
+   Categories: quotations, comparative, vendor-docs, other
    ════════════════════════════════════ */
 
-const POST_DOC_CATEGORIES = ["quotations", "comparative", "vendor-docs", "other", "vendor-acceptance", "signed-copy", "vendor-invoice"];
+const POST_DOC_CATEGORIES = ["quotations", "comparative", "vendor-docs", "other", "signed-copy", "vendor-invoice"];
 
 /* ─────────────────────────────────────────
    POST /api/orders/upload
