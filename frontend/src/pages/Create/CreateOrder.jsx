@@ -3873,6 +3873,10 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState("All");
+  const tableScrollRef = useRef(null);
+  useEffect(() => {
+    if (tableScrollRef.current) tableScrollRef.current.scrollLeft = 0;
+  }, [activeTab]);
   const [pdfPreviewId, setPdfPreviewId] = useState(null);
   const [pdfPreviewNonce, setPdfPreviewNonce] = useState(0);
   const [pdfDownloading, setPdfDownloading] = useState(false);
@@ -5107,7 +5111,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
           </div>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 px-4 py-4 border-b border-slate-200 bg-slate-100">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-[0.7fr_1fr_1fr_1fr_1fr] gap-4 px-4 py-4 border-b border-slate-200 bg-slate-100">
           {[
             { label: "Total Orders", val: stats.total, icon: ShoppingBag, color: "text-[#4f46e5] bg-[#eef2ff]" },
             { label: "Total PO", val: stats.poCount, sub: `₹ ${stats.poValue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: FileText, color: "text-[#2563eb] bg-[#eff6ff]" },
@@ -5263,7 +5267,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
             </div>
           </div>
 
-          <div className="overflow-x-auto w-full rounded-none thin-scrollbar-light border-r border-slate-200">
+          <div ref={tableScrollRef} className="overflow-x-auto w-full rounded-none thin-scrollbar-light border-r border-slate-200">
             <table className="w-full text-sm text-left border-separate border-spacing-0 whitespace-nowrap border-t border-l border-slate-200">
               <thead>
                 <tr className="bg-slate-100">
