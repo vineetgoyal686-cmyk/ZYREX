@@ -3819,10 +3819,18 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
     catch { return {}; }
   });
   const isGlobalAdmin = currentUser.role === "global_admin";
+  // Priority order matters: Master Data and Procurement scopes must resolve to
+  // their own module_key first, not whichever module happens to sort first.
   const orderPermissionKeys = project ? ["order", "create_order"] : ["master_data_orders_tab", "order", "create_order"];
-  const myPerms = currentUser.app_permissions?.find(p => orderPermissionKeys.includes(p.module_key)) || {};
+  const myPerms = orderPermissionKeys
+    .map(k => currentUser.app_permissions?.find(p => p.module_key === k))
+    .find(Boolean) || {};
   const canEdit = isGlobalAdmin || !!myPerms.can_edit || !!myPerms.can_add;
   const canDelete = isGlobalAdmin || !!myPerms.can_delete;
+  const canTrashView    = isGlobalAdmin || !!myPerms.can_trash_view;
+  const canTrashLog     = isGlobalAdmin || !!myPerms.can_trash_log;
+  const canTrashRestore = isGlobalAdmin || !!myPerms.can_trash_restore;
+  const canTrashDelete  = isGlobalAdmin || !!myPerms.can_trash_delete;
 
   useEffect(() => {
     const token = localStorage.getItem("bms_token");
@@ -5176,7 +5184,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                     <div className="px-4 py-1.5 mb-1 border-b border-slate-50">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Status</span>
                     </div>
-                    {MORE_TABS.map(t => {
+                    {MORE_TABS.filter(t => t !== "Trash" || canTrashView).map(t => {
                       const count = getTabCount(t);
                       return (
                         <button
@@ -5413,20 +5421,24 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                           <div className="flex items-center justify-center gap-1.5">
                             {activeTab === "Trash" ? (
                               <>
-                                <button
-                                  onClick={() => setLogPanel({ orderId: o.id, orderNumber: o.order_number || "Draft" })}
-                                  className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-violet-600 hover:border-violet-200 hover:bg-violet-50 transition-all shadow-sm"
-                                  title="Activity Log">
-                                  <Activity size={14} />
-                                </button>
-                                {canDelete && (
+                                {canTrashLog && (
+                                  <button
+                                    onClick={() => setLogPanel({ orderId: o.id, orderNumber: o.order_number || "Draft" })}
+                                    className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-violet-600 hover:border-violet-200 hover:bg-violet-50 transition-all shadow-sm"
+                                    title="Activity Log">
+                                    <Activity size={14} />
+                                  </button>
+                                )}
+                                {canTrashRestore && (
+                                  <button
+                                    onClick={() => handleRestore(o.id)}
+                                    className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 transition-all shadow-sm"
+                                    title="Restore">
+                                    <Undo2 size={14} />
+                                  </button>
+                                )}
+                                {canTrashDelete && (
                                   <>
-                                    <button
-                                      onClick={() => handleRestore(o.id)}
-                                      className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50 transition-all shadow-sm"
-                                      title="Restore">
-                                      <Undo2 size={14} />
-                                    </button>
                                     <button
                                       onClick={() => handlePermanentDelete(o.id)}
                                       className="h-8 w-8 rounded-md border border-slate-200 flex items-center justify-center text-slate-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all shadow-sm"

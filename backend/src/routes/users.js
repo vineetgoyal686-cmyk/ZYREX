@@ -370,6 +370,7 @@ router.get("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
     "can_submit","can_approve","can_request","can_withdraw",
     "can_request_recall","can_request_amend","can_request_cancel",
     "can_withdraw_recall","can_withdraw_amend","can_withdraw_cancel","can_withdraw_submission",
+    "can_trash_view","can_trash_log","can_trash_restore","can_trash_delete",
     "order_overview_aging","order_intake","order_payment",
   ];
 
@@ -432,6 +433,10 @@ router.put("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
       can_withdraw_amend:    p.can_withdraw_amend    || false,
       can_withdraw_cancel:   p.can_withdraw_cancel   || false,
       can_withdraw_submission: p.can_withdraw_submission || false,
+      can_trash_view:        p.can_trash_view        || false,
+      can_trash_log:         p.can_trash_log         || false,
+      can_trash_restore:     p.can_trash_restore     || false,
+      can_trash_delete:      p.can_trash_delete      || false,
       order_overview_aging:  p.order_overview_aging  || false,
       order_intake:          p.order_intake          || false,
       order_payment:         p.order_payment         || false,

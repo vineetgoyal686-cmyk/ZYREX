@@ -90,6 +90,7 @@ router.post("/login", async (req, res) => {
     "can_submit","can_approve","can_request","can_withdraw",
     "can_request_recall","can_request_amend","can_request_cancel",
     "can_withdraw_recall","can_withdraw_amend","can_withdraw_cancel","can_withdraw_submission",
+    "can_trash_view","can_trash_log","can_trash_restore","can_trash_delete",
     "order_overview_aging","order_intake","order_payment",
   ];
   const profilePerms = (designationsRes.data || []).flatMap(d => d.app_permissions || []);
@@ -779,6 +780,7 @@ router.get("/my-permissions", async (req, res) => {
     "can_submit","can_approve","can_request","can_withdraw",
     "can_request_recall","can_request_amend","can_request_cancel",
     "can_withdraw_recall","can_withdraw_amend","can_withdraw_cancel","can_withdraw_submission",
+    "can_trash_view","can_trash_log","can_trash_restore","can_trash_delete",
     "order_overview_aging","order_intake","order_payment",
   ];
 

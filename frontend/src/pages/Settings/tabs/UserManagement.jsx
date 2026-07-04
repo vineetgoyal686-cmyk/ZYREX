@@ -155,7 +155,7 @@ export default function UserManagement({
     if (!profiles.length) {
       setNewUserProfilePerms(DEFAULT_PROFILE_PERMS);
       setNewUserModules(prev => prev.map(m => {
-        const blank = { ...m, can_view: false, can_add: false, can_edit: false, can_delete: false, can_trash: false, can_bulk_upload: false, can_export: false, can_log: false, can_download_document: false, can_take_action: false, can_submit: false, can_approve: false, can_issue: false, can_recall: false, can_reject: false, can_revert: false, can_request: false, can_withdraw: false, can_cancel: false, can_manage_amend: false };
+        const blank = { ...m, can_view: false, can_add: false, can_edit: false, can_delete: false, can_trash: false, can_trash_view: false, can_trash_log: false, can_trash_restore: false, can_trash_delete: false, can_bulk_upload: false, can_export: false, can_log: false, can_download_document: false, can_take_action: false, can_submit: false, can_approve: false, can_issue: false, can_recall: false, can_reject: false, can_revert: false, can_request: false, can_withdraw: false, can_cancel: false, can_manage_amend: false };
         if (m.module_key === "global_dashboard") GLOBAL_DASHBOARD_ORDER_KEYS.forEach(k => { blank[k] = false; });
         return blank;
       }));
@@ -175,7 +175,7 @@ export default function UserManagement({
     setNewUserModules(prev => prev.map(m => {
       const matches = allStored.filter(s => s.module_id === m.module_id);
       if (!matches.length) {
-        const blank = { ...m, can_view: false, can_add: false, can_edit: false, can_delete: false, can_trash: false, can_bulk_upload: false, can_export: false, can_log: false, can_download_document: false, can_take_action: false, can_submit: false, can_approve: false, can_issue: false, can_recall: false, can_reject: false, can_revert: false, can_request: false, can_withdraw: false, can_cancel: false, can_manage_amend: false };
+        const blank = { ...m, can_view: false, can_add: false, can_edit: false, can_delete: false, can_trash: false, can_trash_view: false, can_trash_log: false, can_trash_restore: false, can_trash_delete: false, can_bulk_upload: false, can_export: false, can_log: false, can_download_document: false, can_take_action: false, can_submit: false, can_approve: false, can_issue: false, can_recall: false, can_reject: false, can_revert: false, can_request: false, can_withdraw: false, can_cancel: false, can_manage_amend: false };
         if (m.module_key === "global_dashboard") GLOBAL_DASHBOARD_ORDER_KEYS.forEach(k => { blank[k] = false; });
         return blank;
       }
@@ -260,7 +260,7 @@ export default function UserManagement({
       setAllPermsSelected(false);
       setNewUserModules(prev => prev.map(m => {
         const cleared = {
-          can_view: false, can_add: false, can_edit: false, can_delete: false, can_trash: false, can_bulk_upload: false, can_export: false, can_log: false, can_download_document: false, can_take_action: false, can_submit: false, can_approve: false, can_issue: false, can_recall: false, can_reject: false, can_revert: false, can_request: false, can_withdraw: false, can_cancel: false, can_manage_amend: false,
+          can_view: false, can_add: false, can_edit: false, can_delete: false, can_trash: false, can_trash_view: false, can_trash_log: false, can_trash_restore: false, can_trash_delete: false, can_bulk_upload: false, can_export: false, can_log: false, can_download_document: false, can_take_action: false, can_submit: false, can_approve: false, can_issue: false, can_recall: false, can_reject: false, can_revert: false, can_request: false, can_withdraw: false, can_cancel: false, can_manage_amend: false,
         };
         if (m.module_key === "global_dashboard") {
           GLOBAL_DASHBOARD_ORDER_KEYS.forEach((k) => { cleared[k] = false; });
@@ -382,7 +382,7 @@ export default function UserManagement({
     setPermissions((prev) => prev.map((p) => {
       if (p.module_id !== moduleId) return p;
       const updated = { ...p, [key]: value };
-      const impliesView = ["can_add","can_edit","can_delete","can_trash","can_bulk_upload","can_export","can_download_document","can_log","can_take_action","can_submit","can_approve","can_issue","can_reject","can_revert","can_request","can_withdraw","can_recall","can_cancel","can_manage_amend", ...GLOBAL_DASHBOARD_ORDER_KEYS];
+      const impliesView = ["can_add","can_edit","can_delete","can_trash","can_trash_view","can_trash_log","can_trash_restore","can_trash_delete","can_bulk_upload","can_export","can_download_document","can_log","can_take_action","can_submit","can_approve","can_issue","can_reject","can_revert","can_request","can_withdraw","can_recall","can_cancel","can_manage_amend", ...GLOBAL_DASHBOARD_ORDER_KEYS];
       if (value === true && impliesView.includes(key)) updated.can_view = true;
       if (p.module_key === "global_dashboard" && key === "can_view" && !value) {
         GLOBAL_DASHBOARD_ORDER_KEYS.forEach((k) => { updated[k] = false; });

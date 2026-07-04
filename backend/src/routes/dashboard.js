@@ -5,18 +5,14 @@ const { requireAuth } = require("../middleware/auth");
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
-// 60-second in-memory cache for global stats (expensive query)
+// In-memory cache for global stats (expensive query), proactively warmed
+// so the first request after server start doesn't pay the full cost.
 let globalStatsCache = null;
 let globalStatsCacheAt = 0;
 const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_REFRESH_INTERVAL = 4 * 60 * 1000; // refresh before TTL expires
 
-/* GET /api/dashboard/global-stats */
-router.get("/global-stats", requireAuth, async (req, res) => {
-  try {
-    if (globalStatsCache && Date.now() - globalStatsCacheAt < CACHE_TTL) {
-      return res.json(globalStatsCache);
-    }
-
+async function computeGlobalStats() {
     const { data: orders, error: ordErr } = await supabase
       .schema("procurement")
       .from("purchase_orders")
@@ -87,7 +83,7 @@ router.get("/global-stats", requireAuth, async (req, res) => {
       const val    = Number(o.totals?.grandTotal) || 0;
       const valL   = Math.round(val / 100000 * 100) / 100;
       const key    = STATUS_KEY[o.status];
-      const madeBy = (o.made_by && uuidToName[o.made_by]) || o.made_by || "Unknown";
+      const madeBy = (o.made_by && uuidToName[o.made_by]) || o.made_by || "System";
 
       // Order stats
       orderStats.total[type]++;
@@ -231,11 +227,28 @@ router.get("/global-stats", requireAuth, async (req, res) => {
     };
     globalStatsCache = result;
     globalStatsCacheAt = Date.now();
+    return result;
+}
+
+/* GET /api/dashboard/global-stats */
+router.get("/global-stats", requireAuth, async (req, res) => {
+  try {
+    if (globalStatsCache && Date.now() - globalStatsCacheAt < CACHE_TTL) {
+      return res.json(globalStatsCache);
+    }
+    const result = await computeGlobalStats();
     res.json(result);
   } catch (err) {
     console.error("Dashboard stats error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
+
+// Warm the cache on server start, and keep refreshing it in the background
+// so users never hit a cold (slow) first request.
+computeGlobalStats().catch(err => console.error("Dashboard warmup error:", err.message));
+setInterval(() => {
+  computeGlobalStats().catch(err => console.error("Dashboard refresh error:", err.message));
+}, CACHE_REFRESH_INTERVAL);
 
 module.exports = router;

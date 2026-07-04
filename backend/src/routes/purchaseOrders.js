@@ -852,7 +852,7 @@ router.get("/trash", async (req, res) => {
 router.post("/:id/restore", async (req, res) => {
   try {
     const { data: order, error: fetchErr } = await supabase.schema("procurement")
-      .from("purchase_orders").select("status, snapshot").eq("id", req.params.id).single();
+      .from("purchase_orders").select("status, snapshot, amended_from_id").eq("id", req.params.id).single();
     if (fetchErr) throw fetchErr;
     if (order.status !== "Deleted") {
       return res.status(400).json({ error: "Only trashed orders can be restored." });
@@ -875,6 +875,34 @@ router.post("/:id/restore", async (req, res) => {
     const { error } = await supabase.schema("procurement").from("purchase_orders")
       .update({ status: originalStatus, snapshot: newSnapshot, updated_at: restoredAt }).eq("id", req.params.id);
     if (error) throw error;
+
+    // Mirror image of the delete-time revert: if this restored order is an
+    // amendment clone whose parent was reverted to "Issued" when it got
+    // trashed, put the parent back to "Amended" now that the clone exists again.
+    if (order.amended_from_id) {
+      const { data: parent } = await supabase.schema("procurement")
+        .from("purchase_orders")
+        .select("status, snapshot")
+        .eq("id", order.amended_from_id)
+        .single();
+      if (parent?.status === "Issued") {
+        const parentActLog = Array.isArray(parent.snapshot?.activity_log) ? [...parent.snapshot.activity_log] : [];
+        parentActLog.push({
+          action: "Amended",
+          action_by: restoredBy,
+          action_at: restoredAt,
+          comments: "Amendment draft restored from Trash",
+        });
+        await supabase.schema("procurement").from("purchase_orders")
+          .update({
+            status: "Amended",
+            snapshot: { ...(parent.snapshot || {}), activity_log: parentActLog },
+            updated_at: restoredAt,
+          })
+          .eq("id", order.amended_from_id);
+      }
+    }
+
     cache.bust(ORDERS_CACHE_KEY);
     res.json({ success: true, restored_status: originalStatus });
   } catch (err) {
@@ -903,6 +931,11 @@ router.delete("/:id/permanent", async (req, res) => {
       await Promise.allSettled(filesToDelete.map(url => removeStorageFile(supabase, "procurement-docs", url)));
     } catch { /* silent */ }
     await supabase.schema("procurement").from("purchase_order_items").delete().eq("order_id", req.params.id);
+    // order_amendments.new_order_id points at the clone this order created (if
+    // it was ever the result of an approved amendment) — clear that reference
+    // first so the FK doesn't block deleting the order itself, while keeping
+    // the amendment request row around for history.
+    await supabase.from("order_amendments").update({ new_order_id: null }).eq("new_order_id", req.params.id);
     const { error } = await supabase.schema("procurement").from("purchase_orders").delete().eq("id", req.params.id);
     if (error) throw error;
     res.json({ success: true });
@@ -2184,7 +2217,7 @@ router.delete("/:id", requirePerm("order", "can_delete"), async (req, res) => {
     }
     const { data: order, error: orderErr } = await supabase.schema("procurement")
       .from("purchase_orders")
-      .select("status, snapshot")
+      .select("status, snapshot, amended_from_id")
       .eq("id", req.params.id)
       .single();
     if (orderErr) throw orderErr;
@@ -2211,6 +2244,33 @@ router.delete("/:id", requirePerm("order", "can_delete"), async (req, res) => {
     const { error } = await supabase.schema("procurement").from("purchase_orders")
       .update({ status: "Deleted", snapshot: newSnapshot, updated_at: deleted_at }).eq("id", req.params.id);
     if (error) throw error;
+
+    // If this was an amendment clone (Draft), deleting it means the amendment
+    // never went through — revert the parent order from "Amended" back to "Issued".
+    if (order.amended_from_id) {
+      const { data: parent } = await supabase.schema("procurement")
+        .from("purchase_orders")
+        .select("status, snapshot")
+        .eq("id", order.amended_from_id)
+        .single();
+      if (parent?.status === "Amended") {
+        const parentActLog = Array.isArray(parent.snapshot?.activity_log) ? [...parent.snapshot.activity_log] : [];
+        parentActLog.push({
+          action: "Reverted",
+          action_by: deleted_by,
+          action_at: deleted_at,
+          comments: "Amendment draft deleted — reverted to Issued",
+        });
+        await supabase.schema("procurement").from("purchase_orders")
+          .update({
+            status: "Issued",
+            snapshot: { ...(parent.snapshot || {}), activity_log: parentActLog },
+            updated_at: deleted_at,
+          })
+          .eq("id", order.amended_from_id);
+      }
+    }
+
     cache.bust(ORDERS_CACHE_KEY);
     res.json({ success: true });
   } catch (err) {

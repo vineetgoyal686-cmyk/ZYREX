@@ -149,10 +149,14 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
   };
 
   const MASTER_DATA_COLUMNS = [
-    { key: "can_view",        label: "View"        },
-    { key: "can_add",         label: "Create"      },
-    { key: "can_bulk_upload", label: "Bulk Upload" },
-    { key: "can_export",      label: "Export"      },
+    { key: "can_view",          label: "View"          },
+    { key: "can_add",           label: "Create"        },
+    { key: "can_bulk_upload",   label: "Bulk Upload"   },
+    { key: "can_export",        label: "Export"        },
+    { key: "can_trash_view",    label: "Trash View"    },
+    { key: "can_trash_log",     label: "Trash Log"     },
+    { key: "can_trash_restore", label: "Trash Restore" },
+    { key: "can_trash_delete",  label: "Trash Delete"  },
   ];
 
   const renderMasterDataTable = (groupMods) => (
@@ -419,6 +423,7 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
     { label: "Request",  keys: ["can_request_recall", "can_request_amend", "can_request_cancel"] },
     { label: "Withdraw", keys: ["can_withdraw_recall", "can_withdraw_amend", "can_withdraw_cancel", "can_withdraw_submission"] },
     { label: "Utility",  keys: ["can_export", "can_download_document", "can_bulk_upload"] },
+    { label: "Trash",    keys: ["can_trash_view", "can_trash_log", "can_trash_restore", "can_trash_delete"] },
   ];
 
   const renderOrderCard = (mod) => {

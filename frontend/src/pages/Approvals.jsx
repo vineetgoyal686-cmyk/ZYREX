@@ -302,7 +302,9 @@ export default function Approvals() {
       });
       const data = await res.json();
       if (data.success) {
-        load(); // Refresh list
+        // Optimistically remove from list instantly, then background-refresh
+        setAmendments(prev => prev.filter(a => a.id !== request_id));
+        load();
       } else {
         showToast(data.error, "error");
       }
