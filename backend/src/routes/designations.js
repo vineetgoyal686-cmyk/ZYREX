@@ -90,7 +90,7 @@ router.post("/:id/sync", requireAuth, requireGlobalOrSuper, async (req, res) => 
 
   // Find all users currently assigned this template
   const { data: users, error: usersErr } = await admin
-    .from("users").select("id").eq("designation_id", req.params.id);
+    .from("users").select("id, profile_permissions").eq("designation_id", req.params.id);
   if (usersErr) return res.status(500).json({ error: usersErr.message });
   if (!users || users.length === 0) return res.json({ success: true, synced: 0 });
 
@@ -140,11 +140,19 @@ router.post("/:id/sync", requireAuth, requireGlobalOrSuper, async (req, res) => 
     if (upErr) return res.status(500).json({ error: upErr.message });
   }
 
-  // Sync profile_permissions on each user too
-  const { error: profErr } = await admin
-    .from("users")
-    .update({ profile_permissions: tpl.profile_permissions || {} })
-    .in("id", userIds);
+  // Sync profile_permissions on each user too — preserve each user's personal
+  // ui data (signature, cover image, etc.) and allowed_projects, since those
+  // live in the same JSON column but aren't part of the designation template.
+  const profResults = await Promise.all(users.map(u => {
+    const existing = u.profile_permissions || {};
+    const merged = {
+      ...(tpl.profile_permissions || {}),
+      ...(existing.ui !== undefined ? { ui: existing.ui } : {}),
+      ...(existing.allowed_projects !== undefined ? { allowed_projects: existing.allowed_projects } : {}),
+    };
+    return admin.from("users").update({ profile_permissions: merged }).eq("id", u.id);
+  }));
+  const profErr = profResults.find(r => r.error)?.error;
   if (profErr) return res.status(500).json({ error: profErr.message });
 
   res.json({ success: true, synced: userIds.length });
@@ -194,8 +202,14 @@ router.post("/:id/apply/:userId", requireAuth, requireAdminOrAbove, async (req, 
     if (upErr) return res.status(500).json({ error: upErr.message });
   }
 
+  const { data: targetUser } = await admin.from("users").select("profile_permissions").eq("id", req.params.userId).single();
+  const existing = targetUser?.profile_permissions || {};
   await admin.from("users").update({
-    profile_permissions: tpl.profile_permissions || {},
+    profile_permissions: {
+      ...(tpl.profile_permissions || {}),
+      ...(existing.ui !== undefined ? { ui: existing.ui } : {}),
+      ...(existing.allowed_projects !== undefined ? { allowed_projects: existing.allowed_projects } : {}),
+    },
     designation_id:      tpl.id,
     designation:         tpl.name,
   }).eq("id", req.params.userId);

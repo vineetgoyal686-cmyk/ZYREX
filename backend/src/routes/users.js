@@ -224,9 +224,20 @@ router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
   const { name, contact_no, designation, designation_id, access_profile_ids, department, role, is_active, profile_permissions, reset_permissions, can_manage_roles } = req.body;
 
   const admin = getAdminClient();
-  const { data: targetUser } = await admin.from("users").select("role").eq("id", id).single();
+  const { data: targetUser } = await admin.from("users").select("role, profile_permissions").eq("id", id).single();
 
   if (!targetUser) return res.status(404).json({ error: "User not found" });
+
+  // Permission edits below replace the whole profile_permissions JSON blob,
+  // but personal ui data (signature, cover image) and allowed_projects live
+  // in that same column — preserve them so editing permissions doesn't wipe
+  // a user's uploaded signature.
+  const existingProfilePerms = targetUser.profile_permissions || {};
+  const withPreservedUi = (perms) => ({
+    ...perms,
+    ...(existingProfilePerms.ui !== undefined ? { ui: existingProfilePerms.ui } : {}),
+    ...(existingProfilePerms.allowed_projects !== undefined ? { allowed_projects: existingProfilePerms.allowed_projects } : {}),
+  });
 
   const ROLE_RANK = { global_admin: 4, super_admin: 3, admin: 2, user: 1 };
   const callerRank = ROLE_RANK[req.user.role] ?? 0;
@@ -277,27 +288,27 @@ router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
       const isSA = updates.role === "super_admin";
       if (updates.role === "user") {
         await admin.from("permissions").delete().eq("user_id", id);
-        updates.profile_permissions = {
+        updates.profile_permissions = withPreservedUi({
           manage_user:    { view: false, add: false, edit: false, delete: false, manage_permissions: false },
           manage_project: { view: false, add: false, edit: false, delete: false },
           serialization:  { view: false, edit: false },
           approval_flow:  { view: false, edit: false },
-        };
+        });
       } else {
         await admin.from("permissions").upsert(rows, { onConflict: "user_id,module_id" });
-        updates.profile_permissions = {
+        updates.profile_permissions = withPreservedUi({
           manage_user:    { view: true, add: isSA, edit: isSA, delete: isSA, manage_permissions: isSA },
           manage_project: { view: true, add: isSA, edit: isSA, delete: isSA },
           serialization:  { view: true, edit: isSA },
           approval_flow:  { view: true, edit: isSA },
-        };
+        });
       }
     }
   }
 
   if (profile_permissions !== undefined && !reset_permissions) {
     if (req.user.role === "global_admin" || req.user.role === "super_admin") {
-      updates.profile_permissions = profile_permissions;
+      updates.profile_permissions = withPreservedUi(profile_permissions);
     }
   }
 

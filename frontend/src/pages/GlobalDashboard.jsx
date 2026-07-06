@@ -855,7 +855,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                                   </div>
                                 </div>
                                 <div style={{ width: isMobile ? 66 : 90, flexShrink: 0, paddingLeft: isMobile ? 8 : 16, textAlign: "center" }}>
-                                  <span style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>₹{fmt(s.total)}</span>
+                                  <span style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>₹{fmt(s.total)}L</span>
                                 </div>
                                 {hoveredEntity === i && (
                                   <div style={{ position: "absolute", top: "calc(100% + 5px)", left: 90, zIndex: 200,
@@ -864,17 +864,17 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                                     <div style={{ color: "#64748b", fontSize: 10, fontWeight: 600, marginBottom: 7 }}>{s.name || s.entity}</div>
                                     <div style={{ display: "flex", gap: 14 }}>
                                       <div>
-                                        <div style={{ color: EP, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.po)}</div>
+                                        <div style={{ color: EP, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.po)}L</div>
                                         <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 1 }}>PO · {poPct}%</div>
                                       </div>
                                       <div style={{ width: 1, background: "#c7d2fe" }} />
                                       <div>
-                                        <div style={{ color: EW, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.wo)}</div>
+                                        <div style={{ color: EW, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.wo)}L</div>
                                         <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 1 }}>WO · {woPct}%</div>
                                       </div>
                                       <div style={{ width: 1, background: "#c7d2fe" }} />
                                       <div>
-                                        <div style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>₹{fmt(s.total)}</div>
+                                        <div style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>₹{fmt(s.total)}L</div>
                                         <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 1 }}>Total</div>
                                       </div>
                                     </div>
@@ -965,7 +965,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                                   </div>
                                 </div>
                                 <div style={{ width: isMobile ? 66 : 90, flexShrink: 0, paddingLeft: isMobile ? 8 : 16, textAlign: "center" }}>
-                                  <span style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>₹{fmt(s.total)}</span>
+                                  <span style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>₹{fmt(s.total)}L</span>
                                 </div>
                                 {hoveredSite === i && (
                                   <div style={{ position: "absolute", top: "calc(100% + 5px)", left: 90, zIndex: 200,
@@ -974,17 +974,17 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                                     <div style={{ color: "#64748b", fontSize: 10, fontWeight: 600, marginBottom: 7 }}>{s.name || s.site}</div>
                                     <div style={{ display: "flex", gap: 14 }}>
                                       <div>
-                                        <div style={{ color: SP, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.po)}</div>
+                                        <div style={{ color: SP, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.po)}L</div>
                                         <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 1 }}>PO · {poPct}%</div>
                                       </div>
                                       <div style={{ width: 1, background: "#fecdd3" }} />
                                       <div>
-                                        <div style={{ color: SW, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.wo)}</div>
+                                        <div style={{ color: SW, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.wo)}L</div>
                                         <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 1 }}>WO · {woPct}%</div>
                                       </div>
                                       <div style={{ width: 1, background: "#fecdd3" }} />
                                       <div>
-                                        <div style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>₹{fmt(s.total)}</div>
+                                        <div style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>₹{fmt(s.total)}L</div>
                                         <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 1 }}>Total</div>
                                       </div>
                                     </div>
