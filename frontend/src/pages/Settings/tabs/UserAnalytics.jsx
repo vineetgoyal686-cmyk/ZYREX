@@ -15,7 +15,55 @@ const fmtDuration = (seconds) => {
 
 const fmtTime = (iso) => iso
   ? new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
-  : "—";
+  : null;
+
+// Friendly display names for module_key values (screens/tabs in the app).
+// Falls back to auto-formatting ("my_module" -> "My Module") for anything not listed here.
+const MODULE_LABELS = {
+  global_dashboard: "Global Dashboard",
+  profile: "Profile",
+  organisation: "Organisation",
+  historical_data: "Historical Data",
+  audit: "Audit",
+  dashboard: "Project Dashboard",
+  view_3d: "3D View",
+  inbox: "Inbox",
+  order: "Orders",
+  intake: "Intake",
+  payment_request: "Payment Request",
+  master_data: "Master Data",
+  master_data_vendor: "Master Data — Vendors",
+  master_data_products: "Master Data — Products",
+  master_data_orders_tab: "Master Data — Orders",
+  master_data_intakes: "Master Data — Intakes",
+  master_data_clauses: "Master Data — Clauses",
+  vendor_list: "Vendor List",
+  item_list: "Item List",
+  category_list: "Category List",
+  uom: "Unit of Measure",
+  term_condition: "Terms & Conditions",
+  payment_terms: "Payment Terms",
+  government_laws: "Government Laws",
+  annexure: "Annexure",
+  received_record: "Received Material (GRN)",
+  stock_available: "Stock Inventory",
+  consumption_record: "Material Issue",
+  execution_plan: "Work Activity",
+  staff_attendance: "Staff Attendance",
+  daily_manpower: "Manpower",
+  site_expense: "Site Expense",
+  petty_cash: "Petty Cash",
+  bills_docs: "Bills & Documents",
+  loa: "LOA",
+  boq: "BOQ",
+  drawings: "Drawings",
+  ra_bills: "RA Bills",
+  create__order: "Create Order",
+  create__intake: "Create Intake",
+  user_analytics: "User Analytics",
+};
+const moduleLabel = (key) => MODULE_LABELS[key]
+  || key.replace(/__/g, " – ").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 function ManageAccessModal({ onClose, showToast }) {
   const [allUsers, setAllUsers] = useState([]);
@@ -269,48 +317,68 @@ export default function UserAnalytics({ isAdmin = false, showToast }) {
         )}
 
       {!loading && !error && data && data.users.length > 0 && (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {data.users.map((u) => (
-            <div key={u.user_id} className="border border-slate-200 rounded-2xl p-5 bg-white shadow-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div key={u.user_id} className="border border-slate-200 rounded-xl bg-white shadow-sm overflow-hidden">
+              {/* Name + total active time */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3.5">
                 <div>
                   <p className="font-semibold text-slate-800">{u.user_name}</p>
                   <p className="text-xs text-slate-400">{u.user_email}</p>
                 </div>
-                <div className="flex items-center gap-1.5 text-sm font-semibold text-indigo-700">
+                <div className="flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1.5 text-sm font-bold text-indigo-700">
                   <Clock size={14} />
                   {fmtDuration(u.total_seconds)} active
                 </div>
               </div>
 
-              {u.modules.length > 0 && (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mb-3">
-                  {u.modules
-                    .sort((a, b) => b.duration_seconds - a.duration_seconds)
-                    .map((m) => (
-                      <div key={m.module_key} className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
-                        <p className="text-[11px] text-slate-400 truncate">{m.module_key}</p>
-                        <p className="text-sm font-semibold text-slate-700">{fmtDuration(m.duration_seconds)}</p>
+              {/* Login / logout sessions */}
+              <div className="px-5 py-3 border-t border-slate-100 bg-slate-50/60">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">Login Sessions</p>
+                {u.sessions.length === 0 ? (
+                  <p className="text-sm text-slate-400">No login recorded today.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-x-6 gap-y-1">
+                    {u.sessions.map((s, i) => (
+                      <div key={i} className="flex items-center gap-1.5 text-sm text-slate-600">
+                        <LogIn size={13} className="text-slate-400" />
+                        <span>Logged in <b className="text-slate-800">{fmtTime(s.login_at)}</b></span>
+                        <span className="text-slate-300">•</span>
+                        <span>
+                          {fmtTime(s.logout_at)
+                            ? <>Logged out <b className="text-slate-800">{fmtTime(s.logout_at)}</b></>
+                            : <span className="text-emerald-600 font-semibold">Still active</span>}
+                        </span>
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Module-wise time */}
+              {u.modules.length > 0 && (
+                <div className="px-5 py-3 border-t border-slate-100">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">Time by Screen</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                    {u.modules
+                      .sort((a, b) => b.duration_seconds - a.duration_seconds)
+                      .map((m) => (
+                        <div key={m.module_key} className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2">
+                          <p className="text-[11px] text-slate-400 truncate">{moduleLabel(m.module_key)}</p>
+                          <p className="text-sm font-semibold text-slate-700">{fmtDuration(m.duration_seconds)}</p>
+                        </div>
+                      ))}
+                  </div>
                 </div>
               )}
 
-              <div className="flex flex-wrap gap-4 text-xs text-slate-500 border-t border-slate-100 pt-3">
-                <span className="flex items-center gap-1">
-                  <LogIn size={12} /> {u.sessions.length} session{u.sessions.length === 1 ? "" : "s"}
-                  {u.sessions.length > 0 && (
-                    <span className="text-slate-400">
-                      {" "}({u.sessions.map(s => `${fmtTime(s.login_at)}–${fmtTime(s.logout_at)}`).join(", ")})
-                    </span>
-                  )}
-                </span>
-                <span>Cancel/recall requests raised: {u.requests_raised}</span>
-                <span>Actioned: {u.requests_actioned}</span>
-                {u.avg_turnaround_seconds != null && (
-                  <span>Avg turnaround: {fmtDuration(u.avg_turnaround_seconds)}</span>
-                )}
-              </div>
+              {/* Recall/cancel request activity */}
+              {(u.requests_raised > 0 || u.requests_actioned > 0) && (
+                <div className="px-5 py-2.5 border-t border-slate-100 text-xs text-slate-500">
+                  Raised {u.requests_raised} recall/cancel request{u.requests_raised === 1 ? "" : "s"}, handled {u.requests_actioned}
+                  {u.avg_turnaround_seconds != null && <> (avg response time: {fmtDuration(u.avg_turnaround_seconds)})</>}
+                </div>
+              )}
             </div>
           ))}
         </div>
