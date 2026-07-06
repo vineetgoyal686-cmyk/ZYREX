@@ -1100,6 +1100,33 @@ router.get("/:id", async (req, res) => {
       }
     }
 
+    // Contact persons are only a legal part of the order once it's Issued —
+    // before that (Draft, Pending Approval, etc.) always show the current
+    // phone number/name from Organisation Master, not what was picked at save time.
+    if (!lean && order.status !== "Issued" && Array.isArray(order.snapshot?.contacts) && order.snapshot.contacts.length) {
+      const contactIds = order.snapshot.contacts.map(c => c.id).filter(Boolean);
+      if (contactIds.length) {
+        const { data: liveContacts } = await supabase.schema("organisation")
+          .from("employees")
+          .select("id, person_name, contact_number, designation")
+          .in("id", contactIds);
+        const liveById = new Map((liveContacts || []).map(c => [c.id, c]));
+        order.snapshot = {
+          ...order.snapshot,
+          contacts: order.snapshot.contacts.map(c => {
+            const live = liveById.get(c.id);
+            if (!live) return c;
+            return {
+              ...c,
+              personName:    live.person_name    || c.personName,
+              contactNumber: live.contact_number || c.contactNumber,
+              designation:   live.designation     || c.designation,
+            };
+          }),
+        };
+      }
+    }
+
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const needsUserLookup = order.made_by && UUID_RE.test(order.made_by);
 
@@ -2016,8 +2043,32 @@ const loadOrderForRender = async (orderId) => {
   const vend = cleanOrder.vendors || {};
   const site = cleanOrder.sites || cleanOrder.snapshot?.site || {};
   // Mirror ViewOrder logic: snapshot contacts first, fallback to live JOIN
-  const snapContacts = cleanOrder.snapshot?.contacts;
+  let snapContacts = cleanOrder.snapshot?.contacts;
   const liveContact = cleanOrder.contact_person;
+
+  // Same rule as ViewOrder: contacts are only a legal part of the order once
+  // Issued — before that, always pull the current phone number/name.
+  if (cleanOrder.status !== "Issued" && Array.isArray(snapContacts) && snapContacts.length) {
+    const contactIds = snapContacts.map(c => c.id).filter(Boolean);
+    if (contactIds.length) {
+      const { data: liveContacts } = await supabase.schema("organisation")
+        .from("employees")
+        .select("id, person_name, contact_number, designation")
+        .in("id", contactIds);
+      const liveById = new Map((liveContacts || []).map(c => [c.id, c]));
+      snapContacts = snapContacts.map(c => {
+        const live = liveById.get(c.id);
+        if (!live) return c;
+        return {
+          ...c,
+          personName:    live.person_name    || c.personName,
+          contactNumber: live.contact_number || c.contactNumber,
+          designation:   live.designation     || c.designation,
+        };
+      });
+    }
+  }
+
   const finalContacts = (snapContacts && snapContacts.length > 0)
     ? snapContacts
     : liveContact ? [liveContact] : [];
