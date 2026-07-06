@@ -39,7 +39,7 @@ import {
 const cx = (...classes) => classes.filter(Boolean).join(" ");
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
-const TAB_MODULE_KEY = {
+export const TAB_MODULE_KEY = {
   global_dashboard: "global_dashboard",
   approvals: "inbox",
   approvals__orders: "order",

@@ -27,6 +27,7 @@ const dashboardRoutes        = require("./src/routes/dashboard");
 const historicalOrdersRoutes = require("./src/routes/historicalOrders");
 const contactRoutes          = require("./src/routes/contact");
 const organisationRoutes     = require("./src/routes/organisation");
+const screenTimeRoutes       = require("./src/routes/screenTime");
 
 const app = express();
 
@@ -64,6 +65,7 @@ app.use("/api/dashboard",          dashboardRoutes);
 app.use("/api/historical-orders",  historicalOrdersRoutes);
 app.use("/api/contact",            contactRoutes);
 app.use("/api/organisation",       organisationRoutes);
+app.use("/api/screen-time",        screenTimeRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
@@ -76,6 +78,14 @@ app.listen(PORT, "0.0.0.0", () => {
     try {
       await supabase.from("users").select("id").limit(1).single();
     } catch (_) { /* silent — just a ping */ }
+    try {
+      // Close login sessions that never got a clean logout (crash/force-quit/
+      // network drop before beforeunload could fire) so they don't stay "open" forever.
+      await supabase.from("login_events")
+        .update({ logout_at: new Date().toISOString() })
+        .is("logout_at", null)
+        .lt("login_at", new Date(Date.now() - 18 * 60 * 60 * 1000).toISOString());
+    } catch (_) { /* silent */ }
   }, 4 * 60 * 1000);
 });
 

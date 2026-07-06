@@ -41,4 +41,4 @@ const requireAuth = async (req, res, next) => {
 // Call this after a user profile update to bust the cache
 const bustUserCache = (userId) => userCache.delete(userId);
 
-module.exports = { requireAuth, bustUserCache };
+module.exports = { requireAuth, bustUserCache, decodeJwt };

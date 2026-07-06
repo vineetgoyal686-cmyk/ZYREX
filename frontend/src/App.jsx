@@ -2,7 +2,8 @@ import React, { useState, useEffect, lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
-import Sidebar from "./components/Sidebar";
+import Sidebar, { TAB_MODULE_KEY } from "./components/Sidebar";
+import { useScreenTimeTracker } from "./hooks/useScreenTimeTracker";
 import MobileHeader from "./components/MobileHeader";
 import MobileBottomNav from "./components/MobileBottomNav";
 
@@ -423,6 +424,8 @@ function App() {
   // Derive activeTab and selectedProject from current URL path
   const { tab: activeTab, project: selectedProject } = pathToTabAndProject(location.pathname);
 
+  useScreenTimeTracker(isLoggedIn ? (TAB_MODULE_KEY[activeTab] || activeTab) : null);
+
   const handleSetIsCollapsed = (val) => {
     const next = typeof val === "function" ? val(isCollapsed) : val;
     setIsCollapsed(next);
@@ -454,13 +457,14 @@ function App() {
     } catch { /* silent */ }
   };
 
-  const fetchUserPermissions = async () => {
+  const fetchUserPermissions = async (attempt = 0) => {
     const token = localStorage.getItem("bms_token");
     if (!token) return;
     try {
-      const res  = await fetch(`${API}/api/auth/my-permissions`, {
+      const res = await fetch(`${API}/api/auth/my-permissions`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+      if (!res.ok) throw new Error(`my-permissions failed: ${res.status}`);
       const data = await res.json();
       const permMap = {};
       (data.permissions || []).forEach(p => { permMap[p.module_key] = p; });
@@ -472,7 +476,13 @@ function App() {
         localStorage.setItem("bms_user", JSON.stringify(user));
         window.dispatchEvent(new CustomEvent("bms_permissions_updated"));
       }
-    } catch { /* silent */ }
+    } catch {
+      // Transient network/backend failure (e.g. DNS blip) must not permanently
+      // hide the user's tabs — retry with backoff instead of failing silently.
+      const nextAttempt = attempt + 1;
+      const delay = Math.min(30000, 2000 * 2 ** attempt);
+      setTimeout(() => fetchUserPermissions(nextAttempt), delay);
+    }
   };
 
   useEffect(() => {
@@ -493,11 +503,32 @@ function App() {
     }
     setIsLoggedIn(true);
     navigate("/dashboard", { replace: true });
+
+    const token = localStorage.getItem("bms_token");
+    if (token) {
+      fetch(`${API}/api/screen-time/login`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then(r => r.json())
+        .then(data => { if (data?.session_id) localStorage.setItem("bms_screen_session_id", data.session_id); })
+        .catch(() => { /* silent — best-effort telemetry */ });
+    }
   };
 
   const handleLogout = () => {
+    const token = localStorage.getItem("bms_token");
+    const sessionId = localStorage.getItem("bms_screen_session_id");
+    if (token && sessionId) {
+      fetch(`${API}/api/screen-time/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ session_id: sessionId }),
+      }).catch(() => { /* silent — best-effort telemetry */ });
+    }
     localStorage.removeItem("bms_token");
     localStorage.removeItem("bms_user");
+    localStorage.removeItem("bms_screen_session_id");
     setIsLoggedIn(false);
     setUserRole(null);
     setCurrentUser({});

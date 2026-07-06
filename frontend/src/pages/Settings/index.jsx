@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   UserCircle, Lock, Users, ShieldCheck, Briefcase,
   FolderOpen, KeyRound, Inbox, Workflow, Mail, X, UserCheck,
-  PanelLeftClose, PanelLeftOpen,
+  PanelLeftClose, PanelLeftOpen, BarChart3,
 } from "lucide-react";
 import api from "../../utils/api";
 import ManageProjects from "../../components/ManageProjects";
@@ -16,6 +16,7 @@ import Serialization from "./tabs/Serialization";
 import RequestHandler from "./tabs/RequestHandler";
 import ApprovalFlow from "./tabs/ApprovalFlow";
 import Delegation from "./tabs/Delegation";
+import UserAnalytics from "./tabs/UserAnalytics";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -150,6 +151,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
   const showApprovalFlowTab   = isSuperOrGlobal || !!pp.approval_flow?.view;
   const showRequestHandlerTab = isSuperOrGlobal || !!pp.request_handler?.view;
   const showMailManagementTab = isSuperOrGlobal || !!pp.mail_management?.view;
+  const showUserAnalyticsTab  = isGlobalAdmin || !!pp.user_analytics?.view;
   const adminSettings   = isGlobalAdmin || currentUser.role === "super_admin";
 
   const settingsNavGroups = (() => {
@@ -166,6 +168,9 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
         : []),
       ...(adminSettings
         ? [{ id: "designations", label: "Access Profiles", icon: Briefcase }]
+        : []),
+      ...(showUserAnalyticsTab
+        ? [{ id: "user_analytics", label: "User Analytics", icon: BarChart3 }]
         : []),
     ];
     const workflow = [
@@ -277,7 +282,12 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
             />
           )}
 
-          <div className={`min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4 ${(section === "serialization" || section === "team") ? "hidden" : ""}`}>
+          {/* User Analytics = full-bleed, no padding (sticky header attaches to the Settings sidebar) */}
+          {section === "user_analytics" && showUserAnalyticsTab && (
+            <UserAnalytics isAdmin={isGlobalAdmin} showToast={showToast} />
+          )}
+
+          <div className={`min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4 ${(section === "serialization" || section === "team" || section === "user_analytics") ? "hidden" : ""}`}>
 
             {section === "profile" && (
               <PersonalInfo
