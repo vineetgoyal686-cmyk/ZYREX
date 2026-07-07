@@ -15,9 +15,13 @@ const requireAdminOrAbove = (req, res, next) => {
 
 async function addOrderActivityLog(admin, orderId, action, userName, comments = "") {
   try {
-    const { data: order } = await admin.schema("procurement").from("purchase_orders")
+    const { data: order, error } = await admin.schema("procurement").from("purchase_orders")
       .select("snapshot").eq("id", orderId).single();
-    const snap = order?.snapshot || {};
+    if (error || !order) {
+      console.error("addOrderActivityLog: could not read order snapshot, skipping log:", error?.message);
+      return;
+    }
+    const snap = order.snapshot || {};
     const log = Array.isArray(snap.activity_log) ? [...snap.activity_log] : [];
     log.push({ action, action_by: userName, action_at: new Date().toISOString(), comments });
     await admin.schema("procurement").from("purchase_orders")
