@@ -23,6 +23,8 @@ const fmtAmt = (n) => {
   if (v >= 1000)     return `₹${(v / 1000).toFixed(1)}K`;
   return `₹${fmt(v)}`;
 };
+// Safe percentage — avoids NaN% when the total is 0 (e.g. before data has loaded)
+const pct = (part, total) => (total > 0 ? Math.round((part / total) * 100) : 0);
 
 // ─── PALETTE ─────────────────────────────────────────────────────────────────
 const CP  = "#06b6d4";   // cyan-500 → PO
@@ -405,6 +407,8 @@ const EMPTY_STATS = {
 const GlobalDashboard = memo(function GlobalDashboard() {
   const [stats,            setStats]            = useState(EMPTY_STATS);
   const [loading,          setLoading]          = useState(true);
+  const [loadError,        setLoadError]        = useState(false);
+  const [fetchNonce,       setFetchNonce]       = useState(0);
   const [selectedSites,    setSelectedSites]    = useState([]);
   const [selectedEntities, setSelectedEntities] = useState([]);
   const [dateRange,        setDateRange]        = useState("This Year");
@@ -437,10 +441,14 @@ const GlobalDashboard = memo(function GlobalDashboard() {
 
   // Fetch real data from backend
   useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setLoadError(false);
     const token = localStorage.getItem("bms_token") || "";
     fetch(`${API}/api/dashboard/global-stats`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.ok ? r.json() : null)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`Request failed (${r.status})`)))
       .then(data => {
+        if (!alive) return;
         if (data && !data.error) {
           setStats(data);
           const sl = (data.siteSpend   || []).map(s => s.site);
@@ -450,11 +458,14 @@ const GlobalDashboard = memo(function GlobalDashboard() {
           // populate module-level tooltip lookup maps
           monthlySpendBySite = data.monthlySpendBySite || {};
           monthlyCountBySite = data.monthlyCountBySite || {};
+        } else {
+          setLoadError(true);
         }
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+      .catch(() => { if (alive) setLoadError(true); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [fetchNonce]);
 
   const siteList   = useMemo(() => (stats.siteSpend   || []).map(s => s.site),   [stats]);
   const entityList = useMemo(() => (stats.entitySpend || []).map(e => e.entity), [stats]);
@@ -472,7 +483,33 @@ const GlobalDashboard = memo(function GlobalDashboard() {
   const d        = stats.orders;
 
   return (
-    <div style={{ fontFamily: "'Inter','DM Sans',sans-serif", paddingBottom: 24, paddingTop: isMobile ? 0 : 0, width: "100%", boxSizing: "border-box", overflowX: "hidden", padding: isMobile ? "12px 10px 24px" : undefined }}>
+    <div style={{ fontFamily: "'Inter','DM Sans',sans-serif", paddingBottom: 24, paddingTop: isMobile ? 0 : 0, width: "100%", boxSizing: "border-box", overflowX: "hidden", padding: isMobile ? "12px 10px 24px" : undefined, position: "relative", minHeight: loading || loadError ? 400 : undefined }}>
+
+      {/* ── LOADING / ERROR OVERLAY ── */}
+      {(loading || loadError) && (
+        <div style={{ position: "absolute", inset: 0, zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.92)", borderRadius: 14 }}>
+          {loadError ? (
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 32, marginBottom: 10 }}>⚠️</div>
+              <div style={{ color: "#0f172a", fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Couldn't load dashboard data</div>
+              <div style={{ color: "#94a3b8", fontSize: 12, marginBottom: 14 }}>Your session may have expired, or there was a network issue.</div>
+              <button onClick={() => setFetchNonce(n => n + 1)} style={{
+                background: `linear-gradient(135deg, ${CP}, ${CW})`, color: "#fff", border: "none",
+                borderRadius: 8, padding: "8px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+              }}>Retry</button>
+            </div>
+          ) : (
+            <div style={{ textAlign: "center" }}>
+              <div style={{
+                width: 34, height: 34, margin: "0 auto 12px", borderRadius: "50%",
+                border: `3px solid ${CP}22`, borderTopColor: CP, animation: "gd-spin 0.8s linear infinite",
+              }} />
+              <div style={{ color: "#64748b", fontSize: 13, fontWeight: 600 }}>Loading dashboard…</div>
+              <style>{`@keyframes gd-spin { to { transform: rotate(360deg); } }`}</style>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── HEADER CARD ── */}
       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, marginBottom: 16 }}>
@@ -839,7 +876,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                           {chartData.map((s, i) => {
-                            const poPct = Math.round((s.po / s.total) * 100);
+                            const poPct = pct(s.po, s.total);
                             const woPct = 100 - poPct;
                             const barW  = (s.total / maxVal) * 100;
                             return (
@@ -890,8 +927,8 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                                 <span style={{ color: "#0f172a", fontSize: 11, fontWeight: 700 }}>Overall Split</span>
                                 <div style={{ flex: 1 }} />
-                                <div style={{ paddingRight: 8, borderRight: "1px solid #c7d2fe", marginRight: 8 }}><span style={{ color: EP, fontSize: 15, fontWeight: 800 }}>{((grandPO/grandTotal)*100).toFixed(0)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>PO Spend</div></div>
-                                <div><span style={{ color: EW, fontSize: 15, fontWeight: 800 }}>{((grandWO/grandTotal)*100).toFixed(0)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>WO Spend</div></div>
+                                <div style={{ paddingRight: 8, borderRight: "1px solid #c7d2fe", marginRight: 8 }}><span style={{ color: EP, fontSize: 15, fontWeight: 800 }}>{pct(grandPO, grandTotal)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>PO Spend</div></div>
+                                <div><span style={{ color: EW, fontSize: 15, fontWeight: 800 }}>{pct(grandWO, grandTotal)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>WO Spend</div></div>
                               </div>
                               <div style={{ display: "flex", gap: 8 }}>
                                 <div style={{ flex: 1, background: "#fff", borderRadius: 7, padding: "5px 8px" }}>
@@ -908,8 +945,8 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                               <span style={{ color: "#0f172a", fontSize: 11, fontWeight: 700 }}>Overall Split</span>
                               <div style={{ display: "flex", alignItems: "center" }}>
-                                <div style={{ paddingRight: 12, borderRight: "1px solid #c7d2fe", marginRight: 12 }}><span style={{ color: EP, fontSize: 18, fontWeight: 800 }}>{((grandPO/grandTotal)*100).toFixed(0)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>PO Spend</div></div>
-                                <div style={{ paddingRight: 12, borderRight: "1px solid #c7d2fe", marginRight: 12 }}><span style={{ color: EW, fontSize: 18, fontWeight: 800 }}>{((grandWO/grandTotal)*100).toFixed(0)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>WO Spend</div></div>
+                                <div style={{ paddingRight: 12, borderRight: "1px solid #c7d2fe", marginRight: 12 }}><span style={{ color: EP, fontSize: 18, fontWeight: 800 }}>{pct(grandPO, grandTotal)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>PO Spend</div></div>
+                                <div style={{ paddingRight: 12, borderRight: "1px solid #c7d2fe", marginRight: 12 }}><span style={{ color: EW, fontSize: 18, fontWeight: 800 }}>{pct(grandWO, grandTotal)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>WO Spend</div></div>
                                 <div style={{ paddingRight: 12, borderRight: "1px solid #c7d2fe", marginRight: 12 }}><div style={{ color: "#475569", fontSize: 10, fontWeight: 600, marginBottom: 2 }}>Highest Spend</div><div style={{ color: EP, fontSize: 12, fontWeight: 700 }}>{highest?.entity}</div></div>
                                 <div><div style={{ color: "#475569", fontSize: 10, fontWeight: 600, marginBottom: 2 }}>Lowest Spend</div><div style={{ color: EW, fontSize: 12, fontWeight: 700 }}>{lowest?.entity}</div></div>
                               </div>
@@ -949,7 +986,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                         {/* Site rows */}
                         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
                           {chartData.map((s, i) => {
-                            const poPct = Math.round((s.po / s.total) * 100);
+                            const poPct = pct(s.po, s.total);
                             const woPct = 100 - poPct;
                             const barW  = (s.total / maxVal) * 100;
                             return (
@@ -1001,8 +1038,8 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                                 <span style={{ color: "#0f172a", fontSize: 11, fontWeight: 700 }}>Overall Split</span>
                                 <div style={{ flex: 1 }} />
-                                <div style={{ paddingRight: 8, borderRight: "1px solid #fca5a5", marginRight: 8 }}><span style={{ color: SP, fontSize: 15, fontWeight: 800 }}>{((grandPO/grandTotal)*100).toFixed(0)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>PO Spend</div></div>
-                                <div><span style={{ color: SW, fontSize: 15, fontWeight: 800 }}>{((grandWO/grandTotal)*100).toFixed(0)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>WO Spend</div></div>
+                                <div style={{ paddingRight: 8, borderRight: "1px solid #fca5a5", marginRight: 8 }}><span style={{ color: SP, fontSize: 15, fontWeight: 800 }}>{pct(grandPO, grandTotal)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>PO Spend</div></div>
+                                <div><span style={{ color: SW, fontSize: 15, fontWeight: 800 }}>{pct(grandWO, grandTotal)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>WO Spend</div></div>
                               </div>
                               <div style={{ display: "flex", gap: 8 }}>
                                 <div style={{ flex: 1, background: "#fff", borderRadius: 7, padding: "5px 8px" }}>
@@ -1019,8 +1056,8 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                               <span style={{ color: "#0f172a", fontSize: 11, fontWeight: 700 }}>Overall Split</span>
                               <div style={{ display: "flex", alignItems: "center" }}>
-                                <div style={{ paddingRight: 12, borderRight: "1px solid #fca5a5", marginRight: 12 }}><span style={{ color: SP, fontSize: 18, fontWeight: 800 }}>{((grandPO/grandTotal)*100).toFixed(0)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>PO Spend</div></div>
-                                <div style={{ paddingRight: 12, borderRight: "1px solid #fca5a5", marginRight: 12 }}><span style={{ color: SW, fontSize: 18, fontWeight: 800 }}>{((grandWO/grandTotal)*100).toFixed(0)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>WO Spend</div></div>
+                                <div style={{ paddingRight: 12, borderRight: "1px solid #fca5a5", marginRight: 12 }}><span style={{ color: SP, fontSize: 18, fontWeight: 800 }}>{pct(grandPO, grandTotal)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>PO Spend</div></div>
+                                <div style={{ paddingRight: 12, borderRight: "1px solid #fca5a5", marginRight: 12 }}><span style={{ color: SW, fontSize: 18, fontWeight: 800 }}>{pct(grandWO, grandTotal)}%</span><div style={{ color: "#475569", fontSize: 9, fontWeight: 600 }}>WO Spend</div></div>
                                 <div style={{ paddingRight: 12, borderRight: "1px solid #fca5a5", marginRight: 12 }}><div style={{ color: "#475569", fontSize: 10, fontWeight: 600, marginBottom: 2 }}>Highest Spend</div><div style={{ color: SP, fontSize: 12, fontWeight: 700 }}>{highest?.site}</div></div>
                                 <div><div style={{ color: "#475569", fontSize: 10, fontWeight: 600, marginBottom: 2 }}>Lowest Spend</div><div style={{ color: SW, fontSize: 12, fontWeight: 700 }}>{lowest?.site}</div></div>
                               </div>
