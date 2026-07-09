@@ -21,10 +21,24 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
       const intakeChecked   = !!mod.order_intake;
       const paymentChecked  = !!mod.order_payment;
 
+      // The sidebar's "Global Dashboard" nav link visibility is gated on this
+      // module's own can_view flag — but this card only ever exposes the three
+      // sub-permissions below, so can_view must be kept in sync with them here,
+      // otherwise no combination of checkboxes could ever make the link show up.
+      const syncCanView = (nextOverview, nextIntake, nextPayment) => {
+        onChange(mod.module_id, "can_view", nextOverview || nextIntake || nextPayment);
+      };
+
+      const changeSub = (key, checked) => {
+        onChange(mod.module_id, key, checked);
+        const next = { order_overview_aging: overviewChecked, order_intake: intakeChecked, order_payment: paymentChecked, [key]: checked };
+        syncCanView(next.order_overview_aging, next.order_intake, next.order_payment);
+      };
+
       const chk = (key, checked) => (
         <label className={`flex items-center gap-1.5 select-none ${readOnly ? "cursor-default" : "cursor-pointer"}`}>
           <input type="checkbox" checked={checked} disabled={readOnly}
-            onChange={(e) => !readOnly && onChange(mod.module_id, key, e.target.checked)}
+            onChange={(e) => !readOnly && changeSub(key, e.target.checked)}
             className="w-3.5 h-3.5 rounded accent-indigo-600 cursor-pointer disabled:cursor-not-allowed" />
           <span className="text-[11px] text-slate-500 font-medium">View</span>
         </label>
@@ -45,6 +59,7 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
                       onChange(mod.module_id, "order_overview_aging", e.target.checked);
                       onChange(mod.module_id, "order_intake", e.target.checked);
                       onChange(mod.module_id, "order_payment", e.target.checked);
+                      syncCanView(e.target.checked, e.target.checked, e.target.checked);
                     }}
                     className="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer" />
                   <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">All</span>
