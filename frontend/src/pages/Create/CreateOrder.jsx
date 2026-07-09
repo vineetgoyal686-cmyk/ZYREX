@@ -4062,6 +4062,8 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   const [dateRange, setDateRange] = useState("all"); // all | this_year | last_year | custom
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [showMoreTabs, setShowMoreTabs] = useState(false);
 
   const PRIMARY_TABS = ["All", "Draft", "Review", "Pending Approval", "Pending Issue", "Issued", "Amend Request", "Amended"];
@@ -4848,6 +4850,16 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
       return matchProject && matchSearch && matchTab && matchSite && matchCompany && matchType && matchMadeBy && matchVendor && matchStatus && matchDate;
     });
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paginated = filtered.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  // Land back on page 1 whenever the result set changes shape, so the user
+  // never lands on a page number that no longer has any rows.
+  useEffect(() => {
+    setPage(1);
+  }, [activeTab, search, filterSite, filterCompany, filterVendor, filterType, filterMadeBy, filterStatus, dateRange, customFrom, customTo, pageSize, project]);
+
   const clearFilters = () => {
     setFilterSite([]); setFilterCompany([]); setFilterType([]); setFilterMadeBy([]); setFilterVendor([]); setFilterStatus([]);
     setDateRange("all"); setCustomFrom(""); setCustomTo("");
@@ -5314,7 +5326,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
                     </td>
                   </tr>
                 ) :
-                  filtered.map(o => {
+                  paginated.map(o => {
                     const snap = o.snapshot || {};
                     const cCode = snap.company?.companyCode || o.companies?.company_code || "-";
                     const sCode = getOrderSiteCode(o) || "-";
@@ -5500,6 +5512,47 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
               </tbody>
             </table>
           </div>
+
+          {filtered.length > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-slate-200 bg-white">
+              <div className="flex items-center gap-2 text-[12.5px] text-slate-500">
+                <span>Rows per page</span>
+                <div className="relative">
+                  <select
+                    value={pageSize}
+                    onChange={e => setPageSize(Number(e.target.value))}
+                    className="h-8 appearance-none rounded-md border border-slate-300 bg-white pl-2 pr-7 text-[12.5px] font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 cursor-pointer"
+                  >
+                    {[10, 20, 30, 50].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                  <ChevronDown size={13} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                </div>
+                <span className="ml-2">
+                  {(safePage - 1) * pageSize + 1}–{Math.min(safePage * pageSize, filtered.length)} of {filtered.length}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                  className="h-8 px-3 rounded-md border border-slate-300 text-[12.5px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Prev
+                </button>
+                <span className="px-2 text-[12.5px] font-semibold text-slate-600">
+                  Page {safePage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
+                  className="h-8 px-3 rounded-md border border-slate-300 text-[12.5px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
