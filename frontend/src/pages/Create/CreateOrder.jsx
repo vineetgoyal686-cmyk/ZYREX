@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag, Activity, Calendar } from "lucide-react";
 import * as XLSX from "xlsx";
-import { FullCompanyModal, FullVendorModal, FullViewSiteModal, FullViewCompanyModal, FullViewVendorModal, FullContactModal, FullViewContactModal, FullClauseModal } from "./FullMasterModals";
+import { FullCompanyModal, FullVendorModal, FullViewSiteModal, FullViewCompanyModal, FullViewVendorModal, FullContactModal, FullViewContactModal, ContactLogModal, FullClauseModal } from "./FullMasterModals";
 import ProjectFormModal from "../../components/ProjectFormModal";
 import ProjectSelect from "../../components/ProjectSelect";
 import ReactQuill from "react-quill-new";
@@ -533,7 +533,7 @@ const InlineSelect = ({ value, onChange, options, placeholder, className, disabl
   );
 };
 
-const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "name", subLabelKey, placeholder, required, span2, onAdd, addLabel, onView, isMulti, disabled }) => {
+const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "name", subLabelKey, placeholder, required, span2, onAdd, addLabel, onView, onEditRow, onViewLog, isMulti, disabled }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const containerRef = useRef(null);
@@ -578,11 +578,13 @@ const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "
   const selectedOptions = isMulti
     ? options.filter(o => (value || []).includes(o[valueKey]))
     : options.filter(o => o[valueKey] === value);
+  const isContactSelect = subLabelKey === "designation";
 
   const filteredOptions = options.filter(o => {
     const labelTxt = String(getField(o, labelKey) || "").toLowerCase();
     const subTxt = subLabelKey ? String(getField(o, subLabelKey) || "").toLowerCase() : "";
-    const text = `${labelTxt} ${subTxt}`.trim();
+    const codeTxt = String(getField(o, "contactCode") || "").toLowerCase();
+    const text = `${labelTxt} ${subTxt} ${codeTxt}`.trim();
     return text.includes(search.toLowerCase());
   });
   const totalKind = (() => {
@@ -640,10 +642,11 @@ const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "
 
       {open && (
         <div className="absolute z-50 mt-1 w-full bg-white border border-slate-200 rounded shadow-lg flex flex-col overflow-hidden min-w-[240px]">
-          <div className="p-2 border-b border-slate-100 bg-white">
+          <div className="p-2 border-b border-slate-100 bg-white relative">
+            {isContactSelect && <Search size={14} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />}
             <input type="text" autoFocus value={search} onChange={e => setSearch(e.target.value)}
-              className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50/50 shadow-sm"
-              placeholder="Search here..." />
+              className={`w-full py-2 text-sm bg-white border border-slate-200 rounded outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50/50 shadow-sm ${isContactSelect ? "pl-9 pr-3" : "px-3"}`}
+              placeholder={isContactSelect ? "Search by name, role, or ID" : "Search here..."} />
           </div>
           <div className="overflow-y-auto max-h-56 w-full scrollbar-thin">
             {!required && !isMulti && (
@@ -654,7 +657,9 @@ const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "
             )}
             {options.length > 0 && (
               <div className="px-4 py-1.5 text-[11px] font-medium text-slate-500 bg-slate-50 border-b border-slate-100">
-                {prefersResultsFound ? `${filteredOptions.length} results found` : `Total ${totalKind}: ${options.length}`}
+                {isContactSelect
+                  ? `${filteredOptions.length} of ${options.length} contacts`
+                  : prefersResultsFound ? `${filteredOptions.length} results found` : `Total ${totalKind}: ${options.length}`}
               </div>
             )}
             {filteredOptions.map(o => {
@@ -664,9 +669,60 @@ const Select = ({ label, value, onChange, options, valueKey = "id", labelKey = "
               const isAddressStyle = subLabelKey === "address";
               const isCompanyStyle = subLabelKey === "companyCode";
               const isSiteStyle = subLabelKey === "siteCode";
+              const isContactStyle = subLabelKey === "designation";
               const useChevronView = ["address", "companyCode", "siteCode", "code"].includes(subLabelKey);
               const secondaryLine = isAddressStyle ? extractCityState(secondary) : secondary;
               const gstin = getField(o, "gstin") || getField(o, "billingGstin") || getField(o, "billing_gstin");
+              const contactNumber = getField(o, "contactNumber");
+              const contactCode = getField(o, "contactCode");
+              if (isContactStyle) {
+                return (
+                  <div key={o[valueKey]}
+                    onClick={() => handleToggle(o[valueKey])}
+                    className={`flex items-start justify-between gap-3 px-4 py-3 cursor-pointer transition-colors border-b border-slate-100 last:border-0 group
+                      ${isSelected ? "bg-indigo-50" : "bg-white hover:bg-slate-50"}`}
+                  >
+                    <div className={`mt-0.5 w-4 h-4 rounded-sm border shrink-0 flex items-center justify-center
+                      ${isSelected ? "bg-indigo-600 border-indigo-600" : "border-slate-300 bg-white"}`}>
+                      {isSelected && <Check size={11} className="text-white" strokeWidth={3} />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[14px] font-semibold text-slate-800 truncate">{primary}</p>
+                      {secondaryLine && (
+                        <p className="text-[12.5px] text-slate-500 truncate">{secondaryLine}</p>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      {contactCode && <p className="text-[11px] text-slate-400">{contactCode}</p>}
+                      <p className={`text-[12.5px] mt-0.5 ${contactNumber ? "text-slate-500" : "text-rose-500 font-semibold"}`}>
+                        {contactNumber || "No number"}
+                      </p>
+                    </div>
+                    {(onEditRow || onViewLog) && (
+                      <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        {onEditRow && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setOpen(false); onEditRow(o); }}
+                            className="p-1 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                            title="Edit contact"
+                          >
+                            <Pencil size={13} />
+                          </button>
+                        )}
+                        {onViewLog && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setOpen(false); onViewLog(o); }}
+                            className="p-1 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                            title="Edit history"
+                          >
+                            <Activity size={13} />
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
               return (
                 <div key={o[valueKey]}
                   className={`flex items-center justify-between px-4 py-2 cursor-pointer transition-colors group border-b border-slate-100 last:border-0
@@ -1158,7 +1214,9 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         iRes.json(), clRes.json(), catRes.json(), uomRes.json(),
       ]);
       const sites = s.projects || [], companies = c.companies || [], vendors = v.vendors || [],
-            contacts = co.contacts || [], items = i.items || [], clauses = cl.clauses || [],
+            contacts = (co.contacts || []).slice().sort((a, b) =>
+              (a.contactCode || "").localeCompare(b.contactCode || "", undefined, { numeric: true })),
+            items = i.items || [], clauses = cl.clauses || [],
             categories = cat.categories || [], uoms = uom.uoms || [];
       _masterCache = { sites, companies, vendors, contacts, items, clauses, categories, uoms };
       _masterCacheAt = Date.now();
@@ -2110,10 +2168,12 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                 options={[{ id: "Low", name: "Low" }, { id: "Medium", name: "Medium" }, { id: "High", name: "High" }, { id: "Urgent", name: "Urgent" }]} />
               <div className="lg:col-span-2">
                 <Select label="Contact Person(s)" value={header.contactPersonIds} isMulti
+                  placeholder="Select contacts..."
                   onChange={e => setHeader(h => ({ ...h, contactPersonIds: e.target.value }))}
                   options={contacts} valueKey="id" labelKey="personName" subLabelKey="designation"
-                  onAdd={() => setActionModal({ type: "addContact" })} addLabel="Add New Contact"
-                  onView={(c) => setActionModal({ type: "viewContact", data: c })} />
+                  onAdd={() => setActionModal({ type: "addContact" })} addLabel="Add new contact"
+                  onEditRow={(c) => setActionModal({ type: "editContact", data: c })}
+                  onViewLog={(c) => setActionModal({ type: "contactLog", data: c })} />
               </div>
               <div className="lg:col-span-2">
                 <Input label="Requested By" value={header.requestBy} onChange={e => setHeader(h => ({ ...h, requestBy: e.target.value }))} placeholder="Name of person requesting order" />
@@ -3279,6 +3339,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       {actionModal.type === "addContact" && <FullContactModal companies={companies} onClose={() => setActionModal({ type: null })} onSuccess={() => { invalidateMasterCache(); fetchMasterData(true); }} />}
       {actionModal.type === "editContact" && <FullContactModal companies={companies} editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => { invalidateMasterCache(); fetchMasterData(true); }} />}
       {actionModal.type === "viewContact" && <FullViewContactModal contact={actionModal.data} onClose={() => setActionModal({ type: null })} onEdit={(d) => setActionModal({ type: "editContact", data: d })} />}
+      {actionModal.type === "contactLog" && <ContactLogModal contact={actionModal.data} onClose={() => setActionModal({ type: null })} />}
 
       {/* SPEC VIEW MODAL */}
       {specViewModal.open && (

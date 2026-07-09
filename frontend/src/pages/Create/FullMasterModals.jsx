@@ -1470,6 +1470,12 @@ export const FullViewSiteModal = ({ site, onClose, onEdit }) => {
 
 const emptyContact = { personName: "", contactNumber: "", designation: "", company: "" };
 
+const CONTACT_LOG_FIELDS = [
+  { key: "personName",    label: "Name" },
+  { key: "designation",   label: "Designation" },
+  { key: "contactNumber", label: "Contact Number" },
+];
+
 export const FullContactModal = ({ onClose, onSuccess, editData, companies = [] }) => {
   const [form, setForm] = useState(editData ? { ...emptyContact, ...editData } : emptyContact);
   const [saving, setSaving] = useState(false);
@@ -1483,14 +1489,39 @@ export const FullContactModal = ({ onClose, onSuccess, editData, companies = [] 
       const payload = { ...form, createdById: u.id || "", createdByName: u.name || "" };
       const url = editId ? `${API}/api/organisation/employees/${editId}` : `${API}/api/organisation/employees`;
       const method = editId ? "PUT" : "POST";
-      const res = await fetch(url, { 
-        method, 
-        headers: { "Content-Type": "application/json" }, 
-        body: JSON.stringify(payload) 
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Save failed");
-      onSuccess(data.contact?.id || data.id);
+      const savedId = data.contact?.id || data.id || editId;
+
+      // Audit trail — who changed what on this contact, so it can be reviewed later.
+      const changes = editId
+        ? CONTACT_LOG_FIELDS
+            .filter(f => (editData[f.key] || "") !== (form[f.key] || ""))
+            .map(f => ({ field: f.label, from: editData[f.key] || "", to: form[f.key] || "" }))
+        : null;
+      if (savedId && (!editId || changes.length > 0)) {
+        fetch(`${API}/api/audit-logs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            entityType: "contact",
+            entityId: savedId,
+            entityName: form.personName,
+            action: editId ? "Updated" : "Created",
+            userId: u.id || "",
+            userName: u.name || "",
+            userEmail: u.email || "",
+            changes,
+          }),
+        }).catch(() => {});
+      }
+
+      onSuccess(savedId);
       onClose();
     } catch (err) { alert(err.message || "Failed to save contact"); }
     setSaving(false);
@@ -1507,14 +1538,6 @@ export const FullContactModal = ({ onClose, onSuccess, editData, companies = [] 
           <Field label="Person Name *" value={form.personName} onChange={e => setForm({ ...form, personName: e.target.value })} placeholder="e.g. Rajesh Kumar" />
           <Field label="Contact Number" value={form.contactNumber} onChange={e => setForm({ ...form, contactNumber: e.target.value })} placeholder="e.g. 9876543210" type="tel" />
           <Field label="Designation" value={form.designation} onChange={e => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Site Engineer" />
-          <div>
-            <label className={lbl}>Company / Organisation</label>
-            <select value={form.company} onChange={e => setForm({ ...form, company: e.target.value })}
-              className={inp + " bg-white"}>
-              <option value="">— Select Company —</option>
-              {companies.map(c => <option key={c.id} value={c.companyName}>{c.companyName}</option>)}
-            </select>
-          </div>
         </div>
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0">
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-200 transition-all">Cancel</button>
@@ -1574,6 +1597,71 @@ export const FullViewContactModal = ({ contact, onClose, onEdit }) => {
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Company / Organisation</p>
                   <p className="text-sm font-bold text-slate-700 mt-1">{contact.company}</p>
                </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────
+// CONTACT EDIT HISTORY (who changed what, and when)
+// ─────────────────────────────────────────────────────────────────
+
+export const ContactLogModal = ({ contact, onClose }) => {
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    fetch(`${API}/api/audit-logs/contact/${contact.id}`)
+      .then(r => r.json())
+      .then(d => { if (alive) setLogs(d.logs || []); })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [contact.id]);
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm text-left">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+          <div>
+            <h2 className="text-base font-bold text-slate-800">Edit History</h2>
+            <p className="text-xs text-slate-400 mt-0.5">{contact.personName}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {loading ? (
+            <p className="text-sm text-slate-400 text-center py-6">Loading…</p>
+          ) : logs.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-6">No edit history yet.</p>
+          ) : (
+            <div className="space-y-4">
+              {logs.map((log, i) => (
+                <div key={log.id || i} className="border-l-2 border-slate-200 pl-4 relative">
+                  <div className="absolute -left-[5px] top-1 w-2 h-2 rounded-full bg-indigo-400" />
+                  <p className="text-sm font-semibold text-slate-700">
+                    {log.user_name || "Someone"} <span className="font-normal text-slate-400">{log.action?.toLowerCase()} this contact</span>
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {new Date(log.created_at).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                  {Array.isArray(log.changes) && log.changes.length > 0 && (
+                    <div className="mt-2 space-y-1">
+                      {log.changes.map((c, j) => (
+                        <p key={j} className="text-xs text-slate-600 bg-slate-50 rounded px-2 py-1">
+                          <span className="font-semibold">{c.field}:</span>{" "}
+                          <span className="text-slate-400 line-through">{c.from || "—"}</span>{" → "}
+                          <span className="text-slate-700 font-medium">{c.to || "—"}</span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>

@@ -35,6 +35,7 @@ const mapEmployee = (r) => ({
   contactNumber:  r.contact_number  || "",
   designation:    r.designation     || "",
   company:        r.company         || "",
+  division:       r.division        || "",
   email:          r.email           || "",
   department:     r.department      || "",
   reportingTo:    r.reporting_to    || "",
@@ -71,7 +72,7 @@ router.get("/employees", async (_req, res) => {
 /* POST /api/organisation/employees */
 router.post("/employees", requirePerm("employees", "can_add"), async (req, res) => {
   try {
-    const { personName, contactNumber, designation, company, email, department, reportingTo, status,
+    const { personName, contactNumber, designation, company, division, email, department, reportingTo, status,
             workLocation, role, team, bio, tags, employeeId,
             dateOfBirth, gender, maritalStatus, nationality,
             alternatePhone, address, joiningDate,
@@ -94,7 +95,7 @@ router.post("/employees", requirePerm("employees", "can_add"), async (req, res) 
     const payload = {
       contact_code: code, person_name: personName || "",
       contact_number: contactNumber || "", designation: designation || "",
-      company: company || "", email: email || "", department: department || "",
+      company: company || "", division: division || "", email: email || "", department: department || "",
       reporting_to: reportingTo || "", status: status || "active",
       work_location: workLocation || "", role: role || "", team: team || "",
       bio: bio || "", tags: tags || "", employee_id: employeeId || "",
@@ -121,13 +122,13 @@ router.post("/employees", requirePerm("employees", "can_add"), async (req, res) 
 /* PUT /api/organisation/employees/:id */
 router.put("/employees/:id", requirePerm("employees", "can_edit"), async (req, res) => {
   try {
-    const { personName, contactNumber, designation, company, email, department, reportingTo, status,
+    const { personName, contactNumber, designation, company, division, email, department, reportingTo, status,
             workLocation, role, team, bio, tags, employeeId,
             dateOfBirth, gender, maritalStatus, nationality,
             alternatePhone, address, joiningDate } = req.body;
     const update = {
       person_name: personName || "", contact_number: contactNumber || "",
-      designation: designation || "", company: company || "", email: email || "",
+      designation: designation || "", company: company || "", division: division || "", email: email || "",
       department: department || "", reporting_to: reportingTo || "", status: status || "active",
       work_location: workLocation || "", role: role || "", team: team || "",
       bio: bio || "", tags: tags || "", employee_id: employeeId || "",
@@ -206,6 +207,7 @@ router.post("/employees/bulk", requirePerm("employees", "can_add"), async (req, 
       const { error } = await supabase.schema("organisation").from("employees").insert({
         contact_code: code, person_name: name, contact_number: String(row["Phone Number"] || ""),
         designation: String(row["Designation"] || ""), company: String(row["Company"] || ""),
+        division: String(row["Division"] || ""),
         email: String(row["Work Email"] || ""), department: String(row["Department"] || ""),
         reporting_to: String(row["Reporting To"] || ""), status: "active",
         work_location: String(row["Work Location"] || ""), role: String(row["Role"] || ""),

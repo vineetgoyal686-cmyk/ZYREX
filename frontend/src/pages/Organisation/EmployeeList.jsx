@@ -76,7 +76,7 @@ const DETAIL_TABS = ["Overview", "Documents", "Notes", "Permissions"];
 function EmployeeDetail({ emp, imgUrl, onBack, onEdit, onDelete }) {
   const [tab, setTab] = useState("Overview");
   const s   = STATUS[emp.status || "active"];
-  const div = emp.division || emp.company || "";
+  const div = emp.division || "";
   const grd = emp.grade || "";
 
   return (
@@ -559,7 +559,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     setForm({
       personName: emp.personName || "", employeeId: emp.employeeId || "",
       status: emp.status || "active",
-      division: emp.division || emp.company || "",
+      division: emp.division || "",
       department: emp.department || "", designation: emp.designation || "",
       grade: emp.grade || "", team: emp.team || "", role: emp.role || "",
       reportingTo: emp.reportingTo || "", workLocation: emp.workLocation || "",
@@ -580,7 +580,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     setSaving(true);
     try {
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
-      const payload = { ...form, company: form.division || form.company, createdById: u.id || "", createdByName: u.name || "" };
+      const payload = { ...form, createdById: u.id || "", createdByName: u.name || "" };
       const url    = editId ? `${API}/api/organisation/employees/${editId}` : `${API}/api/organisation/employees`;
       const method = editId ? "PUT" : "POST";
       const res    = await authFetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -616,11 +616,11 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   };
 
   /* ── Filter ── */
-  const allDivs  = [...new Set(emps.map(e => e.division || e.company || "").filter(Boolean))].sort();
+  const allDivs  = [...new Set(emps.map(e => e.division || "").filter(Boolean))].sort();
   const allDepts = [...new Set(emps.map(e => e.department).filter(Boolean))].sort();
 
   const filtered = emps.filter(e => {
-    const div = e.division || e.company || "";
+    const div = e.division || "";
     const q   = search.toLowerCase();
     return (
       (!search || [e.personName, e.employeeId, e.designation, e.department, div].some(v => v?.toLowerCase().includes(q))) &&
@@ -639,7 +639,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const exportExcel = () => {
     const data = filtered.map((e, i) => ({
       "#": i + 1, "Emp ID": e.employeeId, "Name": e.personName,
-      "Division": e.division || e.company || "",
+      "Division": e.division || "",
       "Department": e.department || "", "Designation": e.designation || "",
       "Grade": e.grade || "", "Status": STATUS[e.status]?.label || "Active",
       "Phone": e.contactNumber || "", "Email": e.email || "",
@@ -665,7 +665,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       startY: 30,
       head: [["#", "Emp ID", "Name", "Division", "Department", "Designation", "Grade", "Status"]],
       body: filtered.map((e, i) => [
-        i + 1, e.employeeId, e.personName, e.division || e.company || "—",
+        i + 1, e.employeeId, e.personName, e.division || "—",
         e.department || "—", e.designation || "—", e.grade || "—",
         STATUS[e.status]?.label || "Active",
       ]),
@@ -683,10 +683,10 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   /* ── Download Template ── */
   const downloadTemplate = () => {
     const gradeHint = loadActiveGrades().map(g => g.grade).join(", ") || "Add grades in the Grades tab (A, B, C...)";
-    const headers = ["Person Name", "Employee ID", "Division", "Department", "Designation", "Grade", "Team", "Role", "Reporting Manager", "Work Location", "Joining Date", "Status", "Phone", "Email", "Gender", "Marital Status", "Nationality", "Address"];
+    const headers = ["Person Name", "Employee ID", "Company", "Division", "Department", "Designation", "Grade", "Team", "Role", "Reporting Manager", "Work Location", "Joining Date", "Status", "Phone", "Email", "Gender", "Marital Status", "Nationality", "Address"];
     const ws = XLSX.utils.aoa_to_sheet([
       headers,
-      ["Rahul Sharma", "BITL-001", "Engineering", "Civil", "Site Engineer", "C", "Site Team A", "Civil Engineer", "Ravi Kumar", "Gurgaon", "2024-01-01", "Active", "9876543210", "rahul@company.com", "Male", "Single", "Indian", "New Delhi"],
+      ["Rahul Sharma", "BITL-001", "Bootes Impex Tech Pvt Ltd", "Engineering", "Civil", "Site Engineer", "C", "Site Team A", "Civil Engineer", "Ravi Kumar", "Gurgaon", "2024-01-01", "Active", "9876543210", "rahul@company.com", "Male", "Single", "Indian", "New Delhi"],
       [],
       [`Valid grades: ${gradeHint}  (A=entry ascending)`, "Valid status: Active / Inactive / On Leave"],
     ]);
@@ -710,7 +710,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
           personName:    String(r["Person Name"]        || r["name"]        || "").trim(),
           employeeId:    String(r["Employee ID"]        || r["employeeId"]  || "").trim(),
           division:      String(r["Division"]           || "").trim(),
-          company:       String(r["Division"]           || r["company"]     || "").trim(),
+          company:       String(r["Company"]            || "").trim(),
           department:    String(r["Department"]         || "").trim(),
           designation:   String(r["Designation"]        || "").trim(),
           grade:         String(r["Grade"]              || "").trim().toUpperCase().charAt(0),
@@ -902,7 +902,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         /* ── CARD VIEW ── */
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {paginated.map(emp => {
-            const div = emp.division || emp.company || "";
+            const div = emp.division || "";
             return (
               <div key={emp.id} onClick={() => setSelected(emp)}
                 className="bg-white rounded-lg border border-slate-200 p-4 cursor-pointer hover:shadow-md hover:border-blue-200 transition-all flex flex-col items-center text-center gap-2 group">
@@ -944,7 +944,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
               </thead>
               <tbody>
                 {paginated.map((emp) => {
-                  const div = emp.division || emp.company || "";
+                  const div = emp.division || "";
                   const td = "px-4 py-3 border-b border-r border-slate-200 text-[13px] text-slate-600 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors";
                   const logTitle = [
                     emp.createdByName ? `Added by: ${emp.createdByName}` : "",
