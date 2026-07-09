@@ -117,6 +117,10 @@ export default function MasterData({ view = "vendor" }) {
           setVendors(vendorData.vendors || []);
           setItems(itemData.items || []);
           setOrders(orderData.orders || []);
+          const deepLinkOrderId = new URLSearchParams(window.location.search).get("order");
+          if (deepLinkOrderId && (orderData.orders || []).some(o => o.id === deepLinkOrderId)) {
+            setSelectedOrderId(deepLinkOrderId);
+          }
         }
       } catch {
         if (alive) {

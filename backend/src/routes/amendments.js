@@ -7,7 +7,9 @@ const {
 const admin = require("../helpers/supabaseHelper");
 const getAdminClient = () => admin;
 const { requireAuth } = require("../middleware/auth");
-const { sendTemplateEmail } = require("../utils/mailer");
+const { notifyOrderAction, getHandlerUsers, getUserRecipient, resolveOrderForEmail } = require("../utils/orderNotifications");
+const cache = require("../helpers/cacheHelper");
+const ORDERS_CACHE_KEY = "orders_list";
 
 const shortDbError = (error) => error?.message || error?.details || String(error || "Unknown database error");
 
@@ -133,52 +135,26 @@ router.post("/request", requireAuth, async (req, res) => {
       throw statusErr;
     }
 
-    // ── Notification recipients ──
-    // TO  = users with can_manage_amend (they approve/reject)
-    // CC  = users with can_edit on order module (manage power, kept informed)
+    // Notify whoever handles amend requests (TO) + the order creator (CC)
     try {
-      const { data: orderMod } = await admin.from("modules").select("id").eq("module_key", "order").single();
-      if (orderMod) {
-        const { data: approverUsers } = await admin
-          .from("permissions")
-          .select("user_id, users(email, name, is_active)")
-          .eq("module_id", orderMod.id)
-          .eq("can_manage_amend", true);
-        const { data: ccUsers } = await admin
-          .from("permissions")
-          .select("user_id, users(email, name, is_active)")
-          .eq("module_id", orderMod.id)
-          .eq("can_edit", true);
-
-        const toRecipients = (approverUsers || [])
-          .filter(u => u.users?.is_active)
-          .map(u => ({ email: u.users.email, name: u.users.name || u.users.email }))
-          .filter(r => r.email);
-        const toEmailSet = new Set(toRecipients.map(r => r.email));
-        const ccRecipients = (ccUsers || [])
-          .filter(u => u.users?.is_active && !toEmailSet.has(u.users.email))
-          .map(u => ({ email: u.users.email, name: u.users.name || u.users.email }))
-          .filter(r => r.email);
-
-        if (toRecipients.length > 0) {
-          const orderLink = `${process.env.FRONTEND_URL}/app.html#/procurement/purchase-orders`;
-          await sendTemplateEmail({
-            to:          toRecipients,
-            cc:          ccRecipients,
-            templateKey: process.env.ZEPTOMAIL_TEMPLATE_AMENDMENT,
-            mergeInfo:   {
-              order_number:    order.order_number,
-              requester_name:  req.user?.name || "A user",
-              reason:          reason.trim(),
-              order_link:      orderLink,
-            },
-          });
-        }
+      const [toUsers, emailOrder] = await Promise.all([
+        getHandlerUsers("amend"),
+        resolveOrderForEmail(order_id),
+      ]);
+      if (emailOrder) {
+        await notifyOrderAction({
+          eventKey: "amend_request",
+          toUsers,
+          order: emailOrder,
+          actor: { name: req.user?.name, designation: req.user?.designation, email: req.user?.email },
+          reason: reason.trim(),
+        });
       }
     } catch (mailErr) {
       console.error("Email notification step failed:", mailErr);
     }
 
+    cache.bust(ORDERS_CACHE_KEY);
     res.json({ success: true, amendment: amendmentRow });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -266,15 +242,6 @@ router.get("/requests", requireAuth, async (req, res) => {
       approver:       userById[r.approved_by_id]  || null,
     })));
 
-    // Debug log — trace what we're sending so we can see why cards render blank
-    console.log("[/amendments/requests] amendment rows:", rows.length,
-                "orders fetched:", (orders || []).length,
-                "missing orders:", rows.filter(r => !orderById[r.original_order_id]).length);
-    if (enriched.length && !enriched[0].original_order) {
-      console.log("[/amendments/requests] FIRST row missing order, original_order_id =", enriched[0].original_order_id);
-      console.log("[/amendments/requests] orderById keys:", Object.keys(orderById));
-    }
-
     res.json({ requests: enriched });
   } catch (err) {
     console.error("GET /amendments/requests failed:", err);
@@ -288,7 +255,7 @@ router.get("/requests", requireAuth, async (req, res) => {
 ───────────────────────────────────────── */
 router.post("/action", requireAuth, async (req, res) => {
   const admin = getAdminClient();
-  const { request_id, action } = req.body;
+  const { request_id, action, comment } = req.body;
 
   if (!request_id || !["Approved", "Rejected"].includes(action)) {
     return res.status(400).json({ error: "request_id and a valid action are required" });
@@ -317,6 +284,18 @@ router.post("/action", requireAuth, async (req, res) => {
         actioned_by_id: req.user.id,
         actioned_at:    new Date().toISOString(),
       }).eq("id", request_id);
+
+      try {
+        const [toUsers, emailOrder] = await Promise.all([
+          getUserRecipient(request.requestor_id),
+          resolveOrderForEmail(request.original_order_id),
+        ]);
+        if (emailOrder) {
+          await notifyOrderAction({ eventKey: "amend_rejected", toUsers, order: emailOrder, actor: { name: req.user?.name, designation: req.user?.designation, email: req.user?.email }, reason: comment });
+        }
+      } catch (mailErr) { console.error("Amend-rejected email notification failed:", mailErr); }
+
+      cache.bust(ORDERS_CACHE_KEY);
       return res.json({ success: true });
     }
 
@@ -334,7 +313,6 @@ router.post("/action", requireAuth, async (req, res) => {
         ...clonedData,
         order_number:    newNumber,
         status:          "Draft",
-        made_by:         request.requestor_id,
         created_by_id:   request.requestor_id,
         amended_from_id: request.original_order_id,
       }).select().single();
@@ -369,6 +347,17 @@ router.post("/action", requireAuth, async (req, res) => {
       actioned_at:    approvedAt,
     }).eq("id", request_id);
 
+    try {
+      const [toUsers, emailOrder] = await Promise.all([
+        getUserRecipient(request.requestor_id),
+        resolveOrderForEmail(request.original_order_id),
+      ]);
+      if (emailOrder) {
+        await notifyOrderAction({ eventKey: "amend_approved", toUsers, order: emailOrder, actor: { name: req.user?.name, designation: req.user?.designation, email: req.user?.email } });
+      }
+    } catch (mailErr) { console.error("Amend-approved email notification failed:", mailErr); }
+
+    cache.bust(ORDERS_CACHE_KEY);
     res.json({ success: true, new_order_id: clone.id });
   } catch (err) {
     console.error("POST /amendments/action failed:", err);
@@ -622,6 +611,22 @@ router.post("/cancel", requireAuth, async (req, res) => {
           .update({ snapshot: { ...snap, activity_log: actLog } }).eq("id", pendingRow.original_order_id);
       } catch (logErr) { console.error("Amendment Request Cancelled log failed:", logErr); }
 
+      try {
+        const [toUsers, emailOrder] = await Promise.all([
+          getHandlerUsers("amend"),
+          resolveOrderForEmail(pendingRow.original_order_id),
+        ]);
+        if (emailOrder) {
+          await notifyOrderAction({
+            eventKey: "amend_withdraw",
+            toUsers,
+            order: emailOrder,
+            actor: { name: req.user?.name, designation: req.user?.designation, email: req.user?.email },
+          });
+        }
+      } catch (mailErr) { console.error("Withdraw email notification failed:", mailErr); }
+
+      cache.bust(ORDERS_CACHE_KEY);
       return res.json({ success: true, original_order_id: pendingRow.original_order_id });
     }
 
@@ -715,6 +720,7 @@ router.post("/cancel", requireAuth, async (req, res) => {
       .eq("id", originalOrderId);
     if (restoreErr) throw restoreErr;
 
+    cache.bust(ORDERS_CACHE_KEY);
     res.json({ success: true, original_order_id: originalOrderId });
   } catch (err) {
     console.error("POST /amendments/cancel failed:", err);

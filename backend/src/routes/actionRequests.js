@@ -3,6 +3,7 @@ const router = express.Router();
 const supabaseClient = require("../helpers/supabaseHelper");
 const { broadcast } = require("../sse");
 const { requirePerm } = require("../helpers/permHelper");
+const { notifyOrderAction, getHandlerUsers, getUserRecipient, resolveOrderForEmail } = require("../utils/orderNotifications");
 
 const extractUserId = (token) => {
   try {
@@ -60,7 +61,7 @@ router.post("/", requireAuth, requirePerm("order", "can_request"), async (req, r
       return res.status(409).json({ error: "A pending request already exists for this order" });
     }
 
-    const { data: user } = await admin.from("users").select("name").eq("id", userId).single();
+    const { data: user } = await admin.from("users").select("name, designation, email").eq("id", userId).single();
     const now = new Date().toISOString();
     const snap = order.snapshot || {};
     const actLog = Array.isArray(snap.activity_log) ? [...snap.activity_log] : [];
@@ -83,6 +84,23 @@ router.post("/", requireAuth, requirePerm("order", "can_request"), async (req, r
 
     if (error) throw error;
     broadcast({ type: "action_request_updated" });
+
+    try {
+      const [toUsers, emailOrder] = await Promise.all([
+        getHandlerUsers(request_type),
+        resolveOrderForEmail(order_id),
+      ]);
+      if (emailOrder) {
+        await notifyOrderAction({
+          eventKey: `${request_type}_request`,
+          toUsers,
+          order: emailOrder,
+          actor: { name: user?.name, designation: user?.designation, email: user?.email },
+          reason: reason || "",
+        });
+      }
+    } catch (mailErr) { console.error("Email notification step failed:", mailErr); }
+
     res.json({ success: true, request: data });
   } catch (err) {
     console.error("POST /action-requests failed:", err.message);
@@ -182,7 +200,7 @@ router.post("/direct-amend", requireAuth, async (req, res) => {
   if (!order_id) return res.status(400).json({ error: "order_id required" });
 
   try {
-    const { data: user } = await admin.from("users").select("name, role").eq("id", userId).single();
+    const { data: user } = await admin.from("users").select("name, role, designation, email").eq("id", userId).single();
     const isGlobalAdmin = user?.role === "global_admin";
 
     const hasRecallPerm = isGlobalAdmin || await isHandlerUser(admin, userId, "order", "recall");
@@ -253,6 +271,24 @@ router.post("/direct-amend", requireAuth, async (req, res) => {
       approved_at:       now,
     });
 
+    // This endpoint collapses request+approve into a single step (a handler
+    // amending an order directly, no one ever "requested" anything) — so it
+    // gets its own distinct event/wording rather than reusing "Request
+    // Approved", and notifies the order's creator directly (not the actor).
+    // Global admins acting directly don't trigger this — their direct actions
+    // are treated as routine admin work, not something needing a notification.
+    if (!isGlobalAdmin) {
+      try {
+        const emailOrder = await resolveOrderForEmail(order_id);
+        const toUsers = emailOrder?.created_by_email
+          ? [{ email: emailOrder.created_by_email, name: emailOrder.created_by_name }]
+          : [];
+        if (emailOrder) {
+          await notifyOrderAction({ eventKey: "amend_direct", toUsers, order: emailOrder, actor: { name: user?.name, designation: user?.designation, email: user?.email }, reason });
+        }
+      } catch (mailErr) { console.error("Direct-amend email notification failed:", mailErr); }
+    }
+
     res.json({ success: true, clone_id: clone.id });
   } catch (err) {
     console.error("POST /action-requests/direct-amend failed:", err.message);
@@ -271,7 +307,7 @@ router.post("/withdraw-direct-action", requireAuth, async (req, res) => {
   }
 
   try {
-    const { data: user } = await admin.from("users").select("name, role").eq("id", userId).single();
+    const { data: user } = await admin.from("users").select("name, role, designation, email").eq("id", userId).single();
     const { data: order, error: orderErr } = await admin.schema("procurement")
       .from("purchase_orders")
       .select("id, status, snapshot, created_by_id")
@@ -341,7 +377,7 @@ router.post("/:id/action", requireAuth, async (req, res) => {
       if (String(request.requestor_id) !== String(userId)) {
         return res.status(403).json({ error: "Only the requestor can cancel this request" });
       }
-      const { data: cancelUser } = await admin.from("users").select("name").eq("id", userId).single();
+      const { data: cancelUser } = await admin.from("users").select("name, designation, email").eq("id", userId).single();
       const { data: cancelOrder } = await admin.schema("procurement").from("purchase_orders")
         .select("snapshot").eq("id", request.order_id).single();
       const cancelSnap = cancelOrder?.snapshot || {};
@@ -357,11 +393,27 @@ router.post("/:id/action", requireAuth, async (req, res) => {
         status: "Cancelled", actioned_by_id: userId, actioned_at: now,
       }).eq("id", request.id);
       broadcast({ type: "action_request_updated" });
+
+      try {
+        const [toUsers, emailOrder] = await Promise.all([
+          getHandlerUsers(request.request_type),
+          resolveOrderForEmail(request.order_id),
+        ]);
+        if (emailOrder) {
+          await notifyOrderAction({
+            eventKey: `${request.request_type}_withdraw`,
+            toUsers,
+            order: emailOrder,
+            actor: { name: cancelUser?.name, designation: cancelUser?.designation, email: cancelUser?.email },
+          });
+        }
+      } catch (mailErr) { console.error("Withdraw email notification failed:", mailErr); }
+
       return res.json({ success: true });
     }
 
     // Approve / Reject — needs global_admin or be a request handler for that action type
-    const { data: user } = await admin.from("users").select("role, name").eq("id", userId).single();
+    const { data: user } = await admin.from("users").select("role, name, designation, email").eq("id", userId).single();
     const isGlobalAdmin = user?.role === "global_admin";
 
     if (!isGlobalAdmin) {
@@ -392,6 +444,16 @@ router.post("/:id/action", requireAuth, async (req, res) => {
       });
       await admin.schema("procurement").from("purchase_orders")
         .update({ snapshot: { ...rejSnap, activity_log: rejLog } }).eq("id", request.order_id);
+
+      try {
+        const [toUsers, emailOrder] = await Promise.all([
+          getUserRecipient(request.requestor_id),
+          resolveOrderForEmail(request.order_id),
+        ]);
+        if (emailOrder) {
+          await notifyOrderAction({ eventKey: `${request.request_type}_rejected`, toUsers, order: emailOrder, actor: { name: user?.name, designation: user?.designation, email: user?.email }, reason: comment });
+        }
+      } catch (mailErr) { console.error("Request-rejected email notification failed:", mailErr); }
     }
 
     if (action === "Approved") {
@@ -413,6 +475,16 @@ router.post("/:id/action", requireAuth, async (req, res) => {
         status:   newStatus,
         snapshot: { ...snap, activity_log: actLog },
       }).eq("id", request.order_id);
+
+      try {
+        const [toUsers, emailOrder] = await Promise.all([
+          getUserRecipient(request.requestor_id),
+          resolveOrderForEmail(request.order_id),
+        ]);
+        if (emailOrder) {
+          await notifyOrderAction({ eventKey: `${request.request_type}_approved`, toUsers, order: emailOrder, actor: { name: user?.name, designation: user?.designation, email: user?.email }, reason: comment });
+        }
+      } catch (mailErr) { console.error("Request-approved email notification failed:", mailErr); }
     }
 
     broadcast({ type: "action_request_updated" });

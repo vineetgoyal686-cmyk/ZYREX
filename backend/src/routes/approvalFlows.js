@@ -6,6 +6,14 @@ const getAdminClient = () => admin;
 const { requireAuth } = require("../middleware/auth");
 const cache = require("../helpers/cacheHelper");
 const ORDERS_CACHE_KEY = "orders_list";
+const { notifyOrderAction, getHandlerUsers, getUserRecipient, resolveOrderForEmail } = require("../utils/orderNotifications");
+
+async function getLevelUserEmails(admin, level) {
+  const ids = [...new Set((level?.designations || []).flatMap(d => (d.users || []).map(u => u.id)))];
+  if (!ids.length) return [];
+  const { data } = await admin.from("users").select("id, email, name").in("id", ids);
+  return (data || []).filter(u => u.email);
+}
 
 const requireAdminOrAbove = (req, res, next) => {
   if (!["global_admin", "super_admin", "admin"].includes(req.user.role))
@@ -251,6 +259,8 @@ router.post("/submit", requireAuth, async (req, res) => {
     const { module, document_id } = req.body;
     const userId = req.user.id;
     const userName = req.user.name;
+    const userDesignation = req.user.designation;
+    const userEmail = req.user.email;
 
     // Get all active flows for this module ordered by priority
     const { data: flows } = await admin.from("approval_flows")
@@ -294,6 +304,17 @@ router.post("/submit", requireAuth, async (req, res) => {
         await addOrderActivityLog(admin, document_id, "Auto-Approved (Below Threshold)", userName);
         cache.bust(ORDERS_CACHE_KEY);
         broadcast({ type: "order_updated", status: "Pending Issue" });
+
+        try {
+          const [toUsers, emailOrder] = await Promise.all([
+            getHandlerUsers("issue"),
+            resolveOrderForEmail(document_id),
+          ]);
+          if (emailOrder) {
+            await notifyOrderAction({ eventKey: "issue_ready", toUsers, order: emailOrder, actor: { name: userName, designation: userDesignation, email: userEmail } });
+          }
+        } catch (mailErr) { console.error("Auto-approve email notification failed:", mailErr); }
+
         return res.json({ skip: true, auto_approved: true });
       }
     }
@@ -319,6 +340,17 @@ router.post("/submit", requireAuth, async (req, res) => {
       await addOrderActivityLog(admin, document_id, "Submitted for Approval", userName);
       cache.bust(ORDERS_CACHE_KEY);
       broadcast({ type: "order_updated", status: "Pending Approval" });
+
+      try {
+        const level1 = matchedFlow.levels?.[0];
+        const [toUsers, emailOrder] = await Promise.all([
+          getLevelUserEmails(admin, level1),
+          resolveOrderForEmail(document_id),
+        ]);
+        if (emailOrder) {
+          await notifyOrderAction({ eventKey: "approval_request", toUsers, order: emailOrder, actor: { name: userName, designation: userDesignation, email: userEmail } });
+        }
+      } catch (mailErr) { console.error("Approval-submit email notification failed:", mailErr); }
     } else if (module === "intake") {
       // intake stays "submitted" — that IS the pending approval state
       broadcast({ type: "intake_updated", document_id, status: "submitted" });
@@ -340,6 +372,8 @@ router.post("/action", requireAuth, async (req, res) => {
     const { request_id, action, comments } = req.body;
     const userId = req.user.id;
     const userName = req.user.name;
+    const userDesignation = req.user.designation;
+    const userEmail = req.user.email;
     const isGlobalAdmin = req.user.role === "global_admin";
 
     const { data: request } = await admin.from("approval_requests")
@@ -400,6 +434,42 @@ router.post("/action", requireAuth, async (req, res) => {
       await addOrderActivityLog(admin, request.document_id, logAction, userName, comments);
       cache.bust(ORDERS_CACHE_KEY);
       broadcast({ type: "order_updated", status: docStatus });
+
+      if (action === "approved") {
+        try {
+          const emailOrder = await resolveOrderForEmail(request.document_id);
+          if (emailOrder) {
+            if (docStatus === "Pending Issue") {
+              const toUsers = await getHandlerUsers("issue");
+              await notifyOrderAction({ eventKey: "issue_ready", toUsers, order: emailOrder, actor: { name: userName, designation: userDesignation, email: userEmail } });
+            } else {
+              const nextLevel = levels[newLevel - 1];
+              const toUsers = await getLevelUserEmails(admin, nextLevel);
+              await notifyOrderAction({ eventKey: "approval_approved", toUsers, order: emailOrder, actor: { name: userName, designation: userDesignation, email: userEmail } });
+            }
+          }
+        } catch (mailErr) { console.error("Approval-action email notification failed:", mailErr); }
+      } else if (action === "rejected") {
+        try {
+          const [toUsers, emailOrder] = await Promise.all([
+            getUserRecipient(request.requested_by),
+            resolveOrderForEmail(request.document_id),
+          ]);
+          if (emailOrder) {
+            await notifyOrderAction({ eventKey: "approval_rejected", toUsers, order: emailOrder, actor: { name: userName, designation: userDesignation, email: userEmail }, reason: comments });
+          }
+        } catch (mailErr) { console.error("Approval-rejected email notification failed:", mailErr); }
+      } else if (action === "reverted") {
+        try {
+          const [toUsers, emailOrder] = await Promise.all([
+            getUserRecipient(request.requested_by),
+            resolveOrderForEmail(request.document_id),
+          ]);
+          if (emailOrder) {
+            await notifyOrderAction({ eventKey: "approval_reverted", toUsers, order: emailOrder, actor: { name: userName, designation: userDesignation, email: userEmail }, reason: comments });
+          }
+        } catch (mailErr) { console.error("Approval-reverted email notification failed:", mailErr); }
+      }
     } else if (request.module === "intake") {
       const intakeStatusMap = {
         "Pending Issue": "approved",   // final approval → approved
@@ -430,6 +500,8 @@ router.post("/withdraw/:document_id", requireAuth, async (req, res) => {
     const admin = getAdminClient();
     const { document_id } = req.params;
     const userName = req.user.name;
+    const userDesignation = req.user.designation;
+    const userEmail = req.user.email;
 
     const { data: request } = await admin.from("approval_requests")
       .select("*").eq("document_id", document_id).eq("status", "pending")
@@ -449,6 +521,17 @@ router.post("/withdraw/:document_id", requireAuth, async (req, res) => {
       await addOrderActivityLog(admin, document_id, "Approval Withdrawn — Returned to Review", userName);
       cache.bust(ORDERS_CACHE_KEY);
       broadcast({ type: "order_updated", status: "Review" });
+
+      try {
+        const currentLevel = request.flow_snapshot?.levels?.[request.current_level - 1];
+        const [toUsers, emailOrder] = await Promise.all([
+          getLevelUserEmails(admin, currentLevel),
+          resolveOrderForEmail(document_id),
+        ]);
+        if (emailOrder) {
+          await notifyOrderAction({ eventKey: "approval_withdraw", toUsers, order: emailOrder, actor: { name: userName, designation: userDesignation, email: userEmail } });
+        }
+      } catch (mailErr) { console.error("Approval-withdraw email notification failed:", mailErr); }
     } else if (request.module === "intake") {
       await admin.schema("store").from("intakes")
         .update({ status: "draft", updated_at: new Date().toISOString() }).eq("id", document_id);

@@ -57,6 +57,8 @@ export default function Approvals() {
   const [arActionLoading, setArActionLoading] = useState(null);
   const [arCommentModal, setArCommentModal] = useState({ open: false, requestId: null, action: null });
   const [arCommentText, setArCommentText] = useState("");
+  const [amendCommentModal, setAmendCommentModal] = useState({ open: false, requestId: null, action: null });
+  const [amendCommentText, setAmendCommentText] = useState("");
   // Amendment-specific filters + PDF preview state
   const [amendSiteFilter, setAmendSiteFilter] = useState("");
   const [amendCompanyFilter, setAmendCompanyFilter] = useState("");
@@ -292,13 +294,13 @@ export default function Approvals() {
     setActionLoading(null);
   };
 
-  const handleAmendAction = async (request_id, action) => {
+  const handleAmendAction = async (request_id, action, comment = "") => {
     setActionLoading(request_id);
     try {
       const res = await authFetch(`${API}/api/amendments/action`, {
         method: "POST",
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ request_id, action })
+        body: JSON.stringify({ request_id, action, comment })
       });
       const data = await res.json();
       if (data.success) {
@@ -787,7 +789,7 @@ export default function Approvals() {
                                 {(canManageAmend && canOrderAct) ? (
                                   <>
                                     <button disabled={actionLoading === req.id} onClick={() => handleAmendAction(req.id, "Approved")} title="Approve" className="h-8 w-8 rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 shadow-sm transition-all flex items-center justify-center"><CircleCheck size={18} /></button>
-                                    <button disabled={actionLoading === req.id} onClick={() => handleAmendAction(req.id, "Rejected")} title="Reject" className="h-8 w-8 rounded-md bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-40 shadow-sm transition-all flex items-center justify-center"><CircleX size={18} /></button>
+                                    <button disabled={actionLoading === req.id} onClick={() => setAmendCommentModal({ open: true, requestId: req.id, action: "Rejected" })} title="Reject" className="h-8 w-8 rounded-md bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-40 shadow-sm transition-all flex items-center justify-center"><CircleX size={18} /></button>
                                   </>
                                 ) : (
                                   <span className="text-[10px] text-slate-400 italic px-2">Awaiting approval</span>
@@ -844,7 +846,7 @@ export default function Approvals() {
                             )}
                             {(canManageAmend && canOrderAct) ? (
                               <>
-                                <button disabled={actionLoading === req.id} onClick={() => handleAmendAction(req.id, "Rejected")} className="flex-1 h-9 bg-white border border-rose-200 text-rose-600 font-bold text-[11px] hover:bg-rose-50 transition-all uppercase disabled:opacity-40">REJECT</button>
+                                <button disabled={actionLoading === req.id} onClick={() => setAmendCommentModal({ open: true, requestId: req.id, action: "Rejected" })} className="flex-1 h-9 bg-white border border-rose-200 text-rose-600 font-bold text-[11px] hover:bg-rose-50 transition-all uppercase disabled:opacity-40">REJECT</button>
                                 <button disabled={actionLoading === req.id} onClick={() => handleAmendAction(req.id, "Approved")} className="flex-1 h-9 bg-emerald-500 text-white font-bold text-[11px] hover:bg-emerald-600 shadow-sm transition-all uppercase disabled:opacity-40">APPROVE</button>
                               </>
                             ) : (
@@ -1044,6 +1046,43 @@ export default function Approvals() {
                   }}
                   className={`flex-[2] py-3 text-xs font-bold text-white rounded-xl shadow-lg transition-all disabled:opacity-50 ${arCommentModal.action === "Approved" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-rose-600 hover:bg-rose-700"}`}>
                   {arCommentModal.action === "Approved" ? "Confirm Approve" : "Confirm Reject"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Amend reject comment modal (reason required) */}
+      {amendCommentModal.open && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900">Reject Amend Request</h3>
+              <button onClick={() => setAmendCommentModal({ open: false, requestId: null, action: null })}
+                className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <textarea
+                value={amendCommentText}
+                onChange={e => setAmendCommentText(e.target.value)}
+                rows={3}
+                placeholder="Reason for rejection (required)..."
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 outline-none resize-none transition-all"
+              />
+              <div className="flex gap-3">
+                <button onClick={() => { setAmendCommentModal({ open: false, requestId: null, action: null }); setAmendCommentText(""); }}
+                  className="flex-1 py-3 text-xs font-bold text-slate-500 rounded-xl hover:bg-slate-100 transition-all">Cancel</button>
+                <button
+                  disabled={!amendCommentText.trim()}
+                  onClick={async () => {
+                    const { requestId } = amendCommentModal;
+                    setAmendCommentModal({ open: false, requestId: null, action: null });
+                    await handleAmendAction(requestId, "Rejected", amendCommentText.trim());
+                    setAmendCommentText("");
+                  }}
+                  className="flex-[2] py-3 text-xs font-bold text-white rounded-xl shadow-lg transition-all disabled:opacity-50 bg-rose-600 hover:bg-rose-700">
+                  Confirm Reject
                 </button>
               </div>
             </div>

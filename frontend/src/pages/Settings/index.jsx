@@ -14,6 +14,7 @@ import UserManagement from "./tabs/UserManagement";
 import Designations from "./tabs/Designations";
 import Serialization from "./tabs/Serialization";
 import RequestHandler from "./tabs/RequestHandler";
+import MailManagement from "./tabs/MailManagement";
 import ApprovalFlow from "./tabs/ApprovalFlow";
 import Delegation from "./tabs/Delegation";
 import UserAnalytics from "./tabs/UserAnalytics";
@@ -338,7 +339,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
             )}
 
             {section === "mail_management" && (
-              <ComingSoon label="Mail Management" />
+              <MailManagement currentUser={currentUser} showToast={showToast} />
             )}
 
           </div>

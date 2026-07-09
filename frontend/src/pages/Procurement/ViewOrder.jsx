@@ -420,14 +420,14 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     setArActionLoading(false);
   };
 
-  const handleAmendDecision = async (action) => {
+  const handleAmendDecision = async (action, comment = "") => {
     if (!pendingAmend) return;
     setAmendActionLoading(true);
     try {
       const res = await fetch(`${API}/api/amendments/action`, {
         method: "POST",
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem("bms_token") || ""}` },
-        body: JSON.stringify({ request_id: pendingAmend.id, action }),
+        body: JSON.stringify({ request_id: pendingAmend.id, action, comment }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Action failed");
@@ -498,6 +498,24 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       showToast(err.message, "error");
     } finally {
       setCancelAmendLoading(false);
+    }
+  };
+
+  const handleWithdrawIssueSubmission = async () => {
+    setWithdrawLoading(true);
+    try {
+      const res = await fetch(`${API}/api/orders/${orderId}/withdraw-issue-submission`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${localStorage.getItem("bms_token") || ""}` },
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error || "Withdraw failed");
+      showToast("Submission withdrawn — order moved back to Review.");
+      fetchOrderDetails();
+    } catch (err) {
+      showToast(err.message || "Withdraw failed", "error");
+    } finally {
+      setWithdrawLoading(false);
     }
   };
 
@@ -1504,6 +1522,17 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                 </>
               )}
 
+              {/* Pending Issue — submitter can withdraw their own submission back to Review */}
+              {isPendingIssue &&
+                String(order.created_by_id || "") === String(thisUser.id) &&
+                (isGlobalAdmin || !!myOrderPerms.can_withdraw_submission) && (
+                <button disabled={withdrawLoading}
+                  onClick={handleWithdrawIssueSubmission}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg shadow-sm text-xs transition-all disabled:opacity-60">
+                  {withdrawLoading ? "Withdrawing..." : "Withdraw Submission"}
+                </button>
+              )}
+
               {/* Pending Approval — withdraw + approve/reject/revert actions */}
               {isPendingApproval && (
                 <>
@@ -1711,14 +1740,14 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                   <div className="flex items-center gap-2">
                     <button
                       disabled={amendActionLoading}
-                      onClick={() => runApprovalAction("Amendment Request", true)}
+                      onClick={() => handleAmendDecision("Approved")}
                       className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-md shadow-sm text-xs transition-all disabled:opacity-60"
                     >
                       {amendActionLoading ? "Working..." : "Approve Amendment"}
                     </button>
                     <button
                       disabled={amendActionLoading}
-                      onClick={() => handleAmendDecision("Rejected")}
+                      onClick={() => setActionModal({ open: true, type: "Amendment Reject" })}
                       className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-md shadow-sm text-xs transition-all disabled:opacity-60"
                     >
                       {amendActionLoading ? "Working..." : "Reject Amendment"}
@@ -3192,7 +3221,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
           reject:   { title: "Reject Order", btn: "Confirm Reject", cls: "bg-rose-600 hover:bg-rose-700", desc: "Order will be permanently rejected at issue stage." },
           Recalled: { title: "Recall Order", btn: "Confirm Recall", cls: "bg-purple-600 hover:bg-purple-700", desc: "This issued order will be pulled back to Draft." },
           Cancelled: { title: "Cancel Order", btn: "Confirm Cancellation", cls: "bg-slate-700 hover:bg-slate-800", desc: "Order will be marked as Cancelled." },
-          'Amendment Request': { title: "Approve Amendment", btn: "Confirm Approval", cls: "bg-emerald-600 hover:bg-emerald-700", desc: "Original will be Amended, and a new Draft clone will be created." }
+          'Amendment Reject': { title: "Reject Amendment", btn: "Confirm Rejection", cls: "bg-rose-600 hover:bg-rose-700", desc: "The amendment request will be rejected and the original order restored to Issued." }
         };
         const meta = labelMap[actionModal.type] || { title: "Action Confirmation", btn: "Confirm", cls: "bg-indigo-600", desc: "Please provide a reason." };
         return (
@@ -3236,8 +3265,8 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                       if (!actionComment.trim()) return;
                       if (actionModal.type === 'revert' || actionModal.type === 'reject') {
                         handleIssueAction(actionModal.type, actionComment);
-                      } else if (actionModal.type === 'Amendment Request') {
-                        handleAmendDecision('Approved');
+                      } else if (actionModal.type === 'Amendment Reject') {
+                        handleAmendDecision('Rejected', actionComment);
                       } else if (approvalData.request) {
                         handleApprovalAction(actionModal.type);
                       } else if (isGlobalAdmin) {

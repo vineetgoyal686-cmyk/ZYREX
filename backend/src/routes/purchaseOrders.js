@@ -15,6 +15,7 @@ const {
 } = require("../helpers/storageHelper");
 const { addClient, removeClient, broadcast } = require("../sse");
 const { requirePerm } = require("../helpers/permHelper");
+const { notifyOrderAction, getHandlerUsers, getUserRecipient, resolveOrderForEmail } = require("../utils/orderNotifications");
 
 // SSE endpoint — frontend subscribes here for instant order updates
 router.get("/events", (req, res) => {
@@ -1016,7 +1017,8 @@ router.post("/", requirePerm("order", "can_add"), upload.fields([
         ...mainData,
         quotation_url: quotationUrl,
         comparative_sheet_url: comparativeUrl,
-        pre_documents: preDocuments
+        pre_documents: preDocuments,
+        created_by_id: req._authUserId,
       })
       .select().single();
 
@@ -1793,6 +1795,17 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
       preDocuments = [...otherCategoryDocs, ...keptDocs, ...newDocs];
     }
 
+    // Detect a genuine transition INTO "Pending Issue" via this direct status-update
+    // path (used when no approval flow is configured — approvalFlows.js handles the
+    // flow-driven case, but that route is skipped entirely in that scenario, so the
+    // issue-ready notification has to be fired from here instead).
+    let statusBeforeUpdate = null;
+    if (mainData.status === "Pending Issue") {
+      const { data: prevRow } = await supabase.schema("procurement")
+        .from("purchase_orders").select("status").eq("id", req.params.id).single();
+      statusBeforeUpdate = prevRow?.status || null;
+    }
+
     // 2.1 Override order_number to DRAFT if not Issued (prevent premature numbering on Edit)
     // Exception: amendment clones (e.g. PO-4A, PO-4B) keep their assigned number — they
     // are NOT new pending orders, they're versions of an issued one.
@@ -1951,6 +1964,19 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
       .update({ ...mainData, quotation_url: quotationUrl, comparative_sheet_url: comparativeUrl, pre_documents: preDocuments, updated_at: new Date().toISOString() })
       .eq("id", req.params.id);
     if (orderErr) throw orderErr;
+
+    if (mainData.status === "Pending Issue" && statusBeforeUpdate !== "Pending Issue") {
+      try {
+        const [toUsers, emailOrder] = await Promise.all([
+          getHandlerUsers("issue"),
+          resolveOrderForEmail(req.params.id),
+        ]);
+        if (emailOrder) {
+          const { data: actionUser } = await supabase.from("users").select("name, designation, email").eq("id", req._authUserId).maybeSingle();
+          await notifyOrderAction({ eventKey: "issue_ready", toUsers, order: emailOrder, actor: { name: actionUser?.name || _editBy || "", designation: actionUser?.designation || "", email: actionUser?.email || "" }, actorLabel: "Requested By" });
+        }
+      } catch (mailErr) { console.error("Issue-ready email notification failed:", mailErr); }
+    }
     cache.bust(ORDERS_CACHE_KEY);
 
     // Notify all connected inbox clients instantly when order status changes
@@ -3029,7 +3055,7 @@ router.post("/:id/issue-action", async (req, res) => {
 
   try {
     const { data: user } = await supabase.from("users")
-      .select("name, role, designation, profile_permissions").eq("id", userId).single();
+      .select("name, role, designation, profile_permissions, email").eq("id", userId).single();
     const isGlobalAdmin = user?.role === "global_admin";
 
     if (!isGlobalAdmin) {
@@ -3114,9 +3140,73 @@ router.post("/:id/issue-action", async (req, res) => {
 
     cache.bust(ORDERS_CACHE_KEY);
     broadcast({ type: "order_updated" });
+
+    try {
+      const eventKey = action === "issue" ? "issue_issued" : action === "revert" ? "issue_reverted" : "issue_rejected";
+      const { data: creatorOrder } = await supabase.schema("procurement").from("purchase_orders")
+        .select("created_by_id").eq("id", req.params.id).maybeSingle();
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const [toUsers, emailOrder] = await Promise.all([
+        creatorOrder?.created_by_id && UUID_RE.test(creatorOrder.created_by_id) ? getUserRecipient(creatorOrder.created_by_id) : [],
+        resolveOrderForEmail(req.params.id),
+      ]);
+      if (emailOrder) {
+        await notifyOrderAction({ eventKey, toUsers, order: emailOrder, actor: { name: user?.name, designation: user?.designation, email: user?.email }, reason: comment });
+      }
+    } catch (mailErr) { console.error("Issue-action email notification failed:", mailErr); }
+
     res.json({ success: true, newStatus, order_number: updatePayload.order_number });
   } catch (err) {
     console.error("POST /orders/:id/issue-action failed:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/*
+   POST /api/orders/:id/withdraw-issue-submission
+   Lets the order's creator (or a global admin) pull a Pending Issue / To Issue
+   order back to Review before the issue handler acts on it — mirrors the
+   withdraw options already available for Amend/Cancel/Recall requests.
+*/
+router.post("/:id/withdraw-issue-submission", async (req, res) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Login required" });
+
+  let userId;
+  try {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
+    userId = payload.sub;
+  } catch { return res.status(401).json({ error: "Invalid token" }); }
+
+  try {
+    const { data: user } = await supabase.from("users").select("name, role").eq("id", userId).single();
+    const isGlobalAdmin = user?.role === "global_admin";
+
+    const { data: order } = await supabase.schema("procurement").from("purchase_orders")
+      .select("status, snapshot, created_by_id").eq("id", req.params.id).single();
+    if (!order || !["Pending Issue", "To Issue"].includes(order.status)) {
+      return res.status(400).json({ error: "Order is not in Pending Issue state" });
+    }
+
+    const isCreator = String(order.created_by_id || "") === String(userId);
+    if (!isGlobalAdmin && !isCreator) {
+      return res.status(403).json({ error: "Only the submitter or a global admin can withdraw this submission." });
+    }
+
+    const now = new Date().toISOString();
+    const snap = order.snapshot || {};
+    const actLog = Array.isArray(snap.activity_log) ? [...snap.activity_log] : [];
+    actLog.push({ action: "Issue Submission Withdrawn", action_by: user?.name || "", action_at: now });
+
+    await supabase.schema("procurement").from("purchase_orders")
+      .update({ status: "Review", snapshot: { ...snap, activity_log: actLog }, updated_at: now })
+      .eq("id", req.params.id);
+
+    cache.bust(ORDERS_CACHE_KEY);
+    broadcast({ type: "order_updated" });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("POST /orders/:id/withdraw-issue-submission failed:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
