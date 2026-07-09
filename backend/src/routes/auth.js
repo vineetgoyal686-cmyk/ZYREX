@@ -17,6 +17,14 @@ const getAdminClient = () => createClient(
   { auth: { persistSession: false, autoRefreshToken: false } }
 );
 
+// Auth/permission responses must never be cached by the browser or any
+// intermediary proxy — a stale cached copy of /my-permissions would keep
+// showing a user's old Access Profile state even after a hard refresh.
+router.use((req, res, next) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  next();
+});
+
 const extractUserId = (token) => {
   try {
     const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());

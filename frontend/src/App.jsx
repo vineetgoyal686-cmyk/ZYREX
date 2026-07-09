@@ -438,6 +438,7 @@ function App() {
     try {
       const res = await fetch(`${API}/api/auth/init`, {
         headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
       });
       if (res.status === 401) { handleLogout(); return; }
       if (!res.ok) return;
@@ -463,6 +464,7 @@ function App() {
     try {
       const res = await fetch(`${API}/api/auth/my-permissions`, {
         headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
       });
       if (!res.ok) throw new Error(`my-permissions failed: ${res.status}`);
       const data = await res.json();
@@ -488,7 +490,11 @@ function App() {
   useEffect(() => {
     if (!isLoggedIn) return;
     fetchInit();
-    if (!userTabPermissions) fetchUserPermissions();
+    // Always re-fetch on load, even if permissions are already cached from a
+    // previous session — otherwise a device that stays logged in (silent
+    // token refresh) never picks up Access Profile changes an admin makes
+    // later, since the cached copy in localStorage looks "already loaded".
+    fetchUserPermissions();
   }, [isLoggedIn]);
 
   const handleLogin = (user) => {
