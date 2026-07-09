@@ -4,6 +4,7 @@ import {
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Area, Cell, Line,
 } from "recharts";
 import { useModulePermissions } from "../hooks/useModulePermissions";
+import { getValidToken } from "../utils/authFetch";
 
 // ─── API ─────────────────────────────────────────────────────────────────────
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
@@ -444,8 +445,8 @@ const GlobalDashboard = memo(function GlobalDashboard() {
     let alive = true;
     setLoading(true);
     setLoadError(false);
-    const token = localStorage.getItem("bms_token") || "";
-    fetch(`${API}/api/dashboard/global-stats`, { headers: { Authorization: `Bearer ${token}` } })
+    getValidToken()
+      .then(token => fetch(`${API}/api/dashboard/global-stats`, { headers: { Authorization: `Bearer ${token}` } }))
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`Request failed (${r.status})`)))
       .then(data => {
         if (!alive) return;

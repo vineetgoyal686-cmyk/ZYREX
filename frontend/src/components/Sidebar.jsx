@@ -295,22 +295,23 @@ export default React.memo(function Sidebar({
 
     const fetchCounts = async () => {
       try {
-        const token = localStorage.getItem("bms_token") || "";
-        const headers = { 'Authorization': `Bearer ${token}` };
         const currentUserId = String(JSON.parse(localStorage.getItem("bms_user") || "{}").id || "");
 
+        // Uses the shared `api` axios instance (not raw fetch) so an expired
+        // access token gets silently refreshed-and-retried instead of these
+        // counts just failing with 401 forever until the user logs back in.
         const [orderCountRes, intakesRes, amendRes, arRes, approvalRes] = await Promise.all([
-          fetch(`${API}/api/orders/pending-count?userId=${currentUserId}&isGlobalAdmin=${isGlobalAdmin}`),
-          fetch(`${API}/api/intakes`),
-          fetch(`${API}/api/amendments/requests`, { headers }),
-          fetch(`${API}/api/action-requests/pending`, { headers }),
-          fetch(`${API}/api/approval-flows/pending-for-me`, { headers }),
+          api.get(`/api/orders/pending-count?userId=${currentUserId}&isGlobalAdmin=${isGlobalAdmin}`).catch(() => ({ data: {} })),
+          api.get(`/api/intakes`).catch(() => ({ data: {} })),
+          api.get(`/api/amendments/requests`).catch(() => ({ data: {} })),
+          api.get(`/api/action-requests/pending`).catch(() => ({ data: {} })),
+          api.get(`/api/approval-flows/pending-for-me`).catch(() => ({ data: {} })),
         ]);
-        const orderCountData = orderCountRes.ok ? await orderCountRes.json().catch(() => ({})) : {};
-        const intakesData    = intakesRes.ok    ? await intakesRes.json().catch(() => ({}))    : {};
-        const amendData      = amendRes.ok      ? await amendRes.json().catch(() => ({}))      : {};
-        const arData         = arRes.ok         ? await arRes.json().catch(() => ({}))         : {};
-        const approvalData   = approvalRes.ok   ? await approvalRes.json().catch(() => ({}))   : {};
+        const orderCountData = orderCountRes.data || {};
+        const intakesData    = intakesRes.data    || {};
+        const amendData      = amendRes.data      || {};
+        const arData         = arRes.data         || {};
+        const approvalData   = approvalRes.data   || {};
 
         const orderCount       = orderCountData.count || 0;
         const intakeCount      = (intakesData.intakes || []).filter((i) => ["submitted", "in_review"].includes(i?.status)).length;

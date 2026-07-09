@@ -4,6 +4,7 @@ import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import Sidebar, { TAB_MODULE_KEY } from "./components/Sidebar";
 import { useScreenTimeTracker } from "./hooks/useScreenTimeTracker";
+import { getValidToken } from "./utils/authFetch";
 import MobileHeader from "./components/MobileHeader";
 import MobileBottomNav from "./components/MobileBottomNav";
 
@@ -495,6 +496,19 @@ function App() {
     // token refresh) never picks up Access Profile changes an admin makes
     // later, since the cached copy in localStorage looks "already loaded".
     fetchUserPermissions();
+  }, [isLoggedIn]);
+
+  // Many components (Sidebar counts, Global Dashboard, SSE setup, etc.) read
+  // bms_token straight from localStorage and fetch directly instead of going
+  // through authFetch's on-demand refresh — so without this, the access token
+  // silently expires while the tab stays open and every one of those calls
+  // starts failing with 401 until the user manually logs out and back in.
+  // Proactively checking well inside the refresh window keeps it valid for
+  // all of them, logged-in session or not.
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const interval = setInterval(() => { getValidToken(); }, 2 * 60 * 1000);
+    return () => clearInterval(interval);
   }, [isLoggedIn]);
 
   const handleLogin = (user) => {
