@@ -2,7 +2,8 @@ import React, { useState, useEffect, lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
-import Sidebar, { TAB_MODULE_KEY } from "./components/Sidebar";
+import Sidebar from "./components/Sidebar";
+import { TAB_MODULE_KEY } from "./utils/tabModuleKeys";
 import { useScreenTimeTracker } from "./hooks/useScreenTimeTracker";
 import { getValidToken } from "./utils/authFetch";
 import MobileHeader from "./components/MobileHeader";
@@ -252,11 +253,11 @@ function AppLayout({
       case "view_3d":                          return <View3D project={selectedProject} />;
       case "procurement__orders":             return <GlobalCreateOrder project={selectedProject} editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
       case "procurement__intake":             return <IntakeList project={selectedProject} />;
+      case "operations__staff_attendance":     return <Attendance selectedProject={selectedProject} />;
       case "inventory__received_material_grn":
       case "inventory__stock_inventory":
       case "inventory__material_issue":
       case "operations__work_activity":
-      case "operations__staff_attendance":
       case "operations__manpower":
       case "finance__payment_request":
       case "finance__site_expense":

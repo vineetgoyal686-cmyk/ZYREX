@@ -26,6 +26,8 @@ export default function Serialization({ isGlobalAdmin, showToast }) {
   const [orderSelectedCodes,   setOrderSelectedCodes]   = useState([]);
   const [orderCodeFilterOpen,  setOrderCodeFilterOpen]  = useState(false);
   const [orderCodeSearch,      setOrderCodeSearch]      = useState("");
+  const [orderPage,            setOrderPage]            = useState(1);
+  const [orderPageSize,        setOrderPageSize]        = useState(10);
   const codeFilterRef      = useRef(null);
   const orderCodeFilterRef = useRef(null);
 
@@ -150,6 +152,12 @@ export default function Serialization({ isGlobalAdmin, showToast }) {
       if (orderSelectedCodes.length > 0 && !orderSelectedCodes.includes(site.projectCode || "")) return false;
       return true;
     });
+
+  const orderTotalPages = Math.max(1, Math.ceil(orderCards.length / orderPageSize));
+  const orderSafePage   = Math.min(orderPage, orderTotalPages);
+  const orderCardsPage  = orderCards.slice((orderSafePage - 1) * orderPageSize, orderSafePage * orderPageSize);
+
+  useEffect(() => { setOrderPage(1); }, [orderKindTab, orderSearch, orderSelectedCodes, orderPageSize]);
 
   const openAddOrder = () =>
     setModal({ mode: "add", type: "order", data: { siteId: "", financialYear: currentFY(), currentNumber: 0 } });
@@ -434,7 +442,7 @@ export default function Serialization({ isGlobalAdmin, showToast }) {
                       </div>
                     </div>
                     <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                      <span className="text-[11px] font-mono font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded border border-indigo-100">{preview}</span>
+                      <span className="text-xs font-mono text-slate-600 truncate">{preview}</span>
                       <div className="flex items-center gap-1">
                         <button onClick={() => openEditIntake(cfg)} title="Edit"
                           className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-amber-300 hover:text-amber-600 hover:bg-amber-50 transition-all">
@@ -456,56 +464,57 @@ export default function Serialization({ isGlobalAdmin, showToast }) {
             </div>
           ) : (
             /* ── Intake Table View ── */
-            <div className="bg-white rounded-sm border border-slate-300 overflow-hidden">
-              <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
-                <thead>
-                  <tr className="bg-slate-100">
-                    <th className="border border-slate-300 px-3 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wide w-12">S.No</th>
-                    <th className="border border-slate-300 px-3 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wide">Site Name</th>
-                    <th className="border border-slate-300 px-3 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wide">Code</th>
-                    <th className="border border-slate-300 px-3 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wide">Prefix</th>
-                    <th className="border border-slate-300 px-3 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wide">Pad</th>
-                    <th className="border border-slate-300 px-3 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wide">Last Issued</th>
-                    <th className="border border-slate-300 px-3 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wide">Next Preview</th>
-                    <th className="border border-slate-300 px-3 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wide">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {intakeCards.map((cfg, idx) => {
-                    const site = getSite(cfg.site_id);
-                    const preview = getPreview(cfg.prefix, cfg.pad_length, cfg.current_number);
-                    return (
-                      <tr key={cfg.id} className="hover:bg-indigo-50/30 transition-colors">
-                        <td className="border border-slate-200 px-3 py-2.5 text-center text-xs text-slate-500 font-mono">{idx + 1}</td>
-                        <td className="border border-slate-200 px-3 py-2.5 font-semibold text-slate-800">{site.projectName || cfg.site_id}</td>
-                        <td className="border border-slate-200 px-3 py-2.5 font-mono text-xs text-slate-500">{site.projectCode || "—"}</td>
-                        <td className="border border-slate-200 px-3 py-2.5 font-mono text-xs font-semibold text-slate-700">{cfg.prefix}</td>
-                        <td className="border border-slate-200 px-3 py-2.5 text-center text-xs text-slate-600">{cfg.pad_length || 2}</td>
-                        <td className="border border-slate-200 px-3 py-2.5 text-center text-xs text-slate-600">{cfg.current_number || 0}</td>
-                        <td className="border border-slate-200 px-3 py-2.5">
-                          <span className="font-mono text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">{preview}</span>
-                        </td>
-                        <td className="border border-slate-200 px-3 py-2.5">
-                          <div className="flex items-center justify-center gap-1">
-                            <button onClick={() => openEditIntake(cfg)} title="Edit"
-                              className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-amber-300 hover:text-amber-600 hover:bg-amber-50 transition-all">
-                              <Pencil size={13} />
-                            </button>
-                            <button onClick={() => deleteIntake(cfg)} title="Delete"
-                              className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-600 hover:bg-red-50 transition-all">
-                              <Trash2 size={13} />
-                            </button>
-                            <button onClick={() => openLog(cfg, site)} title="Activity Log"
-                              className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-all">
-                              <History size={13} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+              <div className="overflow-auto">
+                <table className="w-full text-left border-separate border-spacing-0">
+                  <thead className="sticky top-0 z-[5]">
+                    <tr className="text-[11px] uppercase tracking-wider text-slate-500">
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center w-12">S.No</th>
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Site Name</th>
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Code</th>
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Prefix</th>
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Pad</th>
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Last Issued</th>
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Next Preview</th>
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-slate-200 whitespace-nowrap text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {intakeCards.map((cfg, idx) => {
+                      const site = getSite(cfg.site_id);
+                      const preview = getPreview(cfg.prefix, cfg.pad_length, cfg.current_number);
+                      const td = "px-4 py-3 border-b border-r border-slate-200 text-[13px] text-slate-600 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors";
+                      return (
+                        <tr key={cfg.id} className="group cursor-default">
+                          <td className={`${td} text-center text-xs font-mono text-slate-500`}>{idx + 1}</td>
+                          <td className={`${td} font-semibold text-slate-800`}>{site.projectName || cfg.site_id}</td>
+                          <td className={`${td} font-mono text-xs text-slate-500`}>{site.projectCode || "—"}</td>
+                          <td className={`${td} font-mono text-xs font-semibold text-slate-700`}>{cfg.prefix}</td>
+                          <td className={`${td} text-center`}>{cfg.pad_length || 2}</td>
+                          <td className={`${td} text-center`}>{cfg.current_number || 0}</td>
+                          <td className={`${td} font-mono`}>{preview}</td>
+                          <td className="px-4 py-3 border-b border-slate-200 bg-white group-hover:bg-slate-50 transition-colors">
+                            <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => openEditIntake(cfg)} title="Edit"
+                                className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors">
+                                <Pencil size={13} />
+                              </button>
+                              <button onClick={() => deleteIntake(cfg)} title="Delete"
+                                className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                                <Trash2 size={13} />
+                              </button>
+                              <button onClick={() => openLog(cfg, site)} title="Activity Log"
+                                className="p-1.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors">
+                                <History size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )
         ) : (
@@ -529,7 +538,7 @@ export default function Serialization({ isGlobalAdmin, showToast }) {
                         <p className="text-sm font-bold text-slate-800 truncate">{site.projectName || "—"}</p>
                         <div className="flex items-center gap-2 mt-0.5">
                           {site.projectCode && <span className="text-[10px] font-mono font-semibold text-slate-400">{site.projectCode}</span>}
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100">{cfg.financial_year}</span>
+                          <span className="text-[10px] text-slate-500">{cfg.financial_year}</span>
                         </div>
                       </div>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-50 text-slate-500 border border-slate-200 shrink-0">
@@ -543,7 +552,7 @@ export default function Serialization({ isGlobalAdmin, showToast }) {
                       </div>
                     </div>
                     <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-                      <span className="text-[11px] font-mono font-bold text-violet-700 bg-violet-50 px-2.5 py-1 rounded border border-violet-100 truncate">{preview}</span>
+                      <span className="text-xs font-mono text-slate-600 truncate">{preview}</span>
                       <div className="flex items-center gap-1">
                         <button onClick={() => openEditOrder(cfg)} title="Edit"
                           className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-amber-300 hover:text-amber-600 hover:bg-amber-50 transition-all">
@@ -565,57 +574,93 @@ export default function Serialization({ isGlobalAdmin, showToast }) {
             </div>
           ) : (
             /* ── Orders Table View ── */
-            <div className="bg-white rounded-sm border border-slate-300 overflow-hidden">
-              <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
-                <thead>
-                  <tr className="bg-slate-100">
-                    <th className="border border-slate-300 px-3 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wide w-12">S.No</th>
-                    <th className="border border-slate-300 px-3 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wide">Site Name</th>
-                    <th className="border border-slate-300 px-3 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wide">Code</th>
-                    <th className="border border-slate-300 px-3 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wide">Financial Year</th>
-                    <th className="border border-slate-300 px-3 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wide">Last Issued</th>
-                    <th className="border border-slate-300 px-3 py-2.5 text-left text-xs font-bold text-slate-600 uppercase tracking-wide">Next Preview</th>
-                    <th className="border border-slate-300 px-3 py-2.5 text-center text-xs font-bold text-slate-600 uppercase tracking-wide">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orderCards.map((cfg, idx) => {
-                    const site = getSite(cfg.site_id);
-                    const typeCode = cfg.order_kind === "Supply" ? "PO" : "WO";
-                    const preview = `CMP/${site.projectCode || "S"}/${typeCode}/${cfg.financial_year}/${(parseInt(cfg.current_number) || 0) + 1}`;
-                    return (
-                      <tr key={cfg.id} className="hover:bg-violet-50/30 transition-colors">
-                        <td className="border border-slate-200 px-3 py-2.5 text-center text-xs text-slate-500 font-mono">{idx + 1}</td>
-                        <td className="border border-slate-200 px-3 py-2.5 font-semibold text-slate-800">{site.projectName || "—"}</td>
-                        <td className="border border-slate-200 px-3 py-2.5 font-mono text-xs text-slate-500">{site.projectCode || "—"}</td>
-                        <td className="border border-slate-200 px-3 py-2.5 text-center">
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100">{cfg.financial_year}</span>
-                        </td>
-                        <td className="border border-slate-200 px-3 py-2.5 text-center text-xs text-slate-600">{cfg.current_number || 0}</td>
-                        <td className="border border-slate-200 px-3 py-2.5">
-                          <span className="font-mono text-xs font-bold text-violet-700 bg-violet-50 px-2 py-0.5 rounded border border-violet-100">{preview}</span>
-                        </td>
-                        <td className="border border-slate-200 px-3 py-2.5">
-                          <div className="flex items-center justify-center gap-1">
-                            <button onClick={() => openEditOrder(cfg)} title="Edit"
-                              className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-amber-300 hover:text-amber-600 hover:bg-amber-50 transition-all">
-                              <Pencil size={13} />
-                            </button>
-                            <button onClick={() => deleteOrder(cfg)} title="Delete"
-                              className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-red-300 hover:text-red-600 hover:bg-red-50 transition-all">
-                              <Trash2 size={13} />
-                            </button>
-                            <button onClick={() => openLog(cfg, site)} title="Activity Log"
-                              className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:border-slate-400 hover:text-slate-700 hover:bg-slate-50 transition-all">
-                              <History size={13} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+              <div className="overflow-auto">
+                <table className="w-full text-left border-separate border-spacing-0">
+                  <thead className="sticky top-0 z-[5]">
+                    <tr className="text-[11px] uppercase tracking-wider text-slate-500">
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center w-12">S.No</th>
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Site Name</th>
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Code</th>
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Financial Year</th>
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Last Issued</th>
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Next Preview</th>
+                      <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-slate-200 whitespace-nowrap text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orderCardsPage.map((cfg, idx) => {
+                      const site = getSite(cfg.site_id);
+                      const typeCode = cfg.order_kind === "Supply" ? "PO" : "WO";
+                      const preview = `CMP/${site.projectCode || "S"}/${typeCode}/${cfg.financial_year}/${(parseInt(cfg.current_number) || 0) + 1}`;
+                      const td = "px-4 py-3 border-b border-r border-slate-200 text-[13px] text-slate-600 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors";
+                      return (
+                        <tr key={cfg.id} className="group cursor-default">
+                          <td className={`${td} text-center text-xs font-mono text-slate-500`}>{(orderSafePage - 1) * orderPageSize + idx + 1}</td>
+                          <td className={`${td} font-semibold text-slate-800`}>{site.projectName || "—"}</td>
+                          <td className={`${td} font-mono text-xs text-slate-500`}>{site.projectCode || "—"}</td>
+                          <td className={`${td} text-center`}>{cfg.financial_year}</td>
+                          <td className={`${td} text-center`}>{cfg.current_number || 0}</td>
+                          <td className={`${td} font-mono`}>{preview}</td>
+                          <td className="px-4 py-3 border-b border-slate-200 bg-white group-hover:bg-slate-50 transition-colors">
+                            <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => openEditOrder(cfg)} title="Edit"
+                                className="p-1.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors">
+                                <Pencil size={13} />
+                              </button>
+                              <button onClick={() => deleteOrder(cfg)} title="Delete"
+                                className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                                <Trash2 size={13} />
+                              </button>
+                              <button onClick={() => openLog(cfg, site)} title="Activity Log"
+                                className="p-1.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors">
+                                <History size={13} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 bg-white">
+                <div className="flex items-center gap-2 text-xs text-slate-500">
+                  <span>Rows per page</span>
+                  <div className="relative">
+                    <select
+                      value={orderPageSize}
+                      onChange={e => setOrderPageSize(Number(e.target.value))}
+                      className="h-8 appearance-none rounded-md border border-slate-300 bg-white pl-2 pr-7 text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-200 cursor-pointer"
+                    >
+                      {[10, 20, 30, 50].map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <ChevronDown size={13} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
+                  <span className="ml-2">
+                    {(orderSafePage - 1) * orderPageSize + 1}–{Math.min(orderSafePage * orderPageSize, orderCards.length)} of {orderCards.length}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setOrderPage(p => Math.max(1, p - 1))}
+                    disabled={orderSafePage <= 1}
+                    className="h-8 px-3 rounded-md border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Prev
+                  </button>
+                  <span className="px-2 text-xs font-semibold text-slate-600">
+                    Page {orderSafePage} of {orderTotalPages}
+                  </span>
+                  <button
+                    onClick={() => setOrderPage(p => Math.min(orderTotalPages, p + 1))}
+                    disabled={orderSafePage >= orderTotalPages}
+                    className="h-8 px-3 rounded-md border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
             </div>
           )}
           </>

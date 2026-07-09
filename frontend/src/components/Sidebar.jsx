@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../utils/api";
 import { AnimatePresence, motion } from "framer-motion";
+import { TAB_MODULE_KEY } from "../utils/tabModuleKeys";
 import {
   Activity,
   BarChart3,
@@ -38,47 +39,6 @@ import {
 
 const cx = (...classes) => classes.filter(Boolean).join(" ");
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
-
-export const TAB_MODULE_KEY = {
-  global_dashboard: "global_dashboard",
-  approvals: "inbox",
-  approvals__orders: "order",
-  approvals__intake: "intake",
-  approvals__payments: "payment_request",
-  master_data__vendor:   "master_data_vendor",
-  master_data__products: "master_data_products",
-  master_data__orders:   "master_data_orders_tab",
-  master_data__intakes:  "master_data_intakes",
-  master_data__clauses:  "master_data_clauses",
-  audit: "audit",
-  proc_setup__vendor_list: "vendor_list",
-  proc_setup__item_list: "item_list",
-  proc_setup__category_list: "category_list",
-  proc_setup__uom: "uom",
-  proc_setup__term_condition: "term_condition",
-  proc_setup__payment_terms: "payment_terms",
-  proc_setup__payment_clauses: "payment_terms",
-  proc_setup__government_laws: "government_laws",
-  proc_setup__annexure: "annexure",
-  dashboard: "dashboard",
-  view_3d: "view_3d",
-  procurement__intake: "intake",
-  procurement__orders: "order",
-  inventory__received_material_grn: "received_record",
-  inventory__stock_inventory: "stock_available",
-  inventory__material_issue: "consumption_record",
-  operations__work_activity: "execution_plan",
-  operations__staff_attendance: "staff_attendance",
-  operations__manpower: "daily_manpower",
-  finance__payment_request: "payment_request",
-  finance__site_expense: "site_expense",
-  finance__petty_cash: "petty_cash",
-  finance__bills_documents: "bills_docs",
-  confidential__loa: "loa",
-  confidential__boq: "boq",
-  confidential__drawings: "drawings",
-  confidential__ra_bills: "ra_bills",
-};
 
 const globalRows = [
   { id: "global_dashboard", label: "Global Dashboard", icon: LayoutDashboard, description: "Overall overview of all projects" },
@@ -268,6 +228,7 @@ export default React.memo(function Sidebar({
   }, [isCollapsed]);
 
   const [projOpen, setProjOpen] = useState(false);
+  const [projSearch, setProjSearch] = useState("");
   const [approvalCount, setApprovalCount] = useState(0);
   const [avatarUrl, setAvatarUrl] = useState(currentUser.avatar || null);
 
@@ -286,6 +247,17 @@ export default React.memo(function Sidebar({
     const name = typeof p === "string" ? p : p.name;
     return name && name !== "All Project";
   }), [projects]);
+
+  const filteredProjects = useMemo(() => {
+    const q = projSearch.trim().toLowerCase();
+    if (!q) return visibleProjects;
+    return visibleProjects.filter((p) => {
+      if (typeof p === "string") return p.toLowerCase().includes(q);
+      const code = (p.name || p.projectCode || "").toLowerCase();
+      const full = (p.projectName || "").toLowerCase();
+      return code.includes(q) || full.includes(q);
+    });
+  }, [visibleProjects, projSearch]);
 
   useEffect(() => {
     let alive = true;
@@ -556,7 +528,7 @@ export default React.memo(function Sidebar({
               <div>
               <button
                 type="button"
-                onClick={() => setProjOpen(!projOpen)}
+                onClick={() => { setProjOpen(!projOpen); setProjSearch(""); }}
                 className="flex w-full items-center justify-between rounded-md border border-cyan-400/18 bg-[#03111d] px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:border-cyan-300/35"
               >
                 <span className="truncate">{selectedProject || "Select project..."}</span>
@@ -568,36 +540,49 @@ export default React.memo(function Sidebar({
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
-                    className="thin-scrollbar mt-1.5 max-h-56 overflow-y-auto rounded-md border border-cyan-400/18 bg-[#071827] p-1 shadow-xl"
+                    className="mt-1.5 rounded-md border border-cyan-400/18 bg-[#071827] p-1 shadow-xl"
                   >
-                    {selectedProject && (
-                      <button
-                        type="button"
-                        onClick={() => { setSelectedProject(null); setProjOpen(false); }}
-                        className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-slate-500 hover:bg-rose-500/10 hover:text-rose-400 transition-colors border-b border-cyan-400/10 mb-1"
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
-                        <span>None</span>
-                      </button>
-                    )}
-                    {visibleProjects.map((p) => {
-                      const name = typeof p === "string" ? p : p.name;
-                      return (
+                    <input
+                      type="text"
+                      autoFocus
+                      value={projSearch}
+                      onChange={(e) => setProjSearch(e.target.value)}
+                      placeholder="Search by name or code..."
+                      className="mb-1 w-full rounded-md border border-cyan-400/15 bg-[#03111d] px-2.5 py-1.5 text-xs text-white placeholder:text-slate-500 outline-none focus:border-cyan-300/40"
+                    />
+                    <p className="px-2 pb-1 text-[11px] text-slate-500">{filteredProjects.length} result{filteredProjects.length !== 1 ? "s" : ""} found</p>
+                    <div className="thin-scrollbar max-h-56 overflow-y-auto">
+                      {selectedProject && !projSearch.trim() && (
                         <button
                           type="button"
-                          key={name}
-                          onClick={() => { setSelectedProject(name); setProjOpen(false); }}
-                          className={cx(
-                            "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors",
-                            selectedProject === name ? "bg-cyan-400/14 text-white" : "text-slate-300 hover:bg-cyan-400/8 hover:text-white"
-                          )}
+                          onClick={() => { setSelectedProject(null); setProjOpen(false); setProjSearch(""); }}
+                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-slate-500 hover:bg-rose-500/10 hover:text-rose-400 transition-colors border-b border-cyan-400/10 mb-1"
                         >
-                          <span className={cx("h-1.5 w-1.5 rounded-full", selectedProject === name ? "bg-white" : "bg-cyan-300")} />
-                          <span className="truncate">{name}</span>
+                          <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
+                          <span>None</span>
                         </button>
-                      );
-                    })}
-                    {visibleProjects.length === 0 && <p className="px-2 py-2 text-xs text-slate-500">No active projects</p>}
+                      )}
+                      {filteredProjects.map((p) => {
+                        const name = typeof p === "string" ? p : p.name;
+                        return (
+                          <button
+                            type="button"
+                            key={name}
+                            onClick={() => { setSelectedProject(name); setProjOpen(false); setProjSearch(""); }}
+                            className={cx(
+                              "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors",
+                              selectedProject === name ? "bg-cyan-400/14 text-white" : "text-slate-300 hover:bg-cyan-400/8 hover:text-white"
+                            )}
+                          >
+                            <span className={cx("h-1.5 w-1.5 rounded-full shrink-0", selectedProject === name ? "bg-white" : "bg-cyan-300")} />
+                            <span className="truncate">{name}</span>
+                          </button>
+                        );
+                      })}
+                      {filteredProjects.length === 0 && (
+                        <p className="px-2 py-2 text-xs text-slate-500">{projSearch.trim() ? "No matching projects" : "No active projects"}</p>
+                      )}
+                    </div>
                   </motion.div>
                 )}
               </AnimatePresence>
