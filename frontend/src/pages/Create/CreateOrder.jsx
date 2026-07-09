@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag, Activity, Calendar } from "lucide-react";
 import * as XLSX from "xlsx";
-import { FullCompanyModal, FullVendorModal, FullViewSiteModal, FullViewCompanyModal, FullViewVendorModal, FullContactModal, FullViewContactModal, ContactLogModal, FullClauseModal } from "./FullMasterModals";
+import { FullCompanyModal, FullVendorModal, FullViewSiteModal, FullViewCompanyModal, FullViewVendorModal, FullContactModal, FullViewContactModal, FullClauseModal } from "./FullMasterModals";
 import ProjectFormModal from "../../components/ProjectFormModal";
 import ProjectSelect from "../../components/ProjectSelect";
 import ReactQuill from "react-quill-new";
@@ -2172,8 +2172,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                   onChange={e => setHeader(h => ({ ...h, contactPersonIds: e.target.value }))}
                   options={contacts} valueKey="id" labelKey="personName" subLabelKey="designation"
                   onAdd={() => setActionModal({ type: "addContact" })} addLabel="Add new contact"
-                  onEditRow={(c) => setActionModal({ type: "editContact", data: c })}
-                  onViewLog={(c) => setActionModal({ type: "contactLog", data: c })} />
+                  onEditRow={(c) => setActionModal({ type: "editContact", data: c })} />
               </div>
               <div className="lg:col-span-2">
                 <Input label="Requested By" value={header.requestBy} onChange={e => setHeader(h => ({ ...h, requestBy: e.target.value }))} placeholder="Name of person requesting order" />
@@ -3339,7 +3338,6 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       {actionModal.type === "addContact" && <FullContactModal companies={companies} onClose={() => setActionModal({ type: null })} onSuccess={() => { invalidateMasterCache(); fetchMasterData(true); }} />}
       {actionModal.type === "editContact" && <FullContactModal companies={companies} editData={actionModal.data} onClose={() => setActionModal({ type: null })} onSuccess={() => { invalidateMasterCache(); fetchMasterData(true); }} />}
       {actionModal.type === "viewContact" && <FullViewContactModal contact={actionModal.data} onClose={() => setActionModal({ type: null })} onEdit={(d) => setActionModal({ type: "editContact", data: d })} />}
-      {actionModal.type === "contactLog" && <ContactLogModal contact={actionModal.data} onClose={() => setActionModal({ type: null })} />}
 
       {/* SPEC VIEW MODAL */}
       {specViewModal.open && (

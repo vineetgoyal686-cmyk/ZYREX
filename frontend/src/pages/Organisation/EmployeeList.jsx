@@ -10,10 +10,35 @@ import autoTable from "jspdf-autotable";
 import { gradeCls, descriptionsLabel } from "./Grades";
 import { authFetch } from "../../utils/authFetch";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
+import { ContactLogModal } from "../Create/FullMasterModals";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
 const PER_PAGE = 20;
+
+const EMPLOYEE_LOG_FIELDS = [
+  { key: "personName",    label: "Name" },
+  { key: "employeeId",    label: "Employee ID" },
+  { key: "company",       label: "Company" },
+  { key: "division",      label: "Division" },
+  { key: "department",    label: "Department" },
+  { key: "designation",   label: "Designation" },
+  { key: "grade",         label: "Grade" },
+  { key: "team",          label: "Team" },
+  { key: "role",          label: "Role" },
+  { key: "reportingTo",   label: "Reporting Manager" },
+  { key: "workLocation",  label: "Work Location" },
+  { key: "contactNumber", label: "Contact Number" },
+  { key: "alternatePhone", label: "Alternate Phone" },
+  { key: "email",         label: "Email" },
+  { key: "status",        label: "Status" },
+  { key: "gender",        label: "Gender" },
+  { key: "maritalStatus", label: "Marital Status" },
+  { key: "nationality",   label: "Nationality" },
+  { key: "address",       label: "Address" },
+  { key: "joiningDate",   label: "Joining Date" },
+  { key: "dateOfBirth",   label: "Date of Birth" },
+];
 
 /* ── Status config ── */
 const STATUS = {
@@ -482,6 +507,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const [saving,     setSaving]    = useState(false);
   const [page,       setPage]      = useState(1);
   const [perPage,    setPerPage]   = useState(20);
+  const [logEmp,     setLogEmp]    = useState(null);
   const [imgUrls,    setImgUrls]   = useState({});
   const [selectedImgUrl, setSelectedImgUrl] = useState(null);
   const [toast,      setToast]     = useState(null);
@@ -581,11 +607,38 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     try {
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
       const payload = { ...form, createdById: u.id || "", createdByName: u.name || "" };
+      const before = editId ? emps.find(e => e.id === editId) : null;
       const url    = editId ? `${API}/api/organisation/employees/${editId}` : `${API}/api/organisation/employees`;
       const method = editId ? "PUT" : "POST";
       const res    = await authFetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data   = await res.json();
       if (!data.success) throw new Error(data.error);
+      const savedId = editId || data.id;
+
+      // Audit trail — same log every contact edit lands in, regardless of
+      // whether it happened here or from the Contact Person picker in orders.
+      const changes = editId
+        ? EMPLOYEE_LOG_FIELDS
+            .filter(f => (before?.[f.key] || "") !== (form[f.key] || ""))
+            .map(f => ({ field: f.label, from: before?.[f.key] || "", to: form[f.key] || "" }))
+        : null;
+      if (savedId && (!editId || changes.length > 0)) {
+        fetch(`${API}/api/audit-logs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            entityType: "contact",
+            entityId: savedId,
+            entityName: form.personName,
+            action: editId ? "Updated" : "Created",
+            userId: u.id || "",
+            userName: u.name || "",
+            userEmail: u.email || "",
+            changes,
+          }),
+        }).catch(() => {});
+      }
+
       if (editId) {
         const updated = { ...emps.find(e => e.id === editId), ...form };
         setEmps(prev => prev.map(e => e.id === editId ? updated : e));
@@ -946,10 +999,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                 {paginated.map((emp) => {
                   const div = emp.division || "";
                   const td = "px-4 py-3 border-b border-r border-slate-200 text-[13px] text-slate-600 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors";
-                  const logTitle = [
-                    emp.createdByName ? `Added by: ${emp.createdByName}` : "",
-                    emp.createdAt ? `On: ${new Date(emp.createdAt).toLocaleString("en-IN", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" })}` : "",
-                  ].filter(Boolean).join("\n") || "No log available";
                   return (
                     <tr key={emp.id} className="group cursor-pointer" onClick={() => setSelected(emp)}>
                       <td style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 border-b border-r border-slate-200 text-xs font-medium text-slate-500 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[5]">{emp.contactCode || "—"}</td>
@@ -965,7 +1014,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                       <td className="px-4 py-3 border-b border-l border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky right-0 z-[5]" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           {canEdit && <button onClick={() => openEdit(emp)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Edit"><Edit2 size={13} /></button>}
-                          <button className="p-1.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors" title={logTitle}><Clock size={13} /></button>
+                          <button onClick={() => setLogEmp(emp)} className="p-1.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors" title="Edit history"><Clock size={13} /></button>
                           {canDelete && <button onClick={() => handleDelete(emp.id)} className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="Delete"><Trash2 size={13} /></button>}
                         </div>
                       </td>
@@ -1027,6 +1076,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         <EmpModal form={form} setForm={setForm} editId={editId} saving={saving}
           onClose={() => setModal(false)} onSave={handleSave} divisions={divisions} allEmps={emps} />
       )}
+      {logEmp && <ContactLogModal contact={logEmp} onClose={() => setLogEmp(null)} />}
     </>
   );
 }
