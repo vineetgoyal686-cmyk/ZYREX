@@ -1468,12 +1468,13 @@ export const FullViewSiteModal = ({ site, onClose, onEdit }) => {
 // CONTACT MODAL
 // ─────────────────────────────────────────────────────────────────
 
-const emptyContact = { personName: "", contactNumber: "", designation: "", company: "" };
+const emptyContact = { personName: "", contactNumber: "", designation: "", company: "", employeeId: "" };
 
 const CONTACT_LOG_FIELDS = [
   { key: "personName",    label: "Name" },
   { key: "designation",   label: "Designation" },
   { key: "contactNumber", label: "Contact Number" },
+  { key: "employeeId",    label: "Employee ID" },
 ];
 
 export const FullContactModal = ({ onClose, onSuccess, editData, companies = [] }) => {
@@ -1483,6 +1484,7 @@ export const FullContactModal = ({ onClose, onSuccess, editData, companies = [] 
 
   const handleSave = async () => {
     if (!form.personName.trim()) return alert("Person Name is required");
+    if (!form.employeeId.trim()) return alert("Employee ID is required");
     setSaving(true);
     try {
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
@@ -1536,6 +1538,7 @@ export const FullContactModal = ({ onClose, onSuccess, editData, companies = [] 
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           <Field label="Person Name *" value={form.personName} onChange={e => setForm({ ...form, personName: e.target.value })} placeholder="e.g. Rajesh Kumar" />
+          <Field label="Employee ID *" value={form.employeeId} onChange={e => setForm({ ...form, employeeId: e.target.value })} placeholder="e.g. EMP-001" />
           <Field label="Contact Number" value={form.contactNumber} onChange={e => setForm({ ...form, contactNumber: e.target.value })} placeholder="e.g. 9876543210" type="tel" />
           <Field label="Designation" value={form.designation} onChange={e => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Site Engineer" />
         </div>

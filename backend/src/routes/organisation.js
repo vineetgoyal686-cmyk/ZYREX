@@ -98,7 +98,7 @@ router.post("/employees", requirePerm("employees", "can_add"), async (req, res) 
       company: company || "", division: division || "", email: email || "", department: department || "",
       reporting_to: reportingTo || "", status: status || "active",
       work_location: workLocation || "", role: role || "", team: team || "",
-      bio: bio || "", tags: tags || "", employee_id: employeeId || "",
+      bio: bio || "", tags: tags || "", employee_id: employeeId.trim(),
       date_of_birth: dateOfBirth || null, gender: gender || "",
       marital_status: maritalStatus || "", nationality: nationality || "",
       alternate_phone: alternatePhone || "", address: address || "",
