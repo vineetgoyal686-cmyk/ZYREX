@@ -1879,8 +1879,8 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
           if (serialObj) {
             const nextSerial = (serialObj.current_number || 0) + 1;
             const typeCode  = (curr.order_type === 'Supply') ? 'PO' : 'WO';
-            const compCode  = curr.snapshot?.company?.companyCode || curr.snapshot?.company?.company_code || 'CO';
-            const siteCode  = currProject?.project_code || 'SITE';
+            const compCode  = String(curr.snapshot?.company?.companyCode || curr.snapshot?.company?.company_code || 'CO').trim();
+            const siteCode  = String(currProject?.project_code || 'SITE').trim();
             mainData.order_number = `${compCode}/${siteCode}/${typeCode}/${fy}/${nextSerial}`;
 
             await supabase.schema("procurement")
@@ -3106,11 +3106,11 @@ router.post("/:id/issue-action", async (req, res) => {
           if (serialObj) {
             const nextSerial = (serialObj.current_number || 0) + 1;
             const typeCode  = order.order_type === "Supply" ? "PO" : "WO";
-            const compCode  = order.snapshot?.company?.companyCode || order.snapshot?.company?.company_code || "CO";
+            const compCode  = String(order.snapshot?.company?.companyCode || order.snapshot?.company?.company_code || "CO").trim();
             const { data: issueProject } = order.site_id
               ? await supabase.from("projects").select("project_code").eq("id", order.site_id).single()
               : { data: null };
-            const siteCode  = issueProject?.project_code || order.snapshot?.site?.siteCode || "SITE";
+            const siteCode  = String(issueProject?.project_code || order.snapshot?.site?.siteCode || "SITE").trim();
             updatePayload.order_number = `${compCode}/${siteCode}/${typeCode}/${fy}/${nextSerial}`;
             await supabase.schema("procurement").from("serialization_settings")
               .update({ current_number: nextSerial }).eq("id", serialObj.id);

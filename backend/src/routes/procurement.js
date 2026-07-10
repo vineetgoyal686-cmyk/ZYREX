@@ -1411,7 +1411,7 @@ router.post("/companies", companyUpload, async (req, res) => {
     ]);
 
     const basePayload = {
-      company_name: b.companyName || "", company_code: b.companyCode || "",
+      company_name: String(b.companyName || "").trim(), company_code: String(b.companyCode || "").trim(),
       person_name: b.personName || "", designation: b.designation || "",
       phone: b.phone || "", email: b.email || "",
       gstin: b.gstin || "", pan: b.pan || "",
@@ -1456,7 +1456,7 @@ router.put("/companies/:id", companyUpload, async (req, res) => {
     const signUrl  = newSign  || normalizeStoragePath(b.signUrl, "picture")  || "";
 
     const basePayload = {
-      company_name: b.companyName || "", company_code: b.companyCode || "",
+      company_name: String(b.companyName || "").trim(), company_code: String(b.companyCode || "").trim(),
       person_name: b.personName || "", designation: b.designation || "",
       phone: b.phone || "", email: b.email || "",
       gstin: b.gstin || "", pan: b.pan || "",
