@@ -84,18 +84,21 @@ async function notifyOrderAction({ eventKey, toUsers = [], order, actor, reason,
     const enabled = cfgRow ? cfgRow.enabled : meta.defaultEnabled;
     if (!enabled) return;
 
+    // Self-notification skip only applies to recipients resolved automatically
+    // (handler lookups, the auto-CC'd order creator) — an admin who explicitly
+    // added someone as an extra TO/CC in Mail Management meant for them to
+    // always get this mail, even on the rare occasion they're also the actor.
     const actorEmail = (actor?.email || "").toLowerCase();
-    const to = dedupeByEmail([...toUsers, ...(cfgRow?.extra_to || [])].filter(u => u?.email))
-      .filter(u => u.email.toLowerCase() !== actorEmail); // don't notify someone about their own action
+    const autoToFiltered = toUsers.filter(u => (u?.email || "").toLowerCase() !== actorEmail);
+    const to = dedupeByEmail([...autoToFiltered, ...(cfgRow?.extra_to || [])].filter(u => u?.email));
     if (to.length === 0) return; // nobody configured to receive this — nothing to send
 
-    const ccBase = order.created_by_email
+    const ccBase = (order.created_by_email && order.created_by_email.toLowerCase() !== actorEmail)
       ? [{ email: order.created_by_email, name: order.created_by_name || order.created_by_email }]
       : [];
     const toEmails = new Set(to.map(u => u.email.toLowerCase()));
     const cc = dedupeByEmail([...ccBase, ...(cfgRow?.extra_cc || [])])
-      .filter(u => !toEmails.has((u.email || "").toLowerCase()))
-      .filter(u => (u.email || "").toLowerCase() !== actorEmail);
+      .filter(u => !toEmails.has((u.email || "").toLowerCase()));
 
     // Direct/bypass events (no request ever went anywhere) use a visually
     // distinct red template; status-only events that never carry a reason
