@@ -39,7 +39,7 @@ router.post('/sign-urls', async (req, res) => {
     if (validPaths.length === 0) return res.json({ urls: {} });
 
     const uniquePaths = [...new Set(validPaths.map(item => item.path))];
-    const { data, error } = await supabase.storage.from(bucket).createSignedUrls(uniquePaths, 60 * 60 * 24);
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrls(uniquePaths, 60 * 60 * 24 * 365 * 100);
     if (error) throw error;
 
     const signedByPath = new Map();

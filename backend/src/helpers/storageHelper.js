@@ -1,4 +1,4 @@
-const DEFAULT_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24;
+const DEFAULT_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 365 * 100; // 100 years — effectively non-expiring
 
 const decodePath = (path) => {
   try { return decodeURIComponent(path); } catch { return path; }

@@ -1120,7 +1120,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       setFiles({
         quotations: existingQuotations,
         proof: {
-          type: order.comparative_sheet_url ? "Comparative Docs" : "",
+          type: order.snapshot?.proof_type || (order.comparative_sheet_url ? "Comparative Docs" : ""),
           files: existingProof
         },
         others: existingOthers
@@ -2451,6 +2451,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                     value={group.itemId}
                                     onChange={e => handleGroupChange(group.id, e.target.value)}
                                     options={itemsList.filter(i => header.orderType === "ITC" ? ["SITC", "ITC"].includes(i.itemType) : i.itemType === header.orderType)}
+                                    searchable
                                     placeholder="Select Item..."
                                     variant="table"
                                   />
@@ -2667,7 +2668,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                     )}
                                     <div className="flex-1 min-w-0">
                                       <InlineSelect value={sub.specification} onChange={e => handleSubRowChange(group.id, sub.id, "specification", e.target.value)}
-                                        options={itemData?.specifications || []} placeholder=" Spec " disabled={!group.itemId} renderHtml={true}
+                                        options={itemData?.specifications || []} placeholder=" Spec " disabled={!group.itemId} renderHtml={true} searchable
                                         variant="table"
                                         onAdd={() => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: "", originalValue: "" })}
                                         onEdit={(val) => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val })}
@@ -2864,7 +2865,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                   )}
                                   <div className="flex-1 min-w-0">
                                     <InlineSelect value={sub.specification} onChange={e => handleSubRowChange(group.id, sub.id, "specification", e.target.value)}
-                                      options={itemData?.specifications || []} placeholder=" Spec " disabled={!group.itemId} renderHtml={true}
+                                      options={itemData?.specifications || []} placeholder=" Spec " disabled={!group.itemId} renderHtml={true} searchable
                                       variant="table"
                                       onAdd={() => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: "", originalValue: "" })}
                                       onEdit={(val) => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val })}
@@ -2910,6 +2911,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                         options={itemsList.filter(i => header.orderType === "ITC" ? ["SITC", "ITC"].includes(i.itemType) : i.itemType === header.orderType)}
                                         placeholder="Select Item..."
                                         variant="table"
+                                        searchable
                                       />
                                       {group.itemId && (
                                         <button onClick={() => addSubRow(group.id)}
@@ -2933,6 +2935,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                     placeholder=" Spec "
                                     disabled={!group.itemId}
                                     renderHtml={true}
+                                    searchable
                                     variant="table"
                                     onAdd={() => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: "", originalValue: "" })}
                                     onEdit={(val) => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val })}

@@ -197,7 +197,7 @@ const signOrderDocUrl = async (value) => {
     const arr = JSON.parse(value);
     if (Array.isArray(arr)) {
       const signed = await Promise.all(arr.filter(Boolean).map(async (u, i) => {
-        const s = await createSignedStorageUrl(supabase, "procurement-docs", u, 60 * 60 * 24, { download: false });
+        const s = await createSignedStorageUrl(supabase, "procurement-docs", u, 60 * 60 * 24 * 365 * 100, { download: false });
         if (!s) console.error(`[signOrderDocUrl] Failed to sign URL[${i}]:`, u);
         return s;
       }));
@@ -205,7 +205,7 @@ const signOrderDocUrl = async (value) => {
       return valid.length === 1 ? valid[0] : JSON.stringify(valid);
     }
   } catch {}
-  return createSignedStorageUrl(supabase, "procurement-docs", value, 60 * 60 * 24, { download: false });
+  return createSignedStorageUrl(supabase, "procurement-docs", value, 60 * 60 * 24 * 365 * 100, { download: false });
 };
 const signProcImageUrl = (value) => createSignedStorageUrl(supabase, "picture", value);
 const signVendorDocUrl = (value) => createSignedStorageUrl(supabase, "vendor-docs", value);
@@ -2416,13 +2416,8 @@ router.post("/:id/post-documents", upload.single("file"), async (req, res) => {
       uploaded_by_name: uploadedByName,
     };
 
-    const existingArr = Array.isArray(order.post_documents) ? order.post_documents : [];
-    const nextArr = [...existingArr, newDoc];
-
     const { error: updErr } = await supabase.schema("procurement")
-      .from("purchase_orders")
-      .update({ post_documents: nextArr })
-      .eq("id", id);
+      .rpc("append_post_document", { p_order_id: id, p_doc: newDoc });
     if (updErr) throw updErr;
 
     res.json({ success: true, document: { ...newDoc, url: await signOrderDocUrl(newDoc.url) } });
@@ -2451,11 +2446,8 @@ router.delete("/:id/post-documents/:docId", async (req, res) => {
         .catch(err => console.warn("Storage delete warning:", err.message));
     }
 
-    const next = arr.filter(d => d.id !== docId);
     const { error: updErr } = await supabase.schema("procurement")
-      .from("purchase_orders")
-      .update({ post_documents: next })
-      .eq("id", id);
+      .rpc("remove_post_document", { p_order_id: id, p_doc_id: docId });
     if (updErr) throw updErr;
 
     res.json({ success: true });
@@ -2505,11 +2497,8 @@ router.post("/:id/signed-copy", upload.single("file"), async (req, res) => {
       uploaded_at: new Date().toISOString(),
     };
 
-    const nextArr = [...existingArr.filter(d => d.category !== "signed-copy"), newDoc];
     const { error: updErr } = await supabase.schema("procurement")
-      .from("purchase_orders")
-      .update({ post_documents: nextArr })
-      .eq("id", id);
+      .rpc("upsert_signed_copy", { p_order_id: id, p_doc: newDoc });
     if (updErr) throw updErr;
 
     res.json({ success: true, document: newDoc });
@@ -2537,11 +2526,8 @@ router.delete("/:id/signed-copy", async (req, res) => {
         .catch(e => console.warn("Signed-copy storage delete warning:", e.message));
     }
 
-    const next = arr.filter(d => d.category !== "signed-copy");
     const { error: updErr } = await supabase.schema("procurement")
-      .from("purchase_orders")
-      .update({ post_documents: next })
-      .eq("id", id);
+      .rpc("remove_signed_copy", { p_order_id: id });
     if (updErr) throw updErr;
 
     res.json({ success: true });

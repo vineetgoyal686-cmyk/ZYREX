@@ -201,7 +201,7 @@ router.post("/:id/signature", requireAuth, requireAdminOrAbove, async (req, res)
 
   const { data: signedData, error: signedError } = await admin.storage
     .from("picture")
-    .createSignedUrl(newFileName, 315360000);
+    .createSignedUrl(newFileName, 3153600000);
 
   if (signedError || !signedData?.signedUrl)
     return res.status(500).json({ error: "Failed to generate signed URL" });

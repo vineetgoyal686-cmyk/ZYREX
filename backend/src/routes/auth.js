@@ -380,7 +380,7 @@ router.post("/avatar", async (req, res) => {
   // UI ke liye signed URL generate karo
   const { data: signedData, error: signedError } = await admin.storage
     .from("picture")
-    .createSignedUrl(newFileName, 315360000); // 10 years
+    .createSignedUrl(newFileName, 3153600000); // 100 years
 
   if (signedError || !signedData?.signedUrl)
     return res.status(500).json({ error: "Failed to generate signed URL for preview" });
@@ -432,7 +432,7 @@ router.post("/cover", async (req, res) => {
 
   const { data: signedData, error: signedError } = await admin.storage
     .from("picture")
-    .createSignedUrl(newFileName, 315360000); // 10 years
+    .createSignedUrl(newFileName, 3153600000); // 100 years
 
   if (signedError || !signedData?.signedUrl)
     return res.status(500).json({ error: "Failed to generate signed URL" });
@@ -519,7 +519,7 @@ router.post("/signature", async (req, res) => {
 
   const { data: signedData, error: signedError } = await admin.storage
     .from("picture")
-    .createSignedUrl(newFileName, 315360000);
+    .createSignedUrl(newFileName, 3153600000);
 
   if (signedError || !signedData?.signedUrl)
     return res.status(500).json({ error: "Failed to generate signed URL" });
@@ -618,7 +618,7 @@ router.get("/refresh-avatar", async (req, res) => {
 
   const { data, error } = await admin.storage
     .from("picture")
-    .createSignedUrl(filename, 315360000);
+    .createSignedUrl(filename, 3153600000);
 
   if (error || !data?.signedUrl) return res.json({ url: null });
 
