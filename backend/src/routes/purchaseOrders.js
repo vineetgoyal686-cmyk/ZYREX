@@ -705,6 +705,72 @@ router.get("/", async (req, res) => {
   }
 });
 
+/* GET /api/orders/documents-overview
+   Lightweight per-order document counts (no signed URLs) for the
+   "Document Status" overview page — kept fast by only counting, never signing. */
+router.get("/documents-overview", async (_req, res) => {
+  try {
+    const { data, error } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("id, order_number, order_type, subject, status, quotation_url, comparative_sheet_url, pre_documents, post_documents, snapshot")
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+
+    const countQuotationUrl = (val) => {
+      if (!val) return 0;
+      try { const p = JSON.parse(val); if (Array.isArray(p)) return p.filter(Boolean).length; } catch {}
+      return 1;
+    };
+
+    const rows = (data || []).map(o => {
+      const preArr = Array.isArray(o.pre_documents) ? o.pre_documents : [];
+      const postArr = Array.isArray(o.post_documents) ? o.post_documents : [];
+      const isMailProof = o.snapshot?.proof_type === "Mail Proof Doc";
+
+      const vendor = o.snapshot?.vendor || {};
+      const vendorDocTypes = [
+        { key: "gst",      label: "GST Certificate",              present: !!(vendor.docGstUrl || vendor.doc_gst_url) },
+        { key: "pan",      label: "PAN Card",                      present: !!(vendor.docPanUrl || vendor.doc_pan_url) },
+        { key: "aadhaar",  label: "Aadhaar",                       present: !!(vendor.docAadhaarUrl || vendor.doc_aadhaar_url) },
+        { key: "coi",      label: "Certificate of Incorporation",  present: !!(vendor.docCoiUrl || vendor.doc_coi_url) },
+        { key: "msme",     label: "MSME Certificate",              present: !!(vendor.docMsmeUrl || vendor.doc_msme_url) },
+        { key: "cheque",   label: "Cancelled Cheque",              present: !!(vendor.docCancelChequeUrl || vendor.doc_cancel_cheque_url) },
+      ];
+      const vendorDocsFromOrder = preArr.filter(d => d.category === "vendor-docs").length;
+
+      const postCount = (cat) => postArr.filter(d => d.category === cat).length;
+
+      return {
+        id: o.id,
+        orderNumber: o.order_number,
+        orderType: o.order_type,
+        subject: o.subject,
+        status: o.status,
+        pre: {
+          quotations:  countQuotationUrl(o.quotation_url) + preArr.filter(d => d.category === "quotations").length,
+          comparative: (o.comparative_sheet_url && !isMailProof ? 1 : 0) + preArr.filter(d => d.category === "comparative").length,
+          mailProof:   (o.comparative_sheet_url && isMailProof ? 1 : 0) + preArr.filter(d => d.category === "mail-proof").length,
+          vendorDocs:  vendorDocTypes.filter(v => v.present).length + vendorDocsFromOrder,
+          vendorDocTypes,
+          other:       preArr.filter(d => d.category === "other").length,
+        },
+        post: {
+          quotations:  postCount("quotations"),
+          comparative: postCount("comparative"),
+          vendorDocs:  postCount("vendor-docs"),
+          other:       postCount("other"),
+        },
+        orderAccepted: postArr.some(d => d.category === "signed-copy"),
+      };
+    });
+
+    res.json({ orders: rows });
+  } catch (err) {
+    console.error("GET /orders/documents-overview failed:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/master/vendor-data", async (_req, res) => {
   try {
     const [ordersRes, vendorsRes] = await Promise.all([

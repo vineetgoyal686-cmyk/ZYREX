@@ -65,12 +65,12 @@ const amountToWords = (amount) => {
 };
 
 
-const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = null }) => {
+const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = null, initialTab = "Order Details" }) => {
   const [data, setData] = useState({ order: null, items: [] });
   const [approvalData, setApprovalData] = useState({ request: null, logs: [] });
   const [loading, setLoading] = useState(false);
   const [hydrating, setHydrating] = useState(false);
-  const [activeTab, setActiveTab] = useState("Order Details");
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [handlers, setHandlers] = useState({});
   const thisUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
   const isGlobalAdmin = thisUser.role === "global_admin";

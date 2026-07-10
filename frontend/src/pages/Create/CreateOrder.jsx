@@ -3879,7 +3879,7 @@ const getOrderGrandTotal = (o) => {
 };
 
 // ============== ORDER LIST COMPONENT ==============
-function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
+function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOverviewClick }) {
   const [currentUser, setCurrentUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem("bms_user") || "{}"); }
     catch { return {}; }
@@ -5031,6 +5031,10 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <button onClick={onDocsOverviewClick}
+              className="h-10 px-5 rounded border border-slate-200 bg-white text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-50 transition-all text-sm">
+              <FileText size={14} className="text-slate-400" /> Document Status
+            </button>
             <button onClick={handleExport}
               className="h-10 px-5 rounded border border-slate-200 bg-white text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-50 transition-all text-sm">
               <Download size={14} className="text-slate-400" /> Export
@@ -5720,12 +5724,170 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick }) {
   );
 }
 
+// ============== DOCUMENT STATUS OVERVIEW ==============
+const DOC_OVERVIEW_COLS = [
+  { key: "pre.quotations",  label: "Quotations" },
+  { key: "pre.comparative", label: "Comparative Sheet" },
+  { key: "pre.mailProof",   label: "Mail Proof Doc" },
+  { key: "pre.vendorDocs",  label: "Vendor Documents" },
+  { key: "pre.other",       label: "Other" },
+  { key: "post.quotations",  label: "Post: Quotations" },
+  { key: "post.comparative", label: "Post: Comparative" },
+  { key: "post.vendorDocs",  label: "Post: Vendor Docs" },
+  { key: "post.other",       label: "Post: Other" },
+];
+
+function DocumentStatusOverview({ onBack, onOpenOrder }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [vendorPopover, setVendorPopover] = useState(null); // { order, x, y }
+
+  useEffect(() => {
+    let alive = true;
+    authFetch(`${API}/api/orders/documents-overview`)
+      .then(res => res.json())
+      .then(data => { if (alive) setRows(data.orders || []); })
+      .catch(() => { if (alive) setRows([]); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter(r =>
+      (r.orderNumber || "").toLowerCase().includes(q) ||
+      (r.subject || "").toLowerCase().includes(q)
+    );
+  }, [rows, search]);
+
+  const getVal = (row, path) => path.split(".").reduce((o, k) => (o ? o[k] : 0), row);
+
+  const Cell = ({ count, onClick }) => (
+    <button
+      onClick={onClick}
+      disabled={!count}
+      className={`w-full h-full flex items-center justify-center py-2 text-xs font-bold transition-colors
+        ${count > 0 ? "text-emerald-700 hover:bg-emerald-50 cursor-pointer" : "text-slate-300 cursor-default"}`}>
+      {count > 0 ? count : "—"}
+    </button>
+  );
+
+  return (
+    <div className="p-6 bg-[#f7f8fa] min-h-screen">
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="h-9 w-9 rounded-lg border border-slate-200 bg-white flex items-center justify-center hover:bg-slate-50">
+            <ChevronRight size={16} className="rotate-180 text-slate-500" />
+          </button>
+          <div>
+            <h1 className="text-xl font-bold text-slate-800 tracking-tight leading-none mb-1">Document Status</h1>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">• Per-Order Document Overview</p>
+          </div>
+        </div>
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search order no, subject..."
+            className="h-10 pl-9 pr-4 rounded border border-slate-200 bg-white text-sm outline-none focus:border-indigo-400 w-72"
+          />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 overflow-auto">
+        {loading ? (
+          <div className="py-24 text-center text-sm text-slate-400">Loading…</div>
+        ) : (
+          <table className="min-w-full text-left">
+            <thead>
+              <tr className="bg-slate-50">
+                <th className="sticky left-0 z-10 bg-slate-50 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Order No</th>
+                <th className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Order Accepted</th>
+                {DOC_OVERVIEW_COLS.map(c => (
+                  <th key={c.key} className="px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 text-center whitespace-nowrap">{c.label}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(row => (
+                <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="sticky left-0 z-10 bg-white px-4 py-1 border-b border-r border-slate-200 whitespace-nowrap">
+                    <button onClick={() => onOpenOrder(row.id, "Order Details")} className="font-medium text-[13px] text-[#5b4fbe] hover:text-[#4236a1]">
+                      {row.orderNumber}
+                    </button>
+                    <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{row.subject}</p>
+                  </td>
+                  <td className="px-4 py-1 border-b border-r border-slate-200 text-center">
+                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${row.orderAccepted ? "bg-emerald-50 text-emerald-600" : "bg-amber-50 text-amber-600"}`}>
+                      {row.orderAccepted ? "Uploaded" : "Pending"}
+                    </span>
+                  </td>
+                  {DOC_OVERVIEW_COLS.map(c => (
+                    <td key={c.key} className="border-b border-r border-slate-200 p-0">
+                      {c.key === "pre.vendorDocs" ? (
+                        <button
+                          onClick={(e) => {
+                            if (!row.pre.vendorDocs) return;
+                            const r = e.currentTarget.getBoundingClientRect();
+                            setVendorPopover({ order: row, x: r.left, y: r.bottom + 4 });
+                          }}
+                          disabled={!row.pre.vendorDocs}
+                          className={`w-full h-full flex items-center justify-center py-2 text-xs font-bold transition-colors
+                            ${row.pre.vendorDocs > 0 ? "text-emerald-700 hover:bg-emerald-50 cursor-pointer" : "text-slate-300 cursor-default"}`}>
+                          {row.pre.vendorDocs > 0 ? row.pre.vendorDocs : "—"}
+                        </button>
+                      ) : (
+                        <Cell count={getVal(row, c.key)} onClick={() => onOpenOrder(row.id, "Order Documents")} />
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr><td colSpan={2 + DOC_OVERVIEW_COLS.length} className="py-16 text-center text-sm text-slate-400">No orders found</td></tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {vendorPopover && createPortal(
+        <>
+          <div className="fixed inset-0 z-[1100]" onClick={() => setVendorPopover(null)} />
+          <div style={{ position: "fixed", top: vendorPopover.y, left: vendorPopover.x, zIndex: 1101 }}
+            className="bg-white border border-slate-200 rounded-lg shadow-xl w-64 overflow-hidden">
+            <div className="px-3 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 border-b border-slate-100">Vendor Documents</div>
+            {vendorPopover.order.pre.vendorDocTypes.map(v => (
+              <div key={v.key} className="flex items-center justify-between px-3 py-2 text-xs border-b border-slate-50 last:border-0">
+                <span className="text-slate-700">{v.label}</span>
+                {v.present
+                  ? <Check size={14} className="text-emerald-500" />
+                  : <X size={14} className="text-slate-300" />}
+              </div>
+            ))}
+            <button
+              onClick={() => { onOpenOrder(vendorPopover.order.id, "Order Documents"); setVendorPopover(null); }}
+              className="w-full text-center py-2 text-[11px] font-semibold text-indigo-600 hover:bg-indigo-50 border-t border-slate-100">
+              View in Order Documents →
+            </button>
+          </div>
+        </>,
+        document.body
+      )}
+    </div>
+  );
+}
+
 // ============== MAIN CONTROLLER ==============
 export default function CreateOrderWrapper({ project, editOrderId, onEditComplete }) {
   const [view, setView] = useState("list");
   const [viewId, setViewId] = useState(null);
   const [viewSeed, setViewSeed] = useState(null);
   const [localEditId, setLocalEditId] = useState(null);
+  const [viewInitialTab, setViewInitialTab] = useState("Order Details");
 
   useEffect(() => {
     sessionStorage.removeItem("bms_co_view");
@@ -5752,8 +5914,22 @@ export default function CreateOrderWrapper({ project, editOrderId, onEditComplet
       <ViewOrder
         orderId={viewId}
         initialOrder={viewSeed}
-        onBack={() => { setView("list"); setViewId(null); setViewSeed(null); }}
+        initialTab={viewInitialTab}
+        onBack={() => { setView("list"); setViewId(null); setViewSeed(null); setViewInitialTab("Order Details"); }}
         onEdit={(id) => { setViewId(null); setViewSeed(null); setLocalEditId(id); setView("create"); }} // switch to form
+      />
+    );
+  }
+  if (view === "docsOverview") {
+    return (
+      <DocumentStatusOverview
+        onBack={() => setView("list")}
+        onOpenOrder={(id, tab) => {
+          setViewSeed(null);
+          setViewId(id);
+          setViewInitialTab(tab || "Order Details");
+          setView("view");
+        }}
       />
     );
   }
@@ -5761,6 +5937,7 @@ export default function CreateOrderWrapper({ project, editOrderId, onEditComplet
     <OrderList
       project={project}
       onCreateClick={() => { if (onEditComplete) onEditComplete(); setLocalEditId(null); setViewSeed(null); setView("create"); }}
+      onDocsOverviewClick={() => setView("docsOverview")}
       onViewClick={(order) => {
         const id = typeof order === "object" ? order.id : order;
         const seed = typeof order === "object" ? order : null;
