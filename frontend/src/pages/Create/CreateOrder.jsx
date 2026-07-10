@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag, Activity, Calendar } from "lucide-react";
 import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { FullCompanyModal, FullVendorModal, FullViewSiteModal, FullViewCompanyModal, FullViewVendorModal, FullContactModal, FullViewContactModal, FullClauseModal } from "./FullMasterModals";
 import ProjectFormModal from "../../components/ProjectFormModal";
 import ProjectSelect from "../../components/ProjectSelect";
@@ -5742,6 +5744,8 @@ function DocumentStatusOverview({ onBack, onOpenOrder }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [vendorPopover, setVendorPopover] = useState(null); // { order, x, y }
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     let alive = true;
@@ -5762,7 +5766,50 @@ function DocumentStatusOverview({ onBack, onOpenOrder }) {
     );
   }, [rows, search]);
 
+  useEffect(() => { setPage(1); }, [search, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paginated = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page, pageSize]);
+
   const getVal = (row, path) => path.split(".").reduce((o, k) => (o ? o[k] : 0), row);
+
+  const exportRowsFlat = () => filtered.map((row, i) => ({
+    "S.No": i + 1,
+    "Order No": row.orderNumber,
+    "Subject": row.subject,
+    "Order Accepted": row.orderAccepted ? "Uploaded" : "Pending",
+    "Quotations": row.pre.quotations,
+    "Comparative Sheet": row.pre.comparative,
+    "Mail Proof Doc": row.pre.mailProof,
+    "Vendor Documents": row.pre.vendorDocs,
+    "Other": row.pre.other,
+    "Post: Quotations": row.post.quotations,
+    "Post: Comparative": row.post.comparative,
+    "Post: Vendor Docs": row.post.vendorDocs,
+    "Post: Other": row.post.other,
+  }));
+
+  const handleExportExcel = () => {
+    const ws = XLSX.utils.json_to_sheet(exportRowsFlat());
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Document Status");
+    XLSX.writeFile(wb, "document_status.xlsx");
+  };
+
+  const handleExportPdf = () => {
+    const doc = new jsPDF({ orientation: "landscape" });
+    const data = exportRowsFlat();
+    autoTable(doc, {
+      head: [Object.keys(data[0] || { "S.No": "" })],
+      body: data.map(r => Object.values(r)),
+      styles: { fontSize: 7 },
+      headStyles: { fillColor: [91, 79, 190] },
+    });
+    doc.save("document_status.pdf");
+  };
 
   const Cell = ({ count, onClick }) => (
     <button
@@ -5786,34 +5833,48 @@ function DocumentStatusOverview({ onBack, onOpenOrder }) {
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">• Per-Order Document Overview</p>
           </div>
         </div>
-        <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search order no, subject..."
-            className="h-10 pl-9 pr-4 rounded border border-slate-200 bg-white text-sm outline-none focus:border-indigo-400 w-72"
-          />
+        <div className="flex items-center gap-3">
+          <button onClick={handleExportExcel}
+            className="h-10 px-4 rounded border border-slate-200 bg-white text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-50 transition-all text-sm">
+            <FileSpreadsheet size={14} className="text-slate-400" /> Export Excel
+          </button>
+          <button onClick={handleExportPdf}
+            className="h-10 px-4 rounded border border-slate-200 bg-white text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-50 transition-all text-sm">
+            <FileDown size={14} className="text-slate-400" /> Export PDF
+          </button>
+          <div className="relative">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search order no, subject..."
+              className="h-10 pl-9 pr-4 rounded border border-slate-200 bg-white text-sm outline-none focus:border-indigo-400 w-72"
+            />
+          </div>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-auto">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-auto max-h-[70vh]">
         {loading ? (
           <div className="py-24 text-center text-sm text-slate-400">Loading…</div>
         ) : (
           <table className="min-w-full text-left">
             <thead>
               <tr className="bg-slate-50">
-                <th className="sticky left-0 z-10 bg-slate-50 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Order No</th>
-                <th className="px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Order Accepted</th>
+                <th className="sticky top-0 z-20 bg-slate-50 px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap text-center" style={{ width: '56px' }}>S.No</th>
+                <th className="sticky top-0 left-0 z-30 bg-slate-50 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Order No</th>
+                <th className="sticky top-0 z-20 bg-slate-50 px-4 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 whitespace-nowrap">Order Accepted</th>
                 {DOC_OVERVIEW_COLS.map(c => (
-                  <th key={c.key} className="px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 text-center whitespace-nowrap">{c.label}</th>
+                  <th key={c.key} className="sticky top-0 z-20 bg-slate-50 px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b border-r border-slate-200 text-center whitespace-nowrap">{c.label}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.map(row => (
+              {paginated.map((row, i) => (
                 <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-3 py-1 border-b border-r border-slate-200 text-center text-xs text-slate-500">
+                    {(page - 1) * pageSize + i + 1}
+                  </td>
                   <td className="sticky left-0 z-10 bg-white px-4 py-1 border-b border-r border-slate-200 whitespace-nowrap">
                     <button onClick={() => onOpenOrder(row.id, "Order Details")} className="font-medium text-[13px] text-[#5b4fbe] hover:text-[#4236a1]">
                       {row.orderNumber}
@@ -5846,13 +5907,37 @@ function DocumentStatusOverview({ onBack, onOpenOrder }) {
                   ))}
                 </tr>
               ))}
-              {filtered.length === 0 && (
-                <tr><td colSpan={2 + DOC_OVERVIEW_COLS.length} className="py-16 text-center text-sm text-slate-400">No orders found</td></tr>
+              {paginated.length === 0 && (
+                <tr><td colSpan={3 + DOC_OVERVIEW_COLS.length} className="py-16 text-center text-sm text-slate-400">No orders found</td></tr>
               )}
             </tbody>
           </table>
         )}
       </div>
+
+      {!loading && (
+        <div className="flex items-center justify-between mt-4 px-1">
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span>Rows per page</span>
+            <select value={pageSize} onChange={e => setPageSize(Number(e.target.value))}
+              className="border border-slate-200 rounded px-2 py-1 text-xs outline-none focus:border-indigo-400">
+              {[10, 20, 30, 50].map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <span>{filtered.length === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, filtered.length)} of {filtered.length}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+              className="px-3 py-1.5 rounded border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+              Prev
+            </button>
+            <span className="text-xs text-slate-500">Page {page} of {totalPages}</span>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+              className="px-3 py-1.5 rounded border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {vendorPopover && createPortal(
         <>
