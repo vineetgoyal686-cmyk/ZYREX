@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ArrowLeft, Search, Building2, User, Landmark, MapPin, Receipt, ShieldQuestion, FileText, CheckCircle2, Phone, Mail, FileDown, Download, Eye, X, Upload, Trash2, FileCheck, Lock, ShoppingCart, Package, GitMerge, Calendar, Undo2, Folder, Plus, Clock, Pencil, ChevronDown, FileSpreadsheet, Image as ImageIcon, File as FileIcon } from "lucide-react";
-import { getCachedOrderDetails, preloadOrderDetails, seedOrderDetails } from "./orderDetailsCache";
+import { getCachedOrderDetails, preloadOrderDetails, seedOrderDetails, bustOrderCache } from "./orderDetailsCache";
 import { normalizeOrderSite } from "../../utils/orderSite";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
@@ -442,6 +442,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
 
       // After Approve, this clone's status flipped to Draft. After Reject the clone is gone.
       if (action === "Rejected" && onBack) {
+        bustOrderCache(orderId);
         onBack();
       } else {
         fetchOrderDetails();
@@ -474,6 +475,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
           ? "Amendment request cancelled."
           : "Amendment cancelled — original order restored to Issued."
       );
+      bustOrderCache(orderId);
       setTimeout(() => { if (onBack) onBack(); }, 1500);
     } catch (err) {
       showToast(err.message, "error");
@@ -493,6 +495,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Withdraw failed");
       showToast(actionType === "recall" ? "Recall cancelled — order restored to Issued." : "Cancel order withdrawn — order restored to Issued.");
+      bustOrderCache(orderId);
       setTimeout(() => { if (onBack) onBack(); }, 1500);
     } catch (err) {
       showToast(err.message, "error");
@@ -669,6 +672,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       });
       if (!res.ok) throw new Error("Status update failed");
 
+      bustOrderCache(orderId);
       showToast(`Success! Order submitted for ${newStatus === 'Review' ? 'Review' : 'Approval'}.`);
       setTimeout(() => {
         if (onBack) onBack();

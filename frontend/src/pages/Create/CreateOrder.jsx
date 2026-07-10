@@ -8,7 +8,7 @@ import ProjectSelect from "../../components/ProjectSelect";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 import ViewOrder from "../Procurement/ViewOrder";
-import { preloadOrderDetails, seedOrderDetails, getCachedOrderDetails } from "../Procurement/orderDetailsCache";
+import { preloadOrderDetails, seedOrderDetails, getCachedOrderDetails, bustOrderCache } from "../Procurement/orderDetailsCache";
 import { normalizeOrderSite, getOrderSiteCode, siteCodeMatch } from "../../utils/orderSite";
 import { authFetch, getValidToken } from "../../utils/authFetch";
 
@@ -1732,6 +1732,10 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
       // Note: Approval initialization is now handled in the 'Review' stage transition
       // directly from the Order List to ensure the 'Draft -> Review -> Pending Issue' flow.
+
+      // The hover-preload cache would otherwise keep serving the pre-save
+      // snapshot (missing this save's notes/ref number/etc.) on next Edit.
+      bustOrderCache(editOrderId || data.id);
 
       showToast(`Order ${editOrderId ? 'updated' : 'saved'} successfully as ${submitStatus}!`);
       setTimeout(() => {
