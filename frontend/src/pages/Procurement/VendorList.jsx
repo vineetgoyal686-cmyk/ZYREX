@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
-import { Plus, Search, Pencil, Trash2, X, Building2, Upload, FileText, ChevronLeft, ChevronRight, FileSpreadsheet, ChevronDown, Eye, Copy, Check, Trash, RotateCcw, History, Download } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, X, Building2, Users, Upload, FileText, ChevronLeft, ChevronRight, FileSpreadsheet, ChevronDown, Eye, Copy, Check, Trash, RotateCcw, History, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -65,9 +65,9 @@ const COLS = [
   { label: "Vendor Firm Name",       key: "vendorName",     w: "w-[22%] min-w-[180px]" },
   { label: "Company Codes",          key: "companyCodes",   w: "w-[10%] min-w-[110px]" },
   { label: "Site Codes",             key: "siteCodes",      w: "w-[8%] min-w-[80px]" },
-  { label: "Email",                  key: "email",          w: "w-[18%] min-w-[160px]" },
+  { label: "Email",                  key: "email",          w: "w-[18%] min-w-[160px]", copy: true },
   { label: "Contact Number",         key: "mobile",         w: "w-[12%] min-w-[120px]" },
-  { label: "GST No",                 key: "gstin",          w: "w-[15%] min-w-[140px]", mono: true, copy: true },
+  { label: "GST No",                 key: "gstin",          w: "w-[15%] min-w-[140px]", copy: true },
   { label: "Profile Score",          key: "profileScore",   w: "w-[10%] min-w-[110px]" },
 ];
 
@@ -487,18 +487,26 @@ export default function VendorList() {
       {/* Sticky header — edge-to-edge, flush with sidebar/top */}
       <div className="sticky top-0 z-40 bg-white border-b border-slate-200">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-3 sm:px-4 lg:px-6 py-3 border-b border-slate-100">
-        <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-          {[
-            { key: "vendors", label: "Vendor List" },
-            { key: "pool",    label: "Vendor Pool" },
-          ].map(t => (
-            <button key={t.key} type="button" onClick={() => setMainTab(t.key)}
-              className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${
-                mainTab === t.key ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-              }`}>
-              {t.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-5 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+              <Users size={16} className="text-indigo-600" />
+            </div>
+            <h1 className="text-base font-bold text-slate-800 whitespace-nowrap">Vendor Directory</h1>
+          </div>
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+            {[
+              { key: "vendors", label: "Vendor List" },
+              { key: "pool",    label: "Vendor Pool" },
+            ].map(t => (
+              <button key={t.key} type="button" onClick={() => setMainTab(t.key)}
+                className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${
+                  mainTab === t.key ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                }`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap sm:justify-end">
           {/* More dropdown — Export / Bulk Upload / Trash */}
@@ -749,23 +757,28 @@ export default function VendorList() {
                       return (
                       <td key={c.key} className={`px-4 py-3 text-slate-700 whitespace-nowrap ${c.w} ${isVendorName ? "sticky left-0 z-10 bg-white group-hover:bg-slate-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]" : ""}`}>
                         {c.key === "vendorName" ? (
-                          <span className="font-semibold text-slate-800 break-words whitespace-normal">{v[c.key] || "—"}</span>
+                          v[c.key] ? (() => {
+                            const key = `${v.id}:${c.key}`;
+                            const isCopied = copiedKey === key;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(v[c.key], key)}
+                                title={isCopied ? "Copied!" : "Click to copy"}
+                                className={`group inline-flex items-center gap-1.5 font-semibold px-1.5 py-1 -mx-1.5 -my-1 rounded hover:bg-slate-100 transition-colors ${isCopied ? "text-emerald-600" : "text-slate-800"}`}>
+                                <span className="break-words whitespace-normal text-left">{v[c.key]}</span>
+                                {isCopied
+                                  ? <Check size={12} className="shrink-0" />
+                                  : <Copy size={11} className="shrink-0 text-slate-300 group-hover:text-slate-500 transition-colors" />}
+                              </button>
+                            );
+                          })() : <span className="text-slate-300">—</span>
                         ) : c.key === "siteCodes" || c.key === "companyCodes" ? (
-                          <div className="flex flex-wrap gap-1">
-                            {v[c.key]?.filter(Boolean).length > 0 ? (
-                              v[c.key].filter(Boolean).map((sc, i) => (
-                                <span key={i} className={`px-1.5 py-0.5 text-[10px] font-bold rounded border uppercase tracking-tight ${
-                                  c.key === "companyCodes"
-                                    ? "bg-blue-50 text-blue-700 border-blue-100"
-                                    : "bg-purple-50 text-purple-600 border-purple-100"
-                                }`}>
-                                  {sc}
-                                </span>
-                              ))
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                          </div>
+                          v[c.key]?.filter(Boolean).length > 0 ? (
+                            <span className="text-sm text-slate-600">{v[c.key].filter(Boolean).join(", ")}</span>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )
                         ) : c.key === "profileScore" ? (
                           (() => {
                             const { pct, missing } = computeProfileScore(v);
@@ -792,7 +805,7 @@ export default function VendorList() {
                                 type="button"
                                 onClick={() => copyToClipboard(v[c.key], key)}
                                 title={isCopied ? "Copied!" : "Click to copy"}
-                                className={`group inline-flex items-center gap-1.5 font-mono text-xs px-1.5 py-1 -mx-1.5 -my-1 rounded hover:bg-slate-100 transition-colors ${isCopied ? "text-emerald-600" : "text-slate-700"}`}>
+                                className={`group inline-flex items-center gap-1.5 text-xs px-1.5 py-1 -mx-1.5 -my-1 rounded hover:bg-slate-100 transition-colors ${isCopied ? "text-emerald-600" : "text-slate-700"}`}>
                                 <span className="break-words whitespace-normal text-left">{v[c.key]}</span>
                                 {isCopied
                                   ? <Check size={12} className="shrink-0" />
