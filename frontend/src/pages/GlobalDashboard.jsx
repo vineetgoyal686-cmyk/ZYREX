@@ -59,16 +59,16 @@ const CatTip = ({ active, payload, label }) => {
     <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 4, overflow: "hidden", minWidth: 168, boxShadow: "0 8px 24px rgba(15,23,42,0.13)" }}>
       <div style={{ background: "#0f172a", padding: "6px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 12 }}>{label}</span>
-        <span style={{ color: "#34d399", fontWeight: 800, fontSize: 12 }}>₹{fmt(total)}L</span>
+        <span style={{ color: "#34d399", fontWeight: 800, fontSize: 12 }}>{fmtAmt((total) * 100000)}</span>
       </div>
       <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 5 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 20 }}>
           <span style={{ color: "#64748b", fontSize: 11, fontWeight: 600 }}>PO Spend</span>
-          <span style={{ color: "#4338ca", fontWeight: 700, fontSize: 11 }}>₹{fmt(po)}L</span>
+          <span style={{ color: "#4338ca", fontWeight: 700, fontSize: 11 }}>{fmtAmt((po) * 100000)}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 20 }}>
           <span style={{ color: "#64748b", fontSize: 11, fontWeight: 600 }}>WO Spend</span>
-          <span style={{ color: "#ea580c", fontWeight: 700, fontSize: 11 }}>₹{fmt(wo)}L</span>
+          <span style={{ color: "#ea580c", fontWeight: 700, fontSize: 11 }}>{fmtAmt((wo) * 100000)}</span>
         </div>
       </div>
     </div>
@@ -84,7 +84,7 @@ const VendorPOTip = ({ active, payload, label }) => {
     <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 4, overflow: "hidden", minWidth: 175, boxShadow: "0 8px 24px rgba(15,23,42,0.13)" }}>
       <div style={{ background: "#0f172a", padding: "6px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 11, maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-        <span style={{ color: CPL, fontWeight: 800, fontSize: 12, flexShrink: 0, marginLeft: 6 }}>₹{fmt(value)}L</span>
+        <span style={{ color: CPL, fontWeight: 800, fontSize: 12, flexShrink: 0, marginLeft: 6 }}>{fmtAmt((value) * 100000)}</span>
       </div>
       <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 5 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 20 }}>
@@ -93,7 +93,7 @@ const VendorPOTip = ({ active, payload, label }) => {
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 20 }}>
           <span style={{ color: "#64748b", fontSize: 11, fontWeight: 600 }}>PO Value</span>
-          <span style={{ color: "#2563eb", fontWeight: 700, fontSize: 11 }}>₹{fmt(value)}L</span>
+          <span style={{ color: "#2563eb", fontWeight: 700, fontSize: 11 }}>{fmtAmt((value) * 100000)}</span>
         </div>
       </div>
     </div>
@@ -109,7 +109,7 @@ const VendorWOTip = ({ active, payload, label }) => {
     <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 4, overflow: "hidden", minWidth: 175, boxShadow: "0 8px 24px rgba(15,23,42,0.13)" }}>
       <div style={{ background: "#0f172a", padding: "6px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ color: "#fff", fontWeight: 700, fontSize: 11, maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-        <span style={{ color: "#34d399", fontWeight: 800, fontSize: 12, flexShrink: 0, marginLeft: 6 }}>₹{fmt(value)}L</span>
+        <span style={{ color: "#34d399", fontWeight: 800, fontSize: 12, flexShrink: 0, marginLeft: 6 }}>{fmtAmt((value) * 100000)}</span>
       </div>
       <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 5 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 20 }}>
@@ -118,7 +118,7 @@ const VendorWOTip = ({ active, payload, label }) => {
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 20 }}>
           <span style={{ color: "#64748b", fontSize: 11, fontWeight: 600 }}>WO Value</span>
-          <span style={{ color: "#059669", fontWeight: 700, fontSize: 11 }}>₹{fmt(value)}L</span>
+          <span style={{ color: "#059669", fontWeight: 700, fontSize: 11 }}>{fmtAmt((value) * 100000)}</span>
         </div>
       </div>
     </div>
@@ -137,7 +137,7 @@ const MonthTooltip = ({ active, payload, label }) => {
     <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 4, overflow: "hidden", minWidth: 220, boxShadow: "0 8px 28px rgba(15,23,42,0.14)" }}>
       <div style={{ background: "#0f172a", padding: "7px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span style={{ color: "#fff", fontWeight: 800, fontSize: 13 }}>{label}-{year}</span>
-        <span style={{ color: CPL, fontWeight: 800, fontSize: 13 }}>₹{fmt(totalSpendVal)}L</span>
+        <span style={{ color: CPL, fontWeight: 800, fontSize: 13 }}>{fmtAmt((totalSpendVal) * 100000)}</span>
       </div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
@@ -152,7 +152,7 @@ const MonthTooltip = ({ active, payload, label }) => {
             <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
               <td style={{ color: "#374151", fontSize: 11, fontWeight: 600, padding: "5px 10px" }}>{s.code}</td>
               <td style={{ color: "#64748b", fontSize: 11, padding: "5px 8px", textAlign: "center" }}>{s.orders}</td>
-              <td style={{ color: "#0f172a", fontSize: 11, fontWeight: 700, padding: "5px 10px", textAlign: "right" }}>₹{fmt(s.po + s.wo)}L</td>
+              <td style={{ color: "#0f172a", fontSize: 11, fontWeight: 700, padding: "5px 10px", textAlign: "right" }}>{fmtAmt((s.po + s.wo) * 100000)}</td>
             </tr>
           )) : (
             <tr><td colSpan={3} style={{ color: "#94a3b8", fontSize: 11, padding: "7px 10px", textAlign: "center" }}>—</td></tr>
@@ -222,13 +222,13 @@ const SummaryCard = ({ title, icon, total, po, wo, poValue, woValue, accent }) =
       <div style={{ flex: 1 }}>
         <div style={{ color: "#334155", fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", marginBottom: 2 }}>PO</div>
         <div style={{ color: CP, fontSize: 20, fontWeight: 800 }}>{po.toLocaleString()}</div>
-        {poValue !== undefined && <div style={{ color: CPL, fontSize: 10, fontWeight: 600, marginTop: 2 }}>₹{poValue.toLocaleString()}L</div>}
+        {poValue !== undefined && <div style={{ color: CPL, fontSize: 10, fontWeight: 600, marginTop: 2 }}>{fmtAmt(poValue * 100000)}</div>}
       </div>
       <div style={{ width: 1, background: "#1e293b" }} />
       <div style={{ flex: 1 }}>
         <div style={{ color: "#334155", fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", marginBottom: 2 }}>WO</div>
         <div style={{ color: CW, fontSize: 20, fontWeight: 800 }}>{wo.toLocaleString()}</div>
-        {woValue !== undefined && <div style={{ color: CWL, fontSize: 10, fontWeight: 600, marginTop: 2 }}>₹{woValue.toLocaleString()}L</div>}
+        {woValue !== undefined && <div style={{ color: CWL, fontSize: 10, fontWeight: 600, marginTop: 2 }}>{fmtAmt(woValue * 100000)}</div>}
       </div>
     </div>
   </div>
@@ -260,12 +260,12 @@ const KpiCard = ({ title, icon, total, po, wo, poValue, woValue, showValues = tr
       <div style={{ flex: 1, background: `${CP}0c`, borderRadius: 6, padding: "5px 7px" }}>
         <div style={{ color: "#334155", fontSize: 8, fontWeight: 700, marginBottom: 1 }}>PO</div>
         <div style={{ color: CP, fontSize: 15, fontWeight: 800 }}>{po}</div>
-        {showValues && poValue !== undefined && <div style={{ color: CPL, fontSize: 9, fontWeight: 600 }}>₹{poValue}L</div>}
+        {showValues && poValue !== undefined && <div style={{ color: CPL, fontSize: 9, fontWeight: 600 }}>{fmtAmt(poValue * 100000)}</div>}
       </div>
       <div style={{ flex: 1, background: `${CW}0c`, borderRadius: 6, padding: "5px 7px" }}>
         <div style={{ color: "#334155", fontSize: 8, fontWeight: 700, marginBottom: 1 }}>WO</div>
         <div style={{ color: CW, fontSize: 15, fontWeight: 800 }}>{wo}</div>
-        {showValues && woValue !== undefined && <div style={{ color: CWL, fontSize: 9, fontWeight: 600 }}>₹{woValue}L</div>}
+        {showValues && woValue !== undefined && <div style={{ color: CWL, fontSize: 9, fontWeight: 600 }}>{fmtAmt(woValue * 100000)}</div>}
       </div>
     </div>
   </div>
@@ -893,7 +893,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                                   </div>
                                 </div>
                                 <div style={{ width: isMobile ? 66 : 90, flexShrink: 0, paddingLeft: isMobile ? 8 : 16, textAlign: "center" }}>
-                                  <span style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>₹{fmt(s.total)}L</span>
+                                  <span style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>{fmtAmt((s.total) * 100000)}</span>
                                 </div>
                                 {hoveredEntity === i && (
                                   <div style={{ position: "absolute", top: "calc(100% + 5px)", left: 90, zIndex: 200,
@@ -902,17 +902,17 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                                     <div style={{ color: "#64748b", fontSize: 10, fontWeight: 600, marginBottom: 7 }}>{s.name || s.entity}</div>
                                     <div style={{ display: "flex", gap: 14 }}>
                                       <div>
-                                        <div style={{ color: EP, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.po)}L</div>
+                                        <div style={{ color: EP, fontSize: 12, fontWeight: 800 }}>{fmtAmt((s.po) * 100000)}</div>
                                         <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 1 }}>PO · {poPct}%</div>
                                       </div>
                                       <div style={{ width: 1, background: "#c7d2fe" }} />
                                       <div>
-                                        <div style={{ color: EW, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.wo)}L</div>
+                                        <div style={{ color: EW, fontSize: 12, fontWeight: 800 }}>{fmtAmt((s.wo) * 100000)}</div>
                                         <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 1 }}>WO · {woPct}%</div>
                                       </div>
                                       <div style={{ width: 1, background: "#c7d2fe" }} />
                                       <div>
-                                        <div style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>₹{fmt(s.total)}L</div>
+                                        <div style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>{fmtAmt((s.total) * 100000)}</div>
                                         <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 1 }}>Total</div>
                                       </div>
                                     </div>
@@ -1003,7 +1003,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                                   </div>
                                 </div>
                                 <div style={{ width: isMobile ? 66 : 90, flexShrink: 0, paddingLeft: isMobile ? 8 : 16, textAlign: "center" }}>
-                                  <span style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>₹{fmt(s.total)}L</span>
+                                  <span style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>{fmtAmt((s.total) * 100000)}</span>
                                 </div>
                                 {hoveredSite === i && (
                                   <div style={{ position: "absolute", top: "calc(100% + 5px)", left: 90, zIndex: 200,
@@ -1012,17 +1012,17 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                                     <div style={{ color: "#64748b", fontSize: 10, fontWeight: 600, marginBottom: 7 }}>{s.name || s.site}</div>
                                     <div style={{ display: "flex", gap: 14 }}>
                                       <div>
-                                        <div style={{ color: SP, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.po)}L</div>
+                                        <div style={{ color: SP, fontSize: 12, fontWeight: 800 }}>{fmtAmt((s.po) * 100000)}</div>
                                         <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 1 }}>PO · {poPct}%</div>
                                       </div>
                                       <div style={{ width: 1, background: "#fecdd3" }} />
                                       <div>
-                                        <div style={{ color: SW, fontSize: 12, fontWeight: 800 }}>₹{fmt(s.wo)}L</div>
+                                        <div style={{ color: SW, fontSize: 12, fontWeight: 800 }}>{fmtAmt((s.wo) * 100000)}</div>
                                         <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 1 }}>WO · {woPct}%</div>
                                       </div>
                                       <div style={{ width: 1, background: "#fecdd3" }} />
                                       <div>
-                                        <div style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>₹{fmt(s.total)}L</div>
+                                        <div style={{ color: "#0f172a", fontSize: 12, fontWeight: 800 }}>{fmtAmt((s.total) * 100000)}</div>
                                         <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 1 }}>Total</div>
                                       </div>
                                     </div>
@@ -1347,14 +1347,14 @@ const GlobalDashboard = memo(function GlobalDashboard() {
               {/* User Performance Stats — compact */}
               {(() => {
                 const totalAll = (stats.userOrderData||[]).reduce((s, x) => s + x.total, 0);
-                const totalVal = (stats.userOrderData||[]).reduce((s, x) => s + x.value, 0);
+                const totalVal = ((stats.userOrderData||[]).reduce((s, x) => s + x.value, 0)).toFixed(2);
                 const uTh = { padding: "8px 14px", color: "#64748b", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", background: "#f8fafc", borderBottom: "2px solid #e2e8f0", textAlign: "left", whiteSpace: "nowrap" };
                 const uTh2 = { padding: "8px 10px", color: "#475569", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0", textAlign: "left" };
                 const uTd = { padding: "9px 14px", fontSize: 12.5, borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0" };
                 const uTdLast = { padding: "9px 14px", fontSize: 12.5, borderBottom: "1px solid #e2e8f0" };
                 return (
                   <div style={{ display: "flex", gap: 14, marginBottom: 14 }}>
-                    <div style={{ border: "1px solid #e2e8f0", borderRadius: 6, width: isMobile ? "100%" : 580, flexShrink: 0, overflow: "hidden", background: "#fff" }}>
+                    <div style={{ border: "1px solid #e2e8f0", borderRadius: 6, width: isMobile ? "100%" : 580, flexShrink: 0, background: "#fff" }}>
                       <div style={{ padding: "10px 14px", borderBottom: "1px solid #e2e8f0" }}>
                         <div style={{ color: "#0f172a", fontSize: 13, fontWeight: 700 }}>User Stats</div>
                         <div style={{ color: "#94a3b8", fontSize: 10, marginTop: 1 }}>Hover on name → site breakdown</div>
@@ -1388,7 +1388,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                                   onMouseLeave={e => { const t = e.currentTarget.querySelector(".utip"); if(t) t.style.display = "none"; }}
                                 >
                                   <span style={{ color: "#0f172a", fontWeight: 500, fontSize: 12.5, cursor: "default", borderBottom: "1px dashed #cbd5e1" }}>{u.name}</span>
-                                  <div className="utip" style={{ display: "none", position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 300, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, boxShadow: "0 8px 24px rgba(15,23,42,0.13)", minWidth: 190, overflow: "hidden" }}>
+                                  <div className="utip" style={{ display: "none", position: "absolute", bottom: "calc(100% + 6px)", left: 0, zIndex: 300, background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, boxShadow: "0 8px 24px rgba(15,23,42,0.13)", minWidth: 190, overflow: "hidden" }}>
                                     <div style={{ background: "#0f172a", padding: "6px 12px" }}><span style={{ color: "#fff", fontWeight: 700, fontSize: 11 }}>{u.name}</span></div>
                                     <table style={{ width: "100%", borderCollapse: "collapse" }}>
                                       <thead><tr style={{ background: "#f8fafc" }}>
@@ -1410,7 +1410,9 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                               <td style={{ ...uTd, color: CP, fontWeight: 700 }}>{u.po}</td>
                               <td style={{ ...uTd, color: CW, fontWeight: 700 }}>{u.wo}</td>
                               <td style={{ ...uTd, color: "#0f172a", fontWeight: 800 }}>{u.total}</td>
-                              <td style={{ ...uTdLast, color: "#16a34a", fontWeight: 700 }}>₹{u.value}L</td>
+                              <td style={{ ...uTdLast, color: "#16a34a", fontWeight: 700 }}>
+                                <span title={`₹${fmt(u.value * 100000)}`}>{fmtAmt(u.value * 100000)}</span>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -1421,7 +1423,9 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                             <td style={{ ...uTd, color: CP, fontWeight: 800 }}>{(stats.userOrderData||[]).reduce((s,x)=>s+x.po,0)}</td>
                             <td style={{ ...uTd, color: CW, fontWeight: 800 }}>{(stats.userOrderData||[]).reduce((s,x)=>s+x.wo,0)}</td>
                             <td style={{ ...uTd, color: "#0f172a", fontWeight: 900 }}>{totalAll}</td>
-                            <td style={{ ...uTdLast, color: "#16a34a", fontWeight: 800 }}>₹{totalVal}L</td>
+                            <td style={{ ...uTdLast, color: "#16a34a", fontWeight: 800 }}>
+                              <span title={`₹${fmt(totalVal * 100000)}`}>{fmtAmt(totalVal * 100000)}</span>
+                            </td>
                           </tr>
                         </tfoot>
                       </table>
@@ -1485,7 +1489,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                     </div>
                     <div style={{ width: 1, height: 30, background: "#e2e8f0", flexShrink: 0 }} />
                     <div>
-                      <div style={{ color: "#0f172a", fontSize: 15, fontWeight: 800 }}>₹{fmt(totalVal)}L</div>
+                      <div style={{ color: "#0f172a", fontSize: 15, fontWeight: 800 }}>{fmtAmt((totalVal) * 100000)}</div>
                       <div style={{ color: "#94a3b8", fontSize: 9, marginTop: 2 }}>Total Value</div>
                     </div>
                   </div>
@@ -1540,7 +1544,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
                       <span style={{ color: agingColor(u.maxDays), fontSize: 16, fontWeight: 800, lineHeight: 1 }}>{u.orders}</span>
                       <span style={{ color: "#64748b", fontSize: 9 }}>orders</span>
-                      <span style={{ color: "#374151", fontSize: 11, fontWeight: 700, marginLeft: "auto" }}>₹{fmt(u.rawValue / 100000)}L</span>
+                      <span style={{ color: "#374151", fontSize: 11, fontWeight: 700, marginLeft: "auto" }}>{fmtAmt((u.rawValue / 100000) * 100000)}</span>
                     </div>
                   </div>
                   <AgingBadge days={u.maxDays} />
