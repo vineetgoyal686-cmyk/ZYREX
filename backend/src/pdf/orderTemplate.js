@@ -49,12 +49,17 @@ const css = `
   }
   .party-name { font-size: 13px; font-weight: 700; margin-bottom: 7px; }
   .card { margin-bottom: 7px; }
-  .card-title { display: inline-block; font-size: 9px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; border-bottom: 1.5px solid #999; padding-bottom: 1px; }
-  .card-text { font-size: 10.5px; font-weight: 400; }
-  .kv { display: grid; grid-template-columns: 75px 1fr; gap: 3px; font-size: 9.5px; margin-bottom: 2px; }
-  .kv-label { font-weight: 700; text-transform: uppercase; font-size: 9px; }
+  .card-title { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; border-bottom: 1.5px solid #999; padding-bottom: 1px; }
+  .card-text { font-size: 11.5px; font-weight: 400; }
+  .kv { display: grid; grid-template-columns: 75px 1fr; gap: 3px; font-size: 11px; margin-bottom: 2px; }
+  .kv-label { font-weight: 700; font-size: 11px; }
   .kv-value { font-weight: 400; }
+  .kv-stack { font-size: 11px; margin-bottom: 4px; }
+  .kv-stack .kv-label { display: block; margin-bottom: 2px; }
+  .kv-stack .kv-value { display: block; }
   .kv-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 12px; }
+  .kv-full { grid-column: 1 / -1; }
+  .kv-full .kv-value { white-space: nowrap; }
 
   .subject-bar {
     border: var(--box-line); border-top: 0; background: #d4d4d8;
@@ -93,9 +98,9 @@ const css = `
   table.items .amount-col { background: #fafafa; font-weight: 700; }
   tr.item-row { page-break-inside: auto; break-inside: auto; }
   .point-label {
-    display: inline-block; font-size: 9px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.12em; color: #000;
-    margin: 0 0 4px 0; padding-bottom: 1.5px; border-bottom: 1px solid #000;
+    display: inline-block; font-size: 9px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.12em; color: #64748b;
+    margin: 0 0 6px 0; padding-bottom: 1.5px; border-bottom: 1px solid #cbd5e1;
   }
   .desc-block + .desc-block { margin-top: 6px; }
 
@@ -184,10 +189,10 @@ const renderVendorCard = (vend) => `
     <div class="card">
       <div class="card-title">Tax / GST Details</div>
       <div class="kv-grid-2">
-        <div class="kv"><span class="kv-label">GST No:</span><span class="kv-value">${escapeHtml(vend.gstin || "N/A")}</span></div>
-        <div class="kv"><span class="kv-label">PAN:</span><span class="kv-value">${escapeHtml(vend.pan || "N/A")}</span></div>
-        <div class="kv"><span class="kv-label">MSME:</span><span class="kv-value">${escapeHtml(vend.msme_number || vend.msme || vend.msme_no || "N/A")}</span></div>
-        <div class="kv"><span class="kv-label">Aadhar:</span><span class="kv-value">${escapeHtml(vend.aadhar || vend.aadhar_no || "N/A")}</span></div>
+        <div class="kv kv-full"><span class="kv-label">GST No:</span><span class="kv-value">${escapeHtml(vend.gstin || "N/A")}</span></div>
+        <div class="kv kv-full"><span class="kv-label">PAN:</span><span class="kv-value">${escapeHtml(vend.pan || "N/A")}</span></div>
+        <div class="kv kv-full"><span class="kv-label">MSME:</span><span class="kv-value">${escapeHtml(vend.msme_number || vend.msme || vend.msme_no || "N/A")}</span></div>
+        <div class="kv kv-full"><span class="kv-label">Aadhar:</span><span class="kv-value">${escapeHtml(vend.aadhar || vend.aadhar_no || "N/A")}</span></div>
       </div>
     </div>
     <div class="card">
@@ -211,7 +216,7 @@ const renderCompanyCard = (comp, site, contacts, billingProfile) => `
     </div>
     <div class="card">
       <div class="card-title">Tax / GST Details</div>
-      <div class="kv"><span class="kv-label">GST No:</span><span class="kv-value">${escapeHtml(billingProfile?.gstin || "N/A")}</span></div>
+      <div class="kv-stack"><span class="kv-label">GST No:</span><span class="kv-value">${escapeHtml(billingProfile?.gstin || "N/A")}</span></div>
     </div>
     <div class="card">
       <div class="card-title">Contact Persons</div>
@@ -225,10 +230,13 @@ const renderCompanyCard = (comp, site, contacts, billingProfile) => `
                   const rawName = c.person_name || c.personName || "N/A";
                   const cleanName = rawName.replace(/[\t\n\r]/g, ' ').replace(/\s+/g, ' ').trim();
                   const phone = c.contact_number || c.contactNumber || "N/A";
-                  return `<div style="display: flex; margin-bottom: 2px; font-size: 10.5px; align-items: center;">
-                    <span style="font-weight: 400; width: 180px; display: inline-block;">${escapeHtml(cleanName)}</span>
+                  return `<div style="display: flex; align-items: center; margin-bottom: 4px; font-size: 11px; color: #000;">
+                    <span style="font-weight: 400; width: 170px; display: flex; align-items: center;">
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="#000" style="margin-right:5px;flex-shrink:0;"><path d="M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-5 6.5c0-2.5 2.2-4.5 5-4.5s5 2 5 4.5"/></svg>
+                      ${escapeHtml(cleanName)}
+                    </span>
                     <span style="font-weight: 400; display: flex; align-items: center;">
-                      <svg width="10" height="10" viewBox="0 0 16 16" fill="#000" style="margin-right:4px;flex-shrink:0;"><path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.568 17.568 0 0 0 4.168 6.608 17.569 17.569 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.678.678 0 0 0-.58-.122l-2.19.547a1.745 1.745 0 0 1-1.657-.459L5.482 8.062a1.745 1.745 0 0 1-.46-1.657l.548-2.19a.678.678 0 0 0-.122-.58L3.654 1.328z"/></svg>
+                      <svg width="11" height="11" viewBox="0 0 16 16" fill="#000" style="margin-right:5px;flex-shrink:0;"><path d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.568 17.568 0 0 0 4.168 6.608 17.569 17.569 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.678.678 0 0 0-.58-.122l-2.19.547a1.745 1.745 0 0 1-1.657-.459L5.482 8.062a1.745 1.745 0 0 1-.46-1.657l.548-2.19a.678.678 0 0 0-.122-.58L3.654 1.328z"/></svg>
                       ${escapeHtml(phone)}
                     </span>
                   </div>`;

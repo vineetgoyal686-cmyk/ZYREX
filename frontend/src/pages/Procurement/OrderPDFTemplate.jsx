@@ -1001,8 +1001,10 @@ table tbody td[rowspan] {
         .quill-content .sp-decimal li::before {
           content: none;
         }
-        .quill-content p { margin-bottom: 2px !important; }
+        .quill-content p { margin-bottom: 4px !important; }
+        .quill-content p:has(u) { margin-top: 3px !important; margin-bottom: 5px !important; }
         .quill-content strong { font-weight: 700 !important; }
+        .quill-content u { font-weight: 600 !important; color: #64748b !important; text-decoration-color: #94a3b8 !important; }
         .quill-content em { font-style: italic !important; }
         .quill-content li { display: list-item !important; }
         .quill-content li::marker { font-size: 8px; }
@@ -1204,13 +1206,13 @@ table tbody td[rowspan] {
                           <span className="grid-detail-label">Pan No:</span>
                           <span className="grid-detail-value pdf-fit-text">{vend.pan || "N/A"}</span>
                         </div>
-                        <div className="grid-detail-row" style={{ gridTemplateColumns: '55px 1fr' }}>
+                        <div className="grid-detail-row" style={{ gridTemplateColumns: '46px 1fr', gridColumn: 'span 2' }}>
                           <span className="grid-detail-label">MSME No:</span>
-                          <span className="grid-detail-value pdf-fit-text">{vend.msme_number || vend.msme || vend.msme_no || "N/A"}</span>
+                          <span className="grid-detail-value whitespace-nowrap">{vend.msme_number || vend.msme || vend.msme_no || "N/A"}</span>
                         </div>
-                        <div className="grid-detail-row" style={{ gridTemplateColumns: '55px 1fr' }}>
+                        <div className="grid-detail-row" style={{ gridTemplateColumns: '55px 1fr', gridColumn: 'span 2' }}>
                           <span className="grid-detail-label">Aadhar No:</span>
-                          <span className="grid-detail-value pdf-fit-text">{vend.aadhar || vend.aadhar_no || "N/A"}</span>
+                          <span className="grid-detail-value whitespace-nowrap">{vend.aadhar || vend.aadhar_no || "N/A"}</span>
                         </div>
                       </div>
                     </div>
