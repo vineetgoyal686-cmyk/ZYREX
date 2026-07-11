@@ -10,7 +10,7 @@ import { logAudit } from "../../utils/auditLog";
 import LogPanel from "../../components/LogPanel";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
-const PER_PAGE = 10;
+const PER_PAGE_OPTIONS = [10, 20, 30, 40, 50];
 const TABS = ["Supply", "SITC"];
 
 const QUILL_MODULES = {
@@ -95,6 +95,78 @@ function SearchableSelect({ options, value, onChange, placeholder }) {
   );
 }
 
+/* ── Searchable multi-select filter (used for Category / Item Name filters) ── */
+function ItemMultiFilter({ label, options, selected, onChange }) {
+  const [open, setOpen]   = useState(false);
+  const [query, setQuery] = useState("");
+  const ref                = useRef();
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  const toggle = (value) => {
+    if (selected.includes(value)) onChange(selected.filter(v => v !== value));
+    else onChange([...selected, value]);
+  };
+
+  const filtered = query ? options.filter(o => o.toLowerCase().includes(query.toLowerCase())) : options;
+
+  return (
+    <div ref={ref} className="relative w-full sm:w-auto">
+      <button onClick={() => setOpen(o => !o)}
+        className={`h-10 w-full sm:w-auto flex items-center gap-2 px-3 rounded-lg border text-sm font-medium transition-all
+          ${selected.length ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}>
+        <span>{label}</span>
+        {selected.length > 0 && (
+          <span className="grid h-5 min-w-5 place-items-center rounded-full bg-indigo-600 px-1.5 text-[10px] font-bold text-white">{selected.length}</span>
+        )}
+        <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-30 mt-1 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border border-slate-200 bg-white shadow-xl">
+          <div className="p-2 border-b border-slate-100">
+            <div className="flex items-center gap-2 rounded-md border border-slate-200 px-2">
+              <Search size={12} className="text-slate-400 shrink-0" />
+              <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
+                placeholder={`Search ${label.toLowerCase()}…`}
+                className="h-8 w-full bg-transparent text-xs outline-none text-slate-700" />
+            </div>
+            <p className="px-0.5 pt-1.5 text-[11px] text-slate-400">{filtered.length} result{filtered.length !== 1 ? "s" : ""} found</p>
+          </div>
+          <div className="max-h-56 overflow-y-auto py-1">
+            {filtered.length === 0 ? (
+              <p className="px-3 py-4 text-center text-xs text-slate-400">No options</p>
+            ) : (
+              filtered.map(opt => {
+                const checked = selected.includes(opt);
+                return (
+                  <button key={opt} onClick={() => toggle(opt)}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50">
+                    <span className={`grid h-4 w-4 place-items-center rounded border shrink-0 ${checked ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white"}`}>
+                      {checked && <span className="text-[10px] font-black leading-none">✓</span>}
+                    </span>
+                    <span className="truncate">{opt}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+          {selected.length > 0 && (
+            <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2">
+              <span className="text-[11px] font-bold text-slate-500">{selected.length} selected</span>
+              <button onClick={() => onChange([])} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800">Clear</button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ItemList() {
   const permSupply = useModulePermissions("item_supply");
   const permSitc   = useModulePermissions("item_sitc");
@@ -115,16 +187,25 @@ export default function ItemList() {
   const [saving, setSaving]       = useState(false);
   const [toast, setToast]         = useState(null);
   const [page, setPage]           = useState(1);
+  const [perPage, setPerPage]     = useState(10);
   const [logTarget, setLogTarget] = useState(null);
-  const [showExport, setShowExport] = useState(false);
+  const [showMore, setShowMore]   = useState(false);
+  const [showExportSub, setShowExportSub] = useState(false);
   const [showBulk, setShowBulk]   = useState(false);
   const [bulkRows, setBulkRows]   = useState([]);
   const [bulkFile, setBulkFile]   = useState("");
   const [bulkSaving, setBulkSaving] = useState(false);
   const fileRef = useRef();
   const bulkRef = useRef();
+  const moreRef = useRef();
 
   useEffect(() => { fetchAll(); }, []);
+
+  useEffect(() => {
+    const h = (e) => { if (moreRef.current && !moreRef.current.contains(e.target)) { setShowMore(false); setShowExportSub(false); } };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -273,7 +354,7 @@ export default function ItemList() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, activeTab);
     XLSX.writeFile(wb, `${activeTab}_items_${new Date().toISOString().slice(0,10)}.xlsx`);
-    setShowExport(false);
+    setShowMore(false); setShowExportSub(false);
   };
 
   const exportPDF = () => {
@@ -334,7 +415,7 @@ export default function ItemList() {
     });
 
     doc.save(`${activeTab}_items_${new Date().toISOString().slice(0, 10)}.pdf`);
-    setShowExport(false);
+    setShowMore(false); setShowExportSub(false);
   };
 
   const handleBulkFile = (e) => {
@@ -398,8 +479,8 @@ export default function ItemList() {
 
   /* scope of work helpers */
 
-  const [filterCategory, setFilterCategory] = useState("");
-  const [filterItem,     setFilterItem]     = useState("");
+  const [filterCategory, setFilterCategory] = useState([]);
+  const [filterItem,     setFilterItem]     = useState([]);
 
   /* filtered list */
   const tabItems = items.filter(i => (i.itemType || "Supply") === activeTab);
@@ -410,21 +491,21 @@ export default function ItemList() {
 
   const filtered = tabItems.filter(i => {
     const matchSearch   = !search       || i.materialName?.toLowerCase().includes(search.toLowerCase()) || i.category?.toLowerCase().includes(search.toLowerCase()) || i.itemCode?.toLowerCase().includes(search.toLowerCase());
-    const matchCategory = !filterCategory || i.category === filterCategory;
-    const matchItem     = !filterItem     || i.materialName === filterItem;
+    const matchCategory = filterCategory.length === 0 || filterCategory.includes(i.category);
+    const matchItem     = filterItem.length === 0     || filterItem.includes(i.materialName);
     return matchSearch && matchCategory && matchItem;
   });
 
-  const hasFilters  = filterCategory || filterItem;
-  const totalPages  = Math.ceil(filtered.length / PER_PAGE) || 1;
-  const paginated   = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const hasFilters  = filterCategory.length > 0 || filterItem.length > 0;
+  const totalPages  = Math.ceil(filtered.length / perPage) || 1;
+  const paginated   = filtered.slice((page - 1) * perPage, page * perPage);
   const isSITC      = activeTab === "SITC";
 
   const catOptions = categories.map(c => ({ label: c.categoryName, value: c.categoryName }));
   const uomOptions = uoms.map(u => ({ label: `${u.uomName} (${u.uomCode})`, value: u.uomCode }));
 
   return (
-    <div className="p-3 sm:p-4 lg:p-6 w-full pb-32">
+    <>
       <style>{`
         .ql-align-center { text-align: center !important; }
         .ql-align-right { text-align: right !important; }
@@ -443,58 +524,119 @@ export default function ItemList() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-            <Package size={20} className="text-blue-600" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-800">Item List</h1>
-            <p className="text-sm text-slate-400">Global master — used across all POs</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap sm:justify-end">
-          {/* Export dropdown */}
-          {canExport && (
-            <div className="relative">
-              <button onClick={() => { setShowExport(s => !s); setShowBulk(false); }}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
-                <Download size={14} /> Export <ChevronDown size={12} />
-              </button>
-              {showExport && (
-                <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl shadow-lg border border-slate-100 py-1 min-w-36">
-                  <button onClick={exportExcel}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
-                    <FileSpreadsheet size={14} className="text-green-600" /> Excel (.xlsx)
+      {/* Sticky top block: single unified header panel — main has zero padding on this route, so this sits flush at the true top/left/right edges with no offset math needed */}
+      <div className="sticky top-0 z-20 bg-white border-b border-slate-200">
+
+          {/* Row 1: Title + Tabs (left) / Add + More (right) — single slim row */}
+          <div className="flex items-center justify-between gap-4 px-2 sm:px-3 lg:px-4 py-2.5 border-b border-slate-200">
+            <div className="flex items-center gap-5 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                  <Package size={16} className="text-blue-600" />
+                </div>
+                <h1 className="text-base font-bold text-slate-800 whitespace-nowrap">Items</h1>
+              </div>
+
+              {/* Supply / SITC switch — same row as title, header height stays fixed */}
+              <div className="flex gap-1 bg-slate-100 p-0.5 rounded-lg w-fit shrink-0">
+                {TABS.map(tab => (
+                  <button key={tab} onClick={() => { setActiveTab(tab); setPage(1); setFilterCategory([]); setFilterItem([]); }}
+                    className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all
+                      ${activeTab === tab ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                    {tab}
                   </button>
-                  <button onClick={exportPDF}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
-                    <FileText size={14} className="text-red-500" /> PDF
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {(canExport || canBulkUpload) && (
+                <div className="relative" ref={moreRef}>
+                  <button onClick={() => setShowMore(v => !v)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
+                    More <ChevronDown size={12} className={`transition-transform ${showMore ? "rotate-180" : ""}`} />
                   </button>
+                  {showMore && (
+                    <div className="absolute right-0 top-full mt-1 z-20 bg-white rounded-xl shadow-lg border border-slate-100 py-1 min-w-44">
+                      {canExport && (
+                        <div>
+                          <button onClick={() => setShowExportSub(v => !v)}
+                            className="flex items-center justify-between w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                            <span className="flex items-center gap-2"><Download size={14} /> Export</span>
+                            <ChevronDown size={12} className={`transition-transform ${showExportSub ? "rotate-180" : ""}`} />
+                          </button>
+                          {showExportSub && (
+                            <div className="bg-slate-50 py-1">
+                              <button onClick={exportExcel}
+                                className="flex items-center gap-2 w-full pl-9 pr-4 py-2 text-xs text-slate-600 hover:bg-slate-100 transition-colors">
+                                <FileSpreadsheet size={13} className="text-green-600" /> Excel (.xlsx)
+                              </button>
+                              <button onClick={exportPDF}
+                                className="flex items-center gap-2 w-full pl-9 pr-4 py-2 text-xs text-slate-600 hover:bg-slate-100 transition-colors">
+                                <FileText size={13} className="text-red-500" /> PDF
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {canBulkUpload && (
+                        <button onClick={() => { setShowBulk(s => !s); setShowMore(false); setShowExportSub(false); }}
+                          className={`flex items-center gap-2 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors ${canExport ? "border-t border-slate-50" : ""}`}>
+                          <Upload size={14} /> Bulk Upload
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
+              {canAdd && (
+                <button onClick={openAdd}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 transition-all">
+                  <Plus size={15} /> Add Item
+                </button>
+              )}
             </div>
-          )}
-          {/* Bulk Upload */}
-          {canBulkUpload && (
-            <button onClick={() => { setShowBulk(s => !s); setShowExport(false); }}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
-              <Upload size={14} /> Bulk Upload
-            </button>
-          )}
-          {canAdd && (
-            <button onClick={openAdd}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 transition-all">
-              <Plus size={15} /> Add Item
-            </button>
-          )}
-        </div>
+          </div>
+
+          {/* Row 2: Search (left) + Filters (right) */}
+          <div className="px-2 sm:px-3 lg:px-4 py-3">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                <div className="relative w-full sm:w-96 shrink-0">
+                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+                    placeholder="Search…"
+                    className="w-full pl-9 pr-4 h-10 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400 bg-white text-slate-700" />
+                </div>
+                <span className="shrink-0 h-10 flex items-center px-3 rounded-lg bg-slate-50 border border-slate-100 text-xs font-semibold text-slate-500 whitespace-nowrap">
+                  Total {tabItems.length} item{tabItems.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-2 shrink-0">
+                <ItemMultiFilter label="Category" options={uniqueCategories} selected={filterCategory}
+                  onChange={v => { setFilterCategory(v); setPage(1); }} />
+
+                <ItemMultiFilter label="Item" options={uniqueItems} selected={filterItem}
+                  onChange={v => { setFilterItem(v); setPage(1); }} />
+
+                {/* Clear filters */}
+                {hasFilters && (
+                  <button onClick={() => { setFilterCategory([]); setFilterItem([]); setPage(1); }}
+                    className="h-10 flex items-center gap-1.5 px-3 rounded-lg border border-slate-200 text-sm text-slate-500 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all bg-white">
+                    <X size={13} /> Clear
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
       </div>
+
+      <div className="px-2 sm:px-3 lg:px-4 w-full pb-32">
 
       {/* Bulk Upload Panel */}
       {showBulk && (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-5">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mt-4 mb-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-slate-700">Bulk Upload — {activeTab} Items</h3>
             <button onClick={() => { setShowBulk(false); setBulkRows([]); setBulkFile(""); }}
@@ -551,90 +693,38 @@ export default function ItemList() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-4 bg-slate-100 p-1 rounded-xl w-fit">
-        {TABS.map(tab => (
-          <button key={tab} onClick={() => { setActiveTab(tab); setPage(1); setFilterCategory(""); setFilterItem(""); }}
-            className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all
-              ${activeTab === tab ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-            {tab}
-          </button>
-        ))}
-      </div>
-
-      {/* Search + Filters */}
-      <div className="flex flex-col sm:flex-row items-center gap-2 mb-4">
-        <div className="relative w-full sm:flex-1">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search by code, name or category…"
-            className="w-full pl-9 pr-4 h-10 rounded-xl border border-slate-200 text-sm outline-none focus:border-slate-400 bg-white text-slate-700" />
-        </div>
-
-        {/* Category filter */}
-        <div className="relative w-full sm:w-auto">
-          <select value={filterCategory} onChange={e => { setFilterCategory(e.target.value); setPage(1); }}
-            className="h-10 w-full sm:w-40 pl-3 pr-8 rounded-xl border border-slate-200 text-sm outline-none focus:border-slate-400 bg-white text-slate-600 appearance-none cursor-pointer">
-            <option value="">All Categories</option>
-            {uniqueCategories.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
-
-        {/* Item filter */}
-        <div className="relative w-full sm:w-auto">
-          <select value={filterItem} onChange={e => { setFilterItem(e.target.value); setPage(1); }}
-            className="h-10 w-full sm:w-48 pl-3 pr-8 rounded-xl border border-slate-200 text-sm outline-none focus:border-slate-400 bg-white text-slate-600 appearance-none cursor-pointer">
-            <option value="">All Items</option>
-            {uniqueItems.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-          <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
-
-        {/* Clear filters */}
-        {hasFilters && (
-          <button onClick={() => { setFilterCategory(""); setFilterItem(""); setPage(1); }}
-            className="h-10 flex items-center gap-1.5 px-3 rounded-xl border border-slate-200 text-sm text-slate-500 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all bg-white">
-            <X size={13} /> Clear
-          </button>
-        )}
-      </div>
-
       {/* Table */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-lg border border-slate-100 shadow-sm overflow-hidden mt-4">
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
               <tr className="bg-slate-50">
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 sticky left-0 z-10 bg-slate-50 w-[35px]">S.No</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 sticky left-[35px] z-10 bg-slate-50 w-[80px] whitespace-nowrap">Item Code</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200">Category</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 sticky left-0 z-10 bg-slate-50 w-[80px] whitespace-nowrap">Item Code</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 whitespace-nowrap">Category</th>
                 {isSITC ? (
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200">Item Name & Description</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 whitespace-nowrap">Item Name & Description</th>
                 ) : (
                   <>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200">Item Name</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200">Specification</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 w-[180px] whitespace-nowrap">Item Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 whitespace-nowrap">Specification</th>
                   </>
                 )}
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200">Brand(s)</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200">Unit</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200">Remarks</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 sticky right-0 z-10 bg-slate-50 w-[75px]">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 whitespace-nowrap">Brand(s)</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 w-[90px] whitespace-nowrap">Unit</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 sticky right-0 z-10 bg-slate-50 w-[75px] whitespace-nowrap">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={isSITC ? 8 : 9} className="text-center py-16 text-slate-400 text-sm border border-slate-200">Loading…</td></tr>
+                <tr><td colSpan={isSITC ? 6 : 7} className="text-center py-16 text-slate-400 text-sm border border-slate-200">Loading…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={isSITC ? 8 : 9} className="text-center py-16 text-slate-300 font-semibold uppercase tracking-widest text-xs border border-slate-200">No items found</td></tr>
+                <tr><td colSpan={isSITC ? 6 : 7} className="text-center py-16 text-slate-300 font-semibold uppercase tracking-widest text-xs border border-slate-200">No items found</td></tr>
               ) : paginated.map((item, idx) => (
                 <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3 text-sm text-slate-400 text-center border border-slate-200 align-top sticky left-0 z-10 bg-white w-[35px]">{(page - 1) * PER_PAGE + idx + 1}</td>
-                  <td className="px-4 py-3 text-sm font-mono text-slate-600 border border-slate-200 align-top whitespace-nowrap sticky left-[35px] z-10 bg-white w-[80px]">{item.itemCode}</td>
+                  <td className="px-4 py-3 text-sm text-slate-600 border border-slate-200 align-top whitespace-nowrap sticky left-0 z-10 bg-white w-[80px]">{item.itemCode}</td>
                   <td className="px-4 py-3 border border-slate-200 align-top">
                     {item.category
-                      ? <span className="px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-medium whitespace-nowrap">{item.category}</span>
+                      ? <span className="text-sm text-slate-600 whitespace-nowrap">{item.category}</span>
                       : <span className="text-slate-300 text-sm">—</span>}
                   </td>
                   {isSITC ? (
@@ -643,7 +733,7 @@ export default function ItemList() {
                         <div className="text-sm font-semibold text-slate-700 leading-tight">{item.materialName}</div>
                         <div className="space-y-1.5">
                           {item.specifications?.map((s, i) => (
-                            <div key={i} className="quill-content text-[11px] text-slate-500 leading-tight border-l-2 border-slate-100 pl-2 font-medium" 
+                            <div key={i} className="quill-content text-[13px] text-slate-500 leading-snug border-l-2 border-slate-100 pl-2 font-medium" 
                                  dangerouslySetInnerHTML={{ __html: normalizeRichTextHtml(s) }} />
                           ))}
                         </div>
@@ -676,7 +766,6 @@ export default function ItemList() {
                       : <span className="text-slate-300 text-sm">—</span>}
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-500 border border-slate-200 align-top whitespace-nowrap">{item.unit || "—"}</td>
-                  <td className="px-4 py-3 text-sm text-slate-500 border border-slate-200 align-top whitespace-normal break-words leading-tight">{item.remarks || "—"}</td>
                   <td className="px-4 py-3 border border-slate-200 align-top sticky right-0 z-10 bg-white shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.05)] w-[75px]">
                     <div className="flex items-center gap-1">
                       <button onClick={() => setViewItem(item)}
@@ -707,8 +796,17 @@ export default function ItemList() {
         </div>
 
         {/* Pagination */}
-        <div className="px-4 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
-          <p className="text-xs text-slate-400">{filtered.length} item{filtered.length !== 1 ? "s" : ""} · Page {page} of {totalPages}</p>
+        <div className="px-4 py-3 border-t border-slate-100 bg-slate-50 flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <p className="text-xs text-slate-400">{filtered.length} item{filtered.length !== 1 ? "s" : ""} · Page {page} of {totalPages}</p>
+            <div className="relative">
+              <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                className="h-7 pl-2.5 pr-6 rounded-lg border border-slate-200 text-xs text-slate-600 outline-none focus:border-slate-400 bg-white appearance-none cursor-pointer">
+                {PER_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n} / page</option>)}
+              </select>
+              <ChevronDown size={11} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+          </div>
           {totalPages > 1 && (
             <div className="flex items-center gap-1">
               <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
@@ -976,6 +1074,7 @@ export default function ItemList() {
       {logTarget && (
         <LogPanel entityType={logTarget.entityType} entityId={logTarget.entityId} entityName={logTarget.entityName} onClose={() => setLogTarget(null)} />
       )}
-    </div>
+      </div>
+    </>
   );
 }
