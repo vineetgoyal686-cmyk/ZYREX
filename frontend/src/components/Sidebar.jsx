@@ -61,7 +61,7 @@ const masterDataRows = [
 
 const setupRows = [
   { id: "proc_setup__vendor_list", label: "Vendor", description: "Manage vendors" },
-  { id: "proc_setup__item_list", label: "Item", description: "Manage items" },
+  { id: "proc_setup__item_list", label: "Material Catalog", description: "Manage items" },
   { id: "proc_setup__category_list", label: "Category", description: "Manage categories" },
   { id: "proc_setup__uom", label: "UOM", description: "Units of measurement" },
 ];

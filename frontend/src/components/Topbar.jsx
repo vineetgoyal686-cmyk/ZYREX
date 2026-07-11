@@ -18,7 +18,7 @@ const PAGE_TITLES = {
   master_data__intakes:             "Master Data",
   create__intake:                   "Create Intake",
   create__order:                    "Create Order",
-  proc_setup__item_list:            "Item List",
+  proc_setup__item_list:            "Material Catalog",
   proc_setup__vendor_list:          "Vendor List",
   proc_setup__term_condition:       "Term & Conditions",
   proc_setup__payment_terms:        "Payment Terms",

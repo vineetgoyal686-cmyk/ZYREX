@@ -127,7 +127,7 @@ function ItemMultiFilter({ label, options, selected, onChange }) {
         <ChevronDown size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-1 w-64 max-w-[calc(100vw-1.5rem)] rounded-lg border border-slate-200 bg-white shadow-xl">
+        <div className="absolute right-0 z-30 mt-1 w-96 max-w-[calc(100vw-1.5rem)] rounded-lg border border-slate-200 bg-white shadow-xl">
           <div className="p-2 border-b border-slate-100">
             <div className="flex items-center gap-2 rounded-md border border-slate-200 px-2">
               <Search size={12} className="text-slate-400 shrink-0" />
@@ -149,7 +149,7 @@ function ItemMultiFilter({ label, options, selected, onChange }) {
                     <span className={`grid h-4 w-4 place-items-center rounded border shrink-0 ${checked ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white"}`}>
                       {checked && <span className="text-[10px] font-black leading-none">✓</span>}
                     </span>
-                    <span className="truncate">{opt}</span>
+                    <span className="whitespace-normal break-words">{opt}</span>
                   </button>
                 );
               })
