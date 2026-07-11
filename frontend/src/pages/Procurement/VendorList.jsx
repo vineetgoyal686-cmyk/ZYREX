@@ -485,7 +485,8 @@ export default function VendorList() {
       )}
 
       {/* Sticky header — edge-to-edge, flush with sidebar/top */}
-      <div className="sticky top-0 z-20 bg-white border-b border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-3 sm:px-4 lg:px-6 py-3">
+      <div className="sticky top-0 z-20 bg-white border-b border-slate-200">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-3 sm:px-4 lg:px-6 py-3 border-b border-slate-100">
         <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
           {[
             { key: "vendors", label: "Vendor List" },
@@ -597,6 +598,41 @@ export default function VendorList() {
         </div>
       </div>
 
+      {/* Row 2: Search + Filters — also sticky, part of the same header panel */}
+      {mainTab === "vendors" && (
+        <div className="px-3 sm:px-4 lg:px-6 py-3">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+            <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
+              <div className="relative min-w-0 flex-1 lg:max-w-md">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+                  placeholder="Search by name, GSTIN or email…"
+                  className="w-full pl-9 pr-4 py-2 rounded-md border border-slate-200 text-sm outline-none focus:border-indigo-400 bg-white text-slate-700" />
+              </div>
+              <span
+                className="inline-flex h-9 shrink-0 items-center self-start rounded-md border border-slate-200 bg-white px-2.5 text-xs font-bold tabular-nums text-slate-700 shadow-sm sm:self-center"
+                title="Registered vendors in master"
+              >
+                {vendors.length} {vendors.length === 1 ? "vendor" : "vendors"}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <VendorMultiFilter label="Name" options={filterOptions.names} selected={nameFilter} onChange={v => { setNameFilter(v); setPage(1); }} />
+              <VendorMultiFilter label="Entity" options={filterOptions.entities} selected={entityFilter} onChange={v => { setEntityFilter(v); setPage(1); }} />
+              <VendorMultiFilter label="Site" options={filterOptions.sites} selected={siteFilter} onChange={v => { setSiteFilter(v); setPage(1); }} />
+              {(nameFilter.length || entityFilter.length || siteFilter.length) ? (
+                <button onClick={() => { setNameFilter([]); setEntityFilter([]); setSiteFilter([]); setPage(1); }}
+                  className="inline-flex h-9 items-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-500 hover:bg-slate-50">
+                  <X size={12} /> Clear
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
+      </div>
+
       <div className="px-3 sm:px-4 lg:px-6 pt-4 pb-32 w-full">
 
       {/* Vendor Pool tab */}
@@ -670,35 +706,6 @@ export default function VendorList() {
           )}
         </div>
       )}
-
-      {/* Search + Filters */}
-      <div className="mb-4 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
-        <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
-          <div className="relative min-w-0 flex-1 lg:max-w-md">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
-              placeholder="Search by name, GSTIN or email…"
-              className="w-full pl-9 pr-4 py-2 rounded-md border border-slate-200 text-sm outline-none focus:border-indigo-400 bg-white text-slate-700" />
-          </div>
-          <span
-            className="inline-flex h-9 shrink-0 items-center self-start rounded-md border border-slate-200 bg-white px-2.5 text-xs font-bold tabular-nums text-slate-700 shadow-sm sm:self-center"
-            title="Registered vendors in master"
-          >
-            {vendors.length} {vendors.length === 1 ? "vendor" : "vendors"}
-          </span>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <VendorMultiFilter label="Name" options={filterOptions.names} selected={nameFilter} onChange={v => { setNameFilter(v); setPage(1); }} />
-          <VendorMultiFilter label="Entity" options={filterOptions.entities} selected={entityFilter} onChange={v => { setEntityFilter(v); setPage(1); }} />
-          <VendorMultiFilter label="Site" options={filterOptions.sites} selected={siteFilter} onChange={v => { setSiteFilter(v); setPage(1); }} />
-          {(nameFilter.length || entityFilter.length || siteFilter.length) ? (
-            <button onClick={() => { setNameFilter([]); setEntityFilter([]); setSiteFilter([]); setPage(1); }}
-              className="inline-flex h-9 items-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-500 hover:bg-slate-50">
-              <X size={12} /> Clear
-            </button>
-          ) : null}
-        </div>
-      </div>
 
       {/* Table */}
       <div className="bg-white rounded-lg border border-slate-100 shadow-sm overflow-hidden">
