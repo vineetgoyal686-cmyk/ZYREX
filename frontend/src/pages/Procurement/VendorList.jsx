@@ -188,6 +188,7 @@ export default function VendorList() {
   const [companies, setCompanies] = useState(cachedCompanies || []);
   const [showCompanySearch, setShowCompanySearch] = useState(false);
   const [showSiteSearch, setShowSiteSearch] = useState(false);
+  const [siteSearchTerm, setSiteSearchTerm] = useState("");
   const [copiedKey, setCopiedKey] = useState(""); // `${vendorId}:${field}`
 
   const copyToClipboard = (text, key) => {
@@ -215,7 +216,7 @@ export default function VendorList() {
 
   useEffect(() => {
     const click = (e) => {
-      if (siteRef.current && !siteRef.current.contains(e.target)) setShowSiteSearch(false);
+      if (siteRef.current && !siteRef.current.contains(e.target)) { setShowSiteSearch(false); setSiteSearchTerm(""); }
       if (companyRef.current && !companyRef.current.contains(e.target)) setShowCompanySearch(false);
       if (moreRef.current && !moreRef.current.contains(e.target)) setShowMore(false);
       if (poolMoreRef.current && !poolMoreRef.current.contains(e.target)) setPoolMoreOpen(false);
@@ -1039,19 +1040,26 @@ export default function VendorList() {
                       {showSiteSearch && (
                         <div className="absolute top-full left-0 right-0 mt-1 z-30 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
                           <div className="sticky top-0 bg-white p-2 border-b border-slate-50">
-                            <input autoFocus placeholder="Search site code…" 
+                            <input autoFocus placeholder="Search site code…"
                               className="w-full text-xs font-semibold border-none outline-none px-2 py-1 text-slate-600"
-                              onClick={(e) => e.stopPropagation()} 
-                              onChange={(e) => {
-                                // Search functionality handled by list filtering
-                              }}
+                              value={siteSearchTerm}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => setSiteSearchTerm(e.target.value)}
                             />
                           </div>
                           <div className="py-1">
-                            {sites.length === 0 ? (
+                            {sites.filter(s => {
+                              const term = siteSearchTerm.trim().toLowerCase();
+                              if (!term) return true;
+                              return s.projectCode?.toLowerCase().includes(term) || s.projectName?.toLowerCase().includes(term);
+                            }).length === 0 ? (
                               <div className="px-4 py-3 text-xs text-slate-400 italic">No projects found…</div>
                             ) : (
-                              sites.map(s => {
+                              sites.filter(s => {
+                                const term = siteSearchTerm.trim().toLowerCase();
+                                if (!term) return true;
+                                return s.projectCode?.toLowerCase().includes(term) || s.projectName?.toLowerCase().includes(term);
+                              }).map(s => {
                                 const isSel = form.siteCodes.includes(s.projectCode);
                                 return (
                                   <div key={s.id} onClick={() => {
