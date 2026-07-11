@@ -61,7 +61,7 @@ const DocUpload = ({ label, fieldKey, form, setForm }) => {
 };
 
 const COLS = [
-  { label: "Vendor Code",            key: "vendorCode",     w: "w-[9%] min-w-[100px]", mono: true },
+  { label: "Vendor Code",            key: "vendorCode",     w: "w-[9%] min-w-[100px]" },
   { label: "Vendor Firm Name",       key: "vendorName",     w: "w-[22%] min-w-[180px]" },
   { label: "Company Codes",          key: "companyCodes",   w: "w-[10%] min-w-[110px]" },
   { label: "Site Codes",             key: "siteCodes",      w: "w-[8%] min-w-[80px]" },
@@ -475,8 +475,7 @@ export default function VendorList() {
   const paginated  = filtered.slice((page - 1) * perPage, page * perPage);
 
   return (
-    <div className="p-3 sm:p-4 lg:p-6 w-full pb-32">
-
+    <>
       {/* Toast */}
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-lg
@@ -485,8 +484,8 @@ export default function VendorList() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-slate-200 pb-4 mb-5">
+      {/* Sticky header — edge-to-edge, flush with sidebar/top */}
+      <div className="sticky top-0 z-20 bg-white border-b border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-3 sm:px-4 lg:px-6 py-3">
         <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
           {[
             { key: "vendors", label: "Vendor List" },
@@ -597,6 +596,8 @@ export default function VendorList() {
           )}
         </div>
       </div>
+
+      <div className="px-3 sm:px-4 lg:px-6 pt-4 pb-32 w-full">
 
       {/* Vendor Pool tab */}
       {mainTab === "pool" && (
@@ -1526,7 +1527,8 @@ export default function VendorList() {
       {logTarget && (
         <LogPanel entityType={logTarget.entityType} entityId={logTarget.entityId} entityName={logTarget.entityName} onClose={() => setLogTarget(null)} />
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

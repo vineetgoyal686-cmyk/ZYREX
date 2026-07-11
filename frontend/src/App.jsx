@@ -282,7 +282,8 @@ function AppLayout({
     if (isMobileVal) return "pt-14 pb-[60px] px-0";
     if (activeTab === "profile") return "pt-0 px-0 pb-4 bg-[#f0f2f5]";
     if (activeTab === "organisation") return "pt-0 px-0 pb-0";
-    if (activeTab === "proc_setup__item_list") return "pt-0 px-0 pb-0";
+    if (["proc_setup__item_list","proc_setup__category_list","proc_setup__uom","proc_setup__vendor_list"].includes(activeTab))
+      return "pt-0 px-0 pb-0";
     if (["create__order","procurement__orders","master_data__orders",
          "procurement__intake","master_data__intakes","create__intake",
          "historical_data"].includes(activeTab))

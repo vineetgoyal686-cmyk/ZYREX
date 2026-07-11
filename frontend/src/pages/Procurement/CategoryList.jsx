@@ -232,8 +232,7 @@ export default function CategoryList() {
   const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   return (
-    <div className="p-3 sm:p-4 lg:p-6 w-full pb-32">
-
+    <>
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-lg
           ${toast.type === "error" ? "bg-red-50 text-red-700 border border-red-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
@@ -241,126 +240,131 @@ export default function CategoryList() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-teal-50 flex items-center justify-center">
-            <Tag size={20} className="text-teal-600" />
+      {/* Sticky header — edge-to-edge, flush with sidebar/top */}
+      <div className="sticky top-0 z-20 bg-white border-b border-slate-200">
+
+        {/* Row 1: Title + Add/More */}
+        <div className="flex items-center justify-between gap-4 px-3 sm:px-4 lg:px-6 py-2.5 border-b border-slate-100">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center shrink-0">
+              <Tag size={16} className="text-teal-600" />
+            </div>
+            <h1 className="text-base font-bold text-slate-800 whitespace-nowrap">Category Master</h1>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-800">Category Master</h1>
-            <p className="text-sm text-slate-400">Procurement Setup — item categories for Item List</p>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {(canExport || canBulk) && (
+              <div className="relative" ref={exportMenuRef}>
+                <button onClick={() => setShowExportMenu(v => !v)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
+                  More <ChevronDown size={12} className={`transition-transform ${showExportMenu ? "rotate-180" : ""}`} />
+                </button>
+                {showExportMenu && (
+                  <div className="absolute right-0 top-full mt-1 z-30 bg-white rounded-xl shadow-lg border border-slate-100 py-1 min-w-44">
+                    {canExport && (
+                      <div>
+                        <button onClick={() => setShowBulkMenu(v => !v)}
+                          className="flex items-center justify-between w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                          <span className="flex items-center gap-2"><Download size={14} /> Export</span>
+                          <ChevronDown size={12} className={`transition-transform ${showBulkMenu ? "rotate-180" : ""}`} />
+                        </button>
+                        {showBulkMenu && (
+                          <div className="bg-slate-50 py-1">
+                            <button onClick={exportExcel}
+                              className="flex items-center gap-2 w-full pl-9 pr-4 py-2 text-xs text-slate-600 hover:bg-slate-100 transition-colors">
+                              <FileSpreadsheet size={13} className="text-green-600" /> Excel (.xlsx)
+                            </button>
+                            <button onClick={exportPDF}
+                              className="flex items-center gap-2 w-full pl-9 pr-4 py-2 text-xs text-slate-600 hover:bg-slate-100 transition-colors">
+                              <FileText size={13} className="text-red-500" /> PDF
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {canBulk && (
+                      <>
+                        <button onClick={downloadTemplate}
+                          className={`flex items-center gap-2 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors ${canExport ? "border-t border-slate-50" : ""}`}>
+                          <Download size={14} /> Download Template
+                        </button>
+                        <button onClick={() => csvRef.current.click()}
+                          className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-50">
+                          <Upload size={14} /> {bulking ? "Uploading…" : "Bulk Upload"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={handleBulkCSV} />
+
+            {canAdd && (
+              <button onClick={openAdd}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 transition-all">
+                <Plus size={15} /> Add Category
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap sm:justify-end">
-
-          {canExport && (
-          <div className="relative" ref={exportMenuRef}>
-            <button onClick={() => setShowExportMenu(v => !v)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
-              <Download size={15} /> Export <ChevronDown size={13} />
-            </button>
-            {showExportMenu && (
-              <div className="absolute right-0 top-full mt-1.5 w-44 bg-white rounded-xl shadow-xl border border-slate-100 z-30 overflow-hidden">
-                <button onClick={exportExcel}
-                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-emerald-700 hover:bg-emerald-50 transition-colors text-left">
-                  <FileSpreadsheet size={14} /> Excel (.xlsx)
-                </button>
-                <div className="border-t border-slate-100" />
-                <button onClick={exportPDF}
-                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors text-left">
-                  <FileText size={14} /> PDF
-                </button>
-              </div>
-            )}
+        {/* Row 2: Search + total count */}
+        <div className="px-3 sm:px-4 lg:px-6 py-3">
+          <div className="flex items-center gap-3">
+            <div className="relative w-full sm:w-96 shrink-0">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, code or description…"
+                className="w-full pl-9 pr-4 h-10 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400 bg-white text-slate-700" />
+            </div>
+            <span className="shrink-0 h-10 flex items-center px-3 rounded-lg bg-slate-50 border border-slate-100 text-xs font-semibold text-slate-500 whitespace-nowrap">
+              Total {categories.length} categor{categories.length !== 1 ? "ies" : "y"}
+            </span>
           </div>
-          )}
-
-          {canBulk && (
-          <div className="relative" ref={bulkMenuRef}>
-            <button onClick={() => setShowBulkMenu(v => !v)} disabled={bulking}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all disabled:opacity-50">
-              <Upload size={15} /> {bulking ? "Uploading…" : "Bulk Upload"} <ChevronDown size={13} />
-            </button>
-            {showBulkMenu && (
-              <div className="absolute right-0 top-full mt-1.5 w-52 bg-white rounded-xl shadow-xl border border-slate-100 z-30 overflow-hidden">
-                <button onClick={downloadTemplate}
-                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 transition-colors text-left">
-                  <Download size={14} className="text-slate-400" /> Download Template
-                </button>
-                <div className="border-t border-slate-100" />
-                <button onClick={() => { setShowBulkMenu(false); csvRef.current.click(); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 transition-colors text-left">
-                  <Upload size={14} className="text-slate-400" /> Upload CSV
-                </button>
-              </div>
-            )}
-          </div>
-          )}
-          <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={handleBulkCSV} />
-
-          {/* Add Category */}
-          {canAdd && (
-            <button onClick={openAdd}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 transition-all">
-              <Plus size={15} /> Add Category
-            </button>
-          )}
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative mb-5">
-        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search by name, code or description…"
-          className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-slate-400 bg-white text-slate-700" />
-      </div>
+      <div className="px-3 sm:px-4 lg:px-6 pt-4 pb-32 w-full">
 
       {/* Table */}
       {loading ? (
         <div className="text-center py-16 text-slate-400 text-sm">Loading…</div>
       ) : filtered.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-100 p-16 flex items-center justify-center">
+        <div className="bg-white rounded-lg border border-slate-100 p-16 flex items-center justify-center">
           <p className="text-slate-300 font-bold uppercase tracking-widest text-xs">No categories found</p>
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="rounded-lg border border-slate-200 shadow-sm overflow-hidden">
           <table className="w-full text-sm border-collapse table-fixed">
             <colgroup>
-              <col style={{width:"5%"}} />
-              <col style={{width:"11%"}} />
-              <col style={{width:"18%"}} />
+              <col style={{width:"12%"}} />
+              <col style={{width:"22%"}} />
               <col style={{width:"44%"}} />
               <col style={{width:"11%"}} />
               <col style={{width:"11%"}} />
             </colgroup>
             <thead>
-              <tr className="bg-slate-800 text-white">
-                <th className="text-center px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 sticky-left-0 w-[50px]">S.No</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700 sticky-left-1 w-[100px]" style={{left:'50px'}}>Code</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700">Category Name</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700">Description</th>
-                <th className="text-center px-3 py-3 text-xs font-semibold uppercase tracking-wide border-r border-slate-700">Status</th>
-                <th className="text-center px-3 py-3 text-xs font-semibold uppercase tracking-wide sticky-right-0 w-[100px]">Action</th>
+              <tr className="bg-slate-50">
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 whitespace-nowrap">Code</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 whitespace-nowrap">Category Name</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 whitespace-nowrap">Description</th>
+                <th className="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 whitespace-nowrap">Status</th>
+                <th className="text-center px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 whitespace-nowrap">Action</th>
               </tr>
             </thead>
             <tbody>
               {paginated.map((c, idx) => (
-                <tr key={c.id} className={`transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-slate-50"} hover:bg-teal-50/40 group`}>
-                  <td className="px-3 py-3 text-slate-400 text-xs text-center border border-slate-100 font-medium sticky-left-0 w-[50px]">{(page - 1) * PER_PAGE + idx + 1}</td>
-                  <td className="px-4 py-3 border border-slate-100 sticky-left-1 w-[100px]" style={{left:'50px'}}>
-                    <span className="px-2.5 py-1 bg-teal-50 text-teal-700 rounded-lg text-xs font-mono font-semibold">{c.categoryCode}</span>
-                  </td>
-                  <td className="px-4 py-3 font-semibold text-slate-800 text-sm border border-slate-100 whitespace-normal break-words leading-tight">{c.categoryName}</td>
-                  <td className="px-4 py-3 text-slate-500 text-xs border border-slate-100 leading-relaxed whitespace-normal break-words">{c.description}</td>
-                  <td className="px-3 py-3 border border-slate-100 text-center">
+                <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-4 py-3 text-sm text-slate-600 border border-slate-200 align-top whitespace-nowrap">{c.categoryCode}</td>
+                  <td className="px-4 py-3 font-semibold text-slate-800 text-sm border border-slate-200 align-top whitespace-normal break-words leading-tight">{c.categoryName}</td>
+                  <td className="px-4 py-3 text-slate-500 text-xs border border-slate-200 align-top leading-relaxed whitespace-normal break-words">{c.description}</td>
+                  <td className="px-3 py-3 border border-slate-200 align-top text-center">
                     <span className={`px-2.5 py-1 rounded-full text-xs font-semibold
                       ${c.status === "Active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
                       {c.status}
                     </span>
                   </td>
-                  <td className="px-3 py-3 border border-slate-100 sticky-right-0 w-[100px]">
+                  <td className="px-3 py-3 border border-slate-200 align-top">
                     <div className="flex items-center justify-center gap-0.5">
                       <button onClick={() => setViewCategory(c)} className="p-1.5 rounded-lg text-slate-300 hover:text-teal-600 hover:bg-teal-50 transition-all"><Eye size={14} /></button>
                       {canEdit && <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg text-slate-300 hover:text-slate-600 hover:bg-slate-100 transition-all"><Pencil size={14} /></button>}
@@ -372,8 +376,8 @@ export default function CategoryList() {
               ))}
             </tbody>
           </table>
-          <div className="px-4 py-3 border-t border-slate-200 bg-slate-50">
-            <div className="flex items-center justify-between">
+          <div className="px-4 py-3 border-t border-slate-100 bg-slate-50">
+            <div className="flex items-center justify-between flex-wrap gap-3">
               <p className="text-xs text-slate-400">{filtered.length} categor{filtered.length !== 1 ? "ies" : "y"} · Page {page} of {totalPages}</p>
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
@@ -499,7 +503,8 @@ export default function CategoryList() {
       {logTarget && (
         <LogPanel entityType={logTarget.entityType} entityId={logTarget.entityId} entityName={logTarget.entityName} onClose={() => setLogTarget(null)} />
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
