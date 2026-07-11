@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
-import { Plus, Upload, Search, Pencil, Trash2, X, Package, Image as ImageIcon, Eye, ChevronDown, Download, FileSpreadsheet, FileText, History } from "lucide-react";
+import { Plus, Upload, Search, Pencil, Trash2, X, Package, Boxes, Image as ImageIcon, Eye, ChevronDown, Download, FileSpreadsheet, FileText, History } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -532,9 +532,9 @@ export default function ItemList() {
             <div className="flex items-center gap-5 min-w-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-                  <Package size={16} className="text-blue-600" />
+                  <Boxes size={16} className="text-blue-600" />
                 </div>
-                <h1 className="text-base font-bold text-slate-800 whitespace-nowrap">Items</h1>
+                <h1 className="text-base font-bold text-slate-800 whitespace-nowrap">Material Catalog</h1>
               </div>
 
               {/* Supply / SITC switch — same row as title, header height stays fixed */}
