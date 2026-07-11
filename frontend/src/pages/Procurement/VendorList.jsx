@@ -485,7 +485,7 @@ export default function VendorList() {
       )}
 
       {/* Sticky header — edge-to-edge, flush with sidebar/top */}
-      <div className="sticky top-0 z-20 bg-white border-b border-slate-200">
+      <div className="sticky top-0 z-40 bg-white border-b border-slate-200">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-3 sm:px-4 lg:px-6 py-3 border-b border-slate-100">
         <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
           {[
