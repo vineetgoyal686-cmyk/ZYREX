@@ -82,6 +82,10 @@ async function computeGlobalStats() {
 /* GET /api/dashboard/global-stats */
 router.get("/global-stats", requireAuth, async (req, res) => {
   try {
+    if (req.query.force === "1") {
+      const result = await recomputeGlobalStats();
+      return res.json(result);
+    }
     if (globalStatsCache) {
       // Serve whatever we have immediately; if it's gone stale, kick off a
       // background recompute for next time instead of making this request wait.

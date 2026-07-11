@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, memo } from "react";
+import { useState, useMemo, useEffect, useRef, memo } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ComposedChart, Area, Cell, Line,
@@ -410,6 +410,8 @@ const GlobalDashboard = memo(function GlobalDashboard() {
   const [loading,          setLoading]          = useState(true);
   const [loadError,        setLoadError]        = useState(false);
   const [fetchNonce,       setFetchNonce]       = useState(0);
+  const [refreshing,       setRefreshing]       = useState(false);
+  const forceNextFetch = useRef(false);
   const [selectedSites,    setSelectedSites]    = useState([]);
   const [selectedEntities, setSelectedEntities] = useState([]);
   const [dateRange,        setDateRange]        = useState("This Year");
@@ -443,10 +445,13 @@ const GlobalDashboard = memo(function GlobalDashboard() {
   // Fetch real data from backend
   useEffect(() => {
     let alive = true;
+    const forced = forceNextFetch.current;
+    forceNextFetch.current = false;
     setLoading(true);
     setLoadError(false);
+    if (forced) setRefreshing(true);
     getValidToken()
-      .then(token => fetch(`${API}/api/dashboard/global-stats`, { headers: { Authorization: `Bearer ${token}` } }))
+      .then(token => fetch(`${API}/api/dashboard/global-stats${forced ? "?force=1" : ""}`, { headers: { Authorization: `Bearer ${token}` } }))
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`Request failed (${r.status})`)))
       .then(data => {
         if (!alive) return;
@@ -464,9 +469,14 @@ const GlobalDashboard = memo(function GlobalDashboard() {
         }
       })
       .catch(() => { if (alive) setLoadError(true); })
-      .finally(() => { if (alive) setLoading(false); });
+      .finally(() => { if (alive) { setLoading(false); setRefreshing(false); } });
     return () => { alive = false; };
   }, [fetchNonce]);
+
+  const handleManualRefresh = () => {
+    forceNextFetch.current = true;
+    setFetchNonce(n => n + 1);
+  };
 
   const siteList   = useMemo(() => (stats.siteSpend   || []).map(s => s.site),   [stats]);
   const entityList = useMemo(() => (stats.entitySpend || []).map(e => e.entity), [stats]);
@@ -517,8 +527,13 @@ const GlobalDashboard = memo(function GlobalDashboard() {
 
         {/* Top row: title + module tabs */}
         <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", padding: isMobile ? "12px 14px" : "14px 20px", gap: 10 }}>
-          <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <h1 style={{ color: "#0f172a", fontSize: isMobile ? 16 : 18, fontWeight: 800, margin: 0, letterSpacing: "-0.02em" }}>Global Dashboard</h1>
+            <button onClick={handleManualRefresh} disabled={refreshing} title="Refresh live data"
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 7, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", cursor: refreshing ? "default" : "pointer", fontSize: 13, opacity: refreshing ? 0.5 : 1 }}>
+              <span style={{ display: "inline-block", animation: refreshing ? "gd-spin 0.8s linear infinite" : "none" }}>⟳</span>
+            </button>
+            <style>{`@keyframes gd-spin { to { transform: rotate(360deg); } }`}</style>
           </div>
           <div style={{ display: "flex", gap: 2, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 3 }}>
             {MODULE_TABS.map(m => (
