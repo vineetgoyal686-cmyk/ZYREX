@@ -72,8 +72,15 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   const [hydrating, setHydrating] = useState(false);
   const [activeTab, setActiveTab] = useState(initialTab);
   const [handlers, setHandlers] = useState({});
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
   const thisUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
   const isGlobalAdmin = thisUser.role === "global_admin";
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // Approval Action state
   const [actionModal, setActionModal] = useState({ open: false, type: "" });
@@ -1438,8 +1445,8 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
 
       {/* Header */}
       <div className="bg-white border-b border-slate-200 sticky top-0 z-30 print:hidden">
-        <div className="px-4 py-2.5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+        <div className="px-4 py-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3 shrink-0">
             <button onClick={onBack} className="p-1.5 hover:bg-slate-100 rounded-md transition-colors text-slate-500">
               <ArrowLeft size={18} />
             </button>
@@ -1448,7 +1455,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
             </div>
           </div>
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
               {order.status === 'Draft' && (
                 <>
                   {canCancelDraftDirectAction && (
@@ -1775,8 +1782,8 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       {pendingActionRequest?.status === "Pending" && (isGlobalAdmin || userCanRecall || userCanCancel) && (
         <div className="px-4 sm:px-5 lg:px-6 pt-3 print:hidden">
           <div className="bg-white border border-sky-200 rounded-md shadow-sm overflow-hidden">
-            <div className="px-4 sm:px-5 py-3 bg-sky-50 border-b border-sky-100 flex items-center justify-between gap-3">
-              <div>
+            <div className="px-4 sm:px-5 py-3 bg-sky-50 border-b border-sky-100 flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
                 <p className="text-[10px] font-black text-sky-700 uppercase tracking-widest">
                   {pendingActionRequest.request_type === "recall" ? "Recall Request" : "Cancel Request"}
                 </p>
@@ -1792,7 +1799,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                   </span>
                 </p>
               </div>
-              <span className="text-[10px] font-bold px-2.5 py-1 rounded-md border border-sky-200 text-sky-700 bg-white">
+              <span className="shrink-0 text-[10px] font-bold px-2.5 py-1 rounded-md border border-sky-200 text-sky-700 bg-white">
                 Pending
               </span>
             </div>
@@ -2001,6 +2008,69 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                 <CheckCircle2 size={16} className="text-slate-400" /> Items
               </h3>
             </div>
+            {isMobile ? (
+              <div className="mx-4 mt-1 mb-0 divide-y divide-slate-100 border border-slate-200 rounded-md overflow-hidden">
+                {groupedItems.map((it, idx) => {
+                  const gross = Number(it.qty) * Number(it.unit_rate);
+                  const net = gross - (gross * (Number(it.discount_pct) || 0) / 100);
+                  const gst = totals.tax_mode === "line" ? net * (Number(it.tax_pct) || 0) / 100 : 0;
+                  const amount = net + gst;
+                  const desc = it.description || it.specification || it.items?.description;
+                  let points = [];
+                  if (desc && desc !== "--") {
+                    try { points = typeof desc === 'string' && (desc.startsWith('[') || desc.startsWith('{')) ? JSON.parse(desc) : (Array.isArray(desc) ? desc : [desc]); } catch (e) { points = [desc]; }
+                  }
+                  return (
+                    <div key={idx} className="p-3.5">
+                      {!it._isSubRow ? (
+                        <p className="text-[13px] font-black text-slate-800 leading-tight mb-1.5">
+                          <span className="text-slate-400 font-bold mr-1.5">{it._groupSrNo < 10 ? `0${it._groupSrNo}` : it._groupSrNo}.</span>
+                          {it._itemName}
+                        </p>
+                      ) : (
+                        <p className="text-[9px] font-bold text-slate-300 uppercase tracking-widest mb-1.5">Point {it._subIdx}</p>
+                      )}
+                      {points.length > 0 && (
+                        <div className="space-y-1 mb-2">
+                          {points.map((p, i) => (
+                            isSupply
+                              ? <div key={i} className="text-[11.5px] text-slate-600 leading-snug">{p.replace(/<[^>]*>/g, '')}</div>
+                              : <div key={i} className="order-rich-text text-[11.5px] text-slate-600 leading-relaxed" dangerouslySetInnerHTML={{ __html: p }} />
+                          ))}
+                        </div>
+                      )}
+                      {showModel && it.model_number && (
+                        <div className="text-[10.5px] mb-1"><span className="font-bold text-slate-500">Model No.:</span> <span className="font-semibold text-slate-700">{it.model_number}</span></div>
+                      )}
+                      {showBrand && (() => {
+                        const raw = it.make || ""; if (!raw || raw === "[]" || raw === "null") return null;
+                        let b = raw; try { const p = JSON.parse(raw); if (Array.isArray(p)) { if (p.length !== 1) return null; b = p[0]; } } catch { }
+                        return b ? <div className="text-[10.5px] mb-1"><span className="font-bold text-slate-500">Brand:</span> <span className="font-semibold text-slate-700">{b}</span></div> : null;
+                      })()}
+
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-2 text-[12px]">
+                        <div><span className="text-slate-400">Qty: </span><span className="font-semibold text-slate-700">{Number(it.qty).toLocaleString("en-IN")} {it.unit || "nos"}</span></div>
+                        <div><span className="text-slate-400">Rate: </span><span className="font-semibold text-slate-700">{RUPEE}{Number(it.unit_rate).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span></div>
+                        {showDiscount && (
+                          <div><span className="text-slate-400">Discount: </span><span className="font-semibold text-rose-500">{Number(it.discount_pct)}%</span></div>
+                        )}
+                        {showTaxColumn && (
+                          <div><span className="text-slate-400">Tax: </span><span className="font-semibold text-slate-600">{Number(it.tax_pct)}%</span></div>
+                        )}
+                        {showRemarks && it.remarks && (
+                          <div className="col-span-2"><span className="text-slate-400">Remarks: </span><span className="font-medium text-slate-600">{it.remarks}</span></div>
+                        )}
+                      </div>
+
+                      <div className="mt-2.5 flex items-center justify-between bg-indigo-50/50 rounded-md px-3 py-2">
+                        <span className="text-[11px] font-bold text-indigo-900">Amount</span>
+                        <span className="text-[13.5px] font-bold text-indigo-900">{RUPEE}{amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
             <div className="mx-4 mt-1 mb-0 border border-slate-200 rounded-md overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-left whitespace-nowrap" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
@@ -2127,6 +2197,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                 </table>
               </div>
             </div>
+            )}
 
             <div className="bg-slate-50 py-6 px-4">
               <div className="w-full flex flex-col md:flex-row gap-4 md:justify-between md:items-stretch">
@@ -2767,13 +2838,13 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                 </div>
               ) : (() => {
                 /* ── FLOW VIEW (snake) ── */
-                const COLS = 4;
+                const COLS = isMobile ? 1 : 4;
                 const chunks = [];
                 for (let i = 0; i < events.length; i += COLS) chunks.push(events.slice(i, i + COLS));
                 return (
                   <div>
                     {chunks.map((chunk, rowIdx) => {
-                      const goRight = rowIdx % 2 === 0;
+                      const goRight = isMobile ? true : rowIdx % 2 === 0;
                       const isLastRow = rowIdx === chunks.length - 1;
                       return (
                         <div key={rowIdx}>
@@ -3605,9 +3676,9 @@ const OrderDocumentsTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
     .find(d => d.category === "signed-copy") || null;
 
   return (
-    <div className="px-10 py-6 max-w-[1100px] space-y-5">
+    <div className="px-4 sm:px-10 py-6 max-w-[1100px] space-y-5">
       {/* ── SUMMARY BAR ── */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-3 gap-2.5 sm:gap-4">
         <div className="bg-[#f7f6f3] rounded-xl px-4 py-3.5">
           <p className="text-[11px] font-medium text-slate-500 mb-1.5">Pre-order documents</p>
           <p className="text-2xl font-bold text-slate-900">{totalPreDocs}</p>
@@ -3706,7 +3777,7 @@ const DocSection = ({
   return (
     <section className="bg-white rounded-lg border border-slate-200">
       {/* Header */}
-      <div className="px-5 py-4 flex items-center justify-between gap-3">
+      <div className="px-4 sm:px-5 py-4 flex items-center justify-between gap-2 sm:gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
             <Folder size={18} />
@@ -3731,7 +3802,7 @@ const DocSection = ({
       </div>
 
       {/* Tabs */}
-      <div className="px-5 pb-4 flex gap-2 overflow-x-auto border-b border-slate-100">
+      <div className="px-4 sm:px-5 pb-4 flex gap-2 overflow-x-auto no-scrollbar border-b border-slate-100">
         {categories.map(cat => {
           const count = docsByCategory[cat.key]?.length || 0;
           const active = activeTab === cat.key;
@@ -3749,7 +3820,7 @@ const DocSection = ({
       </div>
 
       {/* File grid */}
-      <div className="px-5 pb-5 pt-4">
+      <div className="px-4 sm:px-5 pb-5 pt-4">
         {docs.length === 0 ? (
           <div className="py-8 text-center border border-dashed border-slate-200 rounded-md bg-slate-50/40">
             {!readOnly && canUpload ? (
