@@ -45,17 +45,22 @@ export default function Security({ currentUser, showToast }) {
   };
 
   return (
-    <div className="bg-white rounded-none shadow-sm border border-slate-100 p-6 max-w-lg">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-sm bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center shrink-0">
-          <ShieldCheck size={20} className="text-white" />
-        </div>
-        <div>
-          <h2 className="text-lg font-black text-slate-800">Change Password</h2>
-          <p className="text-sm text-slate-500">OTP will be sent to your email for verification</p>
+    <div className="flex flex-col min-h-full">
+      {/* Sticky header — full-width, attached to the Settings sidebar; stays put while the form below scrolls */}
+      <div className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-sm">
+        <div className="flex items-center gap-2.5 px-6 py-3.5">
+          <div className="w-8 h-8 rounded-sm bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center shrink-0">
+            <ShieldCheck size={16} className="text-white" />
+          </div>
+          <h2 className="text-base font-black text-slate-800">Change Password</h2>
         </div>
       </div>
 
+      <div className="p-6">
+      <div className="bg-white rounded-none shadow-sm border border-slate-100 p-6 max-w-lg">
+      <div className="bg-slate-50 border border-slate-100 rounded-sm px-3 py-2 mb-5">
+        <p className="text-xs text-slate-500">OTP will be sent to your email for verification</p>
+      </div>
       <div className="flex items-center gap-2 mb-7">
         {[{ n: 1, label: "Send OTP" }, { n: 2, label: "Verify & Set" }].map(({ n, label }) => (
           <React.Fragment key={n}>
@@ -140,6 +145,8 @@ export default function Security({ currentUser, showToast }) {
           </div>
         </form>
       )}
+      </div>
+      </div>
     </div>
   );
 }

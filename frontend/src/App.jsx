@@ -307,7 +307,7 @@ function AppLayout({
 
       {/* Sidebar drawer */}
       <div
-        className={`fixed top-0 left-0 h-full z-40 transition-transform duration-300 ${
+        className={`fixed top-0 left-0 h-svh z-40 transition-transform duration-300 ${
           isMobileVal ? (mobileOpen ? "translate-x-0" : "-translate-x-full") : "translate-x-0"
         }`}
       >

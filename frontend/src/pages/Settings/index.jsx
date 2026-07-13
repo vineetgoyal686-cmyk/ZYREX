@@ -318,7 +318,12 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
             <UserAnalytics isAdmin={isGlobalAdmin} showToast={showToast} />
           )}
 
-          <div className={`min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4 ${(section === "serialization" || section === "team" || section === "user_analytics") ? "hidden" : ""}`}>
+          {/* Security = full-bleed, no padding (sticky header attaches to the Settings sidebar) */}
+          {section === "security" && (
+            <Security currentUser={currentUser} showToast={showToast} />
+          )}
+
+          <div className={`min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4 ${(section === "serialization" || section === "team" || section === "user_analytics" || section === "security") ? "hidden" : ""}`}>
 
             {section === "profile" && (
               <PersonalInfo
@@ -327,10 +332,6 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
                 onProfileUpdate={onProfileUpdate}
                 designations={designations}
               />
-            )}
-
-            {section === "security" && (
-              <Security currentUser={currentUser} showToast={showToast} />
             )}
 
             {section === "delegation" && (

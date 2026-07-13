@@ -451,7 +451,7 @@ export default React.memo(function Sidebar({
   return (
     <aside
       className={cx(
-        "group relative h-screen shrink-0 overflow-hidden border-r border-cyan-400/15 bg-[#04111f] text-white transition-[width] duration-[220ms] ease-in-out print:hidden",
+        "group relative h-svh shrink-0 overflow-hidden border-r border-cyan-400/15 bg-[#04111f] text-white transition-[width] duration-[220ms] ease-in-out print:hidden",
         collapsed ? "w-[60px]" : "w-[220px]"
       )}
       style={{ boxShadow: "inset -1px 0 0 rgba(34,211,238,0.08)", willChange: "width" }}
