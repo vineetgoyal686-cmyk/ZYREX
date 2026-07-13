@@ -5060,7 +5060,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
               <div className="flex-1 bg-slate-300">
                 <iframe
                   title="Order PDF"
-                  src={pdfBlobUrl || "about:blank"}
+                  src={pdfBlobUrl ? `${pdfBlobUrl}#zoom=page-width` : "about:blank"}
                   className="w-full h-full border-0 bg-white"
                 />
               </div>

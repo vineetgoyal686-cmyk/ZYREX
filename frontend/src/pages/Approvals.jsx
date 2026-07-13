@@ -65,6 +65,7 @@ export default function Approvals() {
   const [pdfPreviewId, setPdfPreviewId] = useState(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
   const [pdfDownloading, setPdfDownloading] = useState(false);
+  const openPdfPreview = (id) => setPdfPreviewId(id);
 
   const load = async (isInitial = false) => {
     if (isInitial) {
@@ -185,7 +186,7 @@ export default function Approvals() {
       .then(r => r.blob())
       .then(blob => {
         if (cancelled) return;
-        const pdfFile = new File([blob], `Order_${pdfPreviewId}.pdf`, { type: "application/pdf" });
+        const pdfFile = new File([blob], makePdfFileName(pdfPreviewId), { type: "application/pdf" });
         const url = URL.createObjectURL(pdfFile);
         setPdfBlobUrl(prev => { if (prev) URL.revokeObjectURL(prev); return url; });
       })
@@ -203,7 +204,7 @@ export default function Approvals() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Order_${pdfPreviewId}.pdf`;
+      a.download = makePdfFileName(pdfPreviewId);
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
     } catch (err) { console.error(err); }
@@ -327,6 +328,24 @@ export default function Approvals() {
   const canOrderAct = isGlobalAdmin || permOrders.canTakeAction;
   const canIntakeAct = isGlobalAdmin || permIntake.canTakeAction;
 
+  // Resolve a friendly order number for the PDF filename by looking the id up
+  // across every place an order can come from — mirrors CreateOrder.jsx's approach.
+  const findOrderNumberById = (id) => {
+    if (!id) return null;
+    const pools = [
+      orders,
+      pendingApprovals.map(r => r.document),
+      amendments.map(a => a.original_order),
+      actionRequests.map(a => a.order),
+    ];
+    for (const pool of pools) {
+      const found = (pool || []).find(o => o && String(o.id) === String(id));
+      if (found?.order_number) return found.order_number;
+    }
+    return null;
+  };
+  const makePdfFileName = (id) => `${(findOrderNumberById(id) || `Order_${id}`).replace(/[\\/:*?"<>|]+/g, "_")}.pdf`;
+
   const pendingOrders = useMemo(() => (
     orders.filter((o) => ["Pending Issue", "To Issue"].includes(o.status))
   ), [orders]);
@@ -357,6 +376,7 @@ export default function Approvals() {
       o.vendors?.vendor_name,
       o.snapshot?.site?.siteCode,
       o.made_by,
+      o.snapshot?.madeBy,
     ].filter(Boolean).join(" ").toLowerCase();
     return !query || text.includes(query);
   });
@@ -368,7 +388,7 @@ export default function Approvals() {
   const showInitialLoading = loading && !hasApprovalData;
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] p-3 sm:p-4 lg:p-6 pb-20">
+    <div className="min-h-screen bg-[#f8fafc]">
       {toast && (
         <div className={`fixed bottom-6 right-6 z-[300] px-5 py-3 rounded-xl shadow-lg text-sm font-bold text-white transition-all ${toast.type === "error" ? "bg-rose-600" : "bg-emerald-600"}`}>
           {toast.msg}
@@ -381,10 +401,10 @@ export default function Approvals() {
         </div>
       )}
 
-      {/* Main Tabs Navigation */}
-      <div className={`${cardCls} mb-4 p-2`}>
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div className="flex gap-1 overflow-x-auto">
+      {/* Main Header — single row: heading + tabs + search, full-width, attached to the sidebar */}
+      <div className="sticky top-0 z-30 bg-white border-b border-slate-200 shadow-sm">
+        <div className="px-3 sm:px-4 lg:px-6 py-3 flex flex-wrap items-center gap-3">
+          <div className="flex gap-1 overflow-x-auto no-scrollbar bg-slate-100 p-1 rounded-lg min-w-0 max-w-full">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               const on = activeTab === tab.key;
@@ -393,26 +413,35 @@ export default function Approvals() {
                   key={tab.key}
                   type="button"
                   onClick={() => setActiveTab(tab.key)}
-                  className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition-colors ${on ? "bg-cyan-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+                  className={`shrink-0 inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-semibold whitespace-nowrap transition-all ${on ? "bg-white text-cyan-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
                 >
                   <Icon size={15} />
                   {tab.label}
-                  <span className={`rounded-full px-2 py-0.5 text-[11px] ${on ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"}`}>{tab.count}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] ${on ? "bg-cyan-50 text-cyan-700" : "bg-slate-200 text-slate-500"}`}>{tab.count}</span>
                 </button>
               );
             })}
           </div>
-          <div className="relative min-w-0 md:w-80">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search requests..."
-              className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
-            />
-          </div>
+          {activeTab === "orders" && (
+            <div className="shrink-0 flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 shadow-inner ml-auto">
+              <button
+                onClick={() => { setOrderView("table"); setAmendView("table"); }}
+                className={`px-4 py-1 text-[10px] font-black rounded-md transition-all ${orderView === 'table' ? 'bg-white text-cyan-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                TABLE
+              </button>
+              <button
+                onClick={() => { setOrderView("tile"); setAmendView("tile"); }}
+                className={`px-4 py-1 text-[10px] font-black rounded-md transition-all ${orderView === 'tile' ? 'bg-white text-cyan-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                TILE
+              </button>
+            </div>
+          )}
         </div>
       </div>
+
+      <div className="p-3 sm:p-4 lg:p-6 pb-20">
 
       {showInitialLoading ? (
         <div className={`${cardCls} flex min-h-[120px] items-center justify-center`}>
@@ -421,54 +450,47 @@ export default function Approvals() {
       ) : activeTab === "orders" ? (
         <div className="flex flex-col gap-4">
           {/* Orders Sub-tabs */}
-          {/* Orders Sub-tabs & View Toggle */}
-          <div className="flex items-center justify-between border-b border-slate-200 pb-0.5 px-1">
-            <div className="flex items-center gap-2">
+          <div className="border-b border-slate-200 pb-0.5 px-1 flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar min-w-0 max-w-full">
               <button
                 onClick={() => setOrderSubTab("pending_approval")}
-                className={`px-4 py-2 text-sm font-bold transition-all border-b-2 ${orderSubTab === "pending_approval" ? "border-violet-600 text-violet-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+                className={`shrink-0 px-4 py-2 text-sm font-bold whitespace-nowrap transition-all border-b-2 ${orderSubTab === "pending_approval" ? "border-violet-600 text-violet-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
               >
                 Pending Approval {pendingApprovals.length > 0 && <span className="ml-1 bg-violet-100 text-violet-700 text-[10px] font-black px-1.5 py-0.5 rounded-full">{pendingApprovals.length}</span>}
               </button>
               <button
                 onClick={() => setOrderSubTab("issued")}
-                className={`px-4 py-2 text-sm font-bold transition-all border-b-2 ${orderSubTab === "issued" ? "border-cyan-600 text-cyan-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+                className={`shrink-0 px-4 py-2 text-sm font-bold whitespace-nowrap transition-all border-b-2 ${orderSubTab === "issued" ? "border-cyan-600 text-cyan-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
               >
                 Pending Issue ({pendingOrders.length})
               </button>
               <button
                 onClick={() => setOrderSubTab("amendment")}
-                className={`px-4 py-2 text-sm font-bold transition-all border-b-2 ${orderSubTab === "amendment" ? "border-cyan-600 text-cyan-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+                className={`shrink-0 px-4 py-2 text-sm font-bold whitespace-nowrap transition-all border-b-2 ${orderSubTab === "amendment" ? "border-cyan-600 text-cyan-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
               >
                 Amendment ({amendments.length})
               </button>
               <button
                 onClick={() => setOrderSubTab("recall")}
-                className={`px-4 py-2 text-sm font-bold transition-all border-b-2 ${orderSubTab === "recall" ? "border-purple-600 text-purple-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+                className={`shrink-0 px-4 py-2 text-sm font-bold whitespace-nowrap transition-all border-b-2 ${orderSubTab === "recall" ? "border-purple-600 text-purple-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
               >
                 Recall {(() => { const n = actionRequests.filter(r => r.request_type === "recall").length; return n > 0 ? <span className="ml-1 bg-purple-100 text-purple-700 text-[10px] font-black px-1.5 py-0.5 rounded-full">{n}</span> : null; })()}
               </button>
               <button
                 onClick={() => setOrderSubTab("cancel")}
-                className={`px-4 py-2 text-sm font-bold transition-all border-b-2 ${orderSubTab === "cancel" ? "border-rose-600 text-rose-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
+                className={`shrink-0 px-4 py-2 text-sm font-bold whitespace-nowrap transition-all border-b-2 ${orderSubTab === "cancel" ? "border-rose-600 text-rose-700" : "border-transparent text-slate-400 hover:text-slate-600"}`}
               >
                 Cancel {(() => { const n = actionRequests.filter(r => r.request_type === "cancel").length; return n > 0 ? <span className="ml-1 bg-rose-100 text-rose-700 text-[10px] font-black px-1.5 py-0.5 rounded-full">{n}</span> : null; })()}
               </button>
             </div>
-            
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200 shadow-inner scale-90 origin-right">
-              <button 
-                onClick={() => { setOrderView("table"); setAmendView("table"); }} 
-                className={`px-4 py-1 text-[10px] font-black rounded-md transition-all ${orderView === 'table' ? 'bg-white text-cyan-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                TABLE
-              </button>
-              <button 
-                onClick={() => { setOrderView("tile"); setAmendView("tile"); }} 
-                className={`px-4 py-1 text-[10px] font-black rounded-md transition-all ${orderView === 'tile' ? 'bg-white text-cyan-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                TILE
-              </button>
+            <div className="relative w-full sm:w-72 shrink-0 ml-auto">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search requests..."
+                className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+              />
             </div>
           </div>
 
@@ -492,7 +514,7 @@ export default function Approvals() {
                         <div className="p-3.5 border-b border-slate-50 flex items-start justify-between">
                           <div className="min-w-0">
                             <button
-                              onClick={() => setPdfPreviewId(doc.id)}
+                              onClick={() => openPdfPreview(doc.id, doc.order_number)}
                               className="text-[11px] font-black text-violet-700 hover:underline uppercase tracking-tight truncate block leading-none"
                             >
                               {doc.order_number || `Order ${req.document_id?.slice(0, 8)}`}
@@ -571,7 +593,7 @@ export default function Approvals() {
                         {filteredOrders.map((o) => (
                           <tr key={o.id} className="hover:bg-slate-50/50 transition-colors">
                             <td className="px-5 py-4 border-r border-slate-100">
-                              <button onClick={() => setPdfPreviewId(o.id)} className="font-bold text-indigo-700 hover:underline text-[12px] whitespace-nowrap">{orderTitle(o)}</button>
+                              <button onClick={() => openPdfPreview(o.id, orderTitle(o))} className="font-bold text-indigo-700 hover:underline text-[12px] whitespace-nowrap">{orderTitle(o)}</button>
                             </td>
                             <td className="px-5 py-4 border-r border-slate-100 text-slate-700 font-medium text-[12px] max-w-[150px] truncate" title={o.subject || o.snapshot?.subject}>{o.subject || o.snapshot?.subject || "—"}</td>
                             <td className="px-5 py-4 border-r border-slate-100 font-semibold text-slate-700 text-[12px] whitespace-nowrap truncate max-w-[150px]">
@@ -603,22 +625,22 @@ export default function Approvals() {
                     <div key={o.id} className={`${cardCls} p-3.5 flex flex-col border-t-4 border-t-indigo-600 rounded-none shadow-sm`}>
                       <div className="flex items-start justify-between mb-3">
                         <div className="min-w-0">
-                          <button onClick={() => setPdfPreviewId(o.id)} className="text-[11px] font-black text-indigo-700 hover:underline uppercase tracking-tight truncate block leading-none">{orderTitle(o)}</button>
-                          <p className="text-[9px] text-slate-400 font-bold uppercase truncate mt-1">by {o.made_by || o.snapshot?.madeBy || "—"}</p>
+                          <button onClick={() => openPdfPreview(o.id, orderTitle(o))} className="text-[13px] font-bold text-indigo-700 hover:underline tracking-tight truncate block leading-tight">{orderTitle(o)}</button>
+                          <p className="text-[11px] text-slate-500 font-semibold truncate mt-1">by {o.made_by || o.snapshot?.madeBy || "—"}</p>
                         </div>
-                        <span className="text-[8px] font-black text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded-none border border-slate-200 uppercase">{o.snapshot?.site?.siteCode || "-"}</span>
+                        <span className="text-[10px] font-bold text-slate-600 bg-slate-50 px-2 py-1 rounded border border-slate-200 uppercase shrink-0">{o.snapshot?.site?.siteCode || "-"}</span>
                       </div>
                       <div className="mb-3 flex-1 min-w-0 space-y-4">
                         <div className="bg-white p-2 border border-slate-100 relative">
-                          <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-indigo-500 uppercase tracking-widest">Vendor Name</span>
+                          <span className="absolute -top-2 left-2 px-1 bg-white text-[9px] font-bold text-indigo-500 uppercase tracking-wide">Vendor Name</span>
                           <p className="text-[12px] font-bold text-slate-800 truncate">{o.snapshot?.vendor?.vendorName || o.vendors?.vendor_name || "—"}</p>
                         </div>
                         <div className="bg-white p-2 border border-slate-100 relative">
-                          <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-indigo-500 uppercase tracking-widest">Order Subject</span>
+                          <span className="absolute -top-2 left-2 px-1 bg-white text-[9px] font-bold text-indigo-500 uppercase tracking-wide">Order Subject</span>
                           <p className="text-[11px] text-slate-700 line-clamp-1 font-bold">{o.subject || o.snapshot?.subject || "No Subject"}</p>
                         </div>
                         <div className="bg-slate-50 p-2 border border-slate-200 relative">
-                          <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-indigo-500 uppercase tracking-widest">Total Value</span>
+                          <span className="absolute -top-2 left-2 px-1 bg-white text-[9px] font-bold text-indigo-500 uppercase tracking-wide">Total Value</span>
                           <p className="text-[12px] text-slate-900 font-black">Rs {money(o.totals?.grandTotal || 0)}</p>
                         </div>
                       </div>
@@ -663,7 +685,7 @@ export default function Approvals() {
                       <div key={ar.id} className={`${cardCls} flex flex-col rounded-none shadow-sm border border-slate-200 overflow-hidden bg-white border-t-2 ${accentTop}`}>
                         <div className="p-3.5 border-b border-slate-50 flex items-start justify-between">
                           <div className="min-w-0">
-                            <button onClick={() => setPdfPreviewId(ord.id)} className={`text-[12.5px] font-bold ${accentText} uppercase tracking-tight truncate block leading-none mb-1 hover:underline`}>{ord.order_number || "—"}</button>
+                            <button onClick={() => openPdfPreview(ord.id, ord.order_number)} className={`text-[12.5px] font-bold ${accentText} uppercase tracking-tight truncate block leading-none mb-1 hover:underline`}>{ord.order_number || "—"}</button>
                             <p className="text-[10px] text-slate-400 font-bold uppercase truncate tracking-wider">{ar.requestor?.name || "—"}</p>
                           </div>
                           <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border shrink-0 ${accentBadge}`}>
@@ -773,7 +795,7 @@ export default function Approvals() {
                         }).map((req) => (
                           <tr key={req.id} className="hover:bg-slate-50/50 transition-colors">
                             <td className="px-5 py-3 border-r border-slate-100">
-                              <button onClick={() => setPdfPreviewId(req.original_order?.id)} className="font-bold text-indigo-700 hover:underline text-[12px] whitespace-nowrap">{req.original_order?.order_number || "—"}</button>
+                              <button onClick={() => openPdfPreview(req.original_order?.id, req.original_order?.order_number)} className="font-bold text-indigo-700 hover:underline text-[12px] whitespace-nowrap">{req.original_order?.order_number || "—"}</button>
                             </td>
                             <td className="px-5 py-3 border-r border-slate-100 font-semibold text-slate-700 text-[12px] whitespace-nowrap truncate max-w-[150px]">
                               {req.original_order?.vendors?.vendor_name || req.original_order?.snapshot?.vendor?.vendorName || req.original_order?.vendor_name || "—"}
@@ -818,7 +840,7 @@ export default function Approvals() {
                       <div key={req.id} className={`${cardCls} flex flex-col rounded-none shadow-sm border border-slate-200 overflow-hidden bg-white border-t-2 border-t-indigo-500`}>
                         <div className="p-3.5 border-b border-slate-50 flex items-start justify-between">
                           <div className="min-w-0">
-                            <button onClick={() => setPdfPreviewId(ord.id)} className="text-[12.5px] font-bold text-indigo-600 hover:text-indigo-800 uppercase tracking-tight truncate block leading-none mb-1">{ord.order_number || "—"}</button>
+                            <button onClick={() => openPdfPreview(ord.id, ord.order_number)} className="text-[12.5px] font-bold text-indigo-600 hover:text-indigo-800 uppercase tracking-tight truncate block leading-none mb-1">{ord.order_number || "—"}</button>
                             <p className="text-[10px] text-slate-400 font-bold uppercase truncate tracking-wider">{req.requestor?.name || "TEST USER"}</p>
                           </div>
                           <div className="bg-slate-50 px-2 py-0.5 border border-slate-200 shrink-0">
@@ -888,27 +910,27 @@ export default function Approvals() {
 
       {pdfPreviewId && (
         <div className="fixed inset-0 z-[100] flex">
-          <div className="flex-1 bg-black/50" onClick={() => setPdfPreviewId(null)} />
-          <div className="w-full max-w-[860px] bg-slate-200 flex flex-col h-full shadow-2xl">
-            <div className="bg-white border-b border-slate-200 px-5 py-3 flex items-center justify-between shrink-0">
-              <span className="font-bold text-slate-700 text-sm">PDF Preview</span>
-              <div className="flex items-center gap-2">
+          <div className="hidden sm:block flex-1 bg-black/50" onClick={() => setPdfPreviewId(null)} />
+          <div className="w-full sm:max-w-[860px] bg-slate-200 flex flex-col h-full shadow-2xl">
+            <div className="bg-white border-b border-slate-200 px-3 sm:px-5 py-3 flex items-center justify-between gap-2 shrink-0">
+              <span className="font-bold text-slate-700 text-sm shrink-0">PDF Preview</span>
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <button
                   disabled={pdfDownloading}
                   onClick={handlePDFDownload}
-                  className={`flex items-center gap-2 px-4 py-2 text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all ${pdfDownloading ? "bg-slate-400 cursor-not-allowed" : "bg-[#1b3e8a] hover:bg-[#16326d]"}`}>
+                  className={`flex items-center gap-1.5 px-2.5 sm:px-4 py-2 text-white font-bold rounded-lg text-[11px] sm:text-xs uppercase tracking-wider transition-all whitespace-nowrap ${pdfDownloading ? "bg-slate-400 cursor-not-allowed" : "bg-[#1b3e8a] hover:bg-[#16326d]"}`}>
                   {pdfDownloading
                     ? <div className="h-3 w-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     : <FileDown size={14} />}
-                  {pdfDownloading ? "Downloading..." : "Download PDF"}
+                  <span className="hidden sm:inline">{pdfDownloading ? "Downloading..." : "Download PDF"}</span>
                 </button>
-                <button onClick={() => setPdfPreviewId(null)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-all">
+                <button onClick={() => setPdfPreviewId(null)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-500 hover:text-slate-700 transition-all shrink-0">
                   <X size={18} />
                 </button>
               </div>
             </div>
             <div className="flex-1 bg-slate-300">
-              <iframe title="Order PDF" src={pdfBlobUrl || "about:blank"} className="w-full h-full border-0 bg-white" />
+              <iframe title="Order PDF" src={pdfBlobUrl ? `${pdfBlobUrl}#zoom=page-width` : "about:blank"} className="w-full h-full border-0 bg-white" />
             </div>
           </div>
         </div>
@@ -1089,6 +1111,7 @@ export default function Approvals() {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

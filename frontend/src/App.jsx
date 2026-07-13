@@ -286,7 +286,7 @@ function AppLayout({
       return "pt-0 px-0 pb-0";
     if (["create__order","procurement__orders","master_data__orders",
          "procurement__intake","master_data__intakes","create__intake",
-         "historical_data"].includes(activeTab))
+         "historical_data","approvals"].includes(activeTab))
       return "pt-0 px-0 pb-0 bg-[#f0f2f5]";
     return "pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4";
   })();
