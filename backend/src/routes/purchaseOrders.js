@@ -1236,7 +1236,7 @@ router.post("/bulk-import", async (req, res) => {
     }
 
     // Preload masters
-    const [{ data: companies }, { data: sites }, { data: vendors }, { data: clauses }, { data: clauseVersions }, { data: contacts }, { data: users }] = await Promise.all([
+    const [{ data: companies }, { data: sites }, { data: vendors }, { data: clauses }, { data: clauseVersions }, { data: contacts }, { data: users }, { data: masterItems }] = await Promise.all([
       supabase.schema("organisation").from("companies").select("*"),
       supabase.from("projects").select("*"),
       supabase.schema("procurement").from("vendors").select("*"),
@@ -1244,6 +1244,7 @@ router.post("/bulk-import", async (req, res) => {
       supabase.schema("procurement").from("clause_versions").select("*"),
       supabase.schema("organisation").from("employees").select("*"),
       supabase.from("users").select("id, name, email, designation, profile_permissions"),
+      supabase.schema("procurement").from("items").select("id, material_name, item_type, make, description, unit, item_code"),
     ]);
     const companyByCode = new Map((companies || []).map(c => [String(c.company_code || "").toUpperCase().trim(), c]));
     const siteByCode    = new Map((sites || []).map(s => [String(s.project_code || "").toUpperCase().trim(), s]));
@@ -1252,6 +1253,58 @@ router.post("/bulk-import", async (req, res) => {
     const clauseByCode  = new Map((clauses  || []).map(c => [String(c.code || "").toUpperCase().trim(), c]));
     const contactByCode = new Map((contacts || []).map(c => [String(c.contact_code || "").toUpperCase().trim(), c]));
     const userByEmail   = new Map((users || []).map(u => [String(u.email || "").toLowerCase().trim(), u]));
+
+    // Item master sync — auto-create/update Item Setup entries from order items
+    // so the material catalogue doesn't fall behind what's actually being ordered.
+    const itemMasterMap = new Map(
+      (masterItems || []).map(r => [`${r.item_type === "SITC" ? "SITC" : "Supply"}__${(r.material_name || "").trim().toLowerCase()}`, r])
+    );
+    const itemCodeNums = { Supply: 0, SITC: 0 };
+    (masterItems || []).forEach(r => {
+      const type = r.item_type === "SITC" ? "SITC" : "Supply";
+      const prefix = type === "SITC" ? "SIT-" : "ITM-";
+      const n = parseInt((r.item_code || "").replace(prefix, "")) || 0;
+      if (n > itemCodeNums[type]) itemCodeNums[type] = n;
+    });
+    let masterItemsChanged = false;
+    const syncMasterItem = async (materialName, orderType, specPoints, brand, unit) => {
+      const name = String(materialName || "").trim();
+      if (!name) return;
+      const type = orderType === "SITC" ? "SITC" : "Supply";
+      const key = `${type}__${name.toLowerCase()}`;
+      const existing = itemMasterMap.get(key);
+
+      if (!existing) {
+        const prefix = type === "SITC" ? "SIT" : "ITM";
+        itemCodeNums[type] += 1;
+        const item_code = `${prefix}-${String(itemCodeNums[type]).padStart(3, "0")}`;
+        const { data: created, error } = await supabase.schema("procurement").from("items").insert({
+          item_code, item_type: type,
+          material_name: name,
+          make: JSON.stringify(brand ? [brand] : []),
+          description: JSON.stringify(specPoints || []),
+          category: "", unit: unit || "", remarks: "",
+          created_by_id: "", created_by_name: "Bulk Order Import",
+        }).select().single();
+        if (!error && created) { itemMasterMap.set(key, created); masterItemsChanged = true; }
+        return;
+      }
+
+      // Existing item — append any new brand/spec variant not already listed
+      const makeArr = parseJsonArr(existing.make);
+      const descArr = parseJsonArr(existing.description);
+      let changed = false;
+      if (brand && !makeArr.includes(brand)) { makeArr.push(brand); changed = true; }
+      (specPoints || []).forEach(p => { if (p && !descArr.includes(p)) { descArr.push(p); changed = true; } });
+      if (changed) {
+        await supabase.schema("procurement").from("items").update({
+          make: JSON.stringify(makeArr), description: JSON.stringify(descArr),
+        }).eq("id", existing.id);
+        existing.make = JSON.stringify(makeArr);
+        existing.description = JSON.stringify(descArr);
+        masterItemsChanged = true;
+      }
+    };
     // versionMap: clause_id -> { version: pointsArray }
     const versionMap = new Map();
     (clauseVersions || []).forEach(v => {
@@ -1526,6 +1579,11 @@ router.post("/bulk-import", async (req, res) => {
           }
         }
 
+        // Keep Item Master in sync with what's actually being ordered
+        for (const it of consolidated) {
+          await syncMasterItem(it.material_name, orderType, it._descPoints, it.make, it.unit);
+        }
+
         // Final items — strip temp fields, flatten points to storage format
         // material_name stored directly (bulk import has no item_id FK).
         // description gets the spec points; if none, falls back to item name
@@ -1686,6 +1744,8 @@ router.post("/bulk-import", async (req, res) => {
         } catch { /* non-fatal — order already inserted */ }
       }
     }
+
+    if (masterItemsChanged) cache.bust("items");
 
     res.json({ success: true, ordersInExcel: groups.size, ...results });
   } catch (err) {
