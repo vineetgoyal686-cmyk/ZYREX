@@ -1686,19 +1686,22 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       snapshot: { ...snapshot, proof_type: files.proof.type, notes: normalizeRichTextHtml(notesRef.current || header.notes || "") }
     };
 
-    const mappedItems = items.flatMap(g => g.subRows.map(({ id, ...s }) => ({
-      item_id: g.itemId || null,
-      unit: g.unit || "",
-      description: s.specification || "",
-      model_number: settings.model && !s.hideModel ? (s.modelNumber || "") : "",
-      make: settings.brand && !s.hideBrand ? (s.make || "") : "",
-      qty: Number(s.qty) || 0,
-      unit_rate: Number(s.unitRate) || 0,
-      discount_pct: settings.discountMode === "line" ? (Number(s.discountPct) || 0) : 0,
-      tax_pct: Number(s.taxPct) || 0,
-      amount: Number(s.totalAmount) || 0,
-      remarks: settings.remarks ? (s.remarks || "") : ""
-    })));
+    const mappedItems = items.flatMap(g => g.subRows.map((s) => {
+      const p = totals.processedItems.find(x => x.id === s.id);
+      return {
+        item_id: g.itemId || null,
+        unit: g.unit || "",
+        description: s.specification || "",
+        model_number: settings.model && !s.hideModel ? (s.modelNumber || "") : "",
+        make: settings.brand && !s.hideBrand ? (s.make || "") : "",
+        qty: Number(s.qty) || 0,
+        unit_rate: Number(s.unitRate) || 0,
+        discount_pct: settings.discountMode === "line" ? (Number(s.discountPct) || 0) : 0,
+        tax_pct: settings.taxMode === "line" ? (Number(s.taxPct) || 0) : 0,
+        amount: Number(p?.total) || 0,
+        remarks: settings.remarks ? (s.remarks || "") : ""
+      };
+    }));
 
 
     setSaving(true);

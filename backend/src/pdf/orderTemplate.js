@@ -254,7 +254,7 @@ const renderItemsTable = (order, items) => {
   const grouped = groupItems(items);
   const allRows = grouped.flatMap((g) => g.rows);
   const showDiscount = totals.discount_mode === "line" && allRows.some((i) => Number(i.discount_pct) > 0);
-  const showGst = allRows.some((i) => Number(i.tax_pct) > 0);
+  const showGst = totals.tax_mode === "line" && allRows.some((i) => Number(i.tax_pct) > 0);
   const showRemarks = allRows.some((i) => i.remarks) && totals.showRemarks !== false;
   const extraCols = (showDiscount ? 1 : 0) + (showGst ? 1 : 0);
   const colCount = showRemarks
@@ -322,7 +322,12 @@ const renderItemsTable = (order, items) => {
         <td class="r"${offsetStyle}>₹ ${formatINR(it.unit_rate)}</td>
         ${showDiscount ? `<td class="c"${offsetStyle}>${escapeHtml(String(it.discount_pct || 0))}%</td>` : ""}
         ${showGst ? `<td class="c"${offsetStyle}>${escapeHtml(String(it.tax_pct || 0))}%</td>` : ""}
-        <td class="r amount-col"${offsetStyle}>₹ ${formatINR(it.amount)}</td>
+        <td class="r amount-col"${offsetStyle}>₹ ${formatINR((() => {
+          const gross = Number(it.qty) * Number(it.unit_rate);
+          const net = gross - (gross * (Number(it.discount_pct) || 0) / 100);
+          const gst = totals.tax_mode === "line" ? net * (Number(it.tax_pct) || 0) / 100 : 0;
+          return net + gst;
+        })())}</td>
         ${showRemarks ? `<td${offsetStyle}>${escapeHtml(it.remarks || "--")}</td>` : ""}
       </tr>`;
     });

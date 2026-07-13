@@ -1295,12 +1295,12 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
           const qty = Number(it.qty) || 0;
           const unitRate = Number(it.unit_rate) || 0;
           const dPct = Number(it.discount_pct) || 0;
-          const tPct = Number(it.tax_pct) || 0;
+          const tPct = totals.tax_mode === "line" ? (Number(it.tax_pct) || 0) : 0;
           const gross = qty * unitRate;
           const dAmt = gross * dPct / 100;
           const net = gross - dAmt;
           const rowGst = net * tPct / 100;
-          const total = Number(it.amount) || (net + rowGst);
+          const total = net + rowGst;
           return {
             id: it.id,
             itemName: it.material_name || it.items?.material_name || it.item?.material_name || "Unknown",
@@ -2107,7 +2107,12 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                         </td>
                       )}
 
-                      <td className="px-6 py-3 text-right text-indigo-900 font-bold bg-indigo-50/20 text-[13px] border-b border-slate-200">{RUPEE}{Number(it.amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</td>
+                      <td className="px-6 py-3 text-right text-indigo-900 font-bold bg-indigo-50/20 text-[13px] border-b border-slate-200">{RUPEE}{(() => {
+                        const gross = Number(it.qty) * Number(it.unit_rate);
+                        const net = gross - (gross * (Number(it.discount_pct) || 0) / 100);
+                        const gst = totals.tax_mode === "line" ? net * (Number(it.tax_pct) || 0) / 100 : 0;
+                        return (net + gst).toLocaleString("en-IN", { minimumFractionDigits: 2 });
+                      })()}</td>
                     </tr>
                   ))}
                 </tbody>
