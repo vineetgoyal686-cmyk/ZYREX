@@ -674,6 +674,9 @@ export default function HistoricalData() {
               placeholder="Search order no, vendor, subject…"
               className="h-8 w-64 pl-7 pr-3 rounded border border-slate-200 text-xs text-slate-700 outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-100 transition-all bg-white" />
           </div>
+          <span className="text-xs text-slate-400 whitespace-nowrap">
+            {loading ? "Loading…" : `${filtered.length} record${filtered.length !== 1 ? "s" : ""}`}
+          </span>
           <div className="flex-1" />
           <MultiSelect label="Order Type"   options={allOrderTypes} selected={filterOrderType} onChange={setFilterOrderType} />
           <MultiSelect label="Status"       options={allStatuses}   selected={filterStatus}   onChange={setFilterStatus} />
@@ -685,10 +688,6 @@ export default function HistoricalData() {
             <button onClick={() => { setFilterSite([]); setFilterEntity([]); setFilterVendor([]); setFilterPrepared([]); setFilterOrderType([]); setFilterStatus([]); setSearch(""); }}
               className="text-[11px] text-red-500 hover:text-red-700 font-medium">Clear</button>
           ) : null}
-          <div className="h-4 w-px bg-slate-200" />
-          <span className="text-xs text-slate-400 whitespace-nowrap">
-            {loading ? "Loading…" : `${filtered.length} record${filtered.length !== 1 ? "s" : ""}`}
-          </span>
         </div>
 
         {/* ── Table ──────────────────────────────────────────────────────── */}
