@@ -3504,7 +3504,7 @@ const ORDER_LIST_FILTER_SHELL =
 const ORDER_LIST_FILTER_CONTROL =
   "w-full h-full min-w-0 appearance-none border-0 bg-transparent text-[12px] font-normal text-slate-700 outline-none cursor-pointer";
 
-function OrderMultiFilter({ label, options, selected, onChange, icon: Icon, minWidth = 100 }) {
+function OrderMultiFilter({ label, options, selected, onChange, icon: Icon, minWidth = 100, showCount = false, menuWidth = "w-52" }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef(null);
@@ -3538,7 +3538,7 @@ function OrderMultiFilter({ label, options, selected, onChange, icon: Icon, minW
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-52 rounded-md border border-slate-200 bg-white shadow-xl overflow-hidden">
+        <div className={`absolute right-0 top-full z-50 mt-1 ${menuWidth} rounded-md border border-slate-200 bg-white shadow-xl overflow-hidden`}>
           <div className="border-b border-slate-100 px-2 py-1.5">
             <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2">
               <Search size={12} className="text-slate-400 shrink-0" />
@@ -3551,6 +3551,11 @@ function OrderMultiFilter({ label, options, selected, onChange, icon: Icon, minW
               />
             </div>
           </div>
+          {showCount && (
+            <div className="px-3 py-1 text-[10px] font-semibold text-slate-400 border-b border-slate-100">
+              {visible.length} result{visible.length !== 1 ? "s" : ""} found
+            </div>
+          )}
           <div className="max-h-52 overflow-y-auto py-1">
             {visible.length === 0 ? (
               <p className="px-3 py-3 text-center text-[11px] text-slate-400">No options</p>
@@ -5323,14 +5328,14 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
               {/* Filters */}
               <div className="flex items-center gap-2 ml-auto flex-wrap">
                 {[
-                  { selected: filterCompany, set: setFilterCompany, label: "Entity", opts: companyOptions, min: 110, icon: Building2 },
-                  !project && { selected: filterSite, set: setFilterSite, label: "Sites", opts: siteOptions, min: 100, icon: MapPin },
-                  { selected: filterVendor, set: setFilterVendor, label: "Vendor", opts: vendorOptions, min: 115, icon: Truck },
+                  { selected: filterCompany, set: setFilterCompany, label: "Entity", opts: companyOptions, min: 110, icon: Building2, showCount: true },
+                  !project && { selected: filterSite, set: setFilterSite, label: "Sites", opts: siteOptions, min: 100, icon: MapPin, showCount: true },
+                  { selected: filterVendor, set: setFilterVendor, label: "Vendor", opts: vendorOptions, min: 115, icon: Truck, showCount: true, menuWidth: "w-80" },
                   { selected: filterType, set: setFilterType, label: "Type", opts: ["Supply", "SITC", "ITC"], min: 100, icon: Tag },
                   activeTab === "All" && { selected: filterStatus, set: setFilterStatus, label: "Status", opts: ["Draft", "Review", "Pending Issue", "Amend Request", "Amended", "Issued", "Rejected", "Cancelled"], min: 115, icon: CheckCircle2 },
-                  { selected: filterMadeBy, set: setFilterMadeBy, label: "Users", opts: madeByOptions, min: 105, icon: User }
+                  { selected: filterMadeBy, set: setFilterMadeBy, label: "Users", opts: madeByOptions, min: 105, icon: User, showCount: true }
                 ].filter(Boolean).map((f, i) => (
-                  <OrderMultiFilter key={i} label={f.label} options={f.opts} selected={f.selected} onChange={f.set} icon={f.icon} minWidth={f.min} />
+                  <OrderMultiFilter key={i} label={f.label} options={f.opts} selected={f.selected} onChange={f.set} icon={f.icon} minWidth={f.min} showCount={f.showCount} menuWidth={f.menuWidth} />
                 ))}
 
                 <DateRangeFilter
