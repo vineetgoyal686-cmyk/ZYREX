@@ -65,7 +65,26 @@ export default function Approvals() {
   const [pdfPreviewId, setPdfPreviewId] = useState(null);
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
   const [pdfDownloading, setPdfDownloading] = useState(false);
-  const openPdfPreview = (id) => setPdfPreviewId(id);
+  // Mobile browsers (Android Chrome etc.) don't reliably render a PDF embedded
+  // in an iframe — they show a generic "tap to open" placeholder instead of the
+  // content. Skip our custom modal there and let the browser open it natively.
+  const openPdfPreview = async (id) => {
+    if (!id) return;
+    if (window.innerWidth < 768) {
+      const win = window.open("", "_blank"); // open synchronously so mobile popup blockers allow it
+      try {
+        const res = await authFetch(`${API}/api/orders/${id}/pdf?t=${Date.now()}`);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        if (win) win.location.href = url; else window.open(url, "_blank");
+      } catch {
+        if (win) win.close();
+        showToast("Failed to open PDF", "error");
+      }
+      return;
+    }
+    setPdfPreviewId(id);
+  };
 
   const load = async (isInitial = false) => {
     if (isInitial) {
@@ -911,7 +930,7 @@ export default function Approvals() {
       {pdfPreviewId && (
         <div className="fixed inset-0 z-[100] flex">
           <div className="hidden sm:block flex-1 bg-black/50" onClick={() => setPdfPreviewId(null)} />
-          <div className="w-full sm:max-w-[860px] bg-slate-200 flex flex-col h-full shadow-2xl">
+          <div className="w-full sm:max-w-[860px] bg-slate-200 flex flex-col h-svh sm:h-full shadow-2xl">
             <div className="bg-white border-b border-slate-200 px-3 sm:px-5 py-3 flex items-center justify-between gap-2 shrink-0">
               <span className="font-bold text-slate-700 text-sm shrink-0">PDF Preview</span>
               <div className="flex items-center gap-1.5 sm:gap-2">
@@ -929,8 +948,8 @@ export default function Approvals() {
                 </button>
               </div>
             </div>
-            <div className="flex-1 bg-slate-300">
-              <iframe title="Order PDF" src={pdfBlobUrl ? `${pdfBlobUrl}#zoom=page-width` : "about:blank"} className="w-full h-full border-0 bg-white" />
+            <div className="flex-1 min-h-0 bg-slate-300" style={{ touchAction: "pan-y", WebkitOverflowScrolling: "touch" }}>
+              <iframe title="Order PDF" src={pdfBlobUrl ? `${pdfBlobUrl}#zoom=page-width` : "about:blank"} className="w-full h-full border-0 bg-white" style={{ touchAction: "pan-y" }} />
             </div>
           </div>
         </div>
