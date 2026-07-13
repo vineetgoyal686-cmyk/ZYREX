@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag, Activity, Calendar, PackageCheck } from "lucide-react";
+import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag, Activity, Calendar, PackageCheck, MoreVertical, SlidersHorizontal, Info } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -3512,14 +3512,20 @@ const ORDER_LIST_FILTER_SHELL =
 const ORDER_LIST_FILTER_CONTROL =
   "w-full h-full min-w-0 appearance-none border-0 bg-transparent text-[12px] font-normal text-slate-700 outline-none cursor-pointer";
 
+const MENU_WIDTH_PX = { "w-52": 208, "w-80": 320 };
+
 function OrderMultiFilter({ label, options, selected, onChange, icon: Icon, minWidth = 100, showCount = false, menuWidth = "w-52" }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [pos, setPos] = useState({ top: 0, left: 0 });
   const ref = useRef(null);
+  const menuRef = useRef(null);
 
   useEffect(() => {
     if (!open) { setQuery(""); return; }
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target) && menuRef.current && !menuRef.current.contains(e.target)) setOpen(false);
+    };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
@@ -3527,10 +3533,20 @@ function OrderMultiFilter({ label, options, selected, onChange, icon: Icon, minW
   const toggle = (val) => onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val]);
   const visible = query ? options.filter(o => String(o).toLowerCase().includes(query.toLowerCase())) : options;
 
+  const dropW = Math.min(MENU_WIDTH_PX[menuWidth] || 208, window.innerWidth - 16);
+  const handleToggle = () => {
+    if (!open && ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      const left = r.left + dropW > window.innerWidth - 8 ? window.innerWidth - dropW - 8 : r.left;
+      setPos({ top: r.bottom + 4, left: Math.max(8, left) });
+    }
+    setOpen(o => !o);
+  };
+
   return (
     <div ref={ref} className="relative" style={{ minWidth }}>
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={handleToggle}
         className={`inline-flex h-9 w-full items-center gap-1.5 rounded-md border px-3 text-[12px] font-medium shadow-sm transition-colors ${
           selected.length ? "border-indigo-400 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-600 hover:border-slate-400"
         }`}
@@ -3545,8 +3561,9 @@ function OrderMultiFilter({ label, options, selected, onChange, icon: Icon, minW
         <ChevronDown size={11} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
-      {open && (
-        <div className={`absolute right-0 top-full z-50 mt-1 ${menuWidth} rounded-md border border-slate-200 bg-white shadow-xl overflow-hidden`}>
+      {open && createPortal(
+        <div ref={menuRef} style={{ position: "fixed", top: pos.top, left: pos.left, width: dropW, zIndex: 9999 }}
+          className="rounded-md border border-slate-200 bg-white shadow-xl overflow-hidden">
           <div className="border-b border-slate-100 px-2 py-1.5">
             <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2">
               <Search size={12} className="text-slate-400 shrink-0" />
@@ -3587,9 +3604,287 @@ function OrderMultiFilter({ label, options, selected, onChange, icon: Icon, minW
               <button onClick={() => onChange([])} className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800">Clear</button>
             </div>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
+  );
+}
+
+function OrderMobileCard({
+  o, displayNo, cCode, sCode, vName, taxable, totalVal, activeTab,
+  menuOpen, onToggleMenu, onCloseMenu,
+  onViewClick, onEditClick,
+  canWithdrawApproval, canEditOrder, canDeleteOrder,
+  canTrashLog, canTrashRestore, canTrashDelete,
+  handleWithdrawApproval, handleDelete, handleRestore, handlePermanentDelete,
+  openPDFPreview, setLogPanel, downloadOrderPdf,
+}) {
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const h = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) onCloseMenu(); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [menuOpen]);
+
+  const statusClass = ({
+    Draft: "bg-slate-100 text-slate-600",
+    Approved: "bg-emerald-50 text-emerald-600",
+    Issued: "bg-emerald-50 text-emerald-600",
+    "Amendment Request": "bg-amber-100 text-amber-700",
+    Amended: "bg-slate-100 text-slate-600",
+    Rejected: "bg-red-50 text-red-600",
+    Review: "bg-sky-50 text-sky-600",
+    Reverted: "bg-orange-50 text-orange-600",
+    "Pending Approval": "bg-violet-50 text-violet-600",
+    "Pending Issue": "bg-amber-50 text-amber-600",
+    "To Issue": "bg-amber-50 text-amber-600",
+    Recalled: "bg-purple-50 text-purple-600",
+    "Recall Requested": "bg-purple-50 text-purple-600",
+    "Cancel Requested": "bg-rose-50 text-rose-600",
+    Cancelled: "bg-slate-100 text-slate-500 line-through",
+    Deleted: "bg-red-50 text-red-600",
+  })[o.status] || "bg-slate-100 text-slate-600";
+
+  const statusLabel = (o.status === "Pending Issue" || o.status === "To Issue") ? "Pending Issue"
+    : (o.status === "Amendment Request" || o.status === "Amend Request") ? "Amend Request"
+    : (o.status || "Draft");
+
+  const orderTypeLabel = o.order_type === "Supply" ? "Purchase Order" : (o.order_type === "SITC" || o.order_type === "ITC") ? "Work Order" : (o.order_type || "-");
+  const createdOn = new Date(o.date_of_creation || o.created_at).toLocaleDateString("en-GB").replace(/\//g, '.');
+  const money = (n) => n > 0 ? `₹ ${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-";
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+      <div className="flex items-start justify-between gap-2">
+        {displayNo ? (
+          <button onClick={() => onViewClick(o)} className="font-bold text-[15px] text-[#5b4fbe] text-left break-all">{displayNo}</button>
+        ) : <span className="font-bold text-[15px] text-slate-300">-</span>}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className={`inline-flex px-2.5 py-1 rounded-full text-[10.5px] font-semibold whitespace-nowrap ${statusClass}`}>{statusLabel}</span>
+          <div className="relative" ref={menuRef}>
+            <button onClick={onToggleMenu} className="h-7 w-7 flex items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+              <MoreVertical size={16} />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full mt-1 z-30 w-48 bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden py-1">
+                {activeTab === "Trash" ? (
+                  <>
+                    {canTrashLog && (
+                      <button onClick={() => { setLogPanel({ orderId: o.id, orderNumber: o.order_number || "Draft" }); onCloseMenu(); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] text-slate-700 hover:bg-slate-50">
+                        <Activity size={14} className="text-slate-400" /> Activity Log
+                      </button>
+                    )}
+                    {canTrashRestore && (
+                      <button onClick={() => { handleRestore(o.id); onCloseMenu(); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] text-slate-700 hover:bg-slate-50">
+                        <Undo2 size={14} className="text-emerald-500" /> Restore
+                      </button>
+                    )}
+                    {canTrashDelete && (
+                      <button onClick={() => { handlePermanentDelete(o.id); onCloseMenu(); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] text-red-600 hover:bg-red-50">
+                        <Trash2 size={14} /> Permanent Delete
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {canWithdrawApproval(o) && (
+                      <button onClick={() => { handleWithdrawApproval(o.id); onCloseMenu(); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] text-amber-700 hover:bg-amber-50">
+                        <Undo2 size={14} /> Withdraw Request
+                      </button>
+                    )}
+                    {canEditOrder(o) && (
+                      <button onClick={() => { onEditClick(o.id); onCloseMenu(); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] text-slate-700 hover:bg-slate-50">
+                        <Pencil size={13} /> Full Edit
+                      </button>
+                    )}
+                    {canDeleteOrder(o) && (
+                      <button onClick={() => { handleDelete(o.id); onCloseMenu(); }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] text-red-600 hover:bg-red-50">
+                        <Trash2 size={13} /> Delete
+                      </button>
+                    )}
+                    <button onClick={() => { openPDFPreview(o.id); onCloseMenu(); }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] text-slate-700 hover:bg-slate-50">
+                      <Eye size={14} /> Preview PDF
+                    </button>
+                    <button onClick={() => { setLogPanel({ orderId: o.id, orderNumber: o.order_number || "Draft" }); onCloseMenu(); }}
+                      className="w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] text-slate-700 hover:bg-slate-50">
+                      <Activity size={14} className="text-violet-500" /> Activity Log
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      <p className="text-[12px] text-slate-400 mt-0.5 truncate">{vName}</p>
+
+      <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5 text-[12.5px]">
+        <div><p className="text-[10.5px] text-slate-400 uppercase tracking-wide">Order Type</p><p className="text-slate-700 font-medium mt-0.5">{orderTypeLabel}</p></div>
+        <div><p className="text-[10.5px] text-slate-400 uppercase tracking-wide">Entity</p><p className="text-slate-700 font-medium mt-0.5">{cCode}</p></div>
+        <div><p className="text-[10.5px] text-slate-400 uppercase tracking-wide">Site</p><p className="text-slate-700 font-medium mt-0.5">{sCode}</p></div>
+        <div><p className="text-[10.5px] text-slate-400 uppercase tracking-wide">Created By</p><p className="text-slate-700 font-medium mt-0.5">{o.made_by || "System"}</p></div>
+        <div><p className="text-[10.5px] text-slate-400 uppercase tracking-wide">Created On</p><p className="text-slate-700 font-medium mt-0.5">{createdOn}</p></div>
+        <div className="col-span-2"><p className="text-[10.5px] text-slate-400 uppercase tracking-wide">Subject</p><p className="text-slate-700 font-medium mt-0.5 break-words">{o.subject || "-"}</p></div>
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[10.5px] text-slate-400 uppercase tracking-wide">Taxable Amount</p>
+          <p className="text-[13px] font-semibold text-slate-600 mt-0.5">{money(taxable)}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10.5px] text-slate-400 uppercase tracking-wide">Total Value</p>
+          <p className="text-[15px] font-bold text-emerald-700 mt-0.5">{money(totalVal)}</p>
+        </div>
+        <button onClick={() => downloadOrderPdf(o.id)}
+          className="h-9 w-9 shrink-0 flex items-center justify-center rounded-md border border-slate-200 text-slate-500 hover:text-indigo-600 hover:border-indigo-200 hover:bg-indigo-50 transition-all"
+          title="Download PDF">
+          <Download size={15} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MobileFilterSheet({ filterConfigs, dateRange, setDateRange, customFrom, setCustomFrom, customTo, setCustomTo, minDate, maxDate, onClear, onClose }) {
+  const [openKey, setOpenKey] = useState(null);
+  const [query, setQuery] = useState("");
+  const activePresetVal = dateRange === "all" ? "all" : (() => {
+    const match = DR_PRESETS.find(p => {
+      const [f, t] = drPresetRange(p.val);
+      return drToStr(f) === customFrom && drToStr(t || f) === customTo;
+    });
+    return match?.val || "custom";
+  })();
+
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-end sm:items-center sm:justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[85vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
+          <h3 className="text-base font-bold text-slate-800">Filters</h3>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-full text-slate-400"><X size={18} /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 px-5 py-3 space-y-2">
+          {filterConfigs.map(f => {
+            const isOpen = openKey === f.key;
+            const visible = query && isOpen ? f.opts.filter(o => String(o).toLowerCase().includes(query.toLowerCase())) : f.opts;
+            return (
+              <div key={f.key} className="border border-slate-200 rounded-lg overflow-hidden">
+                <button onClick={() => { setOpenKey(isOpen ? null : f.key); setQuery(""); }}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-3 text-[13.5px] font-medium text-slate-700">
+                  <f.icon size={15} className="text-slate-400 shrink-0" />
+                  <span className="flex-1 text-left truncate">
+                    {f.selected.length ? `${f.label} (${f.selected.length})` : f.label}
+                  </span>
+                  <ChevronDown size={15} className={`text-slate-400 transition-transform shrink-0 ${isOpen ? "rotate-180" : ""}`} />
+                </button>
+                {isOpen && (
+                  <div className="border-t border-slate-100">
+                    <div className="p-2 border-b border-slate-100">
+                      <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder={`Search ${f.label}...`}
+                        className="w-full h-8 px-2.5 text-[12.5px] border border-slate-200 rounded-md outline-none focus:border-indigo-400" />
+                    </div>
+                    {f.showCount && (
+                      <div className="px-3.5 py-1 text-[10px] font-semibold text-slate-400 border-b border-slate-100">
+                        {visible.length} result{visible.length !== 1 ? "s" : ""} found
+                      </div>
+                    )}
+                    <div className="max-h-48 overflow-y-auto">
+                      {visible.length === 0 ? (
+                        <p className="px-3.5 py-3 text-center text-[12px] text-slate-400">No options</p>
+                      ) : visible.map(opt => {
+                        const checked = f.selected.includes(opt);
+                        return (
+                          <button key={opt} onClick={() => f.set(checked ? f.selected.filter(v => v !== opt) : [...f.selected, opt])}
+                            className={`w-full flex items-center gap-2 px-3.5 py-2 text-left text-[12.5px] ${checked ? "bg-indigo-50 text-indigo-700" : "text-slate-700 hover:bg-slate-50"}`}>
+                            <span className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded border ${checked ? "border-indigo-600 bg-indigo-600" : "border-slate-300 bg-white"}`}>
+                              {checked && <Check size={9} strokeWidth={3} className="text-white" />}
+                            </span>
+                            <span className="truncate">{opt}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {(() => {
+            const isOpen = openKey === "dateRange";
+            const summary = dateRange === "custom" && customFrom
+              ? `${customFrom}${customTo && customTo !== customFrom ? ` – ${customTo}` : ""}`
+              : "Date Range";
+            const applyPreset = (val) => {
+              if (val === "all") { setDateRange("all"); setCustomFrom(""); setCustomTo(""); return; }
+              const [f, t] = drPresetRange(val);
+              setDateRange("custom");
+              setCustomFrom(drToStr(f));
+              setCustomTo(drToStr(t || f));
+            };
+            return (
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <button onClick={() => setOpenKey(isOpen ? null : "dateRange")}
+                  className="w-full flex items-center gap-2.5 px-3.5 py-3 text-[13.5px] font-medium text-slate-700">
+                  <CalendarDays size={15} className="text-slate-400 shrink-0" />
+                  <span className="flex-1 text-left truncate">{summary}</span>
+                  {dateRange !== "all" && (
+                    <span onClick={(e) => { e.stopPropagation(); setDateRange("all"); setCustomFrom(""); setCustomTo(""); }}
+                      className="p-1 text-slate-400 hover:text-red-500 shrink-0"><X size={13} /></span>
+                  )}
+                  <ChevronDown size={15} className={`text-slate-400 transition-transform shrink-0 ${isOpen ? "rotate-180" : ""}`} />
+                </button>
+                {isOpen && (
+                  <div className="border-t border-slate-100 p-3 space-y-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {DR_PRESETS.map(p => (
+                        <button key={p.val} type="button" onClick={() => applyPreset(p.val)}
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors ${
+                            activePresetVal === p.val ? "bg-violet-100 border-violet-300 text-violet-800" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                          }`}>
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10.5px] text-slate-400 mb-1">From</label>
+                        <input type="date" value={customFrom} max={maxDate} min={minDate}
+                          onChange={e => { setDateRange("custom"); setCustomFrom(e.target.value); }}
+                          className="w-full h-9 px-2 text-[12.5px] border border-slate-200 rounded-md outline-none focus:border-violet-400" />
+                      </div>
+                      <div>
+                        <label className="block text-[10.5px] text-slate-400 mb-1">To</label>
+                        <input type="date" value={customTo} max={maxDate} min={customFrom || minDate}
+                          onChange={e => { setDateRange("custom"); setCustomTo(e.target.value); }}
+                          className="w-full h-9 px-2 text-[12.5px] border border-slate-200 rounded-md outline-none focus:border-violet-400" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+        <div className="flex items-center gap-3 px-5 py-4 border-t border-slate-100 shrink-0">
+          <button onClick={onClear} className="flex-1 h-11 rounded-lg border border-slate-300 text-slate-600 font-semibold text-sm">Clear</button>
+          <button onClick={onClose} className="flex-1 h-11 rounded-lg bg-indigo-600 text-white font-semibold text-sm">Apply</button>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -3631,15 +3926,22 @@ function drPresetRange(val) {
 
 function DateRangeFilter({ dateRange, setDateRange, customFrom, setCustomFrom, customTo, setCustomTo, minDate, maxDate }) {
   const [open,         setOpen]         = useState(false);
-  const [popPos,       setPopPos]       = useState({ top: 0, right: 0 });
+  const [popPos,       setPopPos]       = useState({ top: 0, left: 0 });
   const [activePreset, setActivePreset] = useState("all");
   const [rangeFrom,    setRangeFrom]    = useState(null);
   const [rangeTo,      setRangeTo]      = useState(null);
   const [hoverDate,    setHoverDate]    = useState(null);
   const [selecting,    setSelecting]    = useState(false);
   const [calBase,      setCalBase]      = useState(() => { const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-1); return d; });
+  const [isMobile,     setIsMobile]     = useState(() => window.innerWidth < 640);
   const btnRef  = useRef(null);
   const popRef  = useRef(null);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const maxMs = useMemo(() => {
     const d = maxDate ? new Date(maxDate) : new Date();
@@ -3679,10 +3981,29 @@ function DateRangeFilter({ dateRange, setDateRange, customFrom, setCustomFrom, c
   const handleToggle = () => {
     if (!open && btnRef.current) {
       const r = btnRef.current.getBoundingClientRect();
-      setPopPos({ top: r.bottom + 6, right: window.innerWidth - r.right });
+      setPopPos({ top: r.bottom + 6, left: r.left });
     }
     setOpen(o => !o);
   };
+
+  // Correct the position once the popup has actually rendered, using its
+  // real measured width/height — these vary (stacked on mobile, side-by-side
+  // on desktop) so an upfront estimate can't reliably predict them. Also
+  // flips the popup above the button when there isn't enough room below —
+  // otherwise on mobile, where the button can sit low in a scrollable sheet,
+  // the calendar renders mostly off the bottom of the screen with no way
+  // to reach it (position:fixed doesn't scroll with the page).
+  useLayoutEffect(() => {
+    if (!open || !popRef.current || !btnRef.current) return;
+    const menuW = popRef.current.offsetWidth;
+    const menuH = popRef.current.offsetHeight;
+    const r = btnRef.current.getBoundingClientRect();
+    const maxLeft = window.innerWidth - menuW - 8;
+    const left = r.left > maxLeft ? Math.max(8, maxLeft) : r.left;
+    const fitsBelow = r.bottom + 6 + menuH <= window.innerHeight - 8;
+    const top = fitsBelow ? r.bottom + 6 : Math.max(8, r.top - 6 - menuH);
+    setPopPos({ top, left });
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -3826,11 +4147,11 @@ function DateRangeFilter({ dateRange, setDateRange, customFrom, setCustomFrom, c
   );
 
   const popup = open && createPortal(
-    <div ref={popRef} className="flex w-max rounded-sm border border-slate-200 bg-white shadow-lg"
-      style={{ position: "fixed", top: popPos.top, right: popPos.right, zIndex: 9999 }}
+    <div ref={popRef} className="flex max-h-[85vh] w-max max-w-[calc(100vw-1rem)] flex-col overflow-y-auto rounded-sm border border-slate-200 bg-white shadow-lg sm:max-h-none sm:flex-row sm:overflow-visible"
+      style={{ position: "fixed", top: popPos.top, left: popPos.left, zIndex: 9999 }}
     >
           {/* Preset list */}
-          <div className="w-[108px] shrink-0 border-r border-slate-100 py-2 flex flex-col">
+          <div className="flex shrink-0 flex-wrap border-b border-slate-100 py-2 sm:w-[108px] sm:flex-col sm:flex-nowrap sm:border-b-0 sm:border-r">
             {DR_PRESETS.map(p => (
               <button key={p.val} type="button" onClick={() => handlePreset(p.val)}
                 className={`px-2.5 py-1 text-left text-[12px] font-medium transition-colors ${
@@ -3840,13 +4161,46 @@ function DateRangeFilter({ dateRange, setDateRange, customFrom, setCustomFrom, c
             ))}
           </div>
 
-          {/* Dual calendar + footer */}
+          {/* Custom range: native date inputs on mobile, dual calendar on desktop */}
           <div className="flex shrink-0 flex-col px-3 pt-2 pb-0">
-            <div className="flex items-start gap-3">
-              {renderMonthPane(leftM.y, leftM.m, "left")}
-              <div className="w-px shrink-0 self-stretch bg-slate-100" />
-              {renderMonthPane(rightM.y, rightM.m, "right")}
-            </div>
+            {isMobile ? (
+              <div className="flex flex-col gap-3 w-[240px] py-1">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">From</label>
+                  <input type="date"
+                    value={drToStr(rangeFrom)}
+                    max={drToStr(new Date(maxMs))}
+                    min={minMs != null ? drToStr(new Date(minMs)) : undefined}
+                    onChange={e => {
+                      if (!e.target.value) return;
+                      const d = clampDay(new Date(`${e.target.value}T00:00:00`));
+                      setActivePreset("custom");
+                      setRangeFrom(d);
+                      if (rangeTo && d > rangeTo) setRangeTo(d);
+                    }}
+                    className="w-full h-9 px-2.5 text-[13px] border border-slate-200 rounded-md outline-none focus:border-violet-400" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">To</label>
+                  <input type="date"
+                    value={drToStr(rangeTo)}
+                    max={drToStr(new Date(maxMs))}
+                    min={drToStr(rangeFrom) || (minMs != null ? drToStr(new Date(minMs)) : undefined)}
+                    onChange={e => {
+                      if (!e.target.value) return;
+                      setActivePreset("custom");
+                      setRangeTo(clampDay(new Date(`${e.target.value}T00:00:00`)));
+                    }}
+                    className="w-full h-9 px-2.5 text-[13px] border border-slate-200 rounded-md outline-none focus:border-violet-400" />
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-start gap-3 sm:flex-row">
+                {renderMonthPane(leftM.y, leftM.m, "left")}
+                <div className="hidden w-px shrink-0 self-stretch bg-slate-100 sm:block" />
+                {renderMonthPane(rightM.y, rightM.m, "right")}
+              </div>
+            )}
 
             <div className="mt-2 flex items-center justify-end gap-2 border-t border-slate-200 pt-1.5 pb-2">
               <button type="button" onClick={handleClear} className="flex items-center gap-1 px-1 py-0.5 text-[12px] font-medium text-slate-500 hover:text-slate-700 rounded hover:bg-slate-50">
@@ -4184,6 +4538,26 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [showMoreTabs, setShowMoreTabs] = useState(false);
+  const [moreTabsPos, setMoreTabsPos] = useState({ top: 0, left: 0 });
+  const moreTabsBtnRef = useRef(null);
+  const moreTabsMenuRef = useRef(null);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+  const [openCardMenuId, setOpenCardMenuId] = useState(null);
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!showMoreTabs || !moreTabsBtnRef.current) return;
+    const r = moreTabsBtnRef.current.getBoundingClientRect();
+    const menuW = moreTabsMenuRef.current?.offsetWidth || 208;
+    const left = Math.min(r.right - menuW, window.innerWidth - menuW - 8);
+    setMoreTabsPos({ top: r.bottom + 4, left: Math.max(8, left) });
+  }, [showMoreTabs]);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const PRIMARY_TABS = ["All", "Draft", "Review", "Pending Approval", "Pending Issue", "Issued", "Amend Request", "Amended"];
   const MORE_TABS = ["Reverted", "Rejected", "Recalled", "Cancelled", "Trash"];
@@ -4586,6 +4960,26 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
   };
 
   const openPDFPreview = (orderId) => {
+    // Mobile browsers don't reliably render a PDF embedded in an iframe (they
+    // show a generic "tap to open" placeholder), so skip the modal there and
+    // open the PDF natively/instantly in a new tab instead — matches Inbox.
+    if (window.innerWidth < 768) {
+      const win = window.open("", "_blank"); // open synchronously so mobile popup blockers allow it
+      const order = orders.find(o => String(o.id) === String(orderId));
+      const filename = makeOrderPdfFilename(order?.order_number, `Order_${orderId}`);
+      fetch(`${API}/api/orders/${orderId}/pdf?t=${Date.now()}`)
+        .then(r => r.blob())
+        .then(blob => {
+          const pdfFile = new File([blob], filename, { type: "application/pdf" });
+          const url = URL.createObjectURL(pdfFile);
+          if (win) win.location.href = url; else window.open(url, "_blank");
+        })
+        .catch(() => {
+          if (win) win.close();
+          showToast("Failed to open PDF", "error");
+        });
+      return;
+    }
     setPdfPreviewNonce(Date.now());
     setPdfPreviewId(orderId);
   };
@@ -4630,6 +5024,25 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
       showToast("PDF download failed", "error");
     }
     setPdfDownloading(false);
+  };
+
+  const downloadOrderPdf = async (orderId) => {
+    try {
+      const res = await fetch(`${API}/api/orders/${orderId}/pdf?download=1&t=${Date.now()}`);
+      if (!res.ok) throw new Error("PDF failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const order = orders.find(o => String(o.id) === String(orderId));
+      a.download = makeOrderPdfFilename(order?.order_number, `Order_${orderId}`);
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      showToast("PDF downloaded successfully!");
+    } catch (err) {
+      console.error(err);
+      showToast("PDF download failed", "error");
+    }
   };
 
   const doExport = () => {
@@ -4867,16 +5280,80 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
   const getSiteCodeForOrder = (o) => getOrderSiteCode(o);
   const projectScoped = (o) => !project || siteCodeMatch(getSiteCodeForOrder(o), project);
 
+  const matchesTabStatus = (o, tabName) => {
+    if (tabName === "All") return !o._history && !["Reverted", "Recalled"].includes(o.status);
+    if (tabName === "Issued") return ["Issued", "Amended"].includes(o.status);
+    if (tabName === "Pending Approval") return o.status === "Pending Approval";
+    if (tabName === "Pending Issue") return ["Pending Issue", "To Issue"].includes(o.status);
+    if (tabName === "Amend Request") return ["Amendment Request", "Amend Request"].includes(o.status);
+    if (tabName === "Recalled") return hasRecallHistory(o);
+    return o.status === tabName;
+  };
+
+  // Mirrors the `filtered` predicate below (search + all active filters),
+  // just swapping in `tabName` for `activeTab` — so tab badge counts reflect
+  // whatever the user has currently searched/filtered for, not the total.
   const getTabCount = (tabName) => {
-    if (tabName === "Trash") return trashedOrders.filter(projectScoped).length;
-    const scoped = orders.filter(projectScoped);
-    if (tabName === "All") return scoped.filter(o => !o._history && !["Reverted", "Recalled"].includes(o.status)).length;
-    if (tabName === "Issued") return scoped.filter(o => ["Issued", "Amended"].includes(o.status)).length;
-    if (tabName === "Pending Approval") return scoped.filter(o => o.status === "Pending Approval").length;
-    if (tabName === "Pending Issue") return scoped.filter(o => ["Pending Issue", "To Issue"].includes(o.status)).length;
-    if (tabName === "Amend Request") return scoped.filter(o => ["Amendment Request", "Amend Request"].includes(o.status)).length;
-    if (tabName === "Recalled") return scoped.filter(hasRecallHistory).length;
-    return scoped.filter(o => o.status === tabName).length;
+    if (tabName === "Trash") {
+      return trashedOrders.filter(o => {
+        const created = new Date(o.snapshot?._deleted?.deleted_at || o.updated_at || o.date_of_creation || o.created_at);
+        let matchDate = true;
+        if (dateRange !== "all") {
+          let from, to;
+          if (dateRange === "this_year") ({ from, to } = getFYBounds(0));
+          else if (dateRange === "last_year") ({ from, to } = getFYBounds(-1));
+          else if (dateRange === "custom") {
+            from = customFrom ? new Date(customFrom) : null;
+            to = customTo ? new Date(customTo + "T23:59:59") : null;
+          }
+          if (from && created < from) matchDate = false;
+          if (to && created > to) matchDate = false;
+        }
+        return projectScoped(o)
+          && searchMatch(o, search.toLowerCase())
+          && (!filterSite.length || filterSite.some(s => siteCodeMatch(s, getSiteCode(o))))
+          && (!filterCompany.length || filterCompany.includes(getCompanyCode(o)))
+          && (!filterType.length || filterType.includes(o.order_type))
+          && (!filterMadeBy.length || filterMadeBy.includes(o.made_by))
+          && (!filterVendor.length || filterVendor.includes(getVendorName(o)))
+          && matchDate;
+      }).length;
+    }
+
+    const ms = search.toLowerCase();
+    return orders.filter(o => {
+      const snap = o.snapshot || {};
+      const searchBlob = [
+        o.order_number, o.subject, o.vendors?.vendor_name, snap.vendor?.vendorName,
+        o.companies?.company_code, o.companies?.company_name, snap.company?.companyCode, snap.company?.companyName,
+        snap.site?.siteCode, snap.site?.siteName, o.made_by, o.order_type
+      ].filter(Boolean).join(" ").toLowerCase();
+      const matchSearch = !ms || searchBlob.includes(ms);
+      const matchTab = matchesTabStatus(o, tabName);
+      const matchSite = !filterSite.length || filterSite.some(s => siteCodeMatch(s, getSiteCode(o)));
+      const matchCompany = !filterCompany.length || filterCompany.includes(getCompanyCode(o));
+      const matchType = !filterType.length || filterType.includes(o.order_type);
+      const matchMadeBy = !filterMadeBy.length || filterMadeBy.includes(o.made_by);
+      const matchVendor = !filterVendor.length || filterVendor.includes(getVendorName(o));
+      const matchStatus = tabName !== "All" || !filterStatus.length || filterStatus.includes(o.status);
+
+      let matchDate = true;
+      if (dateRange !== "all") {
+        const created = new Date(o.date_of_creation || o.created_at);
+        let from, to;
+        if (dateRange === "this_year") ({ from, to } = getFYBounds(0));
+        else if (dateRange === "last_year") ({ from, to } = getFYBounds(-1));
+        else if (dateRange === "custom") {
+          from = customFrom ? new Date(customFrom) : null;
+          to = customTo ? new Date(customTo + "T23:59:59") : null;
+        }
+        if (from && created < from) matchDate = false;
+        if (to && created > to) matchDate = false;
+      }
+
+      const matchProject = !project || siteCodeMatch(getSiteCode(o), project);
+      return matchProject && matchSearch && matchTab && matchSite && matchCompany && matchType && matchMadeBy && matchVendor && matchStatus && matchDate;
+    }).length;
   };
 
 
@@ -5093,9 +5570,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
         )}
 
         {/* Header */}
-        <div className="sticky top-0 z-30 flex items-center justify-between bg-white px-5 py-4 border-b border-slate-200 shadow-sm">
-          <div className="flex items-center gap-4">
-            <div className="h-12 w-12 flex items-center justify-center select-none"
+        <div className="sticky top-0 z-30 flex items-center justify-between gap-2 bg-white px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-200 shadow-sm">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+            <div className="hidden sm:flex h-12 w-12 items-center justify-center select-none"
               style={{ perspective: "400px", cursor: cubeDrag.current ? "grabbing" : "grab" }}
               onMouseDown={handleCubeMouseDown}>
               <svg
@@ -5143,16 +5620,16 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
                 <path d="M69 30 L76 37 L89 22" stroke="white" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
               </svg>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-800 tracking-tight leading-none">
+            <div className="min-w-0">
+              <h1 className="text-base sm:text-xl font-bold text-slate-800 tracking-tight leading-tight sm:leading-none whitespace-nowrap truncate">
                 {project ? `${project} Order Data` : "Order Master Data"}
               </h1>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <div className="relative" ref={headerMoreRef}>
               <button onClick={() => setShowHeaderMore(s => !s)}
-                className="h-9 px-3.5 rounded border border-slate-200 bg-white text-slate-700 font-bold flex items-center gap-1.5 hover:bg-slate-50 transition-all text-xs">
+                className="h-9 px-2.5 sm:px-3.5 rounded border border-slate-200 bg-white text-slate-700 font-bold flex items-center gap-1 sm:gap-1.5 hover:bg-slate-50 transition-all text-xs">
                 More <ChevronDown size={12} className={`transition-transform ${showHeaderMore ? "rotate-180" : ""}`} />
               </button>
               {showHeaderMore && (
@@ -5173,7 +5650,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
               )}
             </div>
             <button onClick={onCreateClick}
-              className="h-9 px-3.5 rounded bg-indigo-600 text-white font-bold flex items-center gap-1.5 hover:bg-indigo-700 transition-all text-xs shadow-sm">
+              className="h-9 px-2.5 sm:px-3.5 rounded bg-indigo-600 text-white font-bold flex items-center gap-1 sm:gap-1.5 hover:bg-indigo-700 transition-all text-xs shadow-sm whitespace-nowrap">
               <Plus size={14} /> Create Order
             </button>
           </div>
@@ -5355,7 +5832,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
 
         <div className="bg-white shadow-sm border-t border-slate-200">
 
-          <div className="flex px-5 pt-4 pb-0 border-b border-slate-100 bg-white gap-8 overflow-visible relative">
+          <div className="flex px-5 pt-4 pb-0 border-b border-slate-100 bg-white gap-8 overflow-x-auto no-scrollbar relative">
             {PRIMARY_TABS.map(t => {
               const count = getTabCount(t);
               return (
@@ -5372,7 +5849,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
             })}
 
             {/* More Dropdown */}
-            <div className="relative pb-3.5 flex items-center">
+            <div className="relative pb-3.5 flex items-center" ref={moreTabsBtnRef}>
               <div className="flex items-center">
                 <button
                   onClick={() => setShowMoreTabs(!showMoreTabs)}
@@ -5400,10 +5877,11 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
                 )}
               </div>
 
-              {showMoreTabs && (
+              {showMoreTabs && createPortal(
                 <>
                   <div className="fixed inset-0 z-[60]" onClick={() => setShowMoreTabs(false)}></div>
-                  <div className="absolute top-[100%] right-0 mt-1 w-52 bg-white border border-slate-200 shadow-lg rounded py-2 z-[70] animate-in fade-in zoom-in-95 duration-150 origin-top-right">
+                  <div ref={moreTabsMenuRef} style={{ position: "fixed", top: moreTabsPos.top, left: moreTabsPos.left, zIndex: 70 }}
+                    className="w-52 bg-white border border-slate-200 shadow-lg rounded py-2 animate-in fade-in zoom-in-95 duration-150 origin-top-right">
                     <div className="px-4 py-1.5 mb-1 border-b border-slate-50">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Select Status</span>
                     </div>
@@ -5433,59 +5911,161 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
                       );
                     })}
                   </div>
-                </>
+                </>,
+                document.body
               )}
             </div>
           </div>
 
-          <div className="px-5 py-3 border-b border-slate-100 bg-[#f8fafc]/50 flex flex-col gap-3">
-            <div className="flex items-center flex-wrap gap-2">
-              {/* Search */}
-              <div className={`${ORDER_LIST_FILTER_SHELL} flex-1 min-w-[180px] max-w-[260px] pl-8 pr-3`}>
-                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search PO, subject, vendor..."
-                  className={`${ORDER_LIST_FILTER_CONTROL} placeholder:text-slate-400`}
-                />
+          {(() => {
+            const filterConfigs = [
+              { key: "company", selected: filterCompany, set: setFilterCompany, label: "Entity", opts: companyOptions, min: 110, icon: Building2, showCount: true },
+              !project && { key: "site", selected: filterSite, set: setFilterSite, label: "Sites", opts: siteOptions, min: 100, icon: MapPin, showCount: true },
+              { key: "vendor", selected: filterVendor, set: setFilterVendor, label: "Vendor", opts: vendorOptions, min: 115, icon: Truck, showCount: true, menuWidth: "w-80" },
+              { key: "type", selected: filterType, set: setFilterType, label: "Type", opts: ["Supply", "SITC", "ITC"], min: 100, icon: Tag },
+              activeTab === "All" && { key: "status", selected: filterStatus, set: setFilterStatus, label: "Status", opts: ["Draft", "Review", "Pending Issue", "Amend Request", "Amended", "Issued", "Rejected", "Cancelled"], min: 115, icon: CheckCircle2 },
+              { key: "madeBy", selected: filterMadeBy, set: setFilterMadeBy, label: "Users", opts: madeByOptions, min: 105, icon: User, showCount: true }
+            ].filter(Boolean);
+
+            if (isMobile) {
+              const activeFilterCount = filterConfigs.reduce((n, f) => n + f.selected.length, 0) + (dateRange !== "all" ? 1 : 0);
+              return (
+                <div className="px-4 py-3 border-b border-slate-100 bg-[#f8fafc]/50 flex items-center gap-2">
+                  <div className={`${ORDER_LIST_FILTER_SHELL} flex-1 min-w-0 pl-8 pr-3`}>
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                      placeholder="Search PO, subject, vendor..."
+                      className={`${ORDER_LIST_FILTER_CONTROL} placeholder:text-slate-400`}
+                    />
+                  </div>
+                  <button onClick={() => setShowFilterSheet(true)}
+                    className="relative h-9 w-9 shrink-0 flex items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600">
+                    <SlidersHorizontal size={15} />
+                    {activeFilterCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 h-4 min-w-4 px-0.5 grid place-items-center rounded-full bg-indigo-600 text-[9px] font-black text-white">{activeFilterCount}</span>
+                    )}
+                  </button>
+                </div>
+              );
+            }
+
+            return (
+              <div className="px-5 py-3 border-b border-slate-100 bg-[#f8fafc]/50 flex flex-col gap-3">
+                <div className="flex items-center flex-wrap gap-2">
+                  {/* Search */}
+                  <div className={`${ORDER_LIST_FILTER_SHELL} flex-1 min-w-[180px] max-w-[260px] pl-8 pr-3`}>
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                      placeholder="Search PO, subject, vendor..."
+                      className={`${ORDER_LIST_FILTER_CONTROL} placeholder:text-slate-400`}
+                    />
+                  </div>
+
+                  {/* Filters */}
+                  <div className="flex items-center gap-2 ml-auto flex-wrap">
+                    {filterConfigs.map((f) => (
+                      <OrderMultiFilter key={f.key} label={f.label} options={f.opts} selected={f.selected} onChange={f.set} icon={f.icon} minWidth={f.min} showCount={f.showCount} menuWidth={f.menuWidth} />
+                    ))}
+
+                    <DateRangeFilter
+                      dateRange={dateRange} setDateRange={setDateRange}
+                      customFrom={customFrom} setCustomFrom={setCustomFrom}
+                      customTo={customTo} setCustomTo={setCustomTo}
+                      minDate={orderFilterMinDate}
+                      maxDate={orderDateBounds.maxDate}
+                    />
+                  </div>
+
+                  {hasActiveFilters && (
+                    <button
+                      onClick={clearFilters}
+                      className="inline-flex h-9 items-center px-3 text-xs font-semibold text-slate-600 border border-slate-300 bg-slate-50 hover:bg-slate-100 rounded-md transition-all"
+                    >
+                      Clear
+                    </button>
+                  )}
+
+                </div>
               </div>
+            );
+          })()}
 
-              {/* Filters */}
-              <div className="flex items-center gap-2 ml-auto flex-wrap">
-                {[
-                  { selected: filterCompany, set: setFilterCompany, label: "Entity", opts: companyOptions, min: 110, icon: Building2, showCount: true },
-                  !project && { selected: filterSite, set: setFilterSite, label: "Sites", opts: siteOptions, min: 100, icon: MapPin, showCount: true },
-                  { selected: filterVendor, set: setFilterVendor, label: "Vendor", opts: vendorOptions, min: 115, icon: Truck, showCount: true, menuWidth: "w-80" },
-                  { selected: filterType, set: setFilterType, label: "Type", opts: ["Supply", "SITC", "ITC"], min: 100, icon: Tag },
-                  activeTab === "All" && { selected: filterStatus, set: setFilterStatus, label: "Status", opts: ["Draft", "Review", "Pending Issue", "Amend Request", "Amended", "Issued", "Rejected", "Cancelled"], min: 115, icon: CheckCircle2 },
-                  { selected: filterMadeBy, set: setFilterMadeBy, label: "Users", opts: madeByOptions, min: 105, icon: User, showCount: true }
-                ].filter(Boolean).map((f, i) => (
-                  <OrderMultiFilter key={i} label={f.label} options={f.opts} selected={f.selected} onChange={f.set} icon={f.icon} minWidth={f.min} showCount={f.showCount} menuWidth={f.menuWidth} />
-                ))}
+          {isMobile && showFilterSheet && (
+            <MobileFilterSheet
+              filterConfigs={[
+                { key: "company", selected: filterCompany, set: setFilterCompany, label: "Entity", opts: companyOptions, icon: Building2, showCount: true },
+                !project && { key: "site", selected: filterSite, set: setFilterSite, label: "Site Name", opts: siteOptions, icon: MapPin, showCount: true },
+                { key: "vendor", selected: filterVendor, set: setFilterVendor, label: "Vendor Name", opts: vendorOptions, icon: Truck, showCount: true },
+                { key: "type", selected: filterType, set: setFilterType, label: "Order Type", opts: ["Supply", "SITC", "ITC"], icon: Tag },
+                activeTab === "All" && { key: "status", selected: filterStatus, set: setFilterStatus, label: "Status", opts: ["Draft", "Review", "Pending Issue", "Amend Request", "Amended", "Issued", "Rejected", "Cancelled"], icon: CheckCircle2 },
+                { key: "madeBy", selected: filterMadeBy, set: setFilterMadeBy, label: "Created By", opts: madeByOptions, icon: User, showCount: true },
+              ].filter(Boolean)}
+              dateRange={dateRange} setDateRange={setDateRange}
+              customFrom={customFrom} setCustomFrom={setCustomFrom}
+              customTo={customTo} setCustomTo={setCustomTo}
+              minDate={orderFilterMinDate}
+              maxDate={orderDateBounds.maxDate}
+              onClear={clearFilters}
+              onClose={() => setShowFilterSheet(false)}
+            />
+          )}
 
-                <DateRangeFilter
-                  dateRange={dateRange} setDateRange={setDateRange}
-                  customFrom={customFrom} setCustomFrom={setCustomFrom}
-                  customTo={customTo} setCustomTo={setCustomTo}
-                  minDate={orderFilterMinDate}
-                  maxDate={orderDateBounds.maxDate}
-                />
-              </div>
+          {isMobile ? (
+            <div className="px-4 py-3 space-y-3">
+              {tableLoading && filtered.length === 0 ? (
+                <div className="py-24 flex justify-center"><div className="smooth-loader w-8 h-8 text-indigo-600"></div></div>
+              ) : filtered.length === 0 ? (
+                <div className="py-16 flex flex-col items-center justify-center">
+                  <div className="h-16 w-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 border border-slate-100">
+                    <FileText size={24} className="text-slate-300" />
+                  </div>
+                  <p className="text-slate-500 font-black uppercase tracking-[0.2em] text-[10px]">No records found</p>
+                </div>
+              ) : paginated.map(o => {
+                const snap = o.snapshot || {};
+                const cCode = snap.company?.companyCode || o.companies?.company_code || "-";
+                const sCode = getOrderSiteCode(o) || "-";
+                const vName = snap.vendor?.vendorName || o.vendors?.vendor_name || "-";
+                const typeCode = o.order_type === "Supply" ? "PO" : "WO";
+                const displayNo = o.order_number?.startsWith("PENDING-") ? `${typeCode}-DRAFT` : o.order_number;
+                const taxable = (() => {
+                  const t = o.totals || {};
+                  let sub = Number(t.subtotal) || 0;
+                  const disc = Number(t.totalDiscountAmt) || 0;
+                  if (sub === 0) {
+                    const its = o.order_items || o.snapshot?.items || [];
+                    if (its.length > 0) sub = its.reduce((s, it) => s + (Number(it.qty) * Number(it.unit_rate) || Number(it.amount) || 0), 0);
+                  }
+                  return sub - disc;
+                })();
+                const totalVal = getOrderGrandTotal(o);
 
-              {hasActiveFilters && (
-                <button
-                  onClick={clearFilters}
-                  className="inline-flex h-9 items-center px-3 text-xs font-semibold text-slate-600 border border-slate-300 bg-slate-50 hover:bg-slate-100 rounded-md transition-all"
-                >
-                  Clear
-                </button>
-              )}
-
+                return (
+                  <OrderMobileCard
+                    key={o.id} o={o} displayNo={displayNo} cCode={cCode} sCode={sCode} vName={vName}
+                    taxable={taxable} totalVal={totalVal}
+                    activeTab={activeTab}
+                    menuOpen={openCardMenuId === o.id}
+                    onToggleMenu={() => setOpenCardMenuId(m => m === o.id ? null : o.id)}
+                    onCloseMenu={() => setOpenCardMenuId(null)}
+                    onViewClick={onViewClick} onEditClick={onEditClick}
+                    canWithdrawApproval={canWithdrawApproval} canEditOrder={canEditOrder} canDeleteOrder={canDeleteOrder}
+                    canTrashLog={canTrashLog} canTrashRestore={canTrashRestore} canTrashDelete={canTrashDelete}
+                    handleWithdrawApproval={handleWithdrawApproval} handleDelete={handleDelete}
+                    handleRestore={handleRestore} handlePermanentDelete={handlePermanentDelete}
+                    openPDFPreview={openPDFPreview} setLogPanel={setLogPanel}
+                    downloadOrderPdf={downloadOrderPdf}
+                  />
+                );
+              })}
             </div>
-          </div>
-
+          ) : (
           <div ref={tableScrollRef} className="overflow-x-auto w-full rounded-none thin-scrollbar-light border-r border-slate-200">
             <table className="w-full text-sm text-left border-separate border-spacing-0 whitespace-nowrap border-t border-l border-slate-200">
               <thead>
@@ -5721,6 +6301,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
               </tbody>
             </table>
           </div>
+          )}
 
           {filtered.length > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-slate-200 bg-white">
