@@ -1014,6 +1014,7 @@ router.delete("/:id/permanent", async (req, res) => {
 router.post("/", requirePerm("order", "can_add"), upload.fields([
   { name: "quotation", maxCount: 6 },
   { name: "comparative", maxCount: 1 },
+  { name: "mailProof", maxCount: 1 },
   { name: "other", maxCount: 2 }
 ]), async (req, res) => {
   try {
@@ -1067,6 +1068,24 @@ router.post("/", requirePerm("order", "can_add"), upload.fields([
         mimetype: files.other[i].mimetype,
         uploaded_at: new Date().toISOString(),
       }));
+    }
+    if (files.mailProof?.length) {
+      const f = files.mailProof[0];
+      const storagePath = await uploadToStorage(
+        "procurement-docs",
+        `orders/${mainData.order_number}/mail-proof/mailproof_${Date.now()}_${safeFilename(f.originalname)}`,
+        f.buffer, f.mimetype
+      );
+      preDocuments.push({
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        category: "mail-proof",
+        url: storagePath,
+        storage_path: storagePath,
+        name: f.originalname,
+        size: f.size,
+        mimetype: f.mimetype,
+        uploaded_at: new Date().toISOString(),
+      });
     }
 
     // These are not purchase_orders DB columns. They are only used by
@@ -1757,6 +1776,7 @@ router.post("/bulk-import", async (req, res) => {
 router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
   { name: "quotation", maxCount: 6 },
   { name: "comparative", maxCount: 1 },
+  { name: "mailProof", maxCount: 1 },
   { name: "other", maxCount: 2 }
 ]), async (req, res) => {
   try {
@@ -1919,6 +1939,25 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
         }));
       }
       preDocuments = [...otherCategoryDocs, ...keptDocs, ...newDocs];
+    }
+    if (files.mailProof?.length) {
+      const f = files.mailProof[0];
+      const storagePath = await uploadToStorage(
+        "procurement-docs",
+        `orders/${mainData.order_number}/mail-proof/mailproof_${Date.now()}_${safeFilename(f.originalname)}`,
+        f.buffer, f.mimetype
+      );
+      const newDoc = {
+        id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        category: "mail-proof",
+        url: storagePath,
+        storage_path: storagePath,
+        name: f.originalname,
+        size: f.size,
+        mimetype: f.mimetype,
+        uploaded_at: new Date().toISOString(),
+      };
+      preDocuments = [...preDocuments.filter(d => d.category !== "mail-proof"), newDoc];
     }
 
     // Detect a genuine transition INTO "Pending Issue" via this direct status-update

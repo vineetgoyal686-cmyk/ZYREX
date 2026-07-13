@@ -1029,7 +1029,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   // Documents
   const [files, setFiles] = useState({
     quotations: [],
-    proof: { type: "", files: [] },
+    comparative: [],
+    mailProof: [],
     others: []
   });
 
@@ -1109,16 +1110,26 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         }));
       }
 
-      const existingProof = [];
+      const existingComparative = [];
       if (order.comparative_sheet_url) {
-        existingProof.push({
+        existingComparative.push({
           name: order.comparative_sheet_url.split('/').pop().split('?')[0].replace(/^comparative_\d+_/, '') || "Existing Comparative",
           url: order.comparative_sheet_url,
           isExisting: true
         });
       }
 
-      const existingOthers = (Array.isArray(order.pre_documents) ? order.pre_documents : [])
+      const preDocs = Array.isArray(order.pre_documents) ? order.pre_documents : [];
+      const existingMailProof = preDocs
+        .filter(d => d.category === "mail-proof")
+        .map(d => ({
+          id: d.id,
+          name: d.name || decodeURIComponent((d.storage_path || d.url || "").split('/').pop().split('?')[0]) || "Mail Proof Doc",
+          url: d.url,
+          isExisting: true
+        }));
+
+      const existingOthers = preDocs
         .filter(d => d.category === "other")
         .map(d => ({
           id: d.id,
@@ -1129,10 +1140,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
       setFiles({
         quotations: existingQuotations,
-        proof: {
-          type: order.snapshot?.proof_type || (order.comparative_sheet_url ? "Comparative Docs" : ""),
-          files: existingProof
-        },
+        comparative: existingComparative,
+        mailProof: existingMailProof,
         others: existingOthers
       });
 
@@ -1621,11 +1630,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       if (files.quotations.length === 0) {
         return showToast("At least 1 Quotation Document is mandatory for submission.", "error");
       }
-      if (!files.proof.type) {
-        return showToast("Please select the Proof Type (Comparative or Mail) for submission.", "error");
-      }
-      if (files.proof.files.length === 0) {
-        return showToast(`At least 1 ${files.proof.type} Document is mandatory for submission.`, "error");
+      if (files.comparative.length === 0 && files.mailProof.length === 0) {
+        return showToast("At least 1 Comparative Docs or Mail Proof Doc is mandatory for submission.", "error");
       }
       if (items.some(g => !g.itemId) || items.some(g => g.subRows.some(s => s.qty <= 0))) {
         return showToast("All line items must have an item selected and Qty > 0 for submission.", "error");
@@ -1691,7 +1697,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
       created_by_id: user.id,
       status: submitStatus,
       action_by: user.name || "",
-      snapshot: { ...snapshot, proof_type: files.proof.type, notes: normalizeRichTextHtml(notesRef.current || header.notes || "") }
+      snapshot: { ...snapshot, notes: normalizeRichTextHtml(notesRef.current || header.notes || "") }
     };
 
     const mappedItems = items.flatMap(g => g.subRows.map((s) => {
@@ -1721,7 +1727,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
       // Only append new files if they are actually File objects (not urls)
       files.quotations.forEach(f => { if (f instanceof File) fd.append("quotation", f); });
-      files.proof.files.forEach(f => { if (f instanceof File) fd.append("comparative", f); });
+      files.comparative.forEach(f => { if (f instanceof File) fd.append("comparative", f); });
+      files.mailProof.forEach(f => { if (f instanceof File) fd.append("mailProof", f); });
 
       // Other Documents — send kept existing docs (by id) plus any new files
       const keptOthers = files.others.filter(f => !(f instanceof File)).map(f => ({ id: f.id }));
@@ -2211,37 +2218,30 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                   onPreview={handlePreviewDoc} />
               </div>
 
-              {/* COMPARATIVE / PROOF */}
+              {/* COMPARATIVE / MAIL PROOF — at least one of the two is mandatory */}
               <div className="bg-slate-100/60 p-4 rounded-md border border-slate-100 space-y-4">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">Proof Type *</label>
-                  <div className="relative">
-                    <select
-                      value={files.proof.type}
-                      onChange={e => setFiles(prev => ({ ...prev, proof: { ...prev.proof, type: e.target.value } }))}
-                      className="w-full border border-slate-200 rounded-md pl-3 pr-10 h-10 text-sm outline-none focus:border-indigo-400 bg-white appearance-none"
-                    >
-                      <option value="">Select Type</option>
-                      <option value="Comparative Docs">Comparative Docs</option>
-                      <option value="Mail Proof Doc">Mail Proof Doc</option>
-                    </select>
-                    <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  </div>
-                </div>
-                {files.proof.type && (
-                  <MultiDocUpload label={`${files.proof.type} *`} files={files.proof.files} max={1} required
-                    onAdd={e => {
-                      const f = e.target.files[0];
-                      if (f) setFiles(prev => ({ ...prev, proof: { ...prev.proof, files: [...prev.proof.files, f] } }));
-                    }}
-                    onRemove={i => {
-                      setFiles(prev => {
-                        const newFiles = prev.proof.files.filter((_, idx) => idx !== i);
-                        return { ...prev, proof: { ...prev.proof, files: newFiles } };
-                      });
-                    }}
-                    onPreview={handlePreviewDoc} />
-                )}
+                {(() => {
+                  const proofMissing = files.comparative.length === 0 && files.mailProof.length === 0;
+                  return (
+                    <>
+                      <MultiDocUpload label="Comparative Docs" files={files.comparative} max={1} required={proofMissing}
+                        onAdd={e => {
+                          const f = e.target.files[0];
+                          if (f) setFiles(prev => ({ ...prev, comparative: [...prev.comparative, f] }));
+                        }}
+                        onRemove={i => setFiles(prev => ({ ...prev, comparative: prev.comparative.filter((_, idx) => idx !== i) }))}
+                        onPreview={handlePreviewDoc} />
+                      <MultiDocUpload label="Mail Proof Doc" files={files.mailProof} max={1} required={proofMissing}
+                        onAdd={e => {
+                          const f = e.target.files[0];
+                          if (f) setFiles(prev => ({ ...prev, mailProof: [...prev.mailProof, f] }));
+                        }}
+                        onRemove={i => setFiles(prev => ({ ...prev, mailProof: prev.mailProof.filter((_, idx) => idx !== i) }))}
+                        onPreview={handlePreviewDoc} />
+                      <p className="text-[11px] text-slate-400">At least one of the two is mandatory — you may add both.</p>
+                    </>
+                  );
+                })()}
               </div>
 
               {/* OTHERS */}
