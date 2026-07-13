@@ -195,14 +195,14 @@ export default function Delegation({ showToast }) {
     <div className="flex flex-col gap-4">
 
       {/* Header */}
-      <div className="bg-white rounded-none shadow-sm border border-slate-100 p-5 flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
+      <div className="bg-white rounded-none shadow-sm border border-slate-100 p-5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div className="flex items-start gap-3 min-w-0">
           <div className="p-2 bg-indigo-50 rounded-lg shrink-0">
             <UserCheck size={18} className="text-indigo-600" />
           </div>
-          <div>
+          <div className="min-w-0">
             <h2 className="text-[15px] font-bold text-slate-800">Delegation</h2>
-            <p className="text-[12px] text-slate-500 mt-0.5 max-w-lg">
+            <p className="text-[12px] text-slate-500 mt-0.5 sm:max-w-lg">
               Delegate your approval or action powers to another person for a specific date range — useful when you're on leave.
             </p>
           </div>
@@ -210,7 +210,7 @@ export default function Delegation({ showToast }) {
         {powers.length > 0 && !showForm && canAdd && (
           <button
             onClick={openNew}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-[13px] font-semibold rounded hover:bg-indigo-700 transition-colors shrink-0"
+            className="flex items-center justify-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-[13px] font-semibold rounded hover:bg-indigo-700 transition-colors shrink-0 w-full sm:w-auto"
           >
             <Plus size={14} /> Add Delegation
           </button>
@@ -226,13 +226,19 @@ export default function Delegation({ showToast }) {
         </div>
       )}
 
-      {/* Add / Edit Form */}
+      {/* Add / Edit Form — full-screen takeover on mobile (own header + scroll + pinned actions),
+          normal inline card on desktop (sm: reverts everything back). */}
       {showForm && (
-        <div className="bg-white rounded-none shadow-sm border border-slate-100 p-5 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
+        <div className="fixed inset-0 z-[60] bg-white flex flex-col
+          sm:static sm:z-auto sm:inset-auto sm:rounded-none sm:shadow-sm sm:border sm:border-slate-100 sm:p-5 sm:gap-4">
+          <div className="shrink-0 flex items-center justify-between px-5 py-4 border-b border-slate-100
+            sm:px-0 sm:py-0 sm:border-b-0">
             <p className="text-[13px] font-bold text-slate-700">{editId ? "Edit Delegation" : "New Delegation"}</p>
-            <button onClick={closeForm} className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
+            <button onClick={closeForm} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
           </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-4 px-5 py-4
+            sm:flex-none sm:overflow-visible sm:p-0">
 
           {/* Delegate To */}
           <div className="flex flex-col gap-1">
@@ -340,9 +346,11 @@ export default function Delegation({ showToast }) {
               className="border border-slate-200 rounded px-3 py-2 text-[13px] outline-none focus:border-indigo-400"
             />
           </div>
+          </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-2 justify-end pt-1">
+          {/* Actions — pinned to the bottom on mobile */}
+          <div className="shrink-0 flex items-center gap-2 justify-end px-5 py-4 border-t border-slate-100
+            sm:px-0 sm:py-0 sm:border-t-0 sm:pt-1">
             <button onClick={closeForm} className="px-4 py-1.5 text-[13px] font-semibold text-slate-600 hover:text-slate-800 transition-colors">
               Cancel
             </button>

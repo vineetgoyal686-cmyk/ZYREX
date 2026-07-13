@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import {
   UserCircle, Lock, Users, ShieldCheck, Briefcase,
   FolderOpen, KeyRound, Inbox, Workflow, Mail, X, UserCheck,
@@ -265,6 +265,36 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
 
         {/* Main content */}
         <div className="min-w-0 flex-1 flex flex-col min-h-0">
+
+          {/* Mobile-only section tabs — the sidebar above is desktop-only (hidden md:block).
+              Grouped with dividers (mirrors the desktop sidebar's groups) + edge fade so a long,
+              scrollable row doesn't read as one flat repeated strip. */}
+          <div className="md:hidden relative border-b border-slate-200 bg-white shrink-0">
+            <div className="flex items-center gap-4 px-4 overflow-x-auto thin-scrollbar-xs">
+              {settingsNavGroups.map((group, gi) => (
+                <Fragment key={gi}>
+                  {gi > 0 && <span className="shrink-0 w-px h-4 bg-slate-200" />}
+                  <div className="flex items-center gap-4">
+                    {group.items.map(t => {
+                      const active = section === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => setSection(t.id)}
+                          className={`shrink-0 py-3 text-[13px] font-bold whitespace-nowrap border-b-[3px] transition-all
+                            ${active ? "text-indigo-600 border-indigo-600" : "text-slate-400 border-transparent"}`}
+                        >
+                          {t.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Fragment>
+              ))}
+            </div>
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent" />
+          </div>
 
           {section === "serialization" && (isGlobalAdmin || currentUser.role === "super_admin" || !!pp.serialization?.view) && (
             <Serialization isGlobalAdmin={isGlobalAdmin || currentUser.role === "super_admin"} showToast={showToast} />

@@ -31,8 +31,8 @@ router.get("/dropdowns", requireAuth, async (req, res) => {
 /* ── GET /api/historical-orders/template ─────────────────────────────────── */
 router.get("/template", requireAuth, (req, res) => {
   const ws = XLSX.utils.aoa_to_sheet([
-    ["Order No", "Order Type", "Entity Code", "Site Code", "Vendor Name", "Subject", "Order Value", "Order Date", "Prepared In"],
-    ["PO/2022/001", "Purchase Order", "BITL", "B-47", "Vendor Pvt Ltd", "Supply of materials", 500000, "2022-04-01", "Tally"],
+    ["Order No", "Order Type", "Entity Code", "Site Code", "Vendor Name", "Subject", "Status", "Order Value", "Order Date", "Prepared In"],
+    ["PO/2022/001", "Purchase Order", "BITL", "B-47", "Vendor Pvt Ltd", "Supply of materials", "Completed", 500000, "2022-04-01", "Tally"],
   ]);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Historical Orders");
@@ -55,6 +55,7 @@ router.get("/export", requireAuth, async (req, res) => {
       "Site Code":   r.site_code    || "",
       "Vendor Name": r.vendor_name  || "",
       "Subject":     r.subject      || "",
+      "Status":      r.status       || "",
       "Prepared In": r.prepared_in  || "",
       "Order Value": r.order_value != null ? Number(r.order_value) : "",
       "Order Date":  r.order_date   || "",
@@ -75,13 +76,14 @@ router.get("/export", requireAuth, async (req, res) => {
 /* ── GET /api/historical-orders ──────────────────────────────────────────── */
 router.get("/", requireAuth, async (req, res) => {
   try {
-    const { site_code, entity_code, vendor_name, prepared_in, order_type } = req.query;
+    const { site_code, entity_code, vendor_name, prepared_in, order_type, status } = req.query;
     let q = supabase.from("historical_orders").select("*, creator:created_by(id, name)").order("order_date", { ascending: false });
     if (site_code)   q = q.in("site_code",   Array.isArray(site_code)   ? site_code   : [site_code]);
     if (entity_code) q = q.in("entity_code", Array.isArray(entity_code) ? entity_code : [entity_code]);
     if (vendor_name) q = q.in("vendor_name", Array.isArray(vendor_name) ? vendor_name : [vendor_name]);
     if (prepared_in) q = q.in("prepared_in", Array.isArray(prepared_in) ? prepared_in : [prepared_in]);
     if (order_type)  q = q.in("order_type",  Array.isArray(order_type)  ? order_type  : [order_type]);
+    if (status)      q = q.in("status",      Array.isArray(status)      ? status      : [status]);
     const { data, error } = await q;
     if (error) throw error;
     const records = await Promise.all((data || []).map(formatRow));
@@ -94,7 +96,7 @@ router.get("/", requireAuth, async (req, res) => {
 /* ── POST /api/historical-orders ─────────────────────────────────────────── */
 router.post("/", requireAuth, upload.single("pdf"), async (req, res) => {
   try {
-    const { order_no, site_code, entity_code, vendor_name, subject, order_value, order_date, prepared_in, order_type } = req.body;
+    const { order_no, site_code, entity_code, vendor_name, subject, status, order_value, order_date, prepared_in, order_type } = req.body;
     if (!order_no) return res.status(400).json({ error: "order_no is required" });
     let pdf_path = null;
     if (req.file) {
@@ -102,7 +104,7 @@ router.post("/", requireAuth, upload.single("pdf"), async (req, res) => {
       pdf_path  = await uploadStorageFile(supabase, BUCKET, `${Date.now()}_${order_no.replace(/\s+/g, "_")}.${ext}`, req.file.buffer, req.file.mimetype);
     }
     const { data, error } = await supabase.from("historical_orders")
-      .insert({ order_no, site_code: site_code || null, entity_code: entity_code || null, vendor_name: vendor_name || null, subject: subject || null, order_value: order_value ? Number(order_value) : null, order_date: order_date || null, prepared_in: prepared_in || null, order_type: order_type || null, pdf_path, created_by: req.user.id })
+      .insert({ order_no, site_code: site_code || null, entity_code: entity_code || null, vendor_name: vendor_name || null, subject: subject || null, status: status || null, order_value: order_value ? Number(order_value) : null, order_date: order_date || null, prepared_in: prepared_in || null, order_type: order_type || null, pdf_path, created_by: req.user.id })
       .select("*, creator:created_by(id, name)").single();
     if (error) {
       if (error.code === "23505") return res.status(409).json({ error: `Order No "${order_no}" already exists. Duplicate order numbers are not allowed.` });
@@ -117,7 +119,7 @@ router.post("/", requireAuth, upload.single("pdf"), async (req, res) => {
 /* ── PUT /api/historical-orders/:id ─────────────────────────────────────── */
 router.put("/:id", requireAuth, upload.single("pdf"), async (req, res) => {
   try {
-    const { order_no, site_code, entity_code, vendor_name, subject, order_value, order_date, prepared_in, order_type, remove_pdf } = req.body;
+    const { order_no, site_code, entity_code, vendor_name, subject, status, order_value, order_date, prepared_in, order_type, remove_pdf } = req.body;
     const { data: existing, error: fetchErr } = await supabase.from("historical_orders").select("pdf_path").eq("id", req.params.id).single();
     if (fetchErr) throw fetchErr;
     let pdf_path = existing.pdf_path;
@@ -128,7 +130,7 @@ router.put("/:id", requireAuth, upload.single("pdf"), async (req, res) => {
       pdf_path  = await uploadStorageFile(supabase, BUCKET, `${Date.now()}_${(order_no || "order").replace(/\s+/g, "_")}.${ext}`, req.file.buffer, req.file.mimetype);
     }
     const { data, error } = await supabase.from("historical_orders")
-      .update({ order_no, site_code: site_code || null, entity_code: entity_code || null, vendor_name: vendor_name || null, subject: subject || null, order_value: order_value ? Number(order_value) : null, order_date: order_date || null, prepared_in: prepared_in || null, order_type: order_type || null, pdf_path, updated_at: new Date().toISOString() })
+      .update({ order_no, site_code: site_code || null, entity_code: entity_code || null, vendor_name: vendor_name || null, subject: subject || null, status: status || null, order_value: order_value ? Number(order_value) : null, order_date: order_date || null, prepared_in: prepared_in || null, order_type: order_type || null, pdf_path, updated_at: new Date().toISOString() })
       .eq("id", req.params.id).select("*, creator:created_by(id, name)").single();
     if (error) throw error;
     res.json({ record: await formatRow(data) });
@@ -165,6 +167,7 @@ router.post("/bulk", requireAuth, upload.single("excel"), async (req, res) => {
       site_code:   String(r["Site Code"]   || r["site_code"]   || "").trim() || null,
       vendor_name: String(r["Vendor Name"] || r["vendor_name"] || "").trim() || null,
       subject:     String(r["Subject"]     || r["subject"]     || "").trim() || null,
+      status:      String(r["Status"]      || r["status"]      || "").trim() || null,
       prepared_in: String(r["Prepared In"] || r["prepared_in"] || "").trim() || null,
       order_value: Number(r["Order Value"] || r["order_value"]) || null,
       order_date:  r["Order Date"] ? new Date(r["Order Date"]).toISOString().slice(0, 10) : null,

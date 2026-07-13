@@ -50,6 +50,10 @@ body {
   background: rgba(71, 85, 105, 0.55);
 }
 
+/* Fully hidden scrollbar — scroll still works, just no visible rail */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
 /* Quill rich-text display (cards, history, view modal) */
 .quill-content { text-align: justify; text-justify: inter-word; hyphens: auto; }
 .quill-content ol { list-style: decimal !important; padding-left: 1.5rem !important; margin-bottom: 0.25rem; text-align: justify; }

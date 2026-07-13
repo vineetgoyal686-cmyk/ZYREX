@@ -279,7 +279,7 @@ function AppLayout({
   const isMobileVal = isMobile;
 
   const mainPaddingClass = (() => {
-    if (isMobileVal) return "pt-14 pb-[60px] px-0";
+    if (isMobileVal) return "pt-14 pb-[calc(76px_+_env(safe-area-inset-bottom))] px-0";
     if (activeTab === "profile") return "pt-0 px-0 pb-4 bg-[#f0f2f5]";
     if (activeTab === "organisation") return "pt-0 px-0 pb-0";
     if (["proc_setup__item_list","proc_setup__category_list","proc_setup__uom","proc_setup__vendor_list"].includes(activeTab))
@@ -299,7 +299,7 @@ function AppLayout({
         <MobileHeader
           currentUser={currentUser}
           approvalCount={approvalCount}
-          onMenuOpen={() => setMobileOpen(true)}
+          onMenuOpen={() => setMobileOpen(o => !o)}
           onInbox={() => { onTabChange("approvals"); setMobileOpen(false); }}
           onProfile={() => { onTabChange("profile"); setMobileOpen(false); }}
         />
@@ -334,8 +334,8 @@ function AppLayout({
         <div className="fixed inset-0 bg-black/50 z-30" onClick={() => setMobileOpen(false)} />
       )}
 
-      {/* Mobile bottom navigation */}
-      {isMobileVal && (
+      {/* Mobile bottom navigation — hidden while the drawer is open so it can't sit on top of the backdrop */}
+      {isMobileVal && !mobileOpen && (
         <MobileBottomNav activeTab={activeTab} onTabChange={(tab) => { onTabChange(tab); setMobileOpen(false); }} />
       )}
 
@@ -345,7 +345,7 @@ function AppLayout({
         }`}
       >
         <main
-          className={`flex-1 min-h-0 min-w-0 relative overflow-y-auto overscroll-y-contain thin-scrollbar-xs ${
+          className={`flex-1 min-h-0 min-w-0 relative overflow-y-auto overflow-x-hidden overscroll-y-contain thin-scrollbar-xs ${
             activeTab === "profile" ? "flex flex-col" : ""
           } ${mainPaddingClass}`}
         >

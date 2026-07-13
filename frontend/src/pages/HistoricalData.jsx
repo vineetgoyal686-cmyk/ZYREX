@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Plus, Pencil, Trash2, FileText, X,
-  ScrollText, ChevronDown, Search, FileSpreadsheet, Download, ArrowDownToLine, CalendarDays, ChevronLeft, ChevronRight,
+  ScrollText, ChevronDown, Search, FileSpreadsheet, Download, ArrowDownToLine, CalendarDays, ChevronLeft, ChevronRight, Copy,
 } from "lucide-react";
 import { authFetch } from "../utils/authFetch";
 import { useModulePermissions } from "../hooks/useModulePermissions";
@@ -18,15 +18,18 @@ const TABS = [
 ];
 
 /* ── MultiSelect ─────────────────────────────────────────────────────────── */
-function MultiSelect({ label, options, selected, onChange }) {
-  const [open, setOpen] = useState(false);
+function MultiSelect({ label, options, selected, onChange, showCount }) {
+  const [open, setOpen]   = useState(false);
+  const [query, setQuery] = useState("");
   const ref = useRef();
   useEffect(() => {
     const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
+  useEffect(() => { if (!open) setQuery(""); }, [open]);
   const toggle = (v) => onChange(selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v]);
+  const filtered = query.trim() ? options.filter(o => o.toLowerCase().includes(query.toLowerCase())) : options;
   return (
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setOpen(o => !o)}
@@ -37,17 +40,33 @@ function MultiSelect({ label, options, selected, onChange }) {
         <ChevronDown size={11} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-slate-200 rounded shadow-md min-w-[170px] max-h-56 overflow-y-auto">
-          {options.length === 0
-            ? <p className="px-4 py-3 text-xs text-slate-400">No options</p>
-            : options.map(opt => (
-              <label key={opt} className="flex items-center gap-2.5 px-4 py-2 text-xs text-slate-700 cursor-pointer hover:bg-slate-50">
-                <input type="checkbox" className="accent-indigo-600" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
-                {opt}
-              </label>
-            ))}
+        <div className="absolute top-full right-0 mt-1 z-50 bg-white border border-slate-200 rounded shadow-md min-w-[200px] w-max max-h-72 flex flex-col">
+          {(showCount || options.length > 6) && (
+            <div className="p-2 border-b border-slate-100 shrink-0">
+              <div className="relative">
+                <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input autoFocus value={query} onChange={e => setQuery(e.target.value)} placeholder="Search..."
+                  className="w-full h-7 pl-6 pr-2 rounded border border-slate-200 text-xs outline-none focus:border-indigo-400" />
+              </div>
+            </div>
+          )}
+          {showCount && (
+            <div className="px-3 py-1 text-[10px] font-semibold text-slate-400 border-b border-slate-100 shrink-0">
+              {filtered.length} result{filtered.length !== 1 ? "s" : ""} found
+            </div>
+          )}
+          <div className="overflow-y-auto max-h-56">
+            {filtered.length === 0
+              ? <p className="px-4 py-3 text-xs text-slate-400">No options</p>
+              : filtered.map(opt => (
+                <label key={opt} className="flex items-center gap-2.5 px-4 py-2 text-xs text-slate-700 cursor-pointer hover:bg-slate-50 whitespace-nowrap">
+                  <input type="checkbox" className="accent-indigo-600 shrink-0" checked={selected.includes(opt)} onChange={() => toggle(opt)} />
+                  {opt}
+                </label>
+              ))}
+          </div>
           {selected.length > 0 && (
-            <div className="border-t border-slate-100 px-4 py-2">
+            <div className="border-t border-slate-100 px-4 py-2 shrink-0">
               <button onClick={() => onChange([])} className="text-[11px] text-red-500 hover:text-red-700">Clear all</button>
             </div>
           )}
@@ -322,6 +341,7 @@ function FormModal({ record, sites, entities, onClose, onSave }) {
     site_code:   record?.site_code   || "",
     vendor_name: record?.vendor_name || "",
     subject:     record?.subject     || "",
+    status:      record?.status      || "",
     order_value: record?.order_value || "",
     order_date:  record?.order_date  || "",
     prepared_in: record?.prepared_in || "",
@@ -381,6 +401,9 @@ function FormModal({ record, sites, entities, onClose, onSave }) {
           </LBL>
           <LBL t="Prepared In">
             <input className={inp} value={form.prepared_in} onChange={e => set("prepared_in", e.target.value)} placeholder="e.g. Tally, SAP, Manual" />
+          </LBL>
+          <LBL t="Status">
+            <input className={inp} value={form.status} onChange={e => set("status", e.target.value)} placeholder="e.g. Completed, Pending, Cancelled" />
           </LBL>
           <LBL t="Entity Code">
             <SearchSelect
@@ -479,6 +502,7 @@ export default function HistoricalData() {
   const [filterVendor,   setFilterVendor]   = useState([]);
   const [filterPrepared, setFilterPrepared] = useState([]);
   const [filterOrderType,setFilterOrderType]= useState([]);
+  const [filterStatus,   setFilterStatus]   = useState([]);
   const [page,     setPage]     = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [formOpen, setFormOpen] = useState(false);
@@ -508,6 +532,7 @@ export default function HistoricalData() {
       filterVendor.forEach(v     => p.append("vendor_name", v));
       filterPrepared.forEach(v   => p.append("prepared_in", v));
       filterOrderType.forEach(v  => p.append("order_type",  v));
+      filterStatus.forEach(v     => p.append("status",      v));
       const res  = await authFetch(`${API}/api/historical-orders?${p}`);
       const json = await res.json();
       setRecords(json.records || []);
@@ -515,7 +540,7 @@ export default function HistoricalData() {
   };
 
   useEffect(() => { fetchDropdowns(); }, []);
-  useEffect(() => { fetchRecords(); }, [filterSite, filterEntity, filterVendor, filterPrepared, filterOrderType]);
+  useEffect(() => { fetchRecords(); }, [filterSite, filterEntity, filterVendor, filterPrepared, filterOrderType, filterStatus]);
 
   const handleSave = (rec, isEdit) => {
     setRecords(prev => isEdit ? prev.map(r => r.id === rec.id ? rec : r) : [rec, ...prev]);
@@ -561,6 +586,7 @@ export default function HistoricalData() {
   const allSites      = [...new Set(records.map(r => r.site_code).filter(Boolean))].sort();
   const allPrepared   = [...new Set(records.map(r => r.prepared_in).filter(Boolean))].sort();
   const allOrderTypes = [...new Set(records.map(r => r.order_type).filter(Boolean))].sort();
+  const allStatuses   = [...new Set(records.map(r => r.status).filter(Boolean))].sort();
 
   const filtered = records.filter(r => {
     if (!search) return true;
@@ -650,12 +676,13 @@ export default function HistoricalData() {
           </div>
           <div className="flex-1" />
           <MultiSelect label="Order Type"   options={allOrderTypes} selected={filterOrderType} onChange={setFilterOrderType} />
-          <MultiSelect label="Entity Code"  options={allEntities}   selected={filterEntity}   onChange={setFilterEntity} />
-          <MultiSelect label="Site Code"    options={allSites}      selected={filterSite}     onChange={setFilterSite} />
-          <MultiSelect label="Vendor"       options={allVendors}    selected={filterVendor}   onChange={setFilterVendor} />
+          <MultiSelect label="Status"       options={allStatuses}   selected={filterStatus}   onChange={setFilterStatus} />
+          <MultiSelect label="Entity Code"  options={allEntities}   selected={filterEntity}   onChange={setFilterEntity}   showCount />
+          <MultiSelect label="Site Code"    options={allSites}      selected={filterSite}     onChange={setFilterSite}     showCount />
+          <MultiSelect label="Vendor"       options={allVendors}    selected={filterVendor}   onChange={setFilterVendor}   showCount />
           <MultiSelect label="Prepared In"  options={allPrepared}   selected={filterPrepared} onChange={setFilterPrepared} />
-          {(filterSite.length || filterEntity.length || filterVendor.length || filterPrepared.length || filterOrderType.length || search) ? (
-            <button onClick={() => { setFilterSite([]); setFilterEntity([]); setFilterVendor([]); setFilterPrepared([]); setFilterOrderType([]); setSearch(""); }}
+          {(filterSite.length || filterEntity.length || filterVendor.length || filterPrepared.length || filterOrderType.length || filterStatus.length || search) ? (
+            <button onClick={() => { setFilterSite([]); setFilterEntity([]); setFilterVendor([]); setFilterPrepared([]); setFilterOrderType([]); setFilterStatus([]); setSearch(""); }}
               className="text-[11px] text-red-500 hover:text-red-700 font-medium">Clear</button>
           ) : null}
           <div className="h-4 w-px bg-slate-200" />
@@ -688,6 +715,7 @@ export default function HistoricalData() {
                     <tr>
                       <TH ch="Order No"    sticky="left" />
                       <TH ch="Order Type" />
+                      <TH ch="Status" />
                       <TH ch="Vendor Name" />
                       <TH ch="Subject" />
                       <TH ch="Prepared In" />
@@ -699,26 +727,33 @@ export default function HistoricalData() {
                   </thead>
                   <tbody>
                     {loading ? (
-                      <tr><td colSpan={9} className="px-4 py-16 text-center text-[13px] text-slate-400">Loading…</td></tr>
+                      <tr><td colSpan={10} className="px-4 py-16 text-center text-[13px] text-slate-400">Loading…</td></tr>
                     ) : paginated.length === 0 ? (
-                      <tr><td colSpan={9} className="px-4 py-16 text-center text-[13px] text-slate-400">No records found</td></tr>
+                      <tr><td colSpan={10} className="px-4 py-16 text-center text-[13px] text-slate-400">No records found</td></tr>
                     ) : paginated.map(r => (
                       <tr key={r.id} className="group hover:bg-slate-50 transition-colors">
-                        <td className={`${tdBase} sticky left-0 z-[10] bg-white group-hover:bg-slate-50`}>
-                          <button onClick={() => r.pdf_url ? window.open(r.pdf_url, "_blank") : setToast("No attachment for this order")}
-                            className="text-[13px] font-medium text-indigo-600 hover:underline text-left whitespace-nowrap">
-                            {r.order_no}
-                          </button>
+                        <td className={`${tdBase} sticky left-0 z-[10] bg-white group-hover:bg-slate-50 whitespace-nowrap`}>
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={() => r.pdf_url ? window.open(r.pdf_url, "_blank") : setToast("No attachment for this order")}
+                              className="text-[13px] font-medium text-indigo-600 hover:underline text-left whitespace-nowrap">
+                              {r.order_no}
+                            </button>
+                            <button onClick={() => { navigator.clipboard.writeText(r.order_no); setToast("Order No copied"); }}
+                              title="Copy Order No" className="p-1 rounded hover:bg-slate-100 transition-colors shrink-0">
+                              <Copy size={12} className="text-slate-400" />
+                            </button>
+                          </div>
                         </td>
                         <td className={`${tdBase} whitespace-nowrap`}>
                           {r.order_type ? <span className="text-slate-700">{r.order_type}</span> : <span className="text-slate-300">—</span>}
                         </td>
-                        <td className={`${tdBase} max-w-[180px] truncate`}>{r.vendor_name || <span className="text-slate-300">—</span>}</td>
-                        <td className={`${tdBase} max-w-[260px] truncate text-slate-500`}>{r.subject || <span className="text-slate-300">—</span>}</td>
-                        <td className={`${tdBase}`}>{r.prepared_in || <span className="text-slate-300">—</span>}</td>
-                        <td className={`${tdBase} text-right font-medium`}>{r.order_value != null ? `₹${fmt(r.order_value)}` : <span className="text-slate-300 font-normal">—</span>}</td>
+                        <td className={`${tdBase} whitespace-nowrap`}>{r.status || <span className="text-slate-300">—</span>}</td>
+                        <td className={`${tdBase} whitespace-nowrap`}>{r.vendor_name || <span className="text-slate-300">—</span>}</td>
+                        <td className={`${tdBase} min-w-[280px] max-w-[480px] whitespace-normal break-words text-slate-500`}>{r.subject || <span className="text-slate-300">—</span>}</td>
+                        <td className={`${tdBase} whitespace-nowrap`}>{r.prepared_in || <span className="text-slate-300">—</span>}</td>
+                        <td className={`${tdBase} text-right font-medium whitespace-nowrap`}>{r.order_value != null ? `₹${fmt(r.order_value)}` : <span className="text-slate-300 font-normal">—</span>}</td>
                         <td className={`${tdBase} whitespace-nowrap`}>{fmtDate(r.order_date)}</td>
-                        <td className={`${tdBase} text-slate-500`}>{r.entry_by}</td>
+                        <td className={`${tdBase} text-slate-500 whitespace-nowrap`}>{r.entry_by}</td>
                         <td className={`${tdBase} sticky right-0 z-[10] bg-white group-hover:bg-slate-50`}>
                           <div className="flex items-center gap-1">
                             {canEdit   && <button onClick={() => { setEditRec(r); setFormOpen(true); }} title="Edit"   className="p-1.5 rounded hover:bg-slate-100 transition-colors"><Pencil  size={14} className="text-slate-500" /></button>}
@@ -765,7 +800,7 @@ export default function HistoricalData() {
               </div>
             </div>
             <p className="text-[11px] text-slate-400 text-center">
-              Bulk upload columns: <b>Order No</b> · <b>Order Type</b> · <b>Entity Code</b> · <b>Site Code</b> · <b>Vendor Name</b> · <b>Subject</b> · <b>Order Value</b> · <b>Order Date</b> · <b>Prepared In</b>
+              Bulk upload columns: <b>Order No</b> · <b>Order Type</b> · <b>Entity Code</b> · <b>Site Code</b> · <b>Vendor Name</b> · <b>Subject</b> · <b>Status</b> · <b>Order Value</b> · <b>Order Date</b> · <b>Prepared In</b>
             </p>
           </div>
           );
