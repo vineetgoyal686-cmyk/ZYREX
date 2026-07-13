@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag, Activity, Calendar } from "lucide-react";
+import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag, Activity, Calendar, PackageCheck } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -889,6 +889,14 @@ const autoGrowTextarea = (el) => {
 };
 
 const formatINR = (n) => `₹${(Number(n) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const compactINR = (n) => {
+  const num = Number(n) || 0;
+  const abs = Math.abs(num);
+  if (abs >= 1e7) return `₹${(num / 1e7).toLocaleString("en-IN", { maximumFractionDigits: 2 })} Cr`;
+  if (abs >= 1e5) return `₹${(num / 1e5).toLocaleString("en-IN", { maximumFractionDigits: 2 })} L`;
+  if (abs >= 1e3) return `₹${(num / 1e3).toLocaleString("en-IN", { maximumFractionDigits: 1 })} K`;
+  return formatINR(num);
+};
 
 function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const user = JSON.parse(localStorage.getItem("bms_user") || "{}");
@@ -3973,6 +3981,41 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
   const [bulkResult, setBulkResult] = useState(null);
   const bulkRef = React.useRef();
 
+  // Header "More" dropdown (Export / Bulk Upload)
+  const [showHeaderMore, setShowHeaderMore] = useState(false);
+  const headerMoreRef = React.useRef(null);
+  useEffect(() => {
+    if (!showHeaderMore) return;
+    const handler = (e) => { if (headerMoreRef.current && !headerMoreRef.current.contains(e.target)) setShowHeaderMore(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showHeaderMore]);
+
+  // Header cube icon — mouse-drag 3D rotation (fixed tilt otherwise, no auto-spin)
+  const [cubeRot, setCubeRot] = useState({ x: -18, y: 25 });
+  const cubeDrag = React.useRef(null);
+  const handleCubeMouseDown = (e) => {
+    cubeDrag.current = { startX: e.clientX, startY: e.clientY, base: cubeRot };
+    e.preventDefault();
+  };
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!cubeDrag.current) return;
+      const { startX, startY, base } = cubeDrag.current;
+      setCubeRot({
+        x: Math.max(-70, Math.min(70, base.x - (e.clientY - startY) * 0.5)),
+        y: base.y + (e.clientX - startX) * 0.5,
+      });
+    };
+    const onUp = () => { cubeDrag.current = null; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
   const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
   const [copiedOrderId, setCopiedOrderId] = useState("");
   const [trashedOrders, setTrashedOrders] = useState([]);
@@ -5028,34 +5071,86 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
         {/* Header */}
         <div className="sticky top-0 z-30 flex items-center justify-between bg-white px-5 py-4 border-b border-slate-200 shadow-sm">
           <div className="flex items-center gap-4">
-            <div className="h-12 w-12 bg-[#6366f1] rounded flex items-center justify-center shadow-md shadow-indigo-100">
-              <FileSpreadsheet size={24} className="text-white" />
+            <div className="h-12 w-12 flex items-center justify-center select-none"
+              style={{ perspective: "400px", cursor: cubeDrag.current ? "grabbing" : "grab" }}
+              onMouseDown={handleCubeMouseDown}>
+              <svg
+                width="46" height="46" viewBox="0 0 100 100"
+                style={{
+                  transform: `rotateX(${cubeRot.x}deg) rotateY(${cubeRot.y}deg)`,
+                  transformStyle: "preserve-3d",
+                  filter: "drop-shadow(0 4px 6px rgba(30,41,89,0.35))",
+                  transition: cubeDrag.current ? "none" : "transform 0.3s ease-out",
+                }}
+              >
+                <defs>
+                  <linearGradient id="cartBody" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#818cf8" />
+                    <stop offset="100%" stopColor="#3730a3" />
+                  </linearGradient>
+                  <linearGradient id="badgeGrad" x1="0" y1="0" x2="1" y2="1">
+                    <stop offset="0%" stopColor="#34d399" />
+                    <stop offset="100%" stopColor="#059669" />
+                  </linearGradient>
+                  <radialGradient id="wheelHub" cx="0.35" cy="0.35" r="0.7">
+                    <stop offset="0%" stopColor="#64748b" />
+                    <stop offset="100%" stopColor="#1e293b" />
+                  </radialGradient>
+                </defs>
+
+                {/* handle */}
+                <path d="M16 20 L30 40" stroke="#3730a3" strokeWidth="6" strokeLinecap="round" fill="none" />
+                <circle cx="15" cy="17" r="6" fill="#ef4444" />
+                <circle cx="13" cy="15" r="1.8" fill="#fca5a5" />
+
+                {/* basket */}
+                <polygon points="28,38 84,38 73,68 39,68" fill="url(#cartBody)" stroke="#312e81" strokeWidth="1.5" />
+                <line x1="46" y1="38" x2="43" y2="68" stroke="white" strokeOpacity="0.35" strokeWidth="2" />
+                <line x1="66" y1="38" x2="69" y2="68" stroke="white" strokeOpacity="0.3" strokeWidth="2" />
+                <line x1="32" y1="52" x2="80" y2="52" stroke="white" strokeOpacity="0.3" strokeWidth="2" />
+
+                {/* base + wheels */}
+                <rect x="41" y="68" width="30" height="6" rx="2" fill="#312e81" />
+                <circle cx="47" cy="83" r="7" fill="url(#wheelHub)" />
+                <circle cx="70" cy="83" r="7" fill="url(#wheelHub)" />
+
+                {/* checkmark badge */}
+                <circle cx="78" cy="30" r="18" fill="url(#badgeGrad)" stroke="white" strokeWidth="2.5" />
+                <path d="M69 30 L76 37 L89 22" stroke="white" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+              </svg>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-800 tracking-tight leading-none mb-1.5">
+              <h1 className="text-xl font-bold text-slate-800 tracking-tight leading-none">
                 {project ? `${project} Order Data` : "Order Master Data"}
               </h1>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                {project ? "• Project Specific Order Logs" : "• Global Order Management System"}
-              </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button onClick={onDocsOverviewClick}
-              className="h-10 px-5 rounded border border-slate-200 bg-white text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-50 transition-all text-sm">
-              <FileText size={14} className="text-slate-400" /> Document Status
-            </button>
-            <button onClick={handleExport}
-              className="h-10 px-5 rounded border border-slate-200 bg-white text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-50 transition-all text-sm">
-              <Download size={14} className="text-slate-400" /> Export
-            </button>
-            <button onClick={() => { setShowBulk(true); setBulkRows([]); setBulkFileName(""); setBulkResult(null); }}
-              className="h-10 px-5 rounded border border-slate-200 bg-slate-50 text-slate-700 font-semibold flex items-center gap-2 hover:bg-slate-100 transition-all text-sm">
-              <Upload size={14} className="text-slate-400" /> Bulk Upload
-            </button>
+          <div className="flex items-center gap-2">
+            <div className="relative" ref={headerMoreRef}>
+              <button onClick={() => setShowHeaderMore(s => !s)}
+                className="h-9 px-3.5 rounded border border-slate-200 bg-white text-slate-700 font-bold flex items-center gap-1.5 hover:bg-slate-50 transition-all text-xs">
+                More <ChevronDown size={12} className={`transition-transform ${showHeaderMore ? "rotate-180" : ""}`} />
+              </button>
+              {showHeaderMore && (
+                <div className="absolute right-0 top-full mt-1 z-30 bg-white rounded-lg shadow-xl border border-slate-100 py-1 w-48">
+                  <button onClick={() => { onDocsOverviewClick(); setShowHeaderMore(false); }}
+                    className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                    <FileText size={14} className="text-slate-400" /> Document Status
+                  </button>
+                  <button onClick={() => { handleExport(); setShowHeaderMore(false); }}
+                    className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                    <Download size={14} className="text-slate-400" /> Export
+                  </button>
+                  <button onClick={() => { setShowBulk(true); setBulkRows([]); setBulkFileName(""); setBulkResult(null); setShowHeaderMore(false); }}
+                    className="flex items-center gap-2.5 w-full px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                    <Upload size={14} className="text-slate-400" /> Bulk Upload
+                  </button>
+                </div>
+              )}
+            </div>
             <button onClick={onCreateClick}
-              className="h-10 px-6 rounded bg-indigo-600 text-white font-semibold flex items-center gap-2 hover:bg-indigo-700 transition-all text-sm shadow-md shadow-indigo-600/20">
-              <Plus size={16} /> Create Order
+              className="h-9 px-3.5 rounded bg-indigo-600 text-white font-bold flex items-center gap-1.5 hover:bg-indigo-700 transition-all text-xs shadow-sm">
+              <Plus size={14} /> Create Order
             </button>
           </div>
         </div>
@@ -5203,23 +5298,31 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
           </div>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-[0.7fr_1fr_1fr_1fr_1fr] gap-4 px-4 py-4 border-b border-slate-200 bg-slate-100">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-[0.7fr_1fr_1fr_1fr_1fr] gap-3 px-4 py-3 border-b border-slate-200 bg-slate-50">
           {[
-            { label: "Total Orders", val: stats.total, icon: ShoppingBag, color: "text-[#4f46e5] bg-[#eef2ff]" },
-            { label: "Total PO", val: stats.poCount, sub: `₹ ${stats.poValue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: FileText, color: "text-[#2563eb] bg-[#eff6ff]" },
-            { label: "Total WO", val: stats.woCount, sub: `₹ ${stats.woValue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: Box, color: "text-[#0891b2] bg-[#ecfeff]" },
-            { label: "Taxable Value", val: `₹ ${(stats.poValue + stats.woValue).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: IndianRupee, color: "text-[#9333ea] bg-[#faf5ff]" },
-            { label: "Total Order Value", val: `₹ ${stats.totalOrderValue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, icon: ShoppingCart, color: "text-emerald-600 bg-emerald-50" },
+            { label: "Total Orders", val: stats.total, icon: ShoppingBag, accent: "#4f46e5", tint: "#eef2ff" },
+            { label: "Total PO", val: stats.poCount, sub: compactINR(stats.poValue), subFull: formatINR(stats.poValue), icon: FileText, accent: "#2563eb", tint: "#eff6ff" },
+            { label: "Total WO", val: stats.woCount, sub: compactINR(stats.woValue), subFull: formatINR(stats.woValue), icon: Box, accent: "#0891b2", tint: "#ecfeff" },
+            { label: "Taxable Value", val: compactINR(stats.poValue + stats.woValue), valFull: formatINR(stats.poValue + stats.woValue), icon: IndianRupee, accent: "#9333ea", tint: "#faf5ff" },
+            { label: "Total Order Value", val: compactINR(stats.totalOrderValue), valFull: formatINR(stats.totalOrderValue), icon: ShoppingCart, accent: "#059669", tint: "#ecfdf5" },
           ].map((s, i) => (
-            <div key={i} className="bg-white p-3.5 rounded shadow-sm flex items-center gap-3.5">
-              <div className={`w-11 h-11 rounded ${s.color} flex items-center justify-center shrink-0`}>
-                <s.icon size={20} strokeWidth={2} />
+            <div key={i}
+              className="relative overflow-hidden bg-white rounded-lg border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow duration-200 p-3 flex items-center gap-3 min-w-0">
+              <div className="absolute inset-y-0 left-0 w-[3px]" style={{ background: s.accent }} />
+              <div className="w-9 h-9 rounded-md flex items-center justify-center shrink-0"
+                style={{ background: s.tint, color: s.accent }}>
+                <s.icon size={16} strokeWidth={2.25} />
               </div>
-              <div className="min-w-0">
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-[0.08em] mb-0.5">{s.label}</p>
-                <div className="flex items-baseline gap-1.5 flex-wrap">
-                  <span className="text-base font-black text-slate-800 leading-none">{s.val}</span>
-                  {s.sub && <span className="text-[10px] font-bold text-indigo-600 leading-none">{s.sub}</span>}
+              <div className="min-w-0 flex-1">
+                <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap">{s.label}</p>
+                <div className="flex items-baseline gap-2.5 min-w-0" title={s.valFull || s.subFull || undefined}>
+                  <span className="text-lg font-extrabold text-slate-800 leading-tight tracking-tight truncate min-w-0">{s.val}</span>
+                  {s.sub && (
+                    <span className="text-xs font-bold shrink-0 flex items-baseline gap-1">
+                      <span className="text-[10px] font-semibold text-slate-400">Value</span>
+                      <span style={{ color: s.accent }}>{s.sub}</span>
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
