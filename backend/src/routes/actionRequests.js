@@ -498,7 +498,7 @@ router.post("/:id/action", requireAuth, async (req, res) => {
       const snap   = order?.snapshot || {};
       const actLog = Array.isArray(snap.activity_log) ? [...snap.activity_log] : [];
       actLog.push({
-        action:    newStatus,
+        action:    request.request_type === "recall" ? "Recalled" : newStatus,
         action_by: user.name || "",
         action_at: now,
         ...(comment ? { comments: comment } : {}),

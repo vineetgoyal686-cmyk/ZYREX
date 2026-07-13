@@ -4193,6 +4193,27 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
     if (cachedOrders) fetchOrders(true);
     else fetchOrders();
     fetchTrash(true);
+
+    // SSE — debounced so rapid order_updated events don't fire multiple fetches
+    let es;
+    let sseDebounce = null;
+    const debouncedFetch = () => {
+      clearTimeout(sseDebounce);
+      sseDebounce = setTimeout(() => fetchOrders(true), 150);
+    };
+    const connectSSE = () => {
+      es = new EventSource(`${API}/api/orders/events`);
+      es.onmessage = (e) => {
+        try {
+          const d = JSON.parse(e.data);
+          if (d.type === "order_updated" || d.type === "action_request_updated") debouncedFetch();
+        } catch {}
+      };
+      es.onerror = () => { es.close(); setTimeout(connectSSE, 5000); };
+    };
+    connectSSE();
+
+    return () => { clearTimeout(sseDebounce); if (es) es.close(); };
   }, []);
 
   useEffect(() => {
@@ -4854,6 +4875,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
     if (tabName === "Pending Approval") return scoped.filter(o => o.status === "Pending Approval").length;
     if (tabName === "Pending Issue") return scoped.filter(o => ["Pending Issue", "To Issue"].includes(o.status)).length;
     if (tabName === "Amend Request") return scoped.filter(o => ["Amendment Request", "Amend Request"].includes(o.status)).length;
+    if (tabName === "Recalled") return scoped.filter(hasRecallHistory).length;
     return scoped.filter(o => o.status === tabName).length;
   };
 
@@ -4943,7 +4965,9 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
               ? ["Pending Issue", "To Issue"].includes(o.status)
               : activeTab === "Amend Request"
                 ? ["Amendment Request", "Amend Request"].includes(o.status)
-                : o.status === activeTab;
+                : activeTab === "Recalled"
+                  ? hasRecallHistory(o)
+                  : o.status === activeTab;
       const matchSite = !filterSite.length || filterSite.some(s => siteCodeMatch(s, getSiteCode(o)));
       const matchCompany = !filterCompany.length || filterCompany.includes(getCompanyCode(o));
       const matchType = !filterType.length || filterType.includes(o.order_type);
