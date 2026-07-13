@@ -348,7 +348,9 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
         setRequestModal({ open: false, type: "" });
         setRequestReason("");
         showToast(`${requestModal.type === "recall" ? "Recall" : "Cancel"} request submitted`);
+        bustOrderCache(orderId);
         fetchActionRequest();
+        fetchOrderDetails();
       } else {
         showToast(d.error || "Failed to submit request", "error");
       }
@@ -367,7 +369,12 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
         body: JSON.stringify({ action: "Cancelled", comment }),
       });
       const d = await res.json();
-      if (d.success) { showToast("Request cancelled"); fetchActionRequest(); }
+      if (d.success) {
+        showToast("Request cancelled");
+        bustOrderCache(orderId);
+        fetchActionRequest();
+        fetchOrderDetails();
+      }
       else showToast(d.error || "Failed", "error");
     } catch { showToast("Network error", "error"); }
     setRequestLoading(false);
