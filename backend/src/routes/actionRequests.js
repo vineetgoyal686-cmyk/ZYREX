@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const supabaseClient = require("../helpers/supabaseHelper");
 const { broadcast } = require("../sse");
-const { requirePerm } = require("../helpers/permHelper");
+const { requirePerm, hasPerm } = require("../helpers/permHelper");
 const { notifyOrderAction, getHandlerUsers, getUserRecipient, resolveOrderForEmail } = require("../utils/orderNotifications");
 
 const extractUserId = (token) => {
@@ -39,13 +39,19 @@ const historyHasAction = (order = {}, expected = "") => {
 
 
 // POST /api/action-requests — submit recall or cancel request
-router.post("/", requireAuth, requirePerm("order", "can_request"), async (req, res) => {
+router.post("/", requireAuth, async (req, res) => {
   const admin = supabaseClient;
   const { order_id, request_type, reason } = req.body;
   const userId = req.userId;
 
   if (!order_id || !["recall", "cancel"].includes(request_type)) {
     return res.status(400).json({ error: "order_id and valid request_type required" });
+  }
+
+  const permKey = request_type === "recall" ? "can_request_recall" : "can_request_cancel";
+  const allowed = await hasPerm(userId, "order", permKey);
+  if (!allowed) {
+    return res.status(403).json({ error: `Permission denied: you don't have '${permKey}' access on 'order'` });
   }
 
   try {
@@ -71,8 +77,9 @@ router.post("/", requireAuth, requirePerm("order", "can_request"), async (req, r
       action_at: now,
       ...(reason ? { comments: reason } : {}),
     });
+    const requestedStatus = request_type === "recall" ? "Recall Requested" : "Cancel Requested";
     await admin.schema("procurement").from("purchase_orders")
-      .update({ snapshot: { ...snap, activity_log: actLog } }).eq("id", order_id);
+      .update({ status: requestedStatus, snapshot: { ...snap, activity_log: actLog } }).eq("id", order_id);
 
     const { data, error } = await admin.from("order_action_requests").insert({
       order_id,
@@ -139,11 +146,34 @@ router.get("/pending", requireAuth, async (req, res) => {
 
     const [ordersRes, usersRes] = await Promise.all([
       admin.schema("procurement").from("purchase_orders")
-        .select("id, order_number, subject, status").in("id", orderIds),
+        .select("id, order_number, subject, status, totals, made_by, snapshot, site_id, company_id, vendor_id").in("id", orderIds),
       admin.from("users").select("id, name").in("id", userIds),
     ]);
 
-    const orderMap = Object.fromEntries((ordersRes.data || []).map(o => [o.id, o]));
+    const orders = ordersRes.data || [];
+
+    // Hydrate site_code / vendor_name the same way amendments.js does — snapshot
+    // first (frozen at issue time), falling back to the live master tables.
+    const siteIds   = [...new Set(orders.map(o => o.site_id).filter(Boolean))];
+    const vendorIds = [...new Set(orders.map(o => o.vendor_id).filter(Boolean))];
+    const [sitesRes, vendorsRes] = await Promise.all([
+      siteIds.length   ? admin.from("projects").select("id, project_code").in("id", siteIds)                          : Promise.resolve({ data: [] }),
+      vendorIds.length ? admin.schema("procurement").from("vendors").select("id, vendor_name").in("id", vendorIds)   : Promise.resolve({ data: [] }),
+    ]);
+    const siteMap   = Object.fromEntries((sitesRes.data   || []).map(s => [s.id, s]));
+    const vendorMap = Object.fromEntries((vendorsRes.data || []).map(v => [v.id, v]));
+
+    const enrichOrder = (o) => {
+      if (!o) return null;
+      const snap = o.snapshot || {};
+      return {
+        ...o,
+        site_code:   snap.site?.siteCode     || siteMap[o.site_id]?.project_code || null,
+        vendor_name: snap.vendor?.vendorName || vendorMap[o.vendor_id]?.vendor_name || null,
+      };
+    };
+
+    const orderMap = Object.fromEntries(orders.map(o => [o.id, enrichOrder(o)]));
     const userMap  = Object.fromEntries((usersRes.data  || []).map(u => [u.id, u]));
 
     res.json({
@@ -163,8 +193,10 @@ router.get("/pending", requireAuth, async (req, res) => {
 router.get("/for-order/:orderId", requireAuth, async (req, res) => {
   const admin = supabaseClient;
   try {
-    const { data } = await admin.from("order_action_requests")
-      .select("*").eq("order_id", req.params.orderId).eq("status", "Pending").maybeSingle();
+    const { data: rows } = await admin.from("order_action_requests")
+      .select("*").eq("order_id", req.params.orderId).eq("status", "Pending")
+      .order("created_at", { ascending: false }).limit(1);
+    const data = rows?.[0] || null;
     if (!data) return res.json({ request: null });
 
     const { data: requestor } = await admin.from("users").select("id, name").eq("id", data.requestor_id).maybeSingle();
@@ -386,9 +418,10 @@ router.post("/:id/action", requireAuth, async (req, res) => {
         action: request.request_type === "recall" ? "Recall Request Cancelled" : "Cancel Request Cancelled",
         action_by: cancelUser?.name || "",
         action_at: now,
+        ...(comment ? { comments: comment } : {}),
       });
       await admin.schema("procurement").from("purchase_orders")
-        .update({ snapshot: { ...cancelSnap, activity_log: cancelLog } }).eq("id", request.order_id);
+        .update({ status: "Issued", snapshot: { ...cancelSnap, activity_log: cancelLog } }).eq("id", request.order_id);
       await admin.from("order_action_requests").update({
         status: "Cancelled", actioned_by_id: userId, actioned_at: now,
       }).eq("id", request.id);
@@ -443,7 +476,7 @@ router.post("/:id/action", requireAuth, async (req, res) => {
         ...(comment ? { comments: comment } : {}),
       });
       await admin.schema("procurement").from("purchase_orders")
-        .update({ snapshot: { ...rejSnap, activity_log: rejLog } }).eq("id", request.order_id);
+        .update({ status: "Issued", snapshot: { ...rejSnap, activity_log: rejLog } }).eq("id", request.order_id);
 
       try {
         const [toUsers, emailOrder] = await Promise.all([

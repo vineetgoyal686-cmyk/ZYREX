@@ -356,7 +356,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     setRequestLoading(false);
   };
 
-  const cancelActionRequest = async () => {
+  const cancelActionRequest = async (comment = "") => {
     if (!pendingActionRequest) return;
     setRequestLoading(true);
     const token = localStorage.getItem("bms_token") || "";
@@ -364,7 +364,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       const res = await fetch(`${API}/api/action-requests/${pendingActionRequest.id}/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action: "Cancelled" }),
+        body: JSON.stringify({ action: "Cancelled", comment }),
       });
       const d = await res.json();
       if (d.success) { showToast("Request cancelled"); fetchActionRequest(); }
@@ -533,6 +533,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     else if (type === "amendRequest") handleCancelAmend(comment);
     else if (type === "recall") handleWithdrawDirectAction("recall", comment);
     else if (type === "cancelOrder") handleWithdrawDirectAction("cancel", comment);
+    else if (type === "actionRequestWithdraw") cancelActionRequest(comment);
   };
 
   const fetchOrderDetails = async () => {
@@ -1562,9 +1563,9 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                 </>
               )}
 
-              {(order.status === 'Issued' || order.status === 'Amended' || isPendingIssue) && (
+              {(order.status === 'Issued' || order.status === 'Amended' || order.status === 'Recall Requested' || order.status === 'Cancel Requested' || isPendingIssue) && (
                 <>
-                  {order.status === 'Issued' && (
+                  {(order.status === 'Issued' || order.status === 'Recall Requested' || order.status === 'Cancel Requested') && (
                     <>
                       {/* Power users: Amend button always visible (pending request doesn't block them) */}
                       {(userCanRecall || userCanCancel) && canRequestAmend && (
@@ -1581,7 +1582,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                             ? !!myOrderPerms.can_withdraw_recall
                             : !!myOrderPerms.can_withdraw_cancel
                         )) && (
-                        <button onClick={cancelActionRequest} disabled={requestLoading}
+                        <button onClick={() => openCancelCommentModal("actionRequestWithdraw")} disabled={requestLoading}
                           className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg shadow-sm text-xs transition-all disabled:opacity-60">
                           {pendingActionRequest.request_type === "recall"
                             ? "Withdraw Recall Request"
@@ -3144,7 +3145,13 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
           amendRequest:{ title: "Withdraw Amend Request",  btn: "Withdraw Request",      cls: "bg-rose-600 hover:bg-rose-700",   desc: "The pending amendment request will be cancelled and the order restored to Issued." },
           recall:      { title: "Cancel Recall",           btn: "Cancel Recall",         cls: "bg-slate-700 hover:bg-slate-800", desc: "The recalled draft will be deleted and the order restored to Issued." },
           cancelOrder: { title: "Withdraw Cancel Order",   btn: "Withdraw Cancellation", cls: "bg-slate-700 hover:bg-slate-800", desc: "The cancellation will be reversed and the order restored to Issued." },
+          actionRequestWithdraw: {
+            title: pendingActionRequest?.request_type === "recall" ? "Withdraw Recall Request" : "Withdraw Cancel Request",
+            btn: "Withdraw Request", cls: "bg-slate-700 hover:bg-slate-800",
+            desc: "Your pending request will be withdrawn and the order restored to Issued.",
+          },
         }[cancelCommentModal.type] || { title: "Confirm Action", btn: "Confirm", cls: "bg-rose-600 hover:bg-rose-700", desc: "" };
+        const commentRequired = cancelCommentModal.type === "actionRequestWithdraw";
         return (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200">
@@ -3164,7 +3171,11 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                 </button>
               </div>
               <div className="px-6 py-5">
-                <label className="block text-xs font-bold text-slate-700 mb-2">Reason / Comment <span className="text-slate-400 font-normal">(optional)</span></label>
+                <label className="block text-xs font-bold text-slate-700 mb-2">
+                  Reason / Comment {commentRequired
+                    ? <span className="text-rose-500 font-normal">(required)</span>
+                    : <span className="text-slate-400 font-normal">(optional)</span>}
+                </label>
                 <textarea
                   value={cancelCommentModal.comment}
                   onChange={e => setCancelCommentModal(m => ({ ...m, comment: e.target.value }))}
@@ -3178,9 +3189,9 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                   className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-all">
                   Go Back
                 </button>
-                <button onClick={confirmCancelAction} disabled={cancelAmendLoading}
+                <button onClick={confirmCancelAction} disabled={cancelAmendLoading || requestLoading || (commentRequired && !cancelCommentModal.comment.trim())}
                   className={`px-4 py-2 text-xs font-bold text-white rounded-lg transition-all disabled:opacity-60 ${meta.cls}`}>
-                  {cancelAmendLoading ? "Processing..." : meta.btn}
+                  {(cancelAmendLoading || requestLoading) ? "Processing..." : meta.btn}
                 </button>
               </div>
             </div>

@@ -9,32 +9,16 @@ const decodeToken = (token) => {
 };
 
 /**
- * Express middleware factory.
- * requirePerm("order", "can_add") → 403 if user role is "user" and has no can_add on order module.
- * Admin roles (global_admin, super_admin, admin) always pass.
+ * Core check, reusable both as middleware (requirePerm) and inline (hasPerm)
+ * when a route needs to pick the permKey dynamically from the request body
+ * (e.g. "can_request_recall" vs "can_request_cancel" based on request_type).
+ * `user` must already include { id, role, access_profile_ids }.
  */
-const requirePerm = (moduleKey, permKey) => async (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Login required" });
-
-  const payload = decodeToken(token);
-  if (!payload?.sub) return res.status(401).json({ error: "Invalid token" });
-  if (payload.exp && payload.exp * 1000 < Date.now()) return res.status(401).json({ error: "Token expired" });
-
-  const { data: user } = await admin.from("users").select("id, role, is_active, access_profile_ids").eq("id", payload.sub).single();
-  if (!user || !user.is_active) return res.status(403).json({ error: "Account inactive" });
-
-  // Admin roles bypass all module-level permission checks
-  if (BYPASS_ROLES.includes(user.role)) {
-    req._authUserId   = user.id;
-    req._authUserRole = user.role;
-    return next();
-  }
+const checkPermission = async (user, moduleKey, permKey) => {
+  if (BYPASS_ROLES.includes(user.role)) return true;
 
   const { data: mod } = await admin.from("modules").select("id").eq("module_key", moduleKey).maybeSingle();
-  if (!mod) {
-    return res.status(403).json({ error: `Permission denied: you don't have '${permKey}' access on '${moduleKey}'` });
-  }
+  if (!mod) return false;
 
   const { data: perm } = await admin
     .from("permissions")
@@ -55,7 +39,26 @@ const requirePerm = (moduleKey, permKey) => async (req, res, next) => {
     const profilePerms = (designations || []).flatMap(d => d.app_permissions || []);
     allowed = profilePerms.some(p => p.module_id === mod.id && !!p[permKey]);
   }
+  return allowed;
+};
 
+/**
+ * Express middleware factory.
+ * requirePerm("order", "can_add") → 403 if user role is "user" and has no can_add on order module.
+ * Admin roles (global_admin, super_admin, admin) always pass.
+ */
+const requirePerm = (moduleKey, permKey) => async (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Login required" });
+
+  const payload = decodeToken(token);
+  if (!payload?.sub) return res.status(401).json({ error: "Invalid token" });
+  if (payload.exp && payload.exp * 1000 < Date.now()) return res.status(401).json({ error: "Token expired" });
+
+  const { data: user } = await admin.from("users").select("id, role, is_active, access_profile_ids").eq("id", payload.sub).single();
+  if (!user || !user.is_active) return res.status(403).json({ error: "Account inactive" });
+
+  const allowed = await checkPermission(user, moduleKey, permKey);
   if (!allowed) {
     return res.status(403).json({
       error: `Permission denied: you don't have '${permKey}' access on '${moduleKey}'`,
@@ -67,4 +70,15 @@ const requirePerm = (moduleKey, permKey) => async (req, res, next) => {
   next();
 };
 
-module.exports = { requirePerm };
+/**
+ * Inline check for routes where the permKey depends on the request body
+ * (decided only after req.body is available, so it can't be a fixed-permKey
+ * middleware). Looks the user up itself — call with just (userId, moduleKey, permKey).
+ */
+const hasPerm = async (userId, moduleKey, permKey) => {
+  const { data: user } = await admin.from("users").select("id, role, is_active, access_profile_ids").eq("id", userId).single();
+  if (!user || !user.is_active) return false;
+  return checkPermission(user, moduleKey, permKey);
+};
+
+module.exports = { requirePerm, hasPerm };

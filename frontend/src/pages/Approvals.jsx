@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   FileText, Check, X, AlertCircle, RefreshCw,
   ChevronDown, Building2, CircleCheck, CircleX, RotateCcw,
-  ClipboardList, Clock, IndianRupee, Search, Undo2, User, FileDown
+  ClipboardList, Clock, IndianRupee, Search, Undo2, User, FileDown, ArrowRight
 } from "lucide-react";
 import { authFetch } from "../utils/authFetch";
 import { useModulePermissions } from "../hooks/useModulePermissions";
@@ -528,53 +528,61 @@ export default function Approvals() {
                     const currentLevel = levels[(req.current_level || 1) - 1];
                     const vendorName = doc.vendors?.vendor_name || doc.snapshot?.vendor?.vendorName || "—";
                     const totalVal = doc.totals?.grandTotal ?? doc.totals?.grand_total ?? 0;
+                    const madeBy = doc.made_by || "—";
+                    const siteCode = doc.snapshot?.site?.siteCode || "—";
                     return (
-                      <div key={req.id} className={`${cardCls} flex flex-col rounded-none shadow-sm border-t-4 border-t-violet-600`}>
-                        <div className="p-3.5 border-b border-slate-50 flex items-start justify-between">
-                          <div className="min-w-0">
-                            <button
-                              onClick={() => openPdfPreview(doc.id, doc.order_number)}
-                              className="text-[11px] font-black text-violet-700 hover:underline uppercase tracking-tight truncate block leading-none"
-                            >
-                              {doc.order_number || `Order ${req.document_id?.slice(0, 8)}`}
-                            </button>
-                            <p className="text-[9px] text-slate-400 font-bold uppercase truncate mt-1">by {doc.made_by || "—"}</p>
-                          </div>
-                          <span className="text-[8px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded-none border border-slate-200 uppercase shrink-0">{doc.snapshot?.site?.siteCode || "—"}</span>
+                      <div key={req.id} className="bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-4 pt-3.5 pb-2">
+                          <button
+                            onClick={() => openPdfPreview(doc.id)}
+                            className="min-w-0 text-sm font-bold text-slate-800 hover:underline whitespace-nowrap"
+                          >
+                            {doc.order_number || `Order ${req.document_id?.slice(0, 8)}`}
+                          </button>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-violet-100 text-violet-700 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-violet-500" /> Pending approval
+                          </span>
                         </div>
-                        <div className="p-3.5 flex-1 flex flex-col gap-4">
-                          <div className="bg-white p-2 border border-slate-100 relative">
-                            <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-violet-500 uppercase tracking-widest">Vendor Name</span>
-                            <p className="text-[12px] font-bold text-slate-800 truncate">{vendorName}</p>
+                        <div className="px-4 pb-2.5 min-w-0 space-y-1.5">
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-slate-400">Vendor Name</p>
+                            <p className="text-[14px] font-bold text-slate-900 break-words">{vendorName}</p>
                           </div>
-                          <div className="bg-white p-2 border border-slate-100 relative">
-                            <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-violet-500 uppercase tracking-widest">Order Subject</span>
-                            <p className="text-[11px] text-slate-700 line-clamp-1 font-bold">{doc.subject || doc.snapshot?.subject || "No Subject"}</p>
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-slate-400">Subject</p>
+                            <p className="text-[13px] text-slate-600 break-words">{doc.subject || doc.snapshot?.subject || "No subject"}</p>
                           </div>
-                          <div className="bg-slate-50 p-2 border border-slate-200 relative">
-                            <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-violet-500 uppercase tracking-widest">Total Value</span>
-                            <p className="text-[12px] text-slate-900 font-black">Rs {money(totalVal)}</p>
-                          </div>
+                        </div>
+                        <div className="border-t border-slate-100" />
+                        <div className="flex items-center justify-between px-4 pt-3 pb-2.5">
+                          <span className="text-[13px] text-slate-500">Order value</span>
+                          <span className="text-[15px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md">₹{money(totalVal)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 px-4 pt-1 pb-3 text-[12px] text-slate-400">
+                          <span className="flex items-center gap-1.5 min-w-0 truncate">
+                            <User size={12} className="shrink-0" /> Raised by {madeBy}
+                          </span>
+                          <span className="shrink-0">Project {siteCode}</span>
                         </div>
                         {req.can_act && (
-                          <div className="px-3.5 pb-3.5 flex gap-1.5 pt-3 border-t border-slate-100">
+                          <div className="flex border-t border-slate-100 mt-auto">
                             <button
                               disabled={actionLoading === req.id}
                               onClick={() => { setApprovalActionModal({ open: true, requestId: req.id, action: "reverted" }); setApprovalActionComment(""); }}
-                              className="flex-1 h-8 bg-white border border-amber-200 text-amber-600 font-bold text-[10px] hover:bg-amber-50 transition-all uppercase">
-                              REVERT
+                              className="flex-1 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">
+                              Revert
                             </button>
                             <button
                               disabled={actionLoading === req.id}
                               onClick={() => { setApprovalActionModal({ open: true, requestId: req.id, action: "rejected" }); setApprovalActionComment(""); }}
-                              className="flex-1 h-8 bg-white border border-rose-200 text-rose-600 font-bold text-[10px] hover:bg-rose-50 transition-all uppercase">
-                              REJECT
+                              className="flex-1 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-all border-l border-slate-100">
+                              Reject
                             </button>
                             <button
                               disabled={actionLoading === req.id}
                               onClick={() => handleApprovalFlowAction(req.id, "approved")}
-                              className="flex-1 h-8 bg-emerald-500 text-white font-bold text-[10px] hover:bg-emerald-600 transition-all uppercase">
-                              {actionLoading === req.id ? "..." : "APPROVE"}
+                              className="flex-1 py-2 text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-800 transition-all flex items-center justify-center gap-1.5">
+                              {actionLoading === req.id ? "..." : <>Approve <ArrowRight size={14} /></>}
                             </button>
                           </div>
                         )}
@@ -640,41 +648,54 @@ export default function Approvals() {
                 </div>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {filteredOrders.map((o) => (
-                    <div key={o.id} className={`${cardCls} p-3.5 flex flex-col border-t-4 border-t-indigo-600 rounded-none shadow-sm`}>
-                      <div className="flex items-start justify-between mb-3">
+                  {filteredOrders.map((o) => {
+                    const vendorName = o.snapshot?.vendor?.vendorName || o.vendors?.vendor_name || "—";
+                    const madeBy = o.made_by || o.snapshot?.madeBy || "—";
+                    const siteCode = o.snapshot?.site?.siteCode || "—";
+                    return (
+                    <div key={o.id} className="bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-4 pt-3.5 pb-2">
+                        <button onClick={() => openPdfPreview(o.id)} className="min-w-0 text-sm font-bold text-slate-800 hover:underline whitespace-nowrap">{orderTitle(o)}</button>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 shrink-0">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" /> Pending issue
+                        </span>
+                      </div>
+                      <div className="px-4 pb-2.5 min-w-0 space-y-1.5">
                         <div className="min-w-0">
-                          <button onClick={() => openPdfPreview(o.id, orderTitle(o))} className="text-[13px] font-bold text-indigo-700 hover:underline tracking-tight truncate block leading-tight">{orderTitle(o)}</button>
-                          <p className="text-[11px] text-slate-500 font-semibold truncate mt-1">by {o.made_by || o.snapshot?.madeBy || "—"}</p>
+                          <p className="text-[11px] text-slate-400">Vendor Name</p>
+                          <p className="text-[14px] font-bold text-slate-900 break-words">{vendorName}</p>
                         </div>
-                        <span className="text-[10px] font-bold text-slate-600 bg-slate-50 px-2 py-1 rounded border border-slate-200 uppercase shrink-0">{o.snapshot?.site?.siteCode || "-"}</span>
-                      </div>
-                      <div className="mb-3 flex-1 min-w-0 space-y-4">
-                        <div className="bg-white p-2 border border-slate-100 relative">
-                          <span className="absolute -top-2 left-2 px-1 bg-white text-[9px] font-bold text-indigo-500 uppercase tracking-wide">Vendor Name</span>
-                          <p className="text-[12px] font-bold text-slate-800 truncate">{o.snapshot?.vendor?.vendorName || o.vendors?.vendor_name || "—"}</p>
-                        </div>
-                        <div className="bg-white p-2 border border-slate-100 relative">
-                          <span className="absolute -top-2 left-2 px-1 bg-white text-[9px] font-bold text-indigo-500 uppercase tracking-wide">Order Subject</span>
-                          <p className="text-[11px] text-slate-700 line-clamp-1 font-bold">{o.subject || o.snapshot?.subject || "No Subject"}</p>
-                        </div>
-                        <div className="bg-slate-50 p-2 border border-slate-200 relative">
-                          <span className="absolute -top-2 left-2 px-1 bg-white text-[9px] font-bold text-indigo-500 uppercase tracking-wide">Total Value</span>
-                          <p className="text-[12px] text-slate-900 font-black">Rs {money(o.totals?.grandTotal || 0)}</p>
+                        <div className="min-w-0">
+                          <p className="text-[11px] text-slate-400">Subject</p>
+                          <p className="text-[13px] text-slate-600 break-words">{o.subject || o.snapshot?.subject || "No subject"}</p>
                         </div>
                       </div>
-                      {(isIssueHandler && canOrderAct) && <div className="flex gap-1.5 pt-3 border-t border-slate-100">
-                        <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Reverted" }); setCommentText(""); }}
-                          className="flex-1 h-8 bg-white border border-amber-200 text-amber-600 font-bold text-[10px] hover:bg-amber-500 hover:text-white transition-all uppercase">REVERT</button>
-                        <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Rejected" }); setCommentText(""); }}
-                          className="flex-1 h-8 bg-rose-50 border border-rose-200 text-rose-600 font-bold text-[10px] hover:bg-rose-500 hover:text-white transition-all uppercase">REJECT</button>
-                        <button disabled={actionLoading === o.id} onClick={() => handleOrderAction(o.id, "Issued")}
-                          className="flex-1 h-8 bg-emerald-500 text-white font-bold text-[10px] hover:bg-emerald-600 shadow-sm transition-all uppercase flex items-center justify-center gap-1">
-                          {actionLoading === o.id ? "..." : "ISSUE"}
-                        </button>
-                      </div>}
+                      <div className="border-t border-slate-100" />
+                      <div className="flex items-center justify-between px-4 pt-3 pb-2.5">
+                        <span className="text-[13px] text-slate-500">Order value</span>
+                        <span className="text-[15px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md">₹{money(o.totals?.grandTotal || 0)}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 px-4 pt-1 pb-3 text-[12px] text-slate-400">
+                        <span className="flex items-center gap-1.5 min-w-0 truncate">
+                          <User size={12} className="shrink-0" /> Raised by {madeBy}
+                        </span>
+                        <span className="shrink-0">Project {siteCode}</span>
+                      </div>
+                      {(isIssueHandler && canOrderAct) && (
+                        <div className="flex border-t border-slate-100 mt-auto">
+                          <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Reverted" }); setCommentText(""); }}
+                            className="flex-1 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">Revert</button>
+                          <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Rejected" }); setCommentText(""); }}
+                            className="flex-1 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-all border-l border-slate-100">Reject</button>
+                          <button disabled={actionLoading === o.id} onClick={() => handleOrderAction(o.id, "Issued")}
+                            className="flex-1 py-2 text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-800 transition-all flex items-center justify-center gap-1.5">
+                            {actionLoading === o.id ? "..." : <>Issue <ArrowRight size={14} /></>}
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </>
@@ -696,56 +717,63 @@ export default function Approvals() {
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {filtered.map(ar => {
                     const ord = ar.order || {};
-                    const accentTop = isRecallTab ? "border-t-purple-500" : "border-t-rose-500";
-                    const accentText = isRecallTab ? "text-purple-600" : "text-rose-600";
-                    const accentHover = isRecallTab ? "hover:text-purple-800" : "hover:text-rose-800";
-                    const accentBadge = isRecallTab ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-rose-50 text-rose-700 border-rose-200";
+                    const badgeCls = isRecallTab ? "bg-purple-100 text-purple-700" : "bg-rose-100 text-rose-700";
+                    const dotCls = isRecallTab ? "bg-purple-500" : "bg-rose-500";
+                    const vendorName = ord.snapshot?.vendor?.vendorName || ord.vendor_name || "—";
+                    const madeBy = ar.requestor?.name || "—";
+                    const siteCode = ord.site_code || ord.snapshot?.site?.siteCode || "—";
                     return (
-                      <div key={ar.id} className={`${cardCls} flex flex-col rounded-none shadow-sm border border-slate-200 overflow-hidden bg-white border-t-2 ${accentTop}`}>
-                        <div className="p-3.5 border-b border-slate-50 flex items-start justify-between">
-                          <div className="min-w-0">
-                            <button onClick={() => openPdfPreview(ord.id, ord.order_number)} className={`text-[12.5px] font-bold ${accentText} uppercase tracking-tight truncate block leading-none mb-1 hover:underline`}>{ord.order_number || "—"}</button>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase truncate tracking-wider">{ar.requestor?.name || "—"}</p>
-                          </div>
-                          <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full border shrink-0 ${accentBadge}`}>
-                            {isRecallTab ? "Recall" : "Cancel"}
+                      <div key={ar.id} className="bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-4 pt-3.5 pb-2">
+                          <button onClick={() => openPdfPreview(ord.id)} className="min-w-0 text-sm font-bold text-slate-800 hover:underline whitespace-nowrap">{ord.order_number || "—"}</button>
+                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold shrink-0 ${badgeCls}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${dotCls}`} /> {isRecallTab ? "Recall" : "Cancel"}
                           </span>
                         </div>
-                        <div className="p-4 flex-1 flex flex-col gap-4">
-                          <div className="bg-white p-2 border border-slate-100 relative">
-                            <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest">Order</span>
-                            <p className="text-[12px] font-bold text-slate-800 truncate">{ord.subject || ord.snapshot?.subject || "No Subject"}</p>
+                        <div className="px-4 pb-2.5 min-w-0 space-y-1.5">
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-slate-400">Vendor Name</p>
+                            <p className="text-[14px] font-bold text-slate-900 break-words">{vendorName}</p>
                           </div>
-                          <div className="bg-white p-2 border border-slate-100 relative">
-                            <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest">Vendor</span>
-                            <p className="text-[12px] font-bold text-slate-800 truncate">{ord.snapshot?.vendor?.vendorName || ord.vendors?.vendor_name || "—"}</p>
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-slate-400">Subject</p>
+                            <p className="text-[13px] text-slate-600 break-words">{ord.subject || ord.snapshot?.subject || "No subject"}</p>
                           </div>
                           {ar.reason && (
-                            <div className="flex-1">
-                              <div className="bg-slate-50 p-3 border border-slate-200 relative">
-                                <span className="absolute -top-2 left-2 px-1 bg-white text-[9px] font-bold text-slate-400 uppercase tracking-widest">Reason</span>
-                                <p className="text-[12px] text-slate-600 leading-snug font-medium break-words">{ar.reason}</p>
-                              </div>
+                            <div className="min-w-0">
+                              <p className="text-[11px] text-slate-400">Reason</p>
+                              <p className="text-[13px] text-slate-600 break-words">{ar.reason}</p>
                             </div>
                           )}
-                          <div className="flex gap-2 pt-2 border-t border-slate-50">
-                            {(canManageActionRequests && canOrderAct) ? (
-                              <>
-                                <button disabled={arActionLoading === ar.id}
-                                  onClick={() => setArCommentModal({ open: true, requestId: ar.id, action: "Rejected" })}
-                                  className="flex-1 h-9 bg-white border border-rose-200 text-rose-600 font-bold text-[11px] hover:bg-rose-50 transition-all uppercase">
-                                  REJECT
-                                </button>
-                                <button disabled={arActionLoading === ar.id}
-                                  onClick={() => handleActionRequest(ar.id, "Approved", "")}
-                                  className="flex-1 h-9 bg-emerald-500 text-white font-bold text-[11px] hover:bg-emerald-600 shadow-sm transition-all uppercase">
-                                  {arActionLoading === ar.id ? "..." : isRecallTab ? "APPROVE RECALL" : "APPROVE CANCEL"}
-                                </button>
-                              </>
-                            ) : (
-                              <p className="text-[11px] text-slate-400 italic py-1">Awaiting approval</p>
-                            )}
-                          </div>
+                        </div>
+                        <div className="border-t border-slate-100" />
+                        <div className="flex items-center justify-between px-4 pt-3 pb-2.5">
+                          <span className="text-[13px] text-slate-500">Order value</span>
+                          <span className="text-[15px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md">₹{money(ord.totals?.grandTotal || 0)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 px-4 pt-1 pb-3 text-[12px] text-slate-400">
+                          <span className="flex items-center gap-1.5 min-w-0 truncate">
+                            <User size={12} className="shrink-0" /> Raised by {madeBy}
+                          </span>
+                          <span className="shrink-0">Project {siteCode}</span>
+                        </div>
+                        <div className="flex border-t border-slate-100 mt-auto">
+                          {(canManageActionRequests && canOrderAct) ? (
+                            <>
+                              <button disabled={arActionLoading === ar.id}
+                                onClick={() => setArCommentModal({ open: true, requestId: ar.id, action: "Rejected" })}
+                                className="flex-1 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-all">
+                                Reject
+                              </button>
+                              <button disabled={arActionLoading === ar.id}
+                                onClick={() => handleActionRequest(ar.id, "Approved", "")}
+                                className="flex-1 py-2 text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-800 transition-all flex items-center justify-center gap-1.5">
+                                {arActionLoading === ar.id ? "..." : <>{isRecallTab ? "Approve recall" : "Approve cancel"} <ArrowRight size={14} /></>}
+                              </button>
+                            </>
+                          ) : (
+                            <span className="flex-1 py-2.5 flex items-center justify-center text-sm text-slate-400 italic">Awaiting approval</span>
+                          )}
                         </div>
                       </div>
                     );
@@ -855,45 +883,61 @@ export default function Approvals() {
                     return true;
                   }).map((req) => {
                     const ord = req.original_order || {};
+                    const vendorName = ord.vendors?.vendor_name || ord.snapshot?.vendor?.vendorName || ord.vendor_name || "—";
+                    const madeBy = req.requestor?.name || "—";
+                    const siteCode = ord.site_code || "—";
                     return (
-                      <div key={req.id} className={`${cardCls} flex flex-col rounded-none shadow-sm border border-slate-200 overflow-hidden bg-white border-t-2 border-t-indigo-500`}>
-                        <div className="p-3.5 border-b border-slate-50 flex items-start justify-between">
-                          <div className="min-w-0">
-                            <button onClick={() => openPdfPreview(ord.id, ord.order_number)} className="text-[12.5px] font-bold text-indigo-600 hover:text-indigo-800 uppercase tracking-tight truncate block leading-none mb-1">{ord.order_number || "—"}</button>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase truncate tracking-wider">{req.requestor?.name || "TEST USER"}</p>
-                          </div>
-                          <div className="bg-slate-50 px-2 py-0.5 border border-slate-200 shrink-0">
-                            <span className="text-[10px] font-bold text-slate-500 uppercase">{ord.site_code || "-"}</span>
-                          </div>
+                      <div key={req.id} className="bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 px-4 pt-3.5 pb-2">
+                          <button onClick={() => openPdfPreview(ord.id)} className="min-w-0 text-sm font-bold text-slate-800 hover:underline whitespace-nowrap">{ord.order_number || "—"}</button>
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-100 text-indigo-700 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" /> Amendment
+                          </span>
                         </div>
-                        <div className="p-4 flex-1 flex flex-col gap-4">
-                          <div className="bg-white p-2 border border-slate-100 relative">
-                            <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest">Vendor Name</span>
-                            <p className="text-[12px] font-bold text-slate-800 truncate">{ord.vendors?.vendor_name || ord.snapshot?.vendor?.vendorName || ord.vendor_name || "—"}</p>
+                        <div className="px-4 pb-2.5 min-w-0 space-y-1.5">
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-slate-400">Vendor Name</p>
+                            <p className="text-[14px] font-bold text-slate-900 break-words">{vendorName}</p>
                           </div>
-                          <div className="bg-white p-2 border border-slate-100 relative">
-                            <span className="absolute -top-2 left-2 px-1 bg-white text-[8px] font-black text-slate-400 uppercase tracking-widest">Subject</span>
-                            <p className="text-[11px] text-slate-500 line-clamp-1 font-medium">{ord.subject || ord.snapshot?.subject || "No Subject"}</p>
+                          <div className="min-w-0">
+                            <p className="text-[11px] text-slate-400">Subject</p>
+                            <p className="text-[13px] text-slate-600 break-words">{ord.subject || ord.snapshot?.subject || "No subject"}</p>
                           </div>
-                          <div className="flex-1">
-                            <div className="bg-slate-50 p-3 border border-slate-200 relative">
-                              <span className="absolute -top-2 left-2 px-1 bg-white text-[9px] font-bold text-slate-400 uppercase tracking-widest">Reason</span>
-                              <p className="text-[12px] text-slate-600 leading-snug font-medium break-words">{req.reason}</p>
+                          {req.reason && (
+                            <div className="min-w-0">
+                              <p className="text-[11px] text-slate-400">Reason</p>
+                              <p className="text-[13px] text-slate-600 break-words">{req.reason}</p>
                             </div>
-                          </div>
-                          <div className="flex gap-2 pt-2 border-t border-slate-50">
-                            {req.attachment_url && (
-                              <a href={req.attachment_url} target="_blank" rel="noreferrer" title="View Attachment" className="h-9 w-9 flex items-center justify-center bg-white border border-slate-300 text-slate-500 hover:text-indigo-600 transition-all shadow-sm shrink-0"><FileText size={16} /></a>
-                            )}
-                            {(canManageAmend && canOrderAct) ? (
-                              <>
-                                <button disabled={actionLoading === req.id} onClick={() => setAmendCommentModal({ open: true, requestId: req.id, action: "Rejected" })} className="flex-1 h-9 bg-white border border-rose-200 text-rose-600 font-bold text-[11px] hover:bg-rose-50 transition-all uppercase disabled:opacity-40">REJECT</button>
-                                <button disabled={actionLoading === req.id} onClick={() => handleAmendAction(req.id, "Approved")} className="flex-1 h-9 bg-emerald-500 text-white font-bold text-[11px] hover:bg-emerald-600 shadow-sm transition-all uppercase disabled:opacity-40">APPROVE</button>
-                              </>
-                            ) : (
-                              <span className="flex-1 h-9 flex items-center justify-center text-[11px] text-slate-400 italic">Awaiting approval</span>
-                            )}
-                          </div>
+                          )}
+                        </div>
+                        <div className="border-t border-slate-100" />
+                        <div className="flex items-center justify-between px-4 pt-3 pb-2.5">
+                          <span className="text-[13px] text-slate-500">Order value</span>
+                          <span className="text-[15px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md">₹{money(ord.totals?.grandTotal || 0)}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 px-4 pt-1 pb-3 text-[12px] text-slate-400">
+                          <span className="flex items-center gap-1.5 min-w-0 truncate">
+                            <User size={12} className="shrink-0" /> Raised by {madeBy}
+                          </span>
+                          <span className="shrink-0">Project {siteCode}</span>
+                        </div>
+                        <div className="flex border-t border-slate-100 mt-auto">
+                          {req.attachment_url && (
+                            <a href={req.attachment_url} target="_blank" rel="noreferrer" title="View Attachment"
+                              className="flex items-center justify-center px-4 text-slate-500 hover:bg-slate-50 border-r border-slate-100 transition-all"><FileText size={15} /></a>
+                          )}
+                          {(canManageAmend && canOrderAct) ? (
+                            <>
+                              <button disabled={actionLoading === req.id} onClick={() => setAmendCommentModal({ open: true, requestId: req.id, action: "Rejected" })}
+                                className="flex-1 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-all disabled:opacity-40">Reject</button>
+                              <button disabled={actionLoading === req.id} onClick={() => handleAmendAction(req.id, "Approved")}
+                                className="flex-1 py-2 text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-800 transition-all flex items-center justify-center gap-1.5 disabled:opacity-40">
+                                {actionLoading === req.id ? "..." : <>Approve <ArrowRight size={14} /></>}
+                              </button>
+                            </>
+                          ) : (
+                            <span className="flex-1 py-2.5 flex items-center justify-center text-sm text-slate-400 italic">Awaiting approval</span>
+                          )}
                         </div>
                       </div>
                     );

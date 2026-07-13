@@ -5556,6 +5556,8 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
                                           o.status === "Pending Approval" ? "bg-violet-50 text-violet-600" :
                                           (o.status === "Pending Issue" || o.status === "To Issue") ? "bg-amber-50 text-amber-600" :
                                             o.status === "Recalled" ? "bg-purple-50 text-purple-600" :
+                                              o.status === "Recall Requested" ? "bg-purple-50 text-purple-600" :
+                                              o.status === "Cancel Requested" ? "bg-rose-50 text-rose-600" :
                                               o.status === "Cancelled" ? "bg-slate-100 text-slate-500 line-through" :
                                                 o.status === "Deleted" ? "bg-red-50 text-red-600" :
                                                   "bg-slate-100 text-slate-600"}`}>

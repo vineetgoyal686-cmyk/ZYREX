@@ -8,6 +8,8 @@ const admin = require("../helpers/supabaseHelper");
 const getAdminClient = () => admin;
 const { requireAuth } = require("../middleware/auth");
 const { notifyOrderAction, getHandlerUsers, getUserRecipient, resolveOrderForEmail } = require("../utils/orderNotifications");
+const { broadcast } = require("../sse");
+const { hasPerm } = require("../helpers/permHelper");
 const cache = require("../helpers/cacheHelper");
 const ORDERS_CACHE_KEY = "orders_list";
 
@@ -55,19 +57,6 @@ const canManageAmend = async (admin, userId, role) => {
 
 // True if the user is allowed to REQUEST an amendment.
 // Anyone who can create orders can request an amendment on an existing one.
-const canRequestAmend = async (admin, userId, role) => {
-  if (role === "global_admin") return true;
-  const { data: orderMod } = await admin.from("modules").select("id").eq("module_key", "order").single();
-  if (!orderMod) return false;
-  const { data: perm } = await admin
-    .from("permissions")
-    .select("can_add")
-    .eq("module_id", orderMod.id)
-    .eq("user_id", userId)
-    .maybeSingle();
-  return !!perm?.can_add;
-};
-
 /* ─────────────────────────────────────────
    POST /api/amendments/request
    Just flips the original order's status to "Amendment Request" and stores a
@@ -85,8 +74,8 @@ router.post("/request", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "An attachment / proof is required to submit an amendment request." });
   }
 
-  // Permission gate — only users with create-order rights can ask for an amendment
-  const allowed = await canRequestAmend(admin, req.user.id, req.user.role);
+  // Permission gate
+  const allowed = await hasPerm(req.user.id, "order", "can_request_amend");
   if (!allowed) {
     return res.status(403).json({ error: "You do not have permission to request amendments." });
   }
@@ -118,7 +107,7 @@ router.post("/request", requireAuth, async (req, res) => {
       .from("order_amendments")
       .insert({
         original_order_id: order_id,
-        requestor_id:      req.userId,
+        requestor_id:      req.user.id,
         reason:            reason.trim(),
         attachment_url:    normalizeStoragePath(attachment_url, "procurement-docs"),
         status:            "Pending",
@@ -155,6 +144,7 @@ router.post("/request", requireAuth, async (req, res) => {
     }
 
     cache.bust(ORDERS_CACHE_KEY);
+    broadcast({ type: "order_updated" });
     res.json({ success: true, amendment: amendmentRow });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -296,6 +286,7 @@ router.post("/action", requireAuth, async (req, res) => {
       } catch (mailErr) { console.error("Amend-rejected email notification failed:", mailErr); }
 
       cache.bust(ORDERS_CACHE_KEY);
+      broadcast({ type: "order_updated" });
       return res.json({ success: true });
     }
 
@@ -358,6 +349,7 @@ router.post("/action", requireAuth, async (req, res) => {
     } catch (mailErr) { console.error("Amend-approved email notification failed:", mailErr); }
 
     cache.bust(ORDERS_CACHE_KEY);
+    broadcast({ type: "order_updated" });
     res.json({ success: true, new_order_id: clone.id });
   } catch (err) {
     console.error("POST /amendments/action failed:", err);
@@ -646,7 +638,7 @@ router.post("/cancel", requireAuth, async (req, res) => {
     }
 
     // 2. Permission: created_by or global admin
-    if (!isGlobalAdmin && String(clone.created_by_id) !== String(req.userId)) {
+    if (!isGlobalAdmin && String(clone.created_by_id) !== String(req.user.id)) {
       return res.status(403).json({ error: "Only the amendment creator or a global admin can cancel this amendment." });
     }
 
