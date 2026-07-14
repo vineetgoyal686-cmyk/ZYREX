@@ -243,9 +243,27 @@ export default function ItemList() {
       unit:           item.unit || "",
       remarks:        item.remarks || "",
       image:          null,
-      imagePreview:   item.imageUrl || null,
+      imagePreview:   null,
     });
     setShowModal(true);
+    // The list never carries a signed image URL (kept the list load instant) —
+    // fetch it now, just for this one item, so the preview pops in shortly after.
+    if (item.hasImage) {
+      fetch(`${API}/api/procurement/items/${item.id}/image-url`)
+        .then(r => r.json())
+        .then(d => { if (d.imageUrl) setForm(f => ({ ...f, imagePreview: d.imageUrl })); })
+        .catch(() => {});
+    }
+  };
+
+  const openView = (item) => {
+    setViewItem(item);
+    if (item.hasImage) {
+      fetch(`${API}/api/procurement/items/${item.id}/image-url`)
+        .then(r => r.json())
+        .then(d => { if (d.imageUrl) setViewItem(v => v && v.id === item.id ? { ...v, imageUrl: d.imageUrl } : v); })
+        .catch(() => {});
+    }
   };
 
   const handleImage = (e) => {
@@ -768,7 +786,7 @@ export default function ItemList() {
                   <td className="px-4 py-3 text-sm text-slate-500 border border-slate-200 align-top whitespace-nowrap">{item.unit || "—"}</td>
                   <td className="px-4 py-3 border border-slate-200 align-top sticky right-0 z-10 bg-white shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.05)] w-[75px]">
                     <div className="flex items-center gap-1">
-                      <button onClick={() => setViewItem(item)}
+                      <button onClick={() => openView(item)}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all" title="View">
                         <Eye size={14} />
                       </button>

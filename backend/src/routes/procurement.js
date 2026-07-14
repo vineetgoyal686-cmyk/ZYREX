@@ -104,7 +104,13 @@ router.get("/items", async (_req, res) => {
       .select("*")
       .order("item_code", { ascending: true });
     if (error) throw error;
-    const items = await Promise.all((data || []).map(async r => ({
+
+    // The list/table never renders item images — only the Edit and View
+    // modals do, one item at a time. Signing every row's image here (even
+    // batched) was pure wasted work on every list load; just flag which
+    // rows have one and let the modal fetch that single signed URL when it
+    // actually opens (GET /items/:id/image-url below).
+    const items = (data || []).map(r => ({
       id:           r.id,
       itemCode:     r.item_code     || "",
       itemType:     r.item_type     || "Supply",
@@ -113,17 +119,35 @@ router.get("/items", async (_req, res) => {
       specifications: parseJsonArr(r.description),
       category:     r.category      || "",
       unit:         r.unit          || "",
-      imageUrl:     await createSignedStorageUrl(supabase, "picture", r.image_url),
+      imageUrl:     "",
+      hasImage:     !!r.image_url,
       remarks:      r.remarks       || "",
       createdById:  r.created_by_id || "",
       createdByName: r.created_by_name || "",
-    })));
+    }));
     const payload = { items };
     cache.set("items", payload, TTL5);
     res.json(payload);
   } catch (err) {
     console.error("Items read error:", err.message);
     res.json({ items: [] });
+  }
+});
+
+/* GET /api/procurement/items/:id/image-url — signs one item's image on
+   demand, only called when the Edit/View modal for that item actually
+   opens (see comment on GET /items above). */
+router.get("/items/:id/image-url", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .schema("procurement").from("items")
+      .select("image_url").eq("id", req.params.id).single();
+    if (error || !data) return res.json({ imageUrl: "" });
+    const imageUrl = await createSignedStorageUrl(supabase, "picture", data.image_url);
+    res.json({ imageUrl });
+  } catch (err) {
+    console.error("Item image-url error:", err.message);
+    res.json({ imageUrl: "" });
   }
 });
 
