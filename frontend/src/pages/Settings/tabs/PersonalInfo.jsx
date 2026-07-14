@@ -1,7 +1,7 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   UserCircle, Mail, Phone, Building2, Briefcase, Camera,
-  FolderOpen, Trash2, Save, Loader2, Pencil, LayoutDashboard, X,
+  FolderOpen, Trash2, Save, Loader2, Pencil, LayoutDashboard, X, ShieldAlert,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import api from "../../../utils/api";
@@ -42,6 +42,39 @@ export default function PersonalInfo({ currentUser, showToast, onProfileUpdate, 
   const fileRef      = useRef();
   const coverFileRef = useRef();
   const signatureRef = useRef();
+
+  // ── Service Lock (global_admin only) ──
+  const isGlobalAdmin = currentUser.role === "global_admin";
+  const [showLockPanel, setShowLockPanel] = useState(false);
+  const [lockLoading, setLockLoading]   = useState(false);
+  const [lockSaving, setLockSaving]     = useState(false);
+  const [isLocked, setIsLocked]         = useState(false);
+  const [lockMessage, setLockMessage]   = useState("Your card payment has failed. Please complete the payment to resume service.");
+
+  useEffect(() => {
+    if (!isGlobalAdmin) return;
+    setLockLoading(true);
+    api.get("/api/auth/service-lock")
+      .then(({ data }) => {
+        setIsLocked(!!data.is_locked);
+        if (data.message) setLockMessage(data.message);
+      })
+      .catch(() => {})
+      .finally(() => setLockLoading(false));
+  }, [isGlobalAdmin]);
+
+  const saveServiceLock = async (nextLocked) => {
+    setLockSaving(true);
+    try {
+      await api.put("/api/auth/service-lock", { is_locked: nextLocked, message: lockMessage });
+      setIsLocked(nextLocked);
+      showToast(nextLocked ? "Service locked — non-admin users are now blocked" : "Service unlocked — users can log in normally");
+    } catch {
+      showToast("Failed to update service lock", "error");
+    } finally {
+      setLockSaving(false);
+    }
+  };
 
   const saveProfile = async (e) => {
     e.preventDefault();
@@ -503,6 +536,83 @@ export default function PersonalInfo({ currentUser, showToast, onProfileUpdate, 
               </div>
             </div>
           </div>
+
+          {isGlobalAdmin && !showLockPanel && (
+            <button
+              type="button"
+              onClick={() => setShowLockPanel(true)}
+              className="mt-6 inline-flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-500 border border-slate-200 rounded-sm hover:bg-slate-50 hover:text-slate-700 transition-all"
+            >
+              <ShieldAlert size={14} className="text-rose-400" /> Service Lock
+            </button>
+          )}
+
+          {isGlobalAdmin && showLockPanel && (
+            <div className="bg-white rounded-sm border border-slate-100 p-6 mt-6">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert size={16} className="text-rose-500" />
+                  <h3 className="text-sm font-bold text-slate-800">Service Lock</h3>
+                </div>
+                <button type="button" onClick={() => setShowLockPanel(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-sm transition-all">
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="text-xs text-slate-400 mb-4">
+                When enabled, every other user — including super_admin and admin — is blocked from logging in
+                (and signed-in sessions get signed out within a few minutes) and shown the message below
+                instead. Only your global_admin account stays exempt. Use this if a client hasn't cleared a
+                pending payment.
+              </p>
+
+              {lockLoading ? (
+                <div className="flex items-center gap-2 text-xs text-slate-400"><Loader2 size={14} className="animate-spin" /> Loading...</div>
+              ) : (
+                <>
+                  <div className={`flex items-center justify-between px-4 py-3 rounded-sm border mb-4 ${isLocked ? "bg-rose-50 border-rose-200" : "bg-slate-50 border-slate-100"}`}>
+                    <div>
+                      <p className={`text-xs font-bold ${isLocked ? "text-rose-700" : "text-slate-600"}`}>
+                        {isLocked ? "Service is currently LOCKED" : "Service is currently active"}
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        {isLocked ? "Non-admin users cannot use the software right now." : "All users can log in and use the software normally."}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={lockSaving}
+                      onClick={() => saveServiceLock(!isLocked)}
+                      className={`shrink-0 px-4 py-2 text-xs font-bold rounded-sm transition-all disabled:opacity-60 ${
+                        isLocked ? "bg-slate-800 hover:bg-slate-900 text-white" : "bg-rose-600 hover:bg-rose-700 text-white"
+                      }`}
+                    >
+                      {lockSaving ? "Saving..." : isLocked ? "Unlock Service" : "Lock Service"}
+                    </button>
+                  </div>
+
+                  <label className={lbl}>Message shown to blocked users</label>
+                  <textarea
+                    value={lockMessage}
+                    onChange={e => setLockMessage(e.target.value)}
+                    rows={3}
+                    className={`${inp} resize-none`}
+                    placeholder="Your card payment has failed. Please complete the payment to resume service."
+                  />
+                  <div className="flex justify-end mt-2">
+                    <button
+                      type="button"
+                      disabled={lockSaving}
+                      onClick={() => saveServiceLock(isLocked)}
+                      className="px-4 py-2 text-xs font-bold text-slate-600 border border-slate-200 rounded-sm hover:bg-slate-50 transition-all disabled:opacity-60"
+                    >
+                      Save Message
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
         </div>
       </div>

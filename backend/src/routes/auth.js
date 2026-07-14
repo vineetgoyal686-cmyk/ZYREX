@@ -70,6 +70,13 @@ router.post("/login", async (req, res) => {
     return res.status(403).json({ error: "You are blocked, contact to Administrator" });
   }
 
+  if (profile.role !== "global_admin") {
+    const { data: lock } = await admin.from("service_lock").select("is_locked, message").eq("id", 1).maybeSingle();
+    if (lock?.is_locked) {
+      return res.status(423).json({ error: lock.message || "Your card payment has failed. Please complete the payment to resume service.", service_locked: true });
+    }
+  }
+
   const signedAvatarPromise = createSignedStorageUrl(admin, "picture", profile.avatar);
   const signedProfilePermissions = { ...(profile.profile_permissions || {}) };
   const signedCoverPromise = signedProfilePermissions.ui?.cover_image
@@ -887,6 +894,41 @@ router.get("/init", async (req, res) => {
     },
     projects,
   });
+});
+
+/* ─────────────────────────────────────────
+   Service Lock — a global_admin can flip this to block every other
+   user from using the software (e.g. client hasn't cleared payment).
+   Only global_admin is exempt — super_admin/admin/user are all blocked.
+───────────────────────────────────────── */
+
+/* GET /api/auth/service-lock — public, polled by already-open sessions
+   and checked at login, so no auth required to read it. */
+router.get("/service-lock", async (_req, res) => {
+  const { data } = await supabase.from("service_lock").select("is_locked, message").eq("id", 1).maybeSingle();
+  res.json({ is_locked: !!data?.is_locked, message: data?.message || "" });
+});
+
+/* PUT /api/auth/service-lock — global_admin only
+   Body: { is_locked, message } */
+router.put("/service-lock", async (req, res) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  if (!token) return res.status(401).json({ error: "Login required" });
+  const user = await getUserFromToken(token);
+  if (!user || user.role !== "global_admin") {
+    return res.status(403).json({ error: "Only a global admin can change this setting" });
+  }
+
+  const { is_locked, message } = req.body;
+  const { data, error } = await supabase.from("service_lock").update({
+    is_locked: !!is_locked,
+    message: String(message || "").trim() || "Your card payment has failed. Please complete the payment to resume service.",
+    updated_by_id: user.id,
+    updated_at: new Date().toISOString(),
+  }).eq("id", 1).select().single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true, lock: data });
 });
 
 module.exports = router;

@@ -462,6 +462,19 @@ function App() {
     } catch { /* silent */ }
   };
 
+  const [serviceLocked, setServiceLocked] = useState("");
+
+  const checkServiceLock = async () => {
+    try {
+      const res = await fetch(`${API}/api/auth/service-lock`, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
+      const exempt = u.role === "global_admin";
+      setServiceLocked(data.is_locked && !exempt ? (data.message || "Service is currently suspended. Please clear your pending payment to continue.") : "");
+    } catch { /* transient network error — don't flip lock state on a blip */ }
+  };
+
   const fetchUserPermissions = async (attempt = 0) => {
     const token = localStorage.getItem("bms_token");
     if (!token) return;
@@ -499,13 +512,15 @@ function App() {
     // token refresh) never picks up Access Profile changes an admin makes
     // later, since the cached copy in localStorage looks "already loaded".
     fetchUserPermissions();
+    checkServiceLock();
 
     // A tab that's simply left open never re-runs the effect above, so an
     // admin changing this user's permissions elsewhere wouldn't show up
     // until a manual refresh/relogin. Re-poll periodically and whenever the
-    // tab regains focus so permission changes land without either.
-    const interval = setInterval(() => fetchUserPermissions(), 3 * 60 * 1000);
-    const onFocus = () => fetchUserPermissions();
+    // tab regains focus so permission changes land without either — this
+    // also covers a global_admin flipping the service lock mid-session.
+    const interval = setInterval(() => { fetchUserPermissions(); checkServiceLock(); }, 3 * 60 * 1000);
+    const onFocus = () => { fetchUserPermissions(); checkServiceLock(); };
     window.addEventListener("focus", onFocus);
     return () => {
       clearInterval(interval);
@@ -623,6 +638,29 @@ function App() {
         element={
           !isLoggedIn ? (
             <Login onLogin={handleLogin} />
+          ) : serviceLocked ? (
+            <div className="min-h-screen w-full flex items-center justify-center p-4" style={{ backgroundColor: "#0f172a" }}>
+              <div className="w-full max-w-md bg-white rounded-lg shadow-2xl overflow-hidden">
+                <div className="bg-red-600 px-6 py-4 flex items-center gap-3">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="shrink-0">
+                    <path d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <div>
+                    <p className="text-white font-bold text-sm tracking-wide">SERVICE SUSPENDED</p>
+                    <p className="text-red-100 text-[11px]">Access to this system has been temporarily disabled</p>
+                  </div>
+                </div>
+                <div className="px-6 py-6">
+                  <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{serviceLocked}</p>
+                </div>
+                <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
+                  <p className="text-[11px] text-slate-400">Contact your service provider to restore access.</p>
+                  <button onClick={handleLogout} className="shrink-0 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-300 rounded-md hover:bg-slate-100 transition-all">
+                    Logout
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : (
             <AppLayout
               activeTab={activeTab}

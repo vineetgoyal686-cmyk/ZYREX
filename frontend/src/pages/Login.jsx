@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Lock, Eye, EyeOff, Mail, ArrowRight } from "lucide-react";
+import { Lock, Eye, EyeOff, Mail, ArrowRight, ShieldAlert } from "lucide-react";
 import api from "../utils/api";
 
 const Login = ({ onLogin }) => {
@@ -9,6 +9,7 @@ const Login = ({ onLogin }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [serviceLocked, setServiceLocked] = useState("");
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotSent, setForgotSent] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
@@ -82,11 +83,37 @@ const Login = ({ onLogin }) => {
       }
       onLogin(data.user);
     } catch (err) {
-      setError(err.response?.data?.error || "Login failed. Check your credentials.");
+      if (err.response?.data?.service_locked) {
+        setServiceLocked(err.response.data.error || "Service is currently suspended.");
+      } else {
+        setError(err.response?.data?.error || "Login failed. Check your credentials.");
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  if (serviceLocked) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center p-4" style={{ backgroundColor: "#0f172a" }}>
+        <div className="w-full max-w-md bg-white rounded-lg shadow-2xl overflow-hidden">
+          <div className="bg-red-600 px-6 py-4 flex items-center gap-3">
+            <ShieldAlert size={22} className="text-white shrink-0" />
+            <div>
+              <p className="text-white font-bold text-sm tracking-wide">SERVICE SUSPENDED</p>
+              <p className="text-red-100 text-[11px]">Access to this system has been temporarily disabled</p>
+            </div>
+          </div>
+          <div className="px-6 py-6">
+            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-line">{serviceLocked}</p>
+          </div>
+          <div className="px-6 py-3 bg-slate-50 border-t border-slate-100">
+            <p className="text-[11px] text-slate-400">If you believe this is a mistake, please contact your service provider.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const handleForgot = async (e) => {
     e.preventDefault();
