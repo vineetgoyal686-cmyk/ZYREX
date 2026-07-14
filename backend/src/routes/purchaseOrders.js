@@ -1489,7 +1489,7 @@ router.post("/bulk-import", async (req, res) => {
             orderNumber = `${company.company_code}/${site.site_code}/${typeCode}/${fy}/${nextSerial}`;
             incrementSerial = true;
           } else {
-            orderNumber = await getNextDraftNumber(order.order_type || 'Supply');
+            orderNumber = await getNextDraftNumber(orderType || 'Supply');
           }
         }
 
