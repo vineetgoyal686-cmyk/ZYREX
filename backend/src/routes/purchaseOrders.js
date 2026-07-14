@@ -1303,9 +1303,10 @@ router.post("/bulk-import", async (req, res) => {
           make: JSON.stringify(brand ? [brand] : []),
           description: JSON.stringify(specPoints || []),
           category: "", unit: unit || "", remarks: "",
-          created_by_id: "", created_by_name: "Bulk Order Import",
+          created_by_id: null, created_by_name: "Bulk Order Import",
         }).select().single();
-        if (!error && created) { itemMasterMap.set(key, created); masterItemsChanged = true; }
+        if (error) { console.error("Bulk import: failed to register master item", name, error.message); itemCodeNums[type] -= 1; return; }
+        if (created) { itemMasterMap.set(key, created); masterItemsChanged = true; }
         return;
       }
 
@@ -1650,7 +1651,8 @@ router.post("/bulk-import", async (req, res) => {
         const totals = {
           subtotal,
           totalDiscountAmt: discAmt,
-          discount_mode: "line",
+          discount_mode: itemRows.some(it => Number(it.discount_pct) > 0) ? "line" : "none",
+          tax_mode: itemRows.some(it => Number(it.tax_pct) > 0) ? "line" : "none",
           gst: totalTax,
           frightCharges: fright,
           grandTotal,
