@@ -499,6 +499,18 @@ function App() {
     // token refresh) never picks up Access Profile changes an admin makes
     // later, since the cached copy in localStorage looks "already loaded".
     fetchUserPermissions();
+
+    // A tab that's simply left open never re-runs the effect above, so an
+    // admin changing this user's permissions elsewhere wouldn't show up
+    // until a manual refresh/relogin. Re-poll periodically and whenever the
+    // tab regains focus so permission changes land without either.
+    const interval = setInterval(() => fetchUserPermissions(), 3 * 60 * 1000);
+    const onFocus = () => fetchUserPermissions();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [isLoggedIn]);
 
   // Many components (Sidebar counts, Global Dashboard, SSE setup, etc.) read
