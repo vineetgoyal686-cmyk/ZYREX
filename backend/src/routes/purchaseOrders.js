@@ -1509,6 +1509,12 @@ router.post("/bulk-import", async (req, res) => {
           ifscCode:       vendorMaster.ifsc_code       || "",
           accountNumber:  vendorMaster.account_number  || "",
           beneficiaryName: vendorMaster.account_holder || vendorMaster.vendor_name || "",
+          docGstUrl:          vendorMaster.docGstUrl          || vendorMaster.doc_gst_url          || "",
+          docPanUrl:          vendorMaster.docPanUrl          || vendorMaster.doc_pan_url          || "",
+          docAadhaarUrl:      vendorMaster.docAadhaarUrl      || vendorMaster.doc_aadhaar_url      || "",
+          docCoiUrl:          vendorMaster.docCoiUrl          || vendorMaster.doc_coi_url          || "",
+          docMsmeUrl:         vendorMaster.docMsmeUrl         || vendorMaster.doc_msme_url         || "",
+          docCancelChequeUrl: vendorMaster.docCancelChequeUrl || vendorMaster.doc_cancel_cheque_url || "",
         };
 
         // Build company snapshot — pull entirely from master (Excel only carries Company Code)
