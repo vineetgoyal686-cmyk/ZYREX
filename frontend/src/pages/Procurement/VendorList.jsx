@@ -641,7 +641,7 @@ export default function VendorList() {
 
       </div>
 
-      <div className="px-3 sm:px-4 lg:px-6 pt-4 pb-32 w-full">
+      <div className="px-3 sm:px-4 lg:px-6 pt-4 pb-6 w-full">
 
       {/* Vendor Pool tab */}
       {mainTab === "pool" && (
@@ -722,7 +722,7 @@ export default function VendorList() {
         ) : filtered.length === 0 ? (
           <div className="py-16 text-center text-slate-300 font-bold uppercase tracking-widest text-xs">No vendors found</div>
         ) : (
-          <div className="overflow-x-auto thin-scroll">
+          <div className="overflow-auto thin-scroll max-h-[calc(100vh-300px)]">
             <style>{`
               .thin-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
               .thin-scroll::-webkit-scrollbar { height: 3px; width: 3px; }
@@ -738,13 +738,13 @@ export default function VendorList() {
                     return (
                       <th
                         key={c.key}
-                        className={`px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap ${c.w} ${isVendorName ? "sticky left-0 z-20 bg-slate-50 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]" : ""}`}
+                        className={`sticky top-0 px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap bg-slate-50 ${c.w} ${isVendorName ? "left-0 z-30 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]" : "z-20"}`}
                       >
                         {c.label}
                       </th>
                     );
                   })}
-                  <th className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500 w-[100px] sticky right-0 z-20 bg-slate-50 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.08)]">
+                  <th className="sticky top-0 right-0 z-30 px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500 w-[100px] bg-slate-50 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.08)]">
                     Actions
                   </th>
                 </tr>
