@@ -475,7 +475,7 @@ export default function VendorList() {
   const paginated  = filtered.slice((page - 1) * perPage, page * perPage);
 
   return (
-    <>
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-lg
@@ -485,7 +485,7 @@ export default function VendorList() {
       )}
 
       {/* Sticky header — edge-to-edge, flush with sidebar/top */}
-      <div className="sticky top-0 z-40 bg-white border-b border-slate-200">
+      <div className="shrink-0 sticky top-0 z-40 bg-white border-b border-slate-200">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-3 sm:px-4 lg:px-6 py-3 border-b border-slate-100">
         <div className="flex items-center gap-5 min-w-0">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -641,7 +641,7 @@ export default function VendorList() {
 
       </div>
 
-      <div className="px-3 sm:px-4 lg:px-6 pt-4 pb-6 w-full">
+      <div className="flex-1 min-h-0 flex flex-col px-3 sm:px-4 lg:px-6 pt-4 pb-6 w-full overflow-y-auto">
 
       {/* Vendor Pool tab */}
       {mainTab === "pool" && (
@@ -649,11 +649,12 @@ export default function VendorList() {
       )}
 
       {/* Vendor List tab content */}
-      {mainTab === "vendors" && (<>
+      {mainTab === "vendors" && (
+      <div className="flex-1 min-h-0 flex flex-col">
 
       {/* Bulk Upload Panel */}
       {showBulk && (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-5">
+        <div className="shrink-0 bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-slate-700">Bulk Upload Vendors</h3>
             <button onClick={() => { setShowBulk(false); setBulkRows([]); setBulkFile(""); }}
@@ -716,13 +717,13 @@ export default function VendorList() {
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-lg border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-lg border border-slate-100 shadow-sm overflow-hidden flex-1 min-h-0 flex flex-col">
         {loading ? (
           <div className="py-16 text-center text-slate-400 text-sm">Loading…</div>
         ) : filtered.length === 0 ? (
           <div className="py-16 text-center text-slate-300 font-bold uppercase tracking-widest text-xs">No vendors found</div>
         ) : (
-          <div className="overflow-auto thin-scroll max-h-[calc(100vh-300px)]">
+          <div className="flex-1 min-h-0 overflow-auto thin-scroll">
             <style>{`
               .thin-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
               .thin-scroll::-webkit-scrollbar { height: 3px; width: 3px; }
@@ -853,7 +854,7 @@ export default function VendorList() {
 
         {/* Pagination */}
         {!loading && filtered.length > 0 && (
-          <div className="flex items-center justify-center gap-4 px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+          <div className="shrink-0 flex items-center justify-center gap-4 px-4 py-3 border-t border-slate-100 bg-slate-50/50">
             <p className="text-xs text-slate-500">
               {(page - 1) * perPage + 1}-{Math.min(page * perPage, filtered.length)} of {filtered.length} items
             </p>
@@ -1565,12 +1566,13 @@ export default function VendorList() {
           </div>
         </div>
       )}
-      </>)}
+      </div>
+      )}
       {logTarget && (
         <LogPanel entityType={logTarget.entityType} entityId={logTarget.entityId} entityName={logTarget.entityName} onClose={() => setLogTarget(null)} />
       )}
       </div>
-    </>
+    </div>
   );
 }
 
