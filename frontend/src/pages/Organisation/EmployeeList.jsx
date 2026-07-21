@@ -1029,10 +1029,13 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
           <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-slate-400">Rows per page:</span>
-              <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
-                className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600 bg-white focus:outline-none">
-                {[10, 20, 30, 40, 50].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
+              <div className="relative">
+                <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                  className="appearance-none text-[11px] border border-slate-200 rounded pl-2 pr-5 py-1 text-slate-600 bg-white focus:outline-none">
+                  {[10, 20, 30, 40, 50].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+                <ChevronDown size={11} className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              </div>
               <span className="text-[11px] text-slate-400">
                 {filtered.length > 0 ? `${(page - 1) * perPage + 1}–${Math.min(page * perPage, filtered.length)} of ${filtered.length}` : "0 results"}
               </span>

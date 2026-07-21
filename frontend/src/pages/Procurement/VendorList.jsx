@@ -766,7 +766,7 @@ export default function VendorList() {
                                 onClick={() => copyToClipboard(v[c.key], key)}
                                 title={isCopied ? "Copied!" : "Click to copy"}
                                 className={`group inline-flex items-center gap-1.5 font-semibold px-1.5 py-1 -mx-1.5 -my-1 rounded hover:bg-slate-100 transition-colors ${isCopied ? "text-emerald-600" : "text-slate-800"}`}>
-                                <span className="break-words whitespace-normal text-left">{v[c.key]}</span>
+                                <span className="whitespace-nowrap truncate max-w-[160px] text-left">{v[c.key]}</span>
                                 {isCopied
                                   ? <Check size={12} className="shrink-0" />
                                   : <Copy size={11} className="shrink-0 text-slate-300 group-hover:text-slate-500 transition-colors" />}
@@ -858,10 +858,13 @@ export default function VendorList() {
               <p className="text-xs text-slate-400">{filtered.length} vendors · Page {page} of {totalPages}</p>
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] text-slate-400">Rows per page:</span>
-                <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
-                  className="text-[11px] border border-slate-200 rounded px-2 py-1 text-slate-600 bg-white focus:outline-none">
-                  {[10, 20, 30, 40, 50].map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <div className="relative">
+                  <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                    className="appearance-none text-[11px] border border-slate-200 rounded pl-2 pr-5 py-1 text-slate-600 bg-white focus:outline-none">
+                    {[10, 20, 30, 40, 50].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                  <ChevronDown size={11} className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                </div>
               </div>
             </div>
             {totalPages > 1 && (
