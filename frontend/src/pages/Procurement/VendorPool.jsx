@@ -231,6 +231,7 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted, canEdit = true, 
   const [statusFilter, setStatusFilter]   = useState([]);
   const [categoryFilter, setCategoryFilter] = useState([]);
   const [page,       setPage]       = useState(1);
+  const [perPage,    setPerPage]    = useState(PER_PAGE);
   const [categories, setCategories] = useState([]);
   const [viewEntry,   setViewEntry]  = useState(null);
   const [logTarget,   setLogTarget]  = useState(null);
@@ -429,8 +430,8 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted, canEdit = true, 
     );
   }), [pools, search, statusFilter, categoryFilter]);
 
-  const totalPages = Math.ceil(filtered.length / PER_PAGE) || 1;
-  const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const totalPages = Math.ceil(filtered.length / perPage) || 1;
+  const paginated  = filtered.slice((page - 1) * perPage, page * perPage);
 
   useEffect(() => { setPage(1); }, [search, statusFilter, categoryFilter]);
   useEffect(() => { setPage(p => Math.min(Math.max(1, p), totalPages)); }, [totalPages]);
@@ -762,10 +763,22 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted, canEdit = true, 
         </div>
 
         {!loading && filtered.length > 0 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
-            <p className="text-xs text-slate-400">{filtered.length} entr{filtered.length === 1 ? "y" : "ies"} · Page {page} of {totalPages}</p>
+          <div className="grid grid-cols-3 items-center px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+            <div className="flex items-center gap-3">
+              <p className="text-xs text-slate-400">{filtered.length} entr{filtered.length === 1 ? "y" : "ies"} · Page {page} of {totalPages}</p>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-400">Rows per page:</span>
+                <div className="relative">
+                  <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                    className="appearance-none text-[11px] border border-slate-200 rounded pl-2 pr-5 py-1 text-slate-600 bg-white focus:outline-none">
+                    {[10, 15, 20, 30, 40, 50].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                  <ChevronDown size={11} className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                </div>
+              </div>
+            </div>
             {totalPages > 1 && (
-              <div className="flex items-center gap-1">
+              <div className="flex items-center justify-center gap-1">
                 <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
                   className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-30 transition-all">
                   <ChevronLeft size={14} />

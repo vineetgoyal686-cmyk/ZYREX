@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
-import { Plus, Search, Pencil, Trash2, X, Building2, Users, Upload, FileText, ChevronLeft, ChevronRight, FileSpreadsheet, ChevronDown, Eye, Copy, Check, Trash, RotateCcw, History, Download } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, X, Building2, Users, Upload, FileText, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileSpreadsheet, ChevronDown, Eye, Copy, Check, Trash, RotateCcw, History, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -766,7 +766,7 @@ export default function VendorList() {
                                 onClick={() => copyToClipboard(v[c.key], key)}
                                 title={isCopied ? "Copied!" : "Click to copy"}
                                 className={`group inline-flex items-center gap-1.5 font-semibold px-1.5 py-1 -mx-1.5 -my-1 rounded hover:bg-slate-100 transition-colors ${isCopied ? "text-emerald-600" : "text-slate-800"}`}>
-                                <span className="whitespace-nowrap truncate max-w-[160px] text-left">{v[c.key]}</span>
+                                <span className="whitespace-nowrap text-left">{v[c.key]}</span>
                                 {isCopied
                                   ? <Check size={12} className="shrink-0" />
                                   : <Copy size={11} className="shrink-0 text-slate-300 group-hover:text-slate-500 transition-colors" />}
@@ -853,46 +853,65 @@ export default function VendorList() {
 
         {/* Pagination */}
         {!loading && filtered.length > 0 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-slate-50/50">
-            <div className="flex items-center gap-3">
-              <p className="text-xs text-slate-400">{filtered.length} vendors · Page {page} of {totalPages}</p>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] text-slate-400">Rows per page:</span>
-                <div className="relative">
-                  <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
-                    className="appearance-none text-[11px] border border-slate-200 rounded pl-2 pr-5 py-1 text-slate-600 bg-white focus:outline-none">
-                    {[10, 20, 30, 40, 50].map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                  <ChevronDown size={11} className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="flex items-center justify-center gap-4 px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+            <p className="text-xs text-slate-500">
+              {(page - 1) * perPage + 1}-{Math.min(page * perPage, filtered.length)} of {filtered.length} items
+            </p>
+            <div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setPage(1)} disabled={page === 1}
+                    className="p-1.5 rounded-lg text-slate-400 hover:bg-white disabled:opacity-30 transition-all">
+                    <ChevronsLeft size={14} />
+                  </button>
+                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                    className="p-1.5 rounded-lg text-slate-400 hover:bg-white disabled:opacity-30 transition-all">
+                    <ChevronLeft size={14} />
+                  </button>
+                  {(() => {
+                    const items = [];
+                    const addPage = n => items.push(n);
+                    if (totalPages <= 7) {
+                      for (let n = 1; n <= totalPages; n++) addPage(n);
+                    } else {
+                      addPage(1);
+                      if (page > 3) items.push("...");
+                      const start = Math.max(2, page - 1);
+                      const end = Math.min(totalPages - 1, page + 1);
+                      for (let n = start; n <= end; n++) addPage(n);
+                      if (page < totalPages - 2) items.push("...");
+                      addPage(totalPages);
+                    }
+                    return items.map((n, i) =>
+                      n === "..." ? (
+                        <span key={`e${i}`} className="px-1.5 text-xs text-slate-400 select-none">...</span>
+                      ) : (
+                        <button key={n} onClick={() => setPage(n)}
+                          className={`min-w-[26px] h-[26px] px-1.5 rounded-md text-xs font-medium transition-all
+                            ${page === n ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white"}`}>
+                          {n}
+                        </button>
+                      )
+                    );
+                  })()}
+                  <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                    className="p-1.5 rounded-lg text-slate-400 hover:bg-white disabled:opacity-30 transition-all">
+                    <ChevronRight size={14} />
+                  </button>
+                  <button onClick={() => setPage(totalPages)} disabled={page === totalPages}
+                    className="p-1.5 rounded-lg text-slate-400 hover:bg-white disabled:opacity-30 transition-all">
+                    <ChevronsRight size={14} />
+                  </button>
                 </div>
-              </div>
+              )}
             </div>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-1">
-                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                  className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-30 transition-all">
-                  <ChevronLeft size={14} />
-                </button>
-                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                  let n;
-                  if (totalPages <= 5) n = i + 1;
-                  else if (page <= 3) n = i + 1;
-                  else if (page >= totalPages - 2) n = totalPages - 4 + i;
-                  else n = page - 2 + i;
-                  return (
-                    <button key={n} onClick={() => setPage(n)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all
-                        ${page === n ? "bg-slate-900 text-white border-slate-900" : "text-slate-600 border-slate-200 hover:bg-white"}`}>
-                      {n}
-                    </button>
-                  );
-                })}
-                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                  className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-white disabled:opacity-30 transition-all">
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-            )}
+            <div className="relative">
+              <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                className="appearance-none text-xs border border-slate-200 rounded-md pl-2.5 pr-6 py-1.5 text-slate-600 bg-white focus:outline-none">
+                {[10, 20, 30, 40, 50].map(n => <option key={n} value={n}>{n}</option>)}
+              </select>
+              <ChevronDown size={11} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+            </div>
           </div>
         )}
       </div>
