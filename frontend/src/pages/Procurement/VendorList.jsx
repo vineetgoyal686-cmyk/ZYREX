@@ -1112,6 +1112,7 @@ export default function VendorList() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 bg-black/40 backdrop-blur-sm">
           <style>{`
             .vgrid { display: grid; grid-template-columns: 1fr; }
+            .vgrid-full { grid-column: 1 / -1; }
             @media screen and (min-width: 768px) {
               .vgrid { grid-template-columns: 1fr 1fr; }
             }
@@ -1181,7 +1182,7 @@ export default function VendorList() {
                         onChange={e => setForm(f => ({ ...f, mobile: e.target.value }))}
                         placeholder="10-digit number" />
                     </div>
-                    <div className="col-span-2">
+                    <div className="vgrid-full">
                       <label className={lbl}>Email</label>
                       <input className={inp} type="email" value={form.email}
                         onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
@@ -1212,7 +1213,7 @@ export default function VendorList() {
                         placeholder="MSME Reg. No. (if any)" />
                     </div>
 
-                    <div className="col-span-2 relative" ref={companyRef}>
+                    <div className="vgrid-full relative" ref={companyRef}>
                       <label className={lbl}>Associated Company Codes</label>
                       <div onClick={() => setShowCompanySearch(!showCompanySearch)}
                         className={`min-h-[42px] border border-slate-200 rounded-xl px-3 py-2 text-sm flex flex-wrap gap-1 cursor-pointer transition-all ${showCompanySearch ? "ring-2 ring-indigo-50 border-indigo-400" : "hover:border-slate-300"}`}>
@@ -1258,7 +1259,7 @@ export default function VendorList() {
                       )}
                     </div>
 
-                    <div className="col-span-2 relative" ref={siteRef}>
+                    <div className="vgrid-full relative" ref={siteRef}>
                       <label className={lbl}>Associated Site Codes</label>
                       <div onClick={() => setShowSiteSearch(!showSiteSearch)}
                         className={`min-h-[42px] border border-slate-200 rounded-xl px-3 py-2 text-sm flex flex-wrap gap-1 cursor-pointer transition-all ${showSiteSearch ? "ring-2 ring-indigo-50 border-indigo-400" : "hover:border-slate-300"}`}>
@@ -1319,7 +1320,7 @@ export default function VendorList() {
                         </div>
                       )}
                     </div>
-                    <div className="col-span-2">
+                    <div className="vgrid-full">
                       <label className={lbl}>Address</label>
                       <textarea className={`${inp} resize-none`} rows={2} value={form.address}
                         onChange={e => setForm(f => ({ ...f, address: e.target.value }))}
@@ -1332,19 +1333,19 @@ export default function VendorList() {
               {/* BANK TAB */}
               {tab === "bank" && (
                 <div className="vgrid gap-4">
-                  <div className="col-span-2">
+                  <div className="vgrid-full">
                     <label className={lbl}>Bank Name</label>
                     <input className={inp} value={form.bankName}
                       onChange={e => setForm(f => ({ ...f, bankName: e.target.value }))}
                       placeholder="e.g. HDFC Bank" />
                   </div>
-                  <div className="col-span-2">
+                  <div className="vgrid-full">
                     <label className={lbl}>Account Holder Name</label>
                     <input className={inp} value={form.accountHolder}
                       onChange={e => setForm(f => ({ ...f, accountHolder: e.target.value }))}
                       placeholder="Name as per bank records" />
                   </div>
-                  <div className="col-span-2">
+                  <div className="vgrid-full">
                     <label className={lbl}>Account Number</label>
                     <input className={`${inp} font-mono`} value={form.accountNumber}
                       onChange={e => setForm(f => ({ ...f, accountNumber: e.target.value }))}
