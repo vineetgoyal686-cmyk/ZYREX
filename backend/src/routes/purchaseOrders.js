@@ -191,6 +191,19 @@ const expandUrls = (value) => {
   return [value];
 };
 
+// Append one entry to an order's snapshot.activity_log — used for document add/remove
+// events that happen outside the main PUT /:id save (post-issue doc routes use RPCs
+// that don't touch `snapshot`, so this does its own read-merge-write).
+const logDocumentActivity = async (orderId, actionBy, comments) => {
+  const { data: row } = await supabase.schema("procurement")
+    .from("purchase_orders").select("snapshot").eq("id", orderId).single();
+  const curSnap = row?.snapshot || {};
+  const actLog  = Array.isArray(curSnap.activity_log) ? [...curSnap.activity_log] : [];
+  actLog.push({ action: "Documents Updated", action_by: actionBy || "Unknown", action_at: new Date().toISOString(), comments });
+  await supabase.schema("procurement")
+    .from("purchase_orders").update({ snapshot: { ...curSnap, activity_log: actLog } }).eq("id", orderId);
+};
+
 const signOrderDocUrl = async (value) => {
   if (!value) return "";
   try {
@@ -1968,6 +1981,33 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
       preDocuments = [...preDocuments.filter(d => d.category !== "mail-proof"), newDoc];
     }
 
+    // Log document uploads AND removals to the activity timeline — separate from the
+    // field-edit tracking above, since changing files doesn't touch any tracked field.
+    {
+      const docEvents = [];
+      if (files.quotation?.length) docEvents.push(`${files.quotation.length} quotation file${files.quotation.length > 1 ? "s" : ""} added`);
+      if (req.body.keptQuotations !== undefined) {
+        const keptCount = JSON.parse(req.body.keptQuotations || "[]").length;
+        const removedCount = Math.max(0, expandUrls(existing?.quotation_url).length - keptCount);
+        if (removedCount > 0) docEvents.push(`${removedCount} quotation file${removedCount > 1 ? "s" : ""} removed`);
+      }
+      if (files.comparative?.length) docEvents.push("comparative sheet uploaded");
+      if (files.other?.length) docEvents.push(`${files.other.length} other document${files.other.length > 1 ? "s" : ""} added`);
+      if (req.body.keptOthers !== undefined) {
+        const keptIds = new Set(JSON.parse(req.body.keptOthers || "[]").map(d => d?.id).filter(Boolean));
+        const existingOtherCount = (Array.isArray(existing?.pre_documents) ? existing.pre_documents : []).filter(d => d.category === "other").length;
+        const removedCount = Math.max(0, existingOtherCount - keptIds.size);
+        if (removedCount > 0) docEvents.push(`${removedCount} other document${removedCount > 1 ? "s" : ""} removed`);
+      }
+      if (files.mailProof?.length) docEvents.push("mail proof uploaded");
+      if (docEvents.length > 0) {
+        const curSnap = mainData.snapshot || existing?.snapshot || {};
+        const actLog  = Array.isArray(curSnap.activity_log) ? [...curSnap.activity_log] : [];
+        actLog.push({ action: "Documents Updated", action_by: _editBy, action_at: new Date().toISOString(), comments: docEvents.join(", ") });
+        mainData.snapshot = { ...curSnap, activity_log: actLog };
+      }
+    }
+
     // Detect a genuine transition INTO "Pending Issue" via this direct status-update
     // path (used when no approval flow is configured — approvalFlows.js handles the
     // flow-driven case, but that route is skipped entirely in that scenario, so the
@@ -2593,6 +2633,8 @@ router.post("/:id/post-documents", upload.single("file"), async (req, res) => {
       .rpc("append_post_document", { p_order_id: id, p_doc: newDoc });
     if (updErr) throw updErr;
 
+    await logDocumentActivity(id, uploadedByName, `Post-issue document added (${category}: ${req.file.originalname})`);
+
     res.json({ success: true, document: { ...newDoc, url: await signOrderDocUrl(newDoc.url) } });
   } catch (err) {
     console.error("Post-doc upload error:", err.message);
@@ -2603,6 +2645,7 @@ router.post("/:id/post-documents", upload.single("file"), async (req, res) => {
 router.delete("/:id/post-documents/:docId", async (req, res) => {
   try {
     const { id, docId } = req.params;
+    const deletedBy = req.body?.deletedBy || "Unknown";
     const { data: order, error: ordErr } = await supabase.schema("procurement")
       .from("purchase_orders")
       .select("post_documents")
@@ -2622,6 +2665,8 @@ router.delete("/:id/post-documents/:docId", async (req, res) => {
     const { error: updErr } = await supabase.schema("procurement")
       .rpc("remove_post_document", { p_order_id: id, p_doc_id: docId });
     if (updErr) throw updErr;
+
+    await logDocumentActivity(id, deletedBy, `Post-issue document removed (${target.category}: ${target.name})`);
 
     res.json({ success: true });
   } catch (err) {

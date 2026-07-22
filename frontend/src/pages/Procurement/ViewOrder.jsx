@@ -3647,6 +3647,8 @@ const OrderDocumentsTab = ({ order, orderId, isGlobalAdmin, thisUser, onRefresh,
     try {
       const res = await fetch(`${API}/api/orders/${orderId}/post-documents/${docId}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deletedBy: thisUser.name || thisUser.full_name || thisUser.email || "Unknown" }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Delete failed");

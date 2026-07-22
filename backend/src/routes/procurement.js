@@ -754,7 +754,10 @@ router.post("/vendors", vendorUpload, async (req, res) => {
   try {
     const b = req.body;
     const files = req.files || {};
-    const folder = b.vendorName || "vendor";
+    // Trim — a stray leading/trailing space in vendorName would land in the storage
+    // path here but get stripped by normalizeStoragePath() when signing later,
+    // making the signed-URL lookup miss the actual object (doc looks "not uploaded").
+    const folder = (b.vendorName || "vendor").trim() || "vendor";
 
     const [logoUrl, docGstUrl, docPanUrl, docAadhaarUrl, docCoiUrl, docMsmeUrl, docCancelChequeUrl, docOtherUrl, docOther2Url] = await Promise.all([
       uploadVendorFile(files, "logo",            folder),
@@ -824,7 +827,7 @@ router.put("/vendors/:id", vendorUpload, async (req, res) => {
     const { id } = req.params;
     const b = req.body;
     const files = req.files || {};
-    const folder = b.vendorName || "vendor";
+    const folder = (b.vendorName || "vendor").trim() || "vendor";
 
     const [newLogo, newDocGst, newDocPan, newDocAadhaar, newDocCoi, newDocMsme, newDocCancelCheque, newDocOther, newDocOther2] = await Promise.all([
       uploadVendorFile(files, "logo",            folder),
