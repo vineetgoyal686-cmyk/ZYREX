@@ -489,11 +489,28 @@ export default function VendorList() {
       <div className="shrink-0 sticky top-0 z-30 bg-white border-b border-slate-200">
       <div className="px-3 sm:px-4 lg:px-6 py-3 border-b border-slate-100">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="hidden md:flex w-8 h-8 rounded-lg bg-indigo-50 items-center justify-center shrink-0">
-              <Users size={16} className="text-indigo-600" />
+          <div className="flex items-center gap-5 min-w-0">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="hidden md:flex w-8 h-8 rounded-lg bg-indigo-50 items-center justify-center shrink-0">
+                <Users size={16} className="text-indigo-600" />
+              </div>
+              <h1 className="text-base font-bold text-slate-800 truncate">Vendor Directory</h1>
             </div>
-            <h1 className="text-base font-bold text-slate-800 truncate">Vendor Directory</h1>
+
+            {/* Tabs (desktop) — inline with title to keep the header compact */}
+            <div className="hidden md:flex items-center gap-1 bg-slate-100 rounded-lg p-1 w-fit shrink-0">
+              {[
+                { key: "vendors", label: "Vendor List" },
+                { key: "pool",    label: "Vendor Pool" },
+              ].map(t => (
+                <button key={t.key} type="button" onClick={() => setMainTab(t.key)}
+                  className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${
+                    mainTab === t.key ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                  }`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
         <div className="flex items-center gap-2 flex-wrap sm:justify-end shrink-0">
           {/* More dropdown — Export / Bulk Upload / Trash */}
@@ -593,22 +610,7 @@ export default function VendorList() {
         </div>
         </div>
 
-        <div className="border-t border-slate-100 mt-3" />
-
-        {/* Tabs (desktop) */}
-        <div className="hidden md:flex items-center gap-1 bg-slate-100 rounded-lg p-1 w-fit mt-3">
-          {[
-            { key: "vendors", label: "Vendor List" },
-            { key: "pool",    label: "Vendor Pool" },
-          ].map(t => (
-            <button key={t.key} type="button" onClick={() => setMainTab(t.key)}
-              className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${
-                mainTab === t.key ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-              }`}>
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <div className="border-t border-slate-100 mt-3 md:hidden" />
 
         {/* Tabs (mobile) — underline style, vendor count inline on the right */}
         <div className="flex md:hidden items-center justify-between gap-2 mt-3">
@@ -1044,11 +1046,11 @@ export default function VendorList() {
 
         {/* Pagination */}
         {!loading && filtered.length > 0 && (
-          <div className="shrink-0 flex items-center justify-center gap-4 px-4 py-3 border-t border-slate-100 bg-slate-50/50">
-            <p className="text-xs text-slate-500">
+          <div className="shrink-0 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 md:gap-4 px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+            <p className="text-xs text-slate-500 order-1">
               {(page - 1) * perPage + 1}-{Math.min(page * perPage, filtered.length)} of {filtered.length} items
             </p>
-            <div>
+            <div className="order-3 md:order-2 w-full md:w-auto flex justify-center">
               {totalPages > 1 && (
                 <div className="flex items-center gap-1">
                   <button onClick={() => setPage(1)} disabled={page === 1}
@@ -1096,7 +1098,7 @@ export default function VendorList() {
                 </div>
               )}
             </div>
-            <div className="relative">
+            <div className="relative order-2 md:order-3">
               <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
                 className="appearance-none text-xs border border-slate-200 rounded-md pl-2.5 pr-6 py-1.5 text-slate-600 bg-white focus:outline-none">
                 {[10, 20, 30, 40, 50].map(n => <option key={n} value={n}>{n}</option>)}
