@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
-import { Plus, Search, Pencil, Trash2, X, Building2, Users, Upload, FileText, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileSpreadsheet, ChevronDown, Eye, Copy, Check, Trash, RotateCcw, History, Download } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, X, Building2, Users, Upload, FileText, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileSpreadsheet, ChevronDown, Eye, Copy, Check, Trash, RotateCcw, History, Download, MoreVertical, SlidersHorizontal } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -168,6 +168,7 @@ export default function VendorList() {
   const [nameFilter, setNameFilter]     = useState([]);
   const [entityFilter, setEntityFilter] = useState([]);
   const [siteFilter, setSiteFilter]     = useState([]);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [saving, setSaving]       = useState(false);
   const [toast, setToast]         = useState(null);
   const [tab, setTab]             = useState("basic");
@@ -475,7 +476,7 @@ export default function VendorList() {
   const paginated  = filtered.slice((page - 1) * perPage, page * perPage);
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div className="md:h-full flex flex-col md:overflow-hidden">
       {/* Toast */}
       {toast && (
         <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-lg
@@ -485,35 +486,21 @@ export default function VendorList() {
       )}
 
       {/* Sticky header — edge-to-edge, flush with sidebar/top */}
-      <div className="shrink-0 sticky top-0 z-40 bg-white border-b border-slate-200">
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-3 sm:px-4 lg:px-6 py-3 border-b border-slate-100">
-        <div className="flex items-center gap-5 min-w-0">
+      <div className="shrink-0 sticky top-0 z-30 bg-white border-b border-slate-200">
+      <div className="px-3 sm:px-4 lg:px-6 py-3 border-b border-slate-100">
+        <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+            <div className="hidden md:flex w-8 h-8 rounded-lg bg-indigo-50 items-center justify-center shrink-0">
               <Users size={16} className="text-indigo-600" />
             </div>
-            <h1 className="text-base font-bold text-slate-800 whitespace-nowrap">Vendor Directory</h1>
+            <h1 className="text-base font-bold text-slate-800 truncate">Vendor Directory</h1>
           </div>
-          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-            {[
-              { key: "vendors", label: "Vendor List" },
-              { key: "pool",    label: "Vendor Pool" },
-            ].map(t => (
-              <button key={t.key} type="button" onClick={() => setMainTab(t.key)}
-                className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${
-                  mainTab === t.key ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                }`}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap sm:justify-end">
+        <div className="flex items-center gap-2 flex-wrap sm:justify-end shrink-0">
           {/* More dropdown — Export / Bulk Upload / Trash */}
           {mainTab === "vendors" && (
             <div className="relative" ref={moreRef}>
               <button type="button" onClick={() => setShowMore(s => !s)}
-                className={`inline-flex h-9 select-none items-center gap-2 rounded-md border px-3.5 text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
+                className={`inline-flex h-8 md:h-9 select-none items-center gap-1.5 md:gap-2 rounded-md border px-2.5 md:px-3.5 text-[11px] md:text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
                   showMore
                     ? "border-indigo-500 bg-indigo-100 text-indigo-950 shadow-inner ring-1 ring-indigo-300/70 focus-visible:ring-indigo-500/45"
                     : "border-slate-400 bg-gradient-to-b from-slate-100 to-slate-200 text-slate-800 shadow-sm hover:border-slate-500 hover:from-slate-50 hover:to-slate-200 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:ring-slate-400/50"
@@ -552,7 +539,7 @@ export default function VendorList() {
 
           {mainTab === "vendors" && canAdd && (
             <button type="button" onClick={openAdd}
-              className="inline-flex h-9 select-none items-center gap-2 rounded-md border border-indigo-700 bg-gradient-to-b from-indigo-600 to-indigo-700 px-3.5 text-xs font-bold text-white shadow-sm transition-all hover:border-indigo-800 hover:from-indigo-500 hover:to-indigo-600 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/55 focus-visible:ring-offset-1">
+              className="inline-flex h-8 md:h-9 select-none items-center gap-1.5 md:gap-2 rounded-md border border-indigo-700 bg-gradient-to-b from-indigo-600 to-indigo-700 px-2.5 md:px-3.5 text-[11px] md:text-xs font-bold text-white shadow-sm transition-all hover:border-indigo-800 hover:from-indigo-500 hover:to-indigo-600 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/55 focus-visible:ring-offset-1">
               <Plus size={14} className="shrink-0" /> Add
             </button>
           )}
@@ -560,7 +547,7 @@ export default function VendorList() {
           {mainTab === "pool" && (
             <div className="relative" ref={poolMoreRef}>
               <button type="button" onClick={() => setPoolMoreOpen(s => !s)}
-                className={`inline-flex h-9 select-none items-center gap-2 rounded-md border px-3.5 text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
+                className={`inline-flex h-8 md:h-9 select-none items-center gap-1.5 md:gap-2 rounded-md border px-2.5 md:px-3.5 text-[11px] md:text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
                   poolMoreOpen
                     ? "border-indigo-500 bg-indigo-100 text-indigo-950 shadow-inner ring-1 ring-indigo-300/70 focus-visible:ring-indigo-500/45"
                     : "border-slate-400 bg-gradient-to-b from-slate-100 to-slate-200 text-slate-800 shadow-sm hover:border-slate-500 hover:from-slate-50 hover:to-slate-200 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:ring-slate-400/50"
@@ -599,16 +586,55 @@ export default function VendorList() {
 
           {mainTab === "pool" && poolCanAdd && (
             <button type="button" onClick={() => vendorPoolRef.current?.openAdd?.()}
-              className="inline-flex h-9 select-none items-center gap-2 rounded-md border border-indigo-700 bg-gradient-to-b from-indigo-600 to-indigo-700 px-3.5 text-xs font-bold text-white shadow-sm transition-all hover:border-indigo-800 hover:from-indigo-500 hover:to-indigo-600 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/55 focus-visible:ring-offset-1">
+              className="inline-flex h-8 md:h-9 select-none items-center gap-1.5 md:gap-2 rounded-md border border-indigo-700 bg-gradient-to-b from-indigo-600 to-indigo-700 px-2.5 md:px-3.5 text-[11px] md:text-xs font-bold text-white shadow-sm transition-all hover:border-indigo-800 hover:from-indigo-500 hover:to-indigo-600 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/55 focus-visible:ring-offset-1">
               <Plus size={14} className="shrink-0" /> Add
             </button>
           )}
         </div>
+        </div>
+
+        <div className="border-t border-slate-100 mt-3" />
+
+        {/* Tabs (desktop) */}
+        <div className="hidden md:flex items-center gap-1 bg-slate-100 rounded-lg p-1 w-fit mt-3">
+          {[
+            { key: "vendors", label: "Vendor List" },
+            { key: "pool",    label: "Vendor Pool" },
+          ].map(t => (
+            <button key={t.key} type="button" onClick={() => setMainTab(t.key)}
+              className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${
+                mainTab === t.key ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              }`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Tabs (mobile) — underline style, vendor count inline on the right */}
+        <div className="flex md:hidden items-center justify-between gap-2 mt-3">
+          <div className="flex items-center gap-4">
+            {[
+              { key: "vendors", label: "Vendor List" },
+              { key: "pool",    label: "Vendor Pool" },
+            ].map(t => (
+              <button key={t.key} type="button" onClick={() => setMainTab(t.key)}
+                className={`pb-1.5 text-sm font-semibold border-b-2 transition-colors ${
+                  mainTab === t.key ? "border-indigo-600 text-slate-800" : "border-transparent text-slate-400"
+                }`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs font-semibold text-slate-400 shrink-0">
+            {vendors.length} {vendors.length === 1 ? "vendor" : "vendors"}
+          </span>
+        </div>
       </div>
 
       {/* Row 2: Search + Filters — also sticky, part of the same header panel */}
-      {mainTab === "vendors" && (
-        <div className="px-3 sm:px-4 lg:px-6 py-3">
+      {mainTab === "vendors" && (<>
+        {/* Desktop */}
+        <div className="hidden md:block px-3 sm:px-4 lg:px-6 py-3">
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
             <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
               <div className="relative min-w-0 flex-1 lg:max-w-md">
@@ -637,11 +663,104 @@ export default function VendorList() {
             </div>
           </div>
         </div>
-      )}
+
+        {/* Mobile — search box + filter-icon button that reveals Name/Entity/Site below */}
+        <div className="md:hidden px-3 sm:px-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+                placeholder="Search vendors"
+                className="w-full pl-9 pr-4 py-2 rounded-md border border-slate-200 text-sm outline-none focus:border-indigo-400 bg-white text-slate-700" />
+            </div>
+            <button type="button" onClick={() => setShowMobileFilters(o => !o)}
+              className={`relative shrink-0 flex items-center justify-center w-9 h-9 rounded-md border transition-colors ${
+                showMobileFilters || nameFilter.length || entityFilter.length || siteFilter.length
+                  ? "border-indigo-400 bg-indigo-50 text-indigo-600" : "border-slate-200 bg-white text-slate-500"
+              }`}>
+              <SlidersHorizontal size={15} />
+              {(nameFilter.length + entityFilter.length + siteFilter.length) > 0 && (
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-indigo-600 text-white text-[8px] font-bold flex items-center justify-center">
+                  {nameFilter.length + entityFilter.length + siteFilter.length}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {(nameFilter.length || entityFilter.length || siteFilter.length) > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {nameFilter.map(v => (
+                <span key={`n-${v}`} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-semibold pl-2.5 pr-1.5 py-1">
+                  {v}
+                  <button type="button" onClick={() => { setNameFilter(nameFilter.filter(x => x !== v)); setPage(1); }} className="hover:text-indigo-900">
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+              {entityFilter.map(v => (
+                <span key={`e-${v}`} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-semibold pl-2.5 pr-1.5 py-1">
+                  {v}
+                  <button type="button" onClick={() => { setEntityFilter(entityFilter.filter(x => x !== v)); setPage(1); }} className="hover:text-indigo-900">
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+              {siteFilter.map(v => (
+                <span key={`s-${v}`} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 text-indigo-700 text-[11px] font-semibold pl-2.5 pr-1.5 py-1">
+                  {v}
+                  <button type="button" onClick={() => { setSiteFilter(siteFilter.filter(x => x !== v)); setPage(1); }} className="hover:text-indigo-900">
+                    <X size={11} />
+                  </button>
+                </span>
+              ))}
+              <button type="button" onClick={() => { setNameFilter([]); setEntityFilter([]); setSiteFilter([]); setPage(1); }}
+                className="text-[11px] font-bold text-slate-400 hover:text-slate-600 px-1">
+                Clear all
+              </button>
+            </div>
+          )}
+
+          {showMobileFilters && (
+            <div className="fixed inset-0 z-50">
+              <div className="absolute inset-0 bg-black/40" onClick={() => setShowMobileFilters(false)} />
+              <div className="absolute bottom-0 left-0 right-0 max-h-[85vh] overflow-y-auto rounded-t-2xl bg-white p-4 shadow-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-bold text-slate-800">Filters</p>
+                  <div className="flex items-center gap-3">
+                    {(nameFilter.length || entityFilter.length || siteFilter.length) ? (
+                      <button onClick={() => { setNameFilter([]); setEntityFilter([]); setSiteFilter([]); setPage(1); }}
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800">
+                        Clear all
+                      </button>
+                    ) : null}
+                    <button type="button" onClick={() => setShowMobileFilters(false)}
+                      className="text-slate-400 hover:text-slate-600 transition-colors">
+                      <X size={18} />
+                    </button>
+                  </div>
+                </div>
+                <VendorMultiFilter variant="block" label="Name" placeholder="All vendors" options={filterOptions.names} selected={nameFilter} onChange={v => { setNameFilter(v); setPage(1); }} />
+                <VendorMultiFilter variant="block" label="Entity" placeholder="All entities" options={filterOptions.entities} selected={entityFilter} onChange={v => { setEntityFilter(v); setPage(1); }} />
+                <VendorMultiFilter variant="block" label="Site" placeholder="All sites" options={filterOptions.sites} selected={siteFilter} onChange={v => { setSiteFilter(v); setPage(1); }} />
+                <div className="flex items-center gap-2 pt-1">
+                  <button type="button" onClick={() => { setNameFilter([]); setEntityFilter([]); setSiteFilter([]); setPage(1); }}
+                    className="flex-1 h-10 rounded-md border border-slate-200 bg-white text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">
+                    Reset
+                  </button>
+                  <button type="button" onClick={() => setShowMobileFilters(false)}
+                    className="flex-1 h-10 rounded-md bg-indigo-600 text-sm font-bold text-white hover:bg-indigo-700 transition-colors">
+                    Apply
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </>)}
 
       </div>
 
-      <div className="flex-1 min-h-0 flex flex-col px-3 sm:px-4 lg:px-6 pt-4 pb-6 w-full overflow-y-auto">
+      <div className="md:flex-1 md:min-h-0 flex flex-col px-3 sm:px-4 lg:px-6 pt-4 pb-6 w-full md:overflow-y-auto">
 
       {/* Vendor Pool tab */}
       {mainTab === "pool" && (
@@ -650,7 +769,7 @@ export default function VendorList() {
 
       {/* Vendor List tab content */}
       {mainTab === "vendors" && (
-      <div className="flex-1 min-h-0 flex flex-col">
+      <div className="md:flex-1 md:min-h-0 flex flex-col">
 
       {/* Bulk Upload Panel */}
       {showBulk && (
@@ -716,14 +835,15 @@ export default function VendorList() {
         </div>
       )}
 
-      {/* Table */}
-      <div className="bg-white rounded-lg border border-slate-100 shadow-sm overflow-hidden flex-1 min-h-0 flex flex-col">
+      {/* Table (desktop) / Card list (mobile) — the white boxed card look is desktop-only,
+          on mobile the cards below already have their own box so this wrapper stays flat */}
+      <div className="md:bg-white md:rounded-lg md:border md:border-slate-100 md:shadow-sm md:overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
         {loading ? (
           <div className="py-16 text-center text-slate-400 text-sm">Loading…</div>
         ) : filtered.length === 0 ? (
           <div className="py-16 text-center text-slate-300 font-bold uppercase tracking-widest text-xs">No vendors found</div>
-        ) : (
-          <div className="flex-1 min-h-0 overflow-auto thin-scroll">
+        ) : (<>
+          <div className="hidden md:block flex-1 min-h-0 overflow-auto thin-scroll">
             <style>{`
               .thin-scroll { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
               .thin-scroll::-webkit-scrollbar { height: 3px; width: 3px; }
@@ -850,7 +970,77 @@ export default function VendorList() {
               </tbody>
             </table>
           </div>
-        )}
+
+          {/* Mobile / tablet card list — shown below `lg`, replaces the table.
+              Flows with the page's own scroll (no forced height) — same as Orders. */}
+          <div className="md:hidden p-3 space-y-3">
+            {paginated.map(v => {
+              const docCount = [v.docAadhaarUrl, v.docPanUrl, v.docGstUrl, v.docMsmeUrl, v.docCancelChequeUrl, v.docCoiUrl, v.docOtherUrl, v.docOther2Url].filter(Boolean).length;
+              const { pct } = computeProfileScore(v);
+              const barColor = pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-500" : "bg-red-500";
+              const textColor = pct >= 80 ? "text-emerald-600" : pct >= 50 ? "text-amber-600" : "text-red-600";
+              return (
+                <div key={v.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <button type="button" onClick={() => setViewVendor(v)}
+                      className="text-left font-bold text-sm text-slate-800 hover:text-indigo-600 transition-colors min-w-0 break-words">
+                      {v.vendorName || "—"}
+                    </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold">Active</span>
+                      <VendorCardMenu
+                        canEdit={canEdit} canDelete={canDelete}
+                        onView={() => setViewVendor(v)}
+                        onEdit={() => openEdit(v)}
+                        onDelete={() => handleDelete(v.id)}
+                        onLog={() => setLogTarget({ entityType: "vendor", entityId: v.id, entityName: v.vendor_name || v.vendorName })}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-mono mt-0.5">{v.vendorCode}</p>
+
+                  <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">GST</p>
+                      <p className="text-slate-700 font-medium truncate">{v.gstin || "—"}</p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Contact Number</p>
+                      <p className="text-slate-700 font-medium truncate">{v.mobile || "—"}</p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">PAN</p>
+                      <p className="text-slate-700 font-medium truncate">{v.pan || "—"}</p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Email</p>
+                      <p className="text-slate-700 font-medium truncate">{v.email || "—"}</p>
+                    </div>
+                    <div className="col-span-2 min-w-0">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Address</p>
+                      <p className="text-slate-700 font-medium break-words">{v.address || "—"}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <FileText size={12} className={docCount > 0 ? "text-indigo-500" : "text-slate-300"} />
+                      <span className={`text-xs ${docCount > 0 ? "text-slate-600 font-medium" : "text-slate-400"}`}>
+                        {docCount}/8 docs attached
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 min-w-0 flex-1 max-w-[110px]">
+                      <span className={`text-xs font-bold tabular-nums shrink-0 ${textColor}`}>{pct}%</span>
+                      <div className="h-1.5 flex-1 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full ${barColor}`} style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>)}
 
         {/* Pagination */}
         {!loading && filtered.length > 0 && (
@@ -919,11 +1109,17 @@ export default function VendorList() {
 
       {/* ── MODAL ── */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 bg-black/40 backdrop-blur-sm">
+          <style>{`
+            .vgrid { display: grid; grid-template-columns: 1fr; }
+            @media screen and (min-width: 768px) {
+              .vgrid { grid-template-columns: 1fr 1fr; }
+            }
+          `}</style>
+          <div className="bg-white md:rounded-2xl shadow-2xl w-full max-w-xl h-full md:h-auto overflow-hidden flex flex-col md:max-h-[90vh]">
 
             {/* Modal header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+            <div className="flex items-center justify-between px-4 md:px-6 py-4 border-b border-slate-100 shrink-0">
               <h2 className="text-base font-bold text-slate-800">{editId ? "Edit Vendor" : "Add Vendor"}</h2>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
                 <X size={18} />
@@ -931,7 +1127,7 @@ export default function VendorList() {
             </div>
 
             {/* Tabs */}
-            <div className="flex border-b border-slate-100 px-6 shrink-0">
+            <div className="flex border-b border-slate-100 px-4 md:px-6 shrink-0">
               {MODAL_TABS.map(t => (
                 <button key={t.key} onClick={() => setTab(t.key)}
                   className={`px-4 py-3 text-xs font-bold uppercase tracking-wider transition-all border-b-2 -mb-px
@@ -942,7 +1138,7 @@ export default function VendorList() {
             </div>
 
             {/* Modal body */}
-            <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="flex-1 overflow-y-auto px-4 md:px-6 py-5">
 
               {/* BASIC TAB */}
               {tab === "basic" && (
@@ -972,7 +1168,7 @@ export default function VendorList() {
                       placeholder="e.g. Ojo Technologies Pvt Ltd" />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="vgrid gap-3">
                     <div>
                       <label className={lbl}>Contact Person Name</label>
                       <input className={inp} value={form.contactPerson}
@@ -1135,7 +1331,7 @@ export default function VendorList() {
 
               {/* BANK TAB */}
               {tab === "bank" && (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="vgrid gap-4">
                   <div className="col-span-2">
                     <label className={lbl}>Bank Name</label>
                     <input className={inp} value={form.bankName}
@@ -1184,7 +1380,7 @@ export default function VendorList() {
               {/* DOCS TAB */}
               {tab === "docs" && (
                 <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="vgrid gap-4">
                     <DocUpload label="Aadhar Card"                  fieldKey="docAadhaar"      form={form} setForm={setForm} />
                     <DocUpload label="PAN Card"                     fieldKey="docPan"          form={form} setForm={setForm} />
                     <DocUpload label="GST Certificate"              fieldKey="docGst"          form={form} setForm={setForm} />
@@ -1242,7 +1438,7 @@ export default function VendorList() {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0">
+            <div className="flex items-center justify-between px-4 md:px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0">
               <div className="flex gap-1.5">
                 {MODAL_TABS.map(t => (
                   <span key={t.key} className={`h-1.5 rounded-full transition-all ${tab === t.key ? "w-5 bg-indigo-600" : "w-1.5 bg-slate-200"}`} />
@@ -1352,9 +1548,9 @@ export default function VendorList() {
       )}
 
       {viewVendor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="flex items-start justify-between gap-4 px-6 py-4 border-b border-slate-100 shrink-0">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 bg-black/40 backdrop-blur-sm">
+          <div className="bg-white md:rounded-2xl shadow-2xl w-full max-w-4xl h-full md:h-auto overflow-hidden flex flex-col md:max-h-[90vh]">
+            <div className="flex items-start justify-between gap-4 px-4 md:px-6 py-4 border-b border-slate-100 shrink-0">
               <div className="flex flex-col gap-0.5 min-w-0">
                 <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
                   <Building2 size={18} className="text-indigo-600 shrink-0" />
@@ -1378,7 +1574,7 @@ export default function VendorList() {
               </button>
             </div>
             
-            <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8 bg-slate-50">
+            <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 space-y-8 bg-slate-50">
               
               {/* Basic Details */}
               <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
@@ -1389,7 +1585,7 @@ export default function VendorList() {
                   <h3 className="text-sm font-bold text-slate-700">Basic Information</h3>
                 </div>
                 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Contact Person</p>
                     <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.contactPerson || "—"}</p>
@@ -1406,19 +1602,19 @@ export default function VendorList() {
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Address</p>
                     <p className="text-sm font-semibold text-slate-700">{viewVendor.address || "—"}</p>
                   </div>
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                  <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">GST NO</p>
-                    <p className="text-sm font-bold text-indigo-700 font-mono break-all sm:break-words">{viewVendor.gstin || "—"}</p>
+                    <p className="text-sm font-bold text-indigo-700 font-mono break-words">{viewVendor.gstin || "—"}</p>
                   </div>
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                  <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">PAN NO</p>
-                    <p className="text-sm font-bold text-indigo-700 font-mono break-all sm:break-words">{viewVendor.pan || "—"}</p>
+                    <p className="text-sm font-bold text-indigo-700 font-mono break-words">{viewVendor.pan || "—"}</p>
                   </div>
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                  <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Aadhar NO</p>
                     <p className="text-sm font-semibold text-slate-700 font-mono break-words">{viewVendor.aadharNo || "—"}</p>
                   </div>
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                  <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">MSME NO</p>
                     <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.msmeNumber || "—"}</p>
                   </div>
@@ -1462,7 +1658,7 @@ export default function VendorList() {
                   <h3 className="text-sm font-bold text-slate-700">Bank Details</h3>
                 </div>
                 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="col-span-2 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bank Name</p>
                     <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.bankName || "—"}</p>
@@ -1473,13 +1669,13 @@ export default function VendorList() {
                   </div>
                   <div className="col-span-2 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Account No</p>
-                    <p className="text-sm font-bold text-emerald-700 font-mono break-all sm:break-words">{viewVendor.accountNumber || "—"}</p>
+                    <p className="text-sm font-bold text-emerald-700 font-mono break-all md:break-words">{viewVendor.accountNumber || "—"}</p>
                   </div>
-                  <div className="col-span-2 sm:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                  <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">IFSC Code</p>
-                    <p className="text-sm font-bold text-emerald-700 font-mono break-all sm:break-words">{viewVendor.ifscCode || "—"}</p>
+                    <p className="text-sm font-bold text-emerald-700 font-mono break-all md:break-words">{viewVendor.ifscCode || "—"}</p>
                   </div>
-                  <div className="col-span-2 sm:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                  <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Branch</p>
                     <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.bankBranch || "—"}</p>
                   </div>
@@ -1576,7 +1772,43 @@ export default function VendorList() {
   );
 }
 
-function VendorMultiFilter({ label, options, selected, onChange }) {
+function VendorCardMenu({ canEdit, canDelete, onView, onEdit, onDelete, onLog }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  const item = (onClick, icon, label, danger = false) => (
+    <button type="button" onClick={() => { setOpen(false); onClick(); }}
+      className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-left transition-colors ${danger ? "text-red-600 hover:bg-red-50" : "text-slate-600 hover:bg-slate-50"}`}>
+      {icon} {label}
+    </button>
+  );
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all">
+        <MoreVertical size={16} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-20 w-44 bg-white border border-slate-200 rounded-xl shadow-xl py-1">
+          {item(onView, <Eye size={13} />, "View Details")}
+          {canEdit && item(onEdit, <Pencil size={13} />, "Edit")}
+          {item(onLog, <History size={13} />, "Activity Log")}
+          {canDelete && item(onDelete, <Trash2 size={13} />, "Delete", true)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VendorMultiFilter({ label, options, selected, onChange, variant = "pill", placeholder }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef(null);
@@ -1595,6 +1827,59 @@ function VendorMultiFilter({ label, options, selected, onChange }) {
 
   const filtered = query ? options.filter(o => String(o).toLowerCase().includes(query.toLowerCase())) : options;
 
+  const dropdown = (
+    <div className={variant === "block" ? "mt-1.5 rounded-md border border-slate-200 bg-white shadow-sm" : "absolute right-0 z-30 mt-2 w-64 rounded-md border border-slate-200 bg-white shadow-2xl"}>
+      <div className="border-b border-slate-100 p-2">
+        <div className="flex items-center gap-2 rounded border border-slate-200 px-2">
+          <Search size={12} className="text-slate-400" />
+          <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
+            placeholder={`Search ${label.toLowerCase()}...`}
+            className="h-8 w-full bg-transparent text-xs outline-none placeholder:text-slate-400" />
+        </div>
+      </div>
+      <div className="max-h-60 overflow-y-auto py-1">
+        {filtered.length === 0 ? (
+          <p className="px-3 py-4 text-center text-xs text-slate-400">No options</p>
+        ) : (
+          filtered.map(opt => {
+            const checked = selected.includes(opt);
+            return (
+              <button key={opt} onClick={() => toggle(opt)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50">
+                <span className={`grid h-4 w-4 place-items-center rounded border ${checked ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white"}`}>
+                  {checked && <span className="text-[10px] font-black leading-none">✓</span>}
+                </span>
+                <span className="truncate">{opt}</span>
+              </button>
+            );
+          })
+        )}
+      </div>
+      {selected.length > 0 && (
+        <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2">
+          <span className="text-[11px] font-bold text-slate-500">{selected.length} selected</span>
+          <button onClick={() => onChange([])} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800">Clear</button>
+        </div>
+      )}
+    </div>
+  );
+
+  if (variant === "block") {
+    return (
+      <div ref={ref} className="relative">
+        <p className="text-xs font-semibold text-slate-500 mb-1">{label}</p>
+        <button type="button" onClick={() => setOpen(o => !o)}
+          className={`w-full flex items-center justify-between gap-2 rounded-md border px-3 py-2.5 text-sm text-left transition ${
+            open ? "border-indigo-400 ring-1 ring-indigo-400/40" : "border-slate-200"
+          } ${selected.length ? "text-slate-800 font-medium" : "text-slate-400"}`}>
+          <span className="truncate">{selected.length > 0 ? selected.join(", ") : (placeholder || `All ${label.toLowerCase()}`)}</span>
+          <ChevronDown size={14} className={`shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+        </button>
+        {open && dropdown}
+      </div>
+    );
+  }
+
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen(o => !o)}
@@ -1605,42 +1890,7 @@ function VendorMultiFilter({ label, options, selected, onChange }) {
         )}
         <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
-      {open && (
-        <div className="absolute right-0 z-30 mt-2 w-64 rounded-md border border-slate-200 bg-white shadow-2xl">
-          <div className="border-b border-slate-100 p-2">
-            <div className="flex items-center gap-2 rounded border border-slate-200 px-2">
-              <Search size={12} className="text-slate-400" />
-              <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
-                placeholder={`Search ${label.toLowerCase()}...`}
-                className="h-8 w-full bg-transparent text-xs outline-none placeholder:text-slate-400" />
-            </div>
-          </div>
-          <div className="max-h-60 overflow-y-auto py-1">
-            {filtered.length === 0 ? (
-              <p className="px-3 py-4 text-center text-xs text-slate-400">No options</p>
-            ) : (
-              filtered.map(opt => {
-                const checked = selected.includes(opt);
-                return (
-                  <button key={opt} onClick={() => toggle(opt)}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-slate-700 hover:bg-slate-50">
-                    <span className={`grid h-4 w-4 place-items-center rounded border ${checked ? "border-indigo-600 bg-indigo-600 text-white" : "border-slate-300 bg-white"}`}>
-                      {checked && <span className="text-[10px] font-black leading-none">✓</span>}
-                    </span>
-                    <span className="truncate">{opt}</span>
-                  </button>
-                );
-              })
-            )}
-          </div>
-          {selected.length > 0 && (
-            <div className="flex items-center justify-between border-t border-slate-100 px-3 py-2">
-              <span className="text-[11px] font-bold text-slate-500">{selected.length} selected</span>
-              <button onClick={() => onChange([])} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800">Clear</button>
-            </div>
-          )}
-        </div>
-      )}
+      {open && dropdown}
     </div>
   );
 }

@@ -1,9 +1,9 @@
 import React from "react";
-import { LayoutDashboard, ClipboardList, ShoppingBag, Package, Building2 } from "lucide-react";
+import { LayoutDashboard, Users, ShoppingBag, Package, Building2 } from "lucide-react";
 
 const NAV = [
   { id: "global_dashboard",          label: "Home",         icon: LayoutDashboard },
-  { id: "master_data__orders",        label: "Records",      icon: ClipboardList   },
+  { id: "proc_setup__vendor_list",    label: "Vendor",       icon: Users           },
   { id: "create__order",              label: "Procurement",  icon: ShoppingBag     },
   { id: "inventory__stock_inventory", label: "Inventory",    icon: Package         },
   { id: "organisation",               label: "Organisation", icon: Building2       },
@@ -12,8 +12,8 @@ const NAV = [
 function isActive(navId, activeTab) {
   if (navId === "global_dashboard")
     return activeTab === "global_dashboard" || activeTab === "dashboard";
-  if (navId === "master_data__orders")
-    return activeTab.startsWith("master_data") || activeTab === "historical_data" || activeTab === "audit";
+  if (navId === "proc_setup__vendor_list")
+    return activeTab === "proc_setup__vendor_list";
   if (navId === "create__order")
     return activeTab.startsWith("create") || activeTab.startsWith("procurement") ||
            activeTab === "approvals" || activeTab.startsWith("approvals");
