@@ -57,6 +57,7 @@ const masterDataRows = [
   { id: "master_data__orders", label: "Orders Master" },
   { id: "master_data__intakes", label: "Intakes Master" },
   { id: "master_data__clauses", label: "Clauses Master" },
+  { id: "master_data__finance", label: "Finance Master Data" },
 ];
 
 const setupRows = [
@@ -122,10 +123,10 @@ const projectSections = [
     label: "Finance",
     icon: Wallet,
     rows: [
-      { id: "finance__payment_request", label: "Payment Request", description: "Payment requests" },
-      { id: "finance__site_expense", label: "Site Expense", description: "Site expenses" },
+      { id: "finance__payments_track", label: "Payments Track", description: "Invoices & bills tracking" },
+      { id: "finance__site_expenses", label: "Site Expenses", description: "Site expense bills" },
       { id: "finance__petty_cash", label: "Petty Cash", description: "Petty cash entries" },
-      { id: "finance__bills_documents", label: "Bills / Documents", description: "Bills and documents" },
+      { id: "finance__reimbursement", label: "Reimbursement", description: "Reimbursement claims" },
     ],
   },
   {

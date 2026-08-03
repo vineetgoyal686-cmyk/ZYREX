@@ -35,6 +35,7 @@ const ROUTE_TO_TAB = {
   "/master-data/products":        "master_data__products",
   "/master-data/orders":          "master_data__orders",
   "/master-data/intakes":         "master_data__intakes",
+  "/master-data/finance":         "master_data__finance",
   "/organisation/structure":      "organisation__structure",
   "/organisation/sop":            "organisation__sop",
 };
@@ -55,10 +56,10 @@ const PROJECT_SUB_TO_TAB = {
   "/operations/work":             "operations__work_activity",
   "/operations/attendance":       "operations__staff_attendance",
   "/operations/manpower":         "operations__manpower",
-  "/finance/payment":             "finance__payment_request",
-  "/finance/expenses":            "finance__site_expense",
+  "/finance/payments-track":      "finance__payments_track",
+  "/finance/site-expenses":       "finance__site_expenses",
   "/finance/petty-cash":          "finance__petty_cash",
-  "/finance/bills":               "finance__bills_documents",
+  "/finance/reimbursement":       "finance__reimbursement",
   "/confidential/loa":            "confidential__loa",
   "/confidential/boq":            "confidential__boq",
   "/confidential/drawings":       "confidential__drawings",
@@ -104,9 +105,8 @@ const LOA            = lazy(() => import("./pages/confidential/LOA"));
 const BOQ            = lazy(() => import("./pages/confidential/BOQ"));
 const Drawings       = lazy(() => import("./pages/confidential/Drawings"));
 const RABills        = lazy(() => import("./pages/confidential/RABills"));
-const SiteExpense    = lazy(() => import("./pages/Finance/SiteExpense"));
-const PettyCash      = lazy(() => import("./pages/Finance/PettyCash"));
-const BillsDocs      = lazy(() => import("./pages/Finance/BillsDocs"));
+const PaymentsTrack  = lazy(() => import("./pages/Finance/PaymentsTrack"));
+const SiteExpenses   = lazy(() => import("./pages/Finance/SiteExpenses"));
 const ExecutionPlan  = lazy(() => import("./pages/WorkActivity/ExecutionPlan"));
 const DailyManpower  = lazy(() => import("./pages/Manpower/DailyManpower"));
 const ReceivedRecord = lazy(() => import("./pages/Store/ReceivedRecord"));
@@ -233,6 +233,8 @@ function AppLayout({
 
     if (activeTab === "master_data__products")
       return <ComingSoon label="PRODUCTS MASTER" />;
+    if (activeTab === "master_data__finance")
+      return <ComingSoon label="FINANCE MASTER DATA" />;
     if (activeTab === "audit") return <ComingSoon label="Audit" />;
 
     // Project-specific tabs
@@ -254,15 +256,15 @@ function AppLayout({
       case "procurement__orders":             return <GlobalCreateOrder project={selectedProject} editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
       case "procurement__intake":             return <IntakeList project={selectedProject} />;
       case "operations__staff_attendance":     return <Attendance selectedProject={selectedProject} />;
+      case "finance__payments_track":         return <PaymentsTrack project={selectedProject} />;
+      case "finance__site_expenses":          return <SiteExpenses project={selectedProject} />;
+      case "finance__petty_cash":
+      case "finance__reimbursement":
       case "inventory__received_material_grn":
       case "inventory__stock_inventory":
       case "inventory__material_issue":
       case "operations__work_activity":
       case "operations__manpower":
-      case "finance__payment_request":
-      case "finance__site_expense":
-      case "finance__petty_cash":
-      case "finance__bills_documents":
       case "confidential__loa":
       case "confidential__boq":
       case "confidential__drawings":
@@ -288,6 +290,8 @@ function AppLayout({
          "procurement__intake","master_data__intakes","create__intake",
          "historical_data","approvals"].includes(activeTab))
       return "pt-0 px-0 pb-0 bg-[#f0f2f5]";
+    if (["finance__payments_track","finance__site_expenses"].includes(activeTab))
+      return "pt-0 px-0 pb-0";
     return "pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4";
   })();
 

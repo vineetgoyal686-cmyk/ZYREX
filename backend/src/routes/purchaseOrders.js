@@ -2334,7 +2334,12 @@ router.get("/:id/preview", async (req, res) => {
   try {
     const { cleanOrder, cleanItems, comp, vend, site, contacts, issuedByRaw, currentProfileSignature } = await loadOrderForRender(req.params.id);
 
-    const cacheKey = `${cleanOrder.id}__${cleanOrder.updated_at || cleanOrder.created_at || ""}__${currentProfileSignature || ""}`;
+    // Keyed on actual content (not updated_at) so direct DB edits that don't
+    // bump updated_at — e.g. manual Supabase fixes — still invalidate the cache.
+    const cacheKey = crypto
+      .createHash("sha1")
+      .update(JSON.stringify({ cleanOrder, cleanItems, comp, vend, site, contacts, issuedByRaw, currentProfileSignature }))
+      .digest("hex");
     let html = previewHtmlCache.get(cacheKey);
 
     if (!html) {
