@@ -180,6 +180,7 @@ export default function VendorList() {
   const [bulkRows, setBulkRows]   = useState([]);
   const [bulkFile, setBulkFile]   = useState("");
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
   const [showMore, setShowMore]     = useState(false);
   const [poolMoreOpen, setPoolMoreOpen] = useState(false);
   const vendorPoolRef               = useRef(null);
@@ -419,6 +420,7 @@ export default function VendorList() {
       const data = XLSX.utils.sheet_to_json(ws);
       const valid = data.filter(r => r["Vendor Firm Name"]);
       setBulkRows(valid);
+      setBulkResult(null);
     };
     reader.readAsArrayBuffer(file);
     e.target.value = "";
@@ -442,9 +444,10 @@ export default function VendorList() {
       if (!res.ok) throw new Error(data.error || "Upload failed");
       const parts = [`${data.inserted} vendors uploaded`];
       if (data.updated > 0) parts.push(`${data.updated} existing vendors updated`);
-      if (data.skipped > 0) parts.push(`${data.skipped} skipped (no changes)`);
+      if (data.skipped > 0) parts.push(`${data.skipped} skipped`);
       showToast(parts.join(", "));
-      setShowBulk(false); setBulkRows([]); setBulkFile("");
+      setBulkResult({ inserted: data.inserted, updated: data.updated, skipped: data.skipped, details: data.details || [] });
+      setBulkRows([]); setBulkFile("");
       fetchVendors();
     } catch (err) { showToast(err.message, "error"); }
     setBulkSaving(false);
@@ -779,7 +782,7 @@ export default function VendorList() {
         <div className="shrink-0 bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-slate-700">Bulk Upload Vendors</h3>
-            <button onClick={() => { setShowBulk(false); setBulkRows([]); setBulkFile(""); }}
+            <button onClick={() => { setShowBulk(false); setBulkRows([]); setBulkFile(""); setBulkResult(null); }}
               className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -833,6 +836,31 @@ export default function VendorList() {
                 <Upload size={14} />
                 {bulkSaving ? "Uploading…" : `Upload ${bulkRows.length} Vendors`}
               </button>
+            </div>
+          )}
+
+          {/* Result report — per-vendor: inserted / updated (with fields filled) / skipped (with reason) */}
+          {bulkResult && (
+            <div className="mt-4">
+              <p className="text-xs font-bold text-slate-600 mb-2">
+                {bulkResult.inserted} inserted &middot; {bulkResult.updated} updated &middot; {bulkResult.skipped} skipped
+              </p>
+              <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-100 divide-y divide-slate-50">
+                {bulkResult.details.map((d, i) => (
+                  <div key={i} className="flex items-start gap-3 px-4 py-2.5 text-xs">
+                    <span className={`shrink-0 px-1.5 py-0.5 rounded font-bold uppercase text-[10px] ${
+                      d.status === "updated" ? "bg-emerald-50 text-emerald-600" :
+                      d.status === "inserted" ? "bg-indigo-50 text-indigo-600" :
+                      "bg-slate-100 text-slate-500"}`}>
+                      {d.status}
+                    </span>
+                    <div className="min-w-0">
+                      <span className="font-semibold text-slate-700">{d.vendor}</span>
+                      <span className="text-slate-400"> — {d.reason}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

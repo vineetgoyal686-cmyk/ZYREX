@@ -1005,17 +1005,26 @@ router.post("/vendors/bulk", async (req, res) => {
     };
 
     const seenInBatch = new Set();
-    const patchedInBatch = new Set();
     let skipped = 0;
-    let updated = 0;
     const records = [];
-    const updates = [];
+    const details = [];
+    // Accumulate all rows targeting the same existing vendor (e.g. one row per
+    // site/company code) into a single patch, instead of only honoring the first.
+    const pendingByVendorId = new Map(); // id -> { vendorName, patch, changedFields: [] }
+
+    const FIELD_LABELS = {
+      email: "Email", contact_person: "Contact Person", mobile: "Mobile",
+      gstin: "GSTIN", pan: "PAN", aadhar_no: "Aadhar No", msme_number: "MSME Number",
+      bank_name: "Bank Name", account_holder: "Account Holder", account_number: "Account Number",
+      ifsc_code: "IFSC", bank_branch: "Bank Branch", bank_city: "Bank City",
+      bank_state: "Bank State", address: "Address",
+    };
 
     for (const r of rows) {
       const name  = (r["Vendor Firm Name"] || "").trim();
       const gstin = (r["GST No"] || "").trim().toUpperCase();
       const pan   = (r["PAN No"] || "").trim().toUpperCase();
-      if (!name) { skipped++; continue; }
+      if (!name) { skipped++; details.push({ vendor: "(blank row)", status: "skipped", reason: "Missing vendor name" }); continue; }
 
       const nameKey = name.toLowerCase();
       const existing = byName.get(nameKey) || (gstin && byGstin.get(gstin)) || (pan && byPan.get(pan));
@@ -1027,48 +1036,48 @@ router.post("/vendors/bulk", async (req, res) => {
 
       if (existing) {
         // Matched an existing vendor: fill in blank fields only, never overwrite data
-        // that's already there. Company/site codes are merged (union), never replaced.
-        if (patchedInBatch.has(existing.id)) { skipped++; continue; }
-
-        const fillIfBlank = (col, val) => (!existing[col] && val ? { [col]: val } : {});
-        const patch = {
-          ...fillIfBlank("email", r["Email"]),
-          ...fillIfBlank("contact_person", r["Contact Person Name"]),
-          ...fillIfBlank("mobile", r["Contact Person Number"]),
-          ...fillIfBlank("gstin", r["GST No"]),
-          ...fillIfBlank("pan", r["PAN No"]),
-          ...fillIfBlank("aadhar_no", r["Aadhar No"]),
-          ...fillIfBlank("msme_number", r["MSME Number"]),
-          ...fillIfBlank("bank_name", r["Bank Name"]),
-          ...fillIfBlank("account_holder", r["Account Holder"]),
-          ...fillIfBlank("account_number", r["Account Number"]),
-          ...fillIfBlank("ifsc_code", r["Bank IFSC"]),
-          ...fillIfBlank("bank_branch", r["Bank Branch"]),
-          ...fillIfBlank("bank_city", r["Bank City"]),
-          ...fillIfBlank("bank_state", r["Bank State"]),
-          ...fillIfBlank("address", r["Address"]),
-        };
-
-        const mergedCompanyCodes = [...new Set([...parseArr(existing.company_codes), ...incomingCompanyCodes])];
-        if (mergedCompanyCodes.length !== parseArr(existing.company_codes).length) {
-          patch.company_codes = JSON.stringify(mergedCompanyCodes);
-        }
-        const mergedSiteCodes = [...new Set([...parseArr(existing.site_codes), ...incomingSiteCodes])];
-        if (mergedSiteCodes.length !== parseArr(existing.site_codes).length) {
-          patch.site_codes = JSON.stringify(mergedSiteCodes);
+        // that's already there. Company/site codes are merged (union) across ALL rows
+        // for this vendor in the batch, so multiple rows (e.g. per site) all contribute.
+        let acc = pendingByVendorId.get(existing.id);
+        if (!acc) {
+          acc = {
+            vendorName: existing.vendor_name, patch: {}, changedFields: [],
+            companyCodes: parseArr(existing.company_codes), siteCodes: parseArr(existing.site_codes),
+          };
+          pendingByVendorId.set(existing.id, acc);
         }
 
-        if (Object.keys(patch).length > 0) {
-          updates.push({ id: existing.id, patch });
-          patchedInBatch.add(existing.id);
-          updated++;
-        } else {
-          skipped++;
+        for (const [col, val] of [
+          ["email", r["Email"]], ["contact_person", r["Contact Person Name"]], ["mobile", r["Contact Person Number"]],
+          ["gstin", r["GST No"]], ["pan", r["PAN No"]], ["aadhar_no", r["Aadhar No"]], ["msme_number", r["MSME Number"]],
+          ["bank_name", r["Bank Name"]], ["account_holder", r["Account Holder"]], ["account_number", r["Account Number"]],
+          ["ifsc_code", r["Bank IFSC"]], ["bank_branch", r["Bank Branch"]], ["bank_city", r["Bank City"]],
+          ["bank_state", r["Bank State"]], ["address", r["Address"]],
+        ]) {
+          const currentVal = acc.patch[col] !== undefined ? acc.patch[col] : existing[col];
+          if (!currentVal && val) { acc.patch[col] = val; acc.changedFields.push(FIELD_LABELS[col]); }
+        }
+
+        const newCompanyCodes = incomingCompanyCodes.filter(c => !acc.companyCodes.includes(c));
+        if (newCompanyCodes.length) {
+          acc.companyCodes = [...acc.companyCodes, ...newCompanyCodes];
+          acc.patch.company_codes = JSON.stringify(acc.companyCodes);
+          acc.changedFields.push(`Company Code: +${newCompanyCodes.join(", ")}`);
+        }
+        const newSiteCodes = incomingSiteCodes.filter(c => !acc.siteCodes.includes(c));
+        if (newSiteCodes.length) {
+          acc.siteCodes = [...acc.siteCodes, ...newSiteCodes];
+          acc.patch.site_codes = JSON.stringify(acc.siteCodes);
+          acc.changedFields.push(`Site Code: +${newSiteCodes.join(", ")}`);
         }
         continue;
       }
 
-      if (seenInBatch.has(nameKey)) { skipped++; continue; }
+      if (seenInBatch.has(nameKey)) {
+        skipped++;
+        details.push({ vendor: name, status: "skipped", reason: "Duplicate row (new vendor already queued in this file)" });
+        continue;
+      }
       seenInBatch.add(nameKey);
 
       records.push({
@@ -1094,7 +1103,20 @@ router.post("/vendors/bulk", async (req, res) => {
         created_by_id:   req.body.createdById        || null,
         created_by_name: req.body.createdByName      || "Bulk Upload",
       });
+      details.push({ vendor: name, status: "inserted", reason: "New vendor" });
     }
+
+    const updates = [];
+    for (const [vendorId, acc] of pendingByVendorId.entries()) {
+      if (Object.keys(acc.patch).length > 0) {
+        updates.push({ id: vendorId, patch: acc.patch });
+        details.push({ vendor: acc.vendorName, status: "updated", reason: `Filled: ${acc.changedFields.join(", ")}` });
+      } else {
+        skipped++;
+        details.push({ vendor: acc.vendorName, status: "skipped", reason: "No missing data - already up to date" });
+      }
+    }
+    const updated = updates.length;
 
     if (records.length) {
       const { error } = await supabase.schema("procurement").from("vendors").insert(records);
@@ -1112,7 +1134,7 @@ router.post("/vendors/bulk", async (req, res) => {
     }
 
     cache.bust("vendors");
-    res.json({ success: true, inserted: records.length, updated, skipped });
+    res.json({ success: true, inserted: records.length, updated, skipped, details });
   } catch (err) {
     console.error("Vendor bulk error:", err.message);
     res.status(500).json({ error: err.message });
