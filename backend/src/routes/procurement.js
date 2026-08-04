@@ -987,19 +987,29 @@ router.post("/vendors/bulk", async (req, res) => {
   try {
     const { rows } = req.body;
     if (!rows?.length) return res.status(400).json({ error: "No rows provided" });
-    // Pre-fetch existing for code-numbering AND dedupe
+    // Pre-fetch existing full rows for code-numbering, dedupe, AND fill-missing-data matching
     const { data: existingV } = await supabase.schema("procurement").from("vendors")
-      .select("vendor_code, vendor_name, gstin, pan");
+      .select("id, vendor_code, vendor_name, gstin, pan, email, contact_person, mobile, aadhar_no, " +
+               "msme_number, bank_name, account_holder, account_number, ifsc_code, bank_branch, " +
+               "bank_city, bank_state, address, company_codes, site_codes");
     const existingNums = (existingV || []).map(r => parseInt((r.vendor_code || "").replace("VEN-", "")) || 0);
     let nextNum = (existingNums.length ? Math.max(...existingNums) : 0) + 1;
 
-    const nameSet  = new Set((existingV || []).map(r => (r.vendor_name || "").trim().toLowerCase()).filter(Boolean));
-    const gstinSet = new Set((existingV || []).map(r => (r.gstin || "").trim().toUpperCase()).filter(Boolean));
-    const panSet   = new Set((existingV || []).map(r => (r.pan   || "").trim().toUpperCase()).filter(Boolean));
+    const byName  = new Map((existingV || []).map(r => [(r.vendor_name || "").trim().toLowerCase(), r]).filter(([k]) => k));
+    const byGstin = new Map((existingV || []).map(r => [(r.gstin || "").trim().toUpperCase(), r]).filter(([k]) => k));
+    const byPan   = new Map((existingV || []).map(r => [(r.pan   || "").trim().toUpperCase(), r]).filter(([k]) => k));
+
+    const parseArr = (val) => {
+      if (Array.isArray(val)) return val;
+      try { const p = JSON.parse(val || "[]"); return Array.isArray(p) ? p : []; } catch { return []; }
+    };
 
     const seenInBatch = new Set();
+    const patchedInBatch = new Set();
     let skipped = 0;
+    let updated = 0;
     const records = [];
+    const updates = [];
 
     for (const r of rows) {
       const name  = (r["Vendor Firm Name"] || "").trim();
@@ -1008,14 +1018,59 @@ router.post("/vendors/bulk", async (req, res) => {
       if (!name) { skipped++; continue; }
 
       const nameKey = name.toLowerCase();
-      if (nameSet.has(nameKey))               { skipped++; continue; }
-      if (gstin && gstinSet.has(gstin))       { skipped++; continue; }
-      if (pan   && panSet.has(pan))           { skipped++; continue; }
-      if (seenInBatch.has(nameKey))           { skipped++; continue; }
-      seenInBatch.add(nameKey);
+      const existing = byName.get(nameKey) || (gstin && byGstin.get(gstin)) || (pan && byPan.get(pan));
 
       const siteCodes = r["Site Codes"] || r["Site Code"] || r["siteCodes"] || r["siteCode"] || "";
       const companyCodes = r["Company Codes"] || r["Company Code"] || r["companyCodes"] || r["companyCode"] || "";
+      const incomingCompanyCodes = companyCodes.toString().split(",").map(cc => cc.trim()).filter(Boolean);
+      const incomingSiteCodes = siteCodes.toString().split(",").map(sc => sc.trim()).filter(Boolean);
+
+      if (existing) {
+        // Matched an existing vendor: fill in blank fields only, never overwrite data
+        // that's already there. Company/site codes are merged (union), never replaced.
+        if (patchedInBatch.has(existing.id)) { skipped++; continue; }
+
+        const fillIfBlank = (col, val) => (!existing[col] && val ? { [col]: val } : {});
+        const patch = {
+          ...fillIfBlank("email", r["Email"]),
+          ...fillIfBlank("contact_person", r["Contact Person Name"]),
+          ...fillIfBlank("mobile", r["Contact Person Number"]),
+          ...fillIfBlank("gstin", r["GST No"]),
+          ...fillIfBlank("pan", r["PAN No"]),
+          ...fillIfBlank("aadhar_no", r["Aadhar No"]),
+          ...fillIfBlank("msme_number", r["MSME Number"]),
+          ...fillIfBlank("bank_name", r["Bank Name"]),
+          ...fillIfBlank("account_holder", r["Account Holder"]),
+          ...fillIfBlank("account_number", r["Account Number"]),
+          ...fillIfBlank("ifsc_code", r["Bank IFSC"]),
+          ...fillIfBlank("bank_branch", r["Bank Branch"]),
+          ...fillIfBlank("bank_city", r["Bank City"]),
+          ...fillIfBlank("bank_state", r["Bank State"]),
+          ...fillIfBlank("address", r["Address"]),
+        };
+
+        const mergedCompanyCodes = [...new Set([...parseArr(existing.company_codes), ...incomingCompanyCodes])];
+        if (mergedCompanyCodes.length !== parseArr(existing.company_codes).length) {
+          patch.company_codes = JSON.stringify(mergedCompanyCodes);
+        }
+        const mergedSiteCodes = [...new Set([...parseArr(existing.site_codes), ...incomingSiteCodes])];
+        if (mergedSiteCodes.length !== parseArr(existing.site_codes).length) {
+          patch.site_codes = JSON.stringify(mergedSiteCodes);
+        }
+
+        if (Object.keys(patch).length > 0) {
+          updates.push({ id: existing.id, patch });
+          patchedInBatch.add(existing.id);
+          updated++;
+        } else {
+          skipped++;
+        }
+        continue;
+      }
+
+      if (seenInBatch.has(nameKey)) { skipped++; continue; }
+      seenInBatch.add(nameKey);
+
       records.push({
         vendor_code:     `VEN-${String(nextNum++).padStart(3, "0")}`,
         vendor_name:     name,
@@ -1034,18 +1089,30 @@ router.post("/vendors/bulk", async (req, res) => {
         bank_city:       r["Bank City"]              || "",
         bank_state:      r["Bank State"]             || "",
         address:         r["Address"]                || "",
-        company_codes:   JSON.stringify(companyCodes.toString().split(",").map(cc => cc.trim()).filter(Boolean)),
-        site_codes:      JSON.stringify(siteCodes.toString().split(",").map(sc => sc.trim()).filter(Boolean)),
+        company_codes:   JSON.stringify(incomingCompanyCodes),
+        site_codes:      JSON.stringify(incomingSiteCodes),
         created_by_id:   req.body.createdById        || null,
         created_by_name: req.body.createdByName      || "Bulk Upload",
       });
     }
 
-    if (!records.length) return res.json({ success: true, inserted: 0, skipped });
-    const { error } = await supabase.schema("procurement").from("vendors").insert(records);
-    if (error) throw error;
+    if (records.length) {
+      const { error } = await supabase.schema("procurement").from("vendors").insert(records);
+      if (error) throw error;
+    }
+
+    if (updates.length) {
+      const CHUNK = 20;
+      for (let i = 0; i < updates.length; i += CHUNK) {
+        const chunk = updates.slice(i, i + CHUNK);
+        await Promise.all(chunk.map(({ id, patch }) =>
+          supabase.schema("procurement").from("vendors").update(patch).eq("id", id)
+        ));
+      }
+    }
+
     cache.bust("vendors");
-    res.json({ success: true, inserted: records.length, skipped });
+    res.json({ success: true, inserted: records.length, updated, skipped });
   } catch (err) {
     console.error("Vendor bulk error:", err.message);
     res.status(500).json({ error: err.message });

@@ -3275,7 +3275,7 @@ router.post("/:id/issue-action", async (req, res) => {
     }
 
     const { data: order } = await supabase.schema("procurement").from("purchase_orders")
-      .select("status, snapshot, totals, order_number, order_type, site_id")
+      .select("status, snapshot, totals, order_number, order_type, site_id, vendor_id")
       .eq("id", req.params.id).single();
     if (!order || !["Pending Issue", "To Issue"].includes(order.status)) {
       return res.status(400).json({ error: "Order is not in Pending Issue state" });
@@ -3294,7 +3294,47 @@ router.post("/:id/issue-action", async (req, res) => {
       ...(comment ? { comments: comment } : {}),
     });
 
-    const updatePayload = { status: newStatus, snapshot: { ...snap, activity_log: actLog }, updated_at: now };
+    // On final Issue, refresh the frozen vendor snapshot with the latest Vendor Master
+    // data (bank details etc.) so the snapshot freezes with current info, not stale data
+    // from whenever the order was last saved. Falls back to the existing snapshot on any
+    // lookup failure so the issue action never fails because of this.
+    let vendorSnap = snap.vendor;
+    if (action === "issue" && order.vendor_id) {
+      try {
+        const { data: liveVendor } = await supabase.schema("procurement").from("vendors")
+          .select("*").eq("id", order.vendor_id).maybeSingle();
+        if (liveVendor) {
+          vendorSnap = {
+            ...snap.vendor,
+            vendorName: liveVendor.vendor_name || snap.vendor?.vendorName,
+            address: liveVendor.address || snap.vendor?.address,
+            bankName: liveVendor.bank_name || "",
+            bank_name: liveVendor.bank_name || "",
+            ifscCode: liveVendor.ifsc_code || "",
+            ifsc_code: liveVendor.ifsc_code || "",
+            accountNumber: liveVendor.account_number || "",
+            account_number: liveVendor.account_number || "",
+            accountHolder: liveVendor.account_holder || "",
+            account_holder: liveVendor.account_holder || "",
+            beneficiaryName: liveVendor.account_holder || liveVendor.vendor_name || snap.vendor?.beneficiaryName,
+            bankBranch: liveVendor.bank_branch || snap.vendor?.bankBranch,
+            bankCity: liveVendor.bank_city || snap.vendor?.bankCity,
+            bankState: liveVendor.bank_state || snap.vendor?.bankState,
+            gstin: liveVendor.gstin || snap.vendor?.gstin,
+            pan: liveVendor.pan || snap.vendor?.pan,
+            msme: liveVendor.msme_number || snap.vendor?.msme,
+            msmeNumber: liveVendor.msme_number || snap.vendor?.msmeNumber,
+            contactPerson: liveVendor.contact_person || snap.vendor?.contactPerson,
+            mobile: liveVendor.mobile || snap.vendor?.mobile,
+            email: liveVendor.email || snap.vendor?.email,
+          };
+        }
+      } catch (vendErr) {
+        console.error("Vendor snapshot refresh on issue failed:", vendErr.message);
+      }
+    }
+
+    const updatePayload = { status: newStatus, snapshot: { ...snap, vendor: vendorSnap, activity_log: actLog }, updated_at: now };
 
     if (action === "issue") {
       const issuedBy = {
