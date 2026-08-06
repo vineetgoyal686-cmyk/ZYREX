@@ -15,6 +15,7 @@ const emptyForm = {
   gstin: "", pan: "", aadharNo: "", msmeNumber: "",
   bankName: "", accountHolder: "", accountNumber: "", ifscCode: "",
   bankBranch: "", bankCity: "", bankState: "", address: "",
+  businessDescription: "", firmType: "", partnerType: "Seller",
   companyCodes: [], siteCodes: [],
   logo: null, logoPreview: "",
   docGst: null, docPan: null, docAadhaar: null, docCoi: null,
@@ -22,7 +23,16 @@ const emptyForm = {
 };
 
 const inp = "w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-50 text-slate-700 transition-all";
+const sel = "w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-50 text-slate-700 transition-all bg-white appearance-none";
 const lbl = "block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider";
+
+const FIRM_TYPES = [
+  "Proprietorship", "Unregistered Business", "Partnership", "Limited Liability Partnership",
+  "Private Limited", "Public Limited", "One Person Company", "Hindu Undivided Family",
+  "Cooperative Society", "Trust", "NGO",
+];
+
+const PARTNER_TYPES = ["Seller", "Buyer", "Both"];
 
 const DocUpload = ({ label, fieldKey, form, setForm }) => {
   const ref = useRef();
@@ -62,7 +72,8 @@ const DocUpload = ({ label, fieldKey, form, setForm }) => {
 
 const COLS = [
   { label: "Vendor Code",            key: "vendorCode",     w: "w-[9%] min-w-[100px]" },
-  { label: "Vendor Firm Name",       key: "vendorName",     w: "w-[22%] min-w-[180px]" },
+  { label: "Vendor Firm Name",       key: "vendorName",     w: "w-[18%] min-w-[180px]" },
+  { label: "Business Description",   key: "businessDescription", w: "w-[16%] min-w-[160px]" },
   { label: "Company Codes",          key: "companyCodes",   w: "w-[10%] min-w-[110px]" },
   { label: "Site Codes",             key: "siteCodes",      w: "w-[8%] min-w-[80px]" },
   { label: "Email",                  key: "email",          w: "w-[18%] min-w-[160px]", copy: true },
@@ -340,13 +351,15 @@ export default function VendorList() {
 
   /* ── Export helpers ── */
   const EXPORT_COLS = [
-    ["Vendor ID", "vendorCode"], ["Vendor Firm Name", "vendorName"], ["Company Codes", "companyCodes"], ["Site Codes", "siteCodes"], ["Email", "email"],
+    ["Vendor ID", "vendorCode"], ["Vendor Firm Name", "vendorName"], ["Firm Type", "firmType"], ["Partner Type", "partnerType"],
+    ["Company Codes", "companyCodes"], ["Site Codes", "siteCodes"], ["Email", "email"],
     ["Contact Person Name", "contactPerson"], ["Contact Person Number", "mobile"],
     ["GST No", "gstin"], ["PAN No", "pan"], ["Aadhar No", "aadharNo"],
     ["MSME Number", "msmeNumber"], ["Bank Name", "bankName"],
     ["Account Holder", "accountHolder"], ["Account Number", "accountNumber"],
     ["Bank IFSC", "ifscCode"], ["Bank Branch", "bankBranch"],
     ["Bank City", "bankCity"], ["Bank State", "bankState"], ["Address", "address"],
+    ["Business Description", "businessDescription"],
   ];
 
   const exportExcel = () => {
@@ -386,6 +399,8 @@ export default function VendorList() {
   const downloadTemplate = () => {
     const ws = XLSX.utils.json_to_sheet([{
       "Vendor Firm Name": "ABC Constructions Pvt Ltd",
+      "Firm Type": "Private Limited",
+      "Partner Type": "Seller",
       "Company Codes": "BITL, ZYX",
       "Site Codes": "SITE-001, SITE-002",
       "Email": "abc@example.com",
@@ -403,6 +418,7 @@ export default function VendorList() {
       "Bank City": "New Delhi",
       "Bank State": "Delhi",
       "Address": "123 Industrial Area, Phase 2, New Delhi - 110001",
+      "Business Description": "Civil construction and interior fit-out contractor",
     }]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Vendors");
@@ -1202,6 +1218,46 @@ export default function VendorList() {
 
                   <div className="vgrid gap-3">
                     <div>
+                      <label className={lbl}>Firm Type</label>
+                      <div className="relative">
+                        <select className={`${sel} pr-9 cursor-pointer hover:border-slate-300`} value={form.firmType}
+                          onChange={e => setForm(f => ({ ...f, firmType: e.target.value }))}>
+                          <option value="">— Select —</option>
+                          {FIRM_TYPES.map(ft => <option key={ft} value={ft}>{ft}</option>)}
+                        </select>
+                        <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className={lbl}>Partner Type</label>
+                      <div className="flex items-center gap-2 h-[42px]">
+                        {PARTNER_TYPES.map(pt => (
+                          <label key={pt} className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl border cursor-pointer transition-all text-sm font-semibold select-none
+                            ${form.partnerType === pt
+                              ? "border-indigo-400 bg-indigo-50 text-indigo-700"
+                              : "border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50"}`}>
+                            <input type="radio" name="partnerType" value={pt} checked={form.partnerType === pt}
+                              onChange={() => setForm(f => ({ ...f, partnerType: pt }))} className="hidden" />
+                            {pt}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="vgrid-full">
+                      <label className={lbl}>Business Description</label>
+                      <textarea
+                        className={`${inp} resize-none overflow-hidden`}
+                        rows={2}
+                        value={form.businessDescription}
+                        ref={el => { if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; } }}
+                        onChange={e => {
+                          setForm(f => ({ ...f, businessDescription: e.target.value }));
+                          e.target.style.height = "auto";
+                          e.target.style.height = `${e.target.scrollHeight}px`;
+                        }}
+                        placeholder="What kind of business does this vendor do?" />
+                    </div>
+                    <div>
                       <label className={lbl}>Contact Person Name</label>
                       <input className={inp} value={form.contactPerson}
                         onChange={e => setForm(f => ({ ...f, contactPerson: e.target.value }))}
@@ -1619,6 +1675,14 @@ export default function VendorList() {
                 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Firm Type</p>
+                    <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.firmType || "—"}</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Partner Type</p>
+                    <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.partnerType || "—"}</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Contact Person</p>
                     <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.contactPerson || "—"}</p>
                   </div>
@@ -1629,6 +1693,10 @@ export default function VendorList() {
                   <div className="col-span-2 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Email</p>
                     <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.email || "—"}</p>
+                  </div>
+                  <div className="col-span-full bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Business Description</p>
+                    <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.businessDescription || "—"}</p>
                   </div>
                   <div className="col-span-full bg-slate-50 rounded-xl p-3 border border-slate-100/50">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Address</p>

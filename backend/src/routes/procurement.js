@@ -725,6 +725,9 @@ router.get("/vendors", async (_req, res) => {
         contactPerson:  r.contact_person  || "",
         mobile:         r.mobile          || "",
         email:          r.email           || "",
+        businessDescription: r.business_description || "",
+        firmType:            r.firm_type            || "",
+        partnerType:         r.partner_type          || "",
         companyCodes:   parseJsonArr(r.company_codes).map(x => String(x || "").trim()).filter(Boolean),
         logoUrl,
         docGstUrl,
@@ -789,6 +792,9 @@ router.post("/vendors", vendorUpload, async (req, res) => {
       contact_person:  b.contactPerson  || "",
       mobile:          b.mobile         || "",
       email:           b.email          || "",
+      business_description: b.businessDescription || "",
+      firm_type:             b.firmType            || "",
+      partner_type:          b.partnerType          || "",
       company_codes:   JSON.stringify(parseJsonArr(req.body.companyCodes).map(x => String(x || "").trim()).filter(Boolean)),
       logo_url:              logoUrl             || "",
       doc_gst_url:           docGstUrl           || "",
@@ -858,6 +864,9 @@ router.put("/vendors/:id", vendorUpload, async (req, res) => {
       contact_person:  b.contactPerson  || "",
       mobile:          b.mobile         || "",
       email:           b.email          || "",
+      business_description: b.businessDescription || "",
+      firm_type:             b.firmType            || "",
+      partner_type:          b.partnerType          || "",
       company_codes:   JSON.stringify(parseJsonArr(b.companyCodes).map(x => String(x || "").trim()).filter(Boolean)),
       logo_url:              newLogo             || normalizeStoragePath(b.logoUrl, "vendor-docs")            || "",
       doc_gst_url:           newDocGst           || normalizeStoragePath(b.docGstUrl, "vendor-docs")          || "",
@@ -1018,6 +1027,7 @@ router.post("/vendors/bulk", async (req, res) => {
       bank_name: "Bank Name", account_holder: "Account Holder", account_number: "Account Number",
       ifsc_code: "IFSC", bank_branch: "Bank Branch", bank_city: "Bank City",
       bank_state: "Bank State", address: "Address",
+      firm_type: "Firm Type", partner_type: "Partner Type", business_description: "Business Description",
     };
 
     for (const r of rows) {
@@ -1053,6 +1063,7 @@ router.post("/vendors/bulk", async (req, res) => {
           ["bank_name", r["Bank Name"]], ["account_holder", r["Account Holder"]], ["account_number", r["Account Number"]],
           ["ifsc_code", r["Bank IFSC"]], ["bank_branch", r["Bank Branch"]], ["bank_city", r["Bank City"]],
           ["bank_state", r["Bank State"]], ["address", r["Address"]],
+          ["firm_type", r["Firm Type"]], ["partner_type", r["Partner Type"]], ["business_description", r["Business Description"]],
         ]) {
           const currentVal = acc.patch[col] !== undefined ? acc.patch[col] : existing[col];
           if (!currentVal && val) { acc.patch[col] = val; acc.changedFields.push(FIELD_LABELS[col]); }
@@ -1098,6 +1109,9 @@ router.post("/vendors/bulk", async (req, res) => {
         bank_city:       r["Bank City"]              || "",
         bank_state:      r["Bank State"]             || "",
         address:         r["Address"]                || "",
+        firm_type:              r["Firm Type"]              || "",
+        partner_type:            r["Partner Type"]           || "",
+        business_description:   r["Business Description"]   || "",
         company_codes:   JSON.stringify(incomingCompanyCodes),
         site_codes:      JSON.stringify(incomingSiteCodes),
         created_by_id:   req.body.createdById        || null,
