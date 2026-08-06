@@ -39,13 +39,23 @@ const emptyForm = {
   vendorCard: null, vendorCardUrl: "",
   otherAttachment: null, otherAttachmentUrl: "",
   gstNo: "", category: "", dateOfVisit: todayStr(),
+  businessDescription: "", firmType: "", firmTypeOther: false, partnerType: "Seller",
   notes: "", status: "Pool",
 };
 
 const inp = "w-full border border-slate-200 rounded-md px-3 py-2.5 text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-100 text-slate-700 transition-all";
 const inpArea = "w-full min-h-[100px] border border-slate-200 rounded-md px-3 py-2.5 text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-100 text-slate-700 transition-all resize-y";
+const sel = "w-full border border-slate-200 rounded-md px-3 py-2.5 text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-100 text-slate-700 transition-all bg-white appearance-none";
 const lbl = "block text-[11px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider";
 const dropZone = "flex flex-col items-stretch gap-2 border-2 border-dashed rounded-md px-3 py-3 cursor-pointer transition-all";
+
+const FIRM_TYPES = [
+  "Proprietorship", "Unregistered Business", "Partnership", "Limited Liability Partnership",
+  "Private Limited", "Public Limited", "One Person Company", "Hindu Undivided Family",
+  "Cooperative Society", "Trust", "NGO",
+];
+
+const PARTNER_TYPES = ["Seller", "Buyer", "Both"];
 
 const STATUS_META = {
   Pool:        { bg: "bg-amber-50",   text: "text-amber-700",   dot: "bg-amber-400",   border: "border-amber-200" },
@@ -61,6 +71,9 @@ const POOL_EXPORT_COLS = [
   ["Date of Visit", "date_of_visit"],
   ["Vendor Name", "vendor_name"],
   ["Firm Name", "firm_name"],
+  ["Business Description", "business_description"],
+  ["Firm Type", "firm_type"],
+  ["Partner Type", "partner_type"],
   ["Email", "email"],
   ["Contact", "contact_number"],
   ["State", "state"],
@@ -331,6 +344,10 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted, canEdit = true, 
       gstNo:         p.gst_no         || "",
       category:      p.category       || "",
       dateOfVisit:   p.date_of_visit  || todayStr(),
+      businessDescription: p.business_description || "",
+      firmType:            p.firm_type            || "",
+      firmTypeOther:       !!(p.firm_type && !FIRM_TYPES.includes(p.firm_type)),
+      partnerType:         p.partner_type          || "Seller",
       notes:         p.notes          || "",
       status:        p.status         || "Pool",
     });
@@ -353,6 +370,9 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted, canEdit = true, 
       fd.append("gstNo",         form.gstNo);
       fd.append("category",      form.category);
       fd.append("dateOfVisit",   form.dateOfVisit);
+      fd.append("businessDescription", form.businessDescription);
+      fd.append("firmType",      form.firmType);
+      fd.append("partnerType",   form.partnerType);
       fd.append("notes",         form.notes);
       fd.append("status",        form.status);
       if (form.logo instanceof File) fd.append("logo", form.logo);
@@ -480,6 +500,9 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted, canEdit = true, 
     const ws = XLSX.utils.json_to_sheet([{
       "Vendor Name": "Rajesh Kumar",
       "Firm Name": "Sample Contractors",
+      "Firm Type": "Private Limited",
+      "Partner Type": "Seller",
+      "Business Description": "Civil construction and interior fit-out contractor",
       "Email": "rajesh@example.com",
       "Contact Number": "9876543210",
       "State": "Maharashtra",
@@ -521,6 +544,9 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted, canEdit = true, 
         const fd = new FormData();
         fd.append("vendorName",    String(r["Vendor Name"] || "").trim());
         fd.append("firmName",      String(r["Firm Name"] || "").trim());
+        fd.append("firmType",      String(r["Firm Type"] || "").trim());
+        fd.append("partnerType",   String(r["Partner Type"] || "").trim());
+        fd.append("businessDescription", String(r["Business Description"] || "").trim());
         fd.append("email",         String(r["Email"] || "").trim());
         fd.append("contactNumber", String(r["Contact Number"] || "").trim());
         fd.append("state",         String(r["State"] || "").trim());
@@ -665,7 +691,7 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted, canEdit = true, 
           <table className="w-full text-sm border-collapse border border-slate-200">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 divide-x divide-slate-200">
-                {["Pool Code","Date of Visit","Vendor Name","Firm Name","Email","Contact","State / City","GST No","Category","Status","Actions"].map(h => (
+                {["Pool Code","Date of Visit","Vendor Name","Firm Name","Business Description","Email","Contact","State / City","GST No","Category","Status","Actions"].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500 whitespace-nowrap">
                     {h}
                   </th>
@@ -675,11 +701,11 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted, canEdit = true, 
             <tbody className="divide-y divide-slate-200">
               {loading ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-16 text-center text-slate-400 text-sm">Loading…</td>
+                  <td colSpan={12} className="px-4 py-16 text-center text-slate-400 text-sm">Loading…</td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-16 text-center text-slate-400 text-sm">
+                  <td colSpan={12} className="px-4 py-16 text-center text-slate-400 text-sm">
                     <div className="mx-auto max-w-lg">
                     {pools.length === 0 ? (
                       <>No pool entries yet. Use <span className="font-semibold text-slate-600">Add</span> or <span className="font-semibold text-slate-600">Bulk Upload</span> (under More) to create entries.</>
@@ -705,6 +731,7 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted, canEdit = true, 
                         </div>
                       </td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{p.firm_name || "—"}</td>
+                      <td className="px-4 py-3 text-slate-600 max-w-[220px] break-words whitespace-normal">{p.business_description || "—"}</td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{p.email || "—"}</td>
                       <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{p.contact_number || "—"}</td>
                       <td className="px-4 py-3 text-slate-500 whitespace-nowrap text-xs">
@@ -821,6 +848,62 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted, canEdit = true, 
                 <label className={lbl}>Firm Name</label>
                 <input className={inp} value={form.firmName} onChange={e => setForm(f => ({ ...f, firmName: e.target.value }))} placeholder="Company / firm name" />
               </div>
+
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className={lbl}>Firm Type</label>
+                  <div className="relative">
+                    <select className={`${sel} pr-9 cursor-pointer hover:border-slate-300`}
+                      value={form.firmTypeOther ? "Other" : form.firmType}
+                      onChange={e => {
+                        const val = e.target.value;
+                        if (val === "Other") setForm(f => ({ ...f, firmType: "", firmTypeOther: true }));
+                        else setForm(f => ({ ...f, firmType: val, firmTypeOther: false }));
+                      }}>
+                      <option value="">— Select —</option>
+                      {FIRM_TYPES.map(ft => <option key={ft} value={ft}>{ft}</option>)}
+                      <option value="Other">Other</option>
+                    </select>
+                    <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
+                  {form.firmTypeOther && (
+                    <input className={`${inp} mt-2`} value={form.firmType} autoFocus
+                      onChange={e => setForm(f => ({ ...f, firmType: e.target.value }))}
+                      placeholder="Enter firm type" />
+                  )}
+                </div>
+                <div>
+                  <label className={lbl}>Partner Type</label>
+                  <div className="flex items-center gap-2 h-[42px]">
+                    {PARTNER_TYPES.map(pt => (
+                      <label key={pt} className={`flex items-center gap-1.5 px-3.5 py-2 rounded-md border cursor-pointer transition-all text-sm font-semibold select-none
+                        ${form.partnerType === pt
+                          ? "border-violet-400 bg-violet-50 text-violet-700"
+                          : "border-slate-200 text-slate-500 hover:border-slate-300 hover:bg-slate-50"}`}>
+                        <input type="radio" name="partnerType" value={pt} checked={form.partnerType === pt}
+                          onChange={() => setForm(f => ({ ...f, partnerType: pt }))} className="hidden" />
+                        {pt}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className={lbl}>Business Description</label>
+                <textarea
+                  className={`${inp} resize-none overflow-hidden`}
+                  rows={2}
+                  value={form.businessDescription}
+                  ref={el => { if (el) { el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; } }}
+                  onChange={e => {
+                    setForm(f => ({ ...f, businessDescription: e.target.value }));
+                    e.target.style.height = "auto";
+                    e.target.style.height = `${e.target.scrollHeight}px`;
+                  }}
+                  placeholder="What kind of business does this vendor do?" />
+              </div>
+
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
                 <div>
                   <label className={lbl}>Vendor Name *</label>
@@ -1024,6 +1107,9 @@ const VendorPool = forwardRef(function VendorPool({ onPromoted, canEdit = true, 
               {[
                 ["Vendor Name",   viewEntry.vendor_name],
                 ["Firm Name",     viewEntry.firm_name],
+                ["Firm Type",     viewEntry.firm_type],
+                ["Partner Type",  viewEntry.partner_type],
+                ["Business Description", viewEntry.business_description],
                 ["Email",         viewEntry.email],
                 ["Contact",       viewEntry.contact_number],
                 ["State",         viewEntry.state],

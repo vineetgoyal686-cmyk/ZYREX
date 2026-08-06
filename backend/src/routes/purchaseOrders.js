@@ -901,6 +901,95 @@ router.get("/master/vendor-data", async (_req, res) => {
   }
 });
 
+/* ── Vendor PO Analytics: raw orders + line items for one vendor ── */
+router.get("/vendor/:vendorId/analytics", async (req, res) => {
+  try {
+    const { vendorId } = req.params;
+    const { data: orders, error: ordersErr } = await supabase.schema("procurement")
+      .from("purchase_orders")
+      .select("id, order_number, order_type, status, totals, site_id, snapshot, created_at, date_of_creation")
+      .eq("vendor_id", vendorId)
+      .neq("status", "Deleted")
+      .order("date_of_creation", { ascending: true });
+    if (ordersErr) throw ordersErr;
+
+    const orderIds = (orders || []).map(o => o.id);
+    const { data: orderItems, error: itemErr } = orderIds.length
+      ? await supabase.schema("procurement")
+          .from("purchase_order_items")
+          .select("order_id, description, qty, unit_rate, amount, make, items(material_name, category, item_code)")
+          .in("order_id", orderIds)
+      : { data: [], error: null };
+    if (itemErr) throw itemErr;
+
+    const siteIds = [...new Set((orders || []).map(o => o.site_id).filter(Boolean))];
+    const { data: sites } = siteIds.length
+      ? await supabase.from("projects").select("id, project_code, project_name").in("id", siteIds)
+      : { data: [] };
+    const siteById = new Map((sites || []).map(s => [s.id, s]));
+
+    const itemsByOrder = new Map();
+    (orderItems || []).forEach(row => {
+      const list = itemsByOrder.get(row.order_id) || [];
+      list.push(row);
+      itemsByOrder.set(row.order_id, list);
+    });
+
+    const orderRows = (orders || []).map(order => {
+      const totals = order.totals || {};
+      const lineItems = itemsByOrder.get(order.id) || [];
+      let subtotal = Number(totals.subtotal) || 0;
+      if (subtotal === 0) {
+        subtotal = lineItems.reduce((s, it) => s + ((Number(it.qty) * Number(it.unit_rate)) || Number(it.amount) || 0), 0);
+        if (subtotal === 0) {
+          const snapItems = order.snapshot?.items || [];
+          subtotal = snapItems.reduce((s, it) => s + ((Number(it.qty) * Number(it.unit_rate)) || Number(it.amount) || 0), 0);
+        }
+      }
+      const discount = Number(totals.totalDiscountAmt) || 0;
+      const tax      = Number(totals.gst) || 0;
+      const freight  = Number(totals.frightCharges ?? totals.fright) || 0;
+      const grandTotal = Number(totals.grandTotal) || Math.max(subtotal - discount + tax + freight, 0);
+      const site = siteById.get(order.site_id);
+
+      return {
+        id: order.id,
+        orderNo: order.order_number || "",
+        orderType: order.order_type === "Supply" ? "PO" : "WO",
+        status: order.status || "Draft",
+        date: order.date_of_creation || order.created_at || "",
+        siteCode: site?.project_code || order.snapshot?.site?.siteCode || "",
+        siteName: site?.project_name || order.snapshot?.site?.siteName || "",
+        subtotal, discount, tax, freight, grandTotal,
+      };
+    });
+
+    const itemRows = [];
+    (orders || []).forEach(order => {
+      const lineItems = itemsByOrder.get(order.id) || [];
+      lineItems.forEach(it => {
+        const amount = Number(it.amount) || (Number(it.qty) * Number(it.unit_rate)) || 0;
+        itemRows.push({
+          orderId: order.id,
+          orderNo: order.order_number || "",
+          orderType: order.order_type === "Supply" ? "PO" : "WO",
+          materialName: it.items?.material_name || it.description || "Unnamed item",
+          category: it.items?.category || "",
+          brand: (it.make || "").trim(),
+          qty: Number(it.qty) || 0,
+          rate: Number(it.unit_rate) || 0,
+          amount,
+        });
+      });
+    });
+
+    res.json({ orders: orderRows, items: itemRows });
+  } catch (err) {
+    console.error("Vendor analytics error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* ── TRASH: fetch soft-deleted orders ── */
 router.get("/trash", async (req, res) => {
   try {

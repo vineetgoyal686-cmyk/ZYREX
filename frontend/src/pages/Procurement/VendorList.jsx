@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
-import { Plus, Search, Pencil, Trash2, X, Building2, Users, Upload, FileText, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileSpreadsheet, ChevronDown, Eye, Copy, Check, Trash, RotateCcw, History, Download, MoreVertical, SlidersHorizontal } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, X, Building2, Users, Upload, FileText, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, FileSpreadsheet, ChevronDown, Eye, Copy, Check, Trash, RotateCcw, History, Download, MoreVertical, SlidersHorizontal, ArrowLeft, BarChart3, ClipboardList, TrendingUp, ReceiptText } from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid } from "recharts";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -15,7 +16,7 @@ const emptyForm = {
   gstin: "", pan: "", aadharNo: "", msmeNumber: "",
   bankName: "", accountHolder: "", accountNumber: "", ifscCode: "",
   bankBranch: "", bankCity: "", bankState: "", address: "",
-  businessDescription: "", firmType: "", partnerType: "Seller",
+  businessDescription: "", firmType: "", firmTypeOther: false, partnerType: "Seller",
   companyCodes: [], siteCodes: [],
   logo: null, logoPreview: "",
   docGst: null, docPan: null, docAadhaar: null, docCoi: null,
@@ -277,6 +278,7 @@ export default function VendorList() {
   const openEdit = (v) => {
     setForm({
       ...emptyForm, ...v,
+      firmTypeOther: !!(v.firmType && !FIRM_TYPES.includes(v.firmType)),
       logo: null, logoPreview: v.logoUrl || "",
       docGst: null, docPan: null, docAadhaar: null, docCoi: null,
       docMsme: null, docCancelCheque: null, docOther: null, docOther2: null,
@@ -293,7 +295,7 @@ export default function VendorList() {
       fd.append("createdById", currentUser.id || "");
       fd.append("createdByName", currentUser.name || "");
       Object.entries(form).forEach(([k, v]) => {
-        if (k === "logoPreview") return;
+        if (k === "logoPreview" || k === "firmTypeOther") return;
         if (v instanceof File) fd.append(k, v);
         else if (k === "siteCodes" || k === "companyCodes") fd.append(k, JSON.stringify(v || []));
         else if (v) fd.append(k, v);
@@ -329,24 +331,6 @@ export default function VendorList() {
         } catch { showToast("Failed to delete", "error"); }
       },
     });
-  };
-
-  const forceDownload = async (url, filename) => {
-    try {
-      showToast("Starting download…");
-      const resp = await fetch(url);
-      const blob = await resp.blob();
-      const objUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = objUrl;
-      a.download = `${filename || "Document"}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(objUrl);
-    } catch {
-      window.open(url, "_blank");
-    }
   };
 
   /* ── Export helpers ── */
@@ -494,6 +478,10 @@ export default function VendorList() {
   });
   const totalPages = Math.ceil(filtered.length / perPage) || 1;
   const paginated  = filtered.slice((page - 1) * perPage, page * perPage);
+
+  if (viewVendor) {
+    return <VendorDetailPage vendor={viewVendor} onBack={() => setViewVendor(null)} />;
+  }
 
   return (
     <div className="md:h-full flex flex-col md:overflow-hidden">
@@ -929,16 +917,22 @@ export default function VendorList() {
                             const key = `${v.id}:${c.key}`;
                             const isCopied = copiedKey === key;
                             return (
-                              <button
-                                type="button"
-                                onClick={() => copyToClipboard(v[c.key], key)}
-                                title={isCopied ? "Copied!" : "Click to copy"}
-                                className={`group inline-flex items-center gap-1.5 font-semibold px-1.5 py-1 -mx-1.5 -my-1 rounded hover:bg-slate-100 transition-colors ${isCopied ? "text-emerald-600" : "text-slate-800"}`}>
-                                <span className="whitespace-nowrap text-left">{v[c.key]}</span>
-                                {isCopied
-                                  ? <Check size={12} className="shrink-0" />
-                                  : <Copy size={11} className="shrink-0 text-slate-300 group-hover:text-slate-500 transition-colors" />}
-                              </button>
+                              <span className="inline-flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setViewVendor(v)}
+                                  title="View vendor"
+                                  className="font-semibold text-slate-800 hover:text-indigo-600 hover:underline whitespace-nowrap text-left px-1.5 py-1 -mx-1.5 -my-1 rounded transition-colors">
+                                  {v[c.key]}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(v[c.key], key)}
+                                  title={isCopied ? "Copied!" : "Click to copy"}
+                                  className={`shrink-0 p-1 rounded hover:bg-slate-100 transition-colors ${isCopied ? "text-emerald-600" : "text-slate-300 hover:text-slate-500"}`}>
+                                  {isCopied ? <Check size={12} /> : <Copy size={11} />}
+                                </button>
+                              </span>
                             );
                           })() : <span className="text-slate-300">—</span>
                         ) : c.key === "siteCodes" || c.key === "companyCodes" ? (
@@ -1220,13 +1214,24 @@ export default function VendorList() {
                     <div>
                       <label className={lbl}>Firm Type</label>
                       <div className="relative">
-                        <select className={`${sel} pr-9 cursor-pointer hover:border-slate-300`} value={form.firmType}
-                          onChange={e => setForm(f => ({ ...f, firmType: e.target.value }))}>
+                        <select className={`${sel} pr-9 cursor-pointer hover:border-slate-300`}
+                          value={form.firmTypeOther ? "Other" : form.firmType}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val === "Other") setForm(f => ({ ...f, firmType: "", firmTypeOther: true }));
+                            else setForm(f => ({ ...f, firmType: val, firmTypeOther: false }));
+                          }}>
                           <option value="">— Select —</option>
                           {FIRM_TYPES.map(ft => <option key={ft} value={ft}>{ft}</option>)}
+                          <option value="Other">Other</option>
                         </select>
                         <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
                       </div>
+                      {form.firmTypeOther && (
+                        <input className={`${inp} mt-2`} value={form.firmType} autoFocus
+                          onChange={e => setForm(f => ({ ...f, firmType: e.target.value }))}
+                          placeholder="Enter firm type" />
+                      )}
                     </div>
                     <div>
                       <label className={lbl}>Partner Type</label>
@@ -1635,238 +1640,602 @@ export default function VendorList() {
         </div>
       )}
 
-      {viewVendor && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 md:p-4 bg-black/40 backdrop-blur-sm">
-          <div className="bg-white md:rounded-2xl shadow-2xl w-full max-w-4xl h-full md:h-auto overflow-hidden flex flex-col md:max-h-[90vh]">
-            <div className="flex items-start justify-between gap-4 px-4 md:px-6 py-4 border-b border-slate-100 shrink-0">
-              <div className="flex flex-col gap-0.5 min-w-0">
-                <h2 className="text-base font-bold text-slate-800 flex items-center gap-2">
-                  <Building2 size={18} className="text-indigo-600 shrink-0" />
-                  <span className="truncate">{viewVendor.vendorName}</span>
-                </h2>
-                {(viewVendor.createdByName || viewVendor.createdAt) && (
-                  <p className="text-[11px] text-slate-500 ml-7">
-                    Registered by <span className="font-semibold text-slate-700">{viewVendor.createdByName || "—"}</span>
-                    {viewVendor.createdAt && (() => {
-                      const d = new Date(viewVendor.createdAt);
-                      if (isNaN(d.getTime())) return null;
-                      const date = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-                      const time = d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
-                      return <> on <span className="font-semibold text-slate-700">{date}</span> at <span className="font-semibold text-slate-700">{time}</span></>;
-                    })()}
-                  </p>
-                )}
-              </div>
-              <button onClick={() => setViewVendor(null)} className="text-slate-400 hover:text-slate-600 transition-colors shrink-0">
-                <X size={18} />
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 space-y-8 bg-slate-50">
-              
-              {/* Basic Details */}
-              <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-                <div className="flex items-center gap-2 mb-5 pb-3 border-b border-slate-50">
-                  <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
-                    <Building2 size={16} className="text-indigo-500" />
-                  </div>
-                  <h3 className="text-sm font-bold text-slate-700">Basic Information</h3>
-                </div>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Firm Type</p>
-                    <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.firmType || "—"}</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Partner Type</p>
-                    <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.partnerType || "—"}</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Contact Person</p>
-                    <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.contactPerson || "—"}</p>
-                  </div>
-                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Mobile</p>
-                    <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.mobile || "—"}</p>
-                  </div>
-                  <div className="col-span-2 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Email</p>
-                    <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.email || "—"}</p>
-                  </div>
-                  <div className="col-span-full bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Business Description</p>
-                    <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.businessDescription || "—"}</p>
-                  </div>
-                  <div className="col-span-full bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Address</p>
-                    <p className="text-sm font-semibold text-slate-700">{viewVendor.address || "—"}</p>
-                  </div>
-                  <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">GST NO</p>
-                    <p className="text-sm font-bold text-indigo-700 font-mono break-words">{viewVendor.gstin || "—"}</p>
-                  </div>
-                  <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">PAN NO</p>
-                    <p className="text-sm font-bold text-indigo-700 font-mono break-words">{viewVendor.pan || "—"}</p>
-                  </div>
-                  <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Aadhar NO</p>
-                    <p className="text-sm font-semibold text-slate-700 font-mono break-words">{viewVendor.aadharNo || "—"}</p>
-                  </div>
-                  <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">MSME NO</p>
-                    <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.msmeNumber || "—"}</p>
-                  </div>
-                  <div className="col-span-full bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Associated Company Codes</p>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {viewVendor.companyCodes?.length > 0 ? (
-                        viewVendor.companyCodes.map((cc, i) => (
-                          <span key={i} className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded border border-blue-200 uppercase tracking-tight">
-                            {cc}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-sm text-slate-400 font-medium italic">No companies associated</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="col-span-full bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Associated Site Codes</p>
-                    <div className="flex flex-wrap gap-2 mt-1">
-                      {viewVendor.siteCodes?.length > 0 ? (
-                        viewVendor.siteCodes.map((sc, i) => (
-                          <span key={i} className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-bold rounded border border-purple-200 uppercase tracking-tight">
-                            {sc}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-sm text-slate-400 font-medium italic">No sites associated</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bank Details */}
-              <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-                <div className="flex items-center gap-2 mb-5 pb-3 border-b border-slate-50">
-                  <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-                    <span className="text-emerald-500 font-serif font-bold text-sm">₹</span>
-                  </div>
-                  <h3 className="text-sm font-bold text-slate-700">Bank Details</h3>
-                </div>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="col-span-2 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bank Name</p>
-                    <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.bankName || "—"}</p>
-                  </div>
-                  <div className="col-span-2 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Account Holder</p>
-                    <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.accountHolder || "—"}</p>
-                  </div>
-                  <div className="col-span-2 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Account No</p>
-                    <p className="text-sm font-bold text-emerald-700 font-mono break-all md:break-words">{viewVendor.accountNumber || "—"}</p>
-                  </div>
-                  <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">IFSC Code</p>
-                    <p className="text-sm font-bold text-emerald-700 font-mono break-all md:break-words">{viewVendor.ifscCode || "—"}</p>
-                  </div>
-                  <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Branch</p>
-                    <p className="text-sm font-semibold text-slate-700 break-words">{viewVendor.bankBranch || "—"}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Documents */}
-              <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
-                <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-50">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
-                      <FileText size={16} className="text-orange-500" />
-                    </div>
-                    <h3 className="text-sm font-bold text-slate-700">Documents Attached</h3>
-                  </div>
-                  
-                  {/* Download All Button */}
-                  <button onClick={() => {
-                    const docs = [
-                      { label: "Aadhar", url: viewVendor.docAadhaarUrl },
-                      { label: "PAN Card", url: viewVendor.docPanUrl },
-                      { label: "GST Certificate", url: viewVendor.docGstUrl },
-                      { label: "MSME", url: viewVendor.docMsmeUrl },
-                      { label: "Cancel Cheque", url: viewVendor.docCancelChequeUrl },
-                      { label: "COI", url: viewVendor.docCoiUrl },
-                      { label: "Other Doc 1", url: viewVendor.docOtherUrl },
-                      { label: "Other Doc 2", url: viewVendor.docOther2Url },
-                    ].filter(d => d.url);
-                    if (docs.length > 0) {
-                      docs.forEach((doc, idx) => {
-                        setTimeout(() => forceDownload(doc.url, doc.label), idx * 800);
-                      });
-                    }
-                  }} className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-100 text-slate-600 rounded-lg text-xs font-bold transition-all">
-                    <Download size={13} className="text-indigo-500" /> Download All
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  {[
-                    { label: "Aadhar", url: viewVendor.docAadhaarUrl },
-                    { label: "PAN Card", url: viewVendor.docPanUrl },
-                    { label: "GST Certificate", url: viewVendor.docGstUrl },
-                    { label: "MSME", url: viewVendor.docMsmeUrl },
-                    { label: "Cancel Cheque", url: viewVendor.docCancelChequeUrl },
-                    { label: "COI", url: viewVendor.docCoiUrl },
-                    { label: "Other Doc 1", url: viewVendor.docOtherUrl },
-                    { label: "Other Doc 2", url: viewVendor.docOther2Url },
-                  ].map((doc, idx) => doc.url ? (
-                    <div key={idx} onClick={() => window.open(doc.url, "_blank")}
-                       className="flex flex-col bg-white border border-slate-200 rounded-xl overflow-hidden hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer group">
-                       
-                       <div className="h-28 w-full bg-slate-50 border-b border-slate-100 relative overflow-hidden pointer-events-none">
-                         {doc.url.match(/\.(jpeg|jpg|png|gif|webp)$/i) ? (
-                           <img src={doc.url} alt="" className="w-full h-full object-cover" />
-                         ) : (
-                           <div className="absolute inset-0 right-[-30px] bottom-[-30px]">
-                             <iframe src={`${doc.url}#toolbar=0&navpanes=0&scrollbar=0&view=Fit`} 
-                               scrolling="no" 
-                               className="w-[150%] h-[150%] scale-[0.66] origin-top-left border-none pointer-events-none" />
-                           </div>
-                         )}
-                         <div className="absolute inset-0 bg-transparent group-hover:bg-indigo-50/10 z-10 transition-colors" />
-                       </div>
-
-                       <div className="flex items-center justify-between p-2.5 bg-white">
-                         <div className="flex items-center gap-2 pr-2 min-w-0">
-                           <FileText size={14} className="text-indigo-500 shrink-0" />
-                           <span className="text-[11px] font-bold text-slate-700 truncate">{doc.label}</span>
-                         </div>
-                         <button onClick={(e) => { e.stopPropagation(); forceDownload(doc.url, doc.label); }} 
-                           className="p-1 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors shrink-0" title="Download Document">
-                           <Download size={14} />
-                         </button>
-                       </div>
-                    </div>
-                  ) : null)}
-                  
-                  {![viewVendor.docAadhaarUrl, viewVendor.docPanUrl, viewVendor.docGstUrl, viewVendor.docMsmeUrl, viewVendor.docCancelChequeUrl, viewVendor.docCoiUrl, viewVendor.docOtherUrl, viewVendor.docOther2Url].some(u => !!u) && (
-                    <p className="text-sm text-slate-400 italic col-span-2">No documents uploaded.</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       </div>
       )}
       {logTarget && (
         <LogPanel entityType={logTarget.entityType} entityId={logTarget.entityId} entityName={logTarget.entityName} onClose={() => setLogTarget(null)} />
       )}
+      </div>
+    </div>
+  );
+}
+
+const DETAIL_TABS = [
+  { key: "details",   label: "Details"   },
+  { key: "analytics", label: "Analytics" },
+];
+
+const fmtINR = (n) => "₹" + Math.round(n || 0).toLocaleString("en-IN");
+const DONUT_COLORS = ["#6366f1", "#10b981"];
+
+function VendorDetailPage({ vendor, onBack }) {
+  const [tab, setTab] = useState("details");
+  const [toast, setToast] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
+  const analyticsLoading = tab === "analytics" && !analytics;
+
+  const fetchAnalytics = async () => {
+    try {
+      const res = await fetch(`${API}/api/orders/vendor/${vendor.id}/analytics`);
+      const data = await res.json();
+      setAnalytics({ orders: data.orders || [], items: data.items || [] });
+    } catch {
+      setAnalytics({ orders: [], items: [] });
+    }
+  };
+
+  useEffect(() => {
+    if (tab !== "analytics" || analytics || !vendor?.id) return;
+    fetchAnalytics();
+  }, [tab, vendor?.id, analytics]);
+
+  const stats = useMemo(() => {
+    if (!analytics) return null;
+    const { orders, items } = analytics;
+    const totalOrders = orders.length;
+    const totalSpend = orders.reduce((s, o) => s + o.grandTotal, 0);
+    const avgOrderValue = totalOrders ? totalSpend / totalOrders : 0;
+    const poOrders = orders.filter(o => o.orderType === "PO");
+    const woOrders = orders.filter(o => o.orderType === "WO");
+    const poSpend = poOrders.reduce((s, o) => s + o.grandTotal, 0);
+    const woSpend = woOrders.reduce((s, o) => s + o.grandTotal, 0);
+    const subtotal = orders.reduce((s, o) => s + o.subtotal, 0);
+    const tax = orders.reduce((s, o) => s + o.tax, 0);
+    const discount = orders.reduce((s, o) => s + o.discount, 0);
+    const netSpend = subtotal - discount + tax;
+
+    const monthly = new Map();
+    orders.forEach(o => {
+      if (!o.date) return;
+      const d = new Date(o.date);
+      if (isNaN(d.getTime())) return;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      monthly.set(key, (monthly.get(key) || 0) + o.grandTotal);
+    });
+    const monthlyTrend = [...monthly.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => {
+      const [y, m] = key.split("-");
+      return { month: `${m}-${y.slice(2)}`, spend: Math.round(value) };
+    });
+
+    const statusMap = new Map();
+    orders.forEach(o => {
+      const cur = statusMap.get(o.status) || { count: 0, value: 0 };
+      cur.count++; cur.value += o.grandTotal;
+      statusMap.set(o.status, cur);
+    });
+    const statusBreakdown = [...statusMap.entries()].map(([status, v]) => ({ status, ...v })).sort((a, b) => b.value - a.value);
+
+    const materialMap = new Map();
+    items.forEach(it => {
+      const cur = materialMap.get(it.materialName) || { qty: 0, amount: 0, orders: new Set() };
+      cur.qty += it.qty; cur.amount += it.amount; cur.orders.add(it.orderId);
+      materialMap.set(it.materialName, cur);
+    });
+    const topMaterials = [...materialMap.entries()]
+      .map(([name, v]) => ({ name, qty: v.qty, amount: v.amount, orders: v.orders.size }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 10);
+    const maxMaterialAmount = topMaterials[0]?.amount || 1;
+
+    const siteMap = new Map();
+    orders.forEach(o => {
+      const key = o.siteCode || "—";
+      const cur = siteMap.get(key) || { value: 0, count: 0 };
+      cur.value += o.grandTotal; cur.count++;
+      siteMap.set(key, cur);
+    });
+    const siteBreakdown = [...siteMap.entries()].map(([site, v]) => ({ site, ...v })).sort((a, b) => b.value - a.value);
+
+    const itemRows = [...items].sort((a, b) => b.amount - a.amount);
+
+    return {
+      totalOrders, totalSpend, avgOrderValue,
+      poCount: poOrders.length, woCount: woOrders.length, poSpend, woSpend,
+      subtotal, tax, discount, netSpend,
+      monthlyTrend, statusBreakdown, topMaterials, maxMaterialAmount, siteBreakdown, itemRows,
+    };
+  }, [analytics]);
+
+  const showToast = (msg, type = "success") => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const forceDownload = async (url, filename) => {
+    try {
+      showToast("Starting download…");
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      const objUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objUrl;
+      a.download = `${filename || "Document"}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(objUrl);
+    } catch {
+      window.open(url, "_blank");
+    }
+  };
+
+  return (
+    <div className="md:h-full flex flex-col md:overflow-hidden">
+      {toast && (
+        <div className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl text-sm font-medium shadow-lg
+          ${toast.type === "error" ? "bg-red-50 text-red-700 border border-red-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
+          {toast.msg}
+        </div>
+      )}
+
+      {/* Sticky header */}
+      <div className="shrink-0 sticky top-0 z-30 bg-white border-b border-slate-200">
+        <div className="px-3 sm:px-4 lg:px-6 py-3 flex items-center gap-3 border-b border-slate-100">
+          <button onClick={onBack} title="Back to Vendor List"
+            className="p-1.5 rounded-full border border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-all shrink-0">
+            <ArrowLeft size={16} />
+          </button>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="hidden md:flex w-8 h-8 rounded-lg bg-indigo-50 items-center justify-center shrink-0">
+              <Building2 size={16} className="text-indigo-600" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-base font-bold text-slate-800 truncate">Vendor — {vendor.vendorName}</h1>
+              {(vendor.createdByName || vendor.createdAt) && (
+                <p className="text-[11px] text-slate-500 truncate">
+                  Registered by <span className="font-semibold text-slate-700">{vendor.createdByName || "—"}</span>
+                  {vendor.createdAt && (() => {
+                    const d = new Date(vendor.createdAt);
+                    if (isNaN(d.getTime())) return null;
+                    const date = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+                    const time = d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+                    return <> on <span className="font-semibold text-slate-700">{date}</span> at <span className="font-semibold text-slate-700">{time}</span></>;
+                  })()}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-3 sm:px-4 lg:px-6 flex gap-5 overflow-x-auto no-scrollbar">
+          {DETAIL_TABS.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={`pb-3 pt-2.5 text-sm font-semibold transition-all border-b-2 whitespace-nowrap
+                ${tab === t.key ? "text-indigo-600 border-indigo-600" : "text-slate-500 border-transparent hover:text-slate-700"}`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 space-y-6 bg-slate-50">
+        {tab === "details" ? (<>
+          {/* Basic Details */}
+          <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-5 pb-3 border-b border-slate-50">
+              <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+                <Building2 size={16} className="text-indigo-500" />
+              </div>
+              <h3 className="text-sm font-bold text-slate-700">Basic Information</h3>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Firm Type</p>
+                <p className="text-sm font-semibold text-slate-700 break-words">{vendor.firmType || "—"}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Partner Type</p>
+                <p className="text-sm font-semibold text-slate-700 break-words">{vendor.partnerType || "—"}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Contact Person</p>
+                <p className="text-sm font-semibold text-slate-700 break-words">{vendor.contactPerson || "—"}</p>
+              </div>
+              <div className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Mobile</p>
+                <p className="text-sm font-semibold text-slate-700 break-words">{vendor.mobile || "—"}</p>
+              </div>
+              <div className="col-span-2 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Email</p>
+                <p className="text-sm font-semibold text-slate-700 break-words">{vendor.email || "—"}</p>
+              </div>
+              <div className="col-span-full bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Business Description</p>
+                <p className="text-sm font-semibold text-slate-700 break-words">{vendor.businessDescription || "—"}</p>
+              </div>
+              <div className="col-span-full bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Address</p>
+                <p className="text-sm font-semibold text-slate-700">{vendor.address || "—"}</p>
+              </div>
+              <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">GST NO</p>
+                <p className="text-sm font-bold text-indigo-700 font-mono break-words">{vendor.gstin || "—"}</p>
+              </div>
+              <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">PAN NO</p>
+                <p className="text-sm font-bold text-indigo-700 font-mono break-words">{vendor.pan || "—"}</p>
+              </div>
+              <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Aadhar NO</p>
+                <p className="text-sm font-semibold text-slate-700 font-mono break-words">{vendor.aadharNo || "—"}</p>
+              </div>
+              <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">MSME NO</p>
+                <p className="text-sm font-semibold text-slate-700 break-words">{vendor.msmeNumber || "—"}</p>
+              </div>
+              <div className="col-span-full bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Associated Company Codes</p>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {vendor.companyCodes?.length > 0 ? (
+                    vendor.companyCodes.map((cc, i) => (
+                      <span key={i} className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-bold rounded border border-blue-200 uppercase tracking-tight">
+                        {cc}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-sm text-slate-400 font-medium italic">No companies associated</span>
+                  )}
+                </div>
+              </div>
+              <div className="col-span-full bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Associated Site Codes</p>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {vendor.siteCodes?.length > 0 ? (
+                    vendor.siteCodes.map((sc, i) => (
+                      <span key={i} className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-bold rounded border border-purple-200 uppercase tracking-tight">
+                        {sc}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-sm text-slate-400 font-medium italic">No sites associated</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bank Details */}
+          <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-5 pb-3 border-b border-slate-50">
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
+                <span className="text-emerald-500 font-serif font-bold text-sm">₹</span>
+              </div>
+              <h3 className="text-sm font-bold text-slate-700">Bank Details</h3>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="col-span-2 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Bank Name</p>
+                <p className="text-sm font-semibold text-slate-700 break-words">{vendor.bankName || "—"}</p>
+              </div>
+              <div className="col-span-2 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Account Holder</p>
+                <p className="text-sm font-semibold text-slate-700 break-words">{vendor.accountHolder || "—"}</p>
+              </div>
+              <div className="col-span-2 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Account No</p>
+                <p className="text-sm font-bold text-emerald-700 font-mono break-all md:break-words">{vendor.accountNumber || "—"}</p>
+              </div>
+              <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">IFSC Code</p>
+                <p className="text-sm font-bold text-emerald-700 font-mono break-all md:break-words">{vendor.ifscCode || "—"}</p>
+              </div>
+              <div className="col-span-2 md:col-span-1 bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Branch</p>
+                <p className="text-sm font-semibold text-slate-700 break-words">{vendor.bankBranch || "—"}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Documents */}
+          <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-5 pb-3 border-b border-slate-50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center">
+                  <FileText size={16} className="text-orange-500" />
+                </div>
+                <h3 className="text-sm font-bold text-slate-700">Documents Attached</h3>
+              </div>
+
+              <button onClick={() => {
+                const docs = [
+                  { label: "Aadhar", url: vendor.docAadhaarUrl },
+                  { label: "PAN Card", url: vendor.docPanUrl },
+                  { label: "GST Certificate", url: vendor.docGstUrl },
+                  { label: "MSME", url: vendor.docMsmeUrl },
+                  { label: "Cancel Cheque", url: vendor.docCancelChequeUrl },
+                  { label: "COI", url: vendor.docCoiUrl },
+                  { label: "Other Doc 1", url: vendor.docOtherUrl },
+                  { label: "Other Doc 2", url: vendor.docOther2Url },
+                ].filter(d => d.url);
+                if (docs.length > 0) {
+                  docs.forEach((doc, idx) => {
+                    setTimeout(() => forceDownload(doc.url, doc.label), idx * 800);
+                  });
+                }
+              }} className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-100 text-slate-600 rounded-lg text-xs font-bold transition-all">
+                <Download size={13} className="text-indigo-500" /> Download All
+              </button>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                { label: "Aadhar", url: vendor.docAadhaarUrl },
+                { label: "PAN Card", url: vendor.docPanUrl },
+                { label: "GST Certificate", url: vendor.docGstUrl },
+                { label: "MSME", url: vendor.docMsmeUrl },
+                { label: "Cancel Cheque", url: vendor.docCancelChequeUrl },
+                { label: "COI", url: vendor.docCoiUrl },
+                { label: "Other Doc 1", url: vendor.docOtherUrl },
+                { label: "Other Doc 2", url: vendor.docOther2Url },
+              ].map((doc, idx) => doc.url ? (
+                <div key={idx} onClick={() => window.open(doc.url, "_blank")}
+                   className="flex flex-col bg-white border border-slate-200 rounded-xl overflow-hidden hover:border-indigo-300 hover:shadow-md transition-all cursor-pointer group">
+
+                   <div className="h-28 w-full bg-slate-50 border-b border-slate-100 relative overflow-hidden pointer-events-none">
+                     {doc.url.match(/\.(jpeg|jpg|png|gif|webp)$/i) ? (
+                       <img src={doc.url} alt="" className="w-full h-full object-cover" />
+                     ) : (
+                       <div className="absolute inset-0 right-[-30px] bottom-[-30px]">
+                         <iframe src={`${doc.url}#toolbar=0&navpanes=0&scrollbar=0&view=Fit`}
+                           scrolling="no"
+                           className="w-[150%] h-[150%] scale-[0.66] origin-top-left border-none pointer-events-none" />
+                       </div>
+                     )}
+                     <div className="absolute inset-0 bg-transparent group-hover:bg-indigo-50/10 z-10 transition-colors" />
+                   </div>
+
+                   <div className="flex items-center justify-between p-2.5 bg-white">
+                     <div className="flex items-center gap-2 pr-2 min-w-0">
+                       <FileText size={14} className="text-indigo-500 shrink-0" />
+                       <span className="text-[11px] font-bold text-slate-700 truncate">{doc.label}</span>
+                     </div>
+                     <button onClick={(e) => { e.stopPropagation(); forceDownload(doc.url, doc.label); }}
+                       className="p-1 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-slate-100 transition-colors shrink-0" title="Download Document">
+                       <Download size={14} />
+                     </button>
+                   </div>
+                </div>
+              ) : null)}
+
+              {![vendor.docAadhaarUrl, vendor.docPanUrl, vendor.docGstUrl, vendor.docMsmeUrl, vendor.docCancelChequeUrl, vendor.docCoiUrl, vendor.docOtherUrl, vendor.docOther2Url].some(u => !!u) && (
+                <p className="text-sm text-slate-400 italic col-span-2">No documents uploaded.</p>
+              )}
+            </div>
+          </div>
+        </>) : analyticsLoading || !stats ? (
+          <div className="flex items-center justify-center py-24">
+            <p className="text-sm text-slate-400">Loading analytics…</p>
+          </div>
+        ) : stats.totalOrders === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
+              <BarChart3 size={24} className="text-indigo-400" />
+            </div>
+            <p className="text-sm font-bold text-slate-500">No orders yet</p>
+            <p className="text-xs text-slate-400 mt-1">Once purchase/work orders are issued to this vendor, spend analytics will appear here.</p>
+          </div>
+        ) : (<>
+          {/* Stat cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Orders</p>
+                <p className="text-xl font-bold text-slate-800">{stats.totalOrders}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">PO: {stats.poCount} · WO: {stats.woCount}</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                <ClipboardList size={18} className="text-blue-500" />
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Spend</p>
+                <p className="text-xl font-bold text-slate-800">{fmtINR(stats.totalSpend)}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Including tax</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                <TrendingUp size={18} className="text-emerald-500" />
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">Avg Order Value</p>
+                <p className="text-xl font-bold text-slate-800">{fmtINR(stats.avgOrderValue)}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Per order</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center shrink-0">
+                <ReceiptText size={18} className="text-purple-500" />
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1">PO vs WO</p>
+                <p className="text-xl font-bold text-slate-800">{stats.poCount} / {stats.woCount}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Order count split</p>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
+                <Building2 size={18} className="text-orange-500" />
+              </div>
+            </div>
+          </div>
+
+          {/* Distribution + Trend */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+              <h3 className="text-sm font-bold text-slate-700 mb-4">Spend Distribution</h3>
+              {stats.totalSpend > 0 ? (<>
+                <div className="h-52">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={[{ name: "PO", value: stats.poSpend }, { name: "WO", value: stats.woSpend }]}
+                        dataKey="value" innerRadius={55} outerRadius={80} paddingAngle={2}>
+                        {DONUT_COLORS.map((c, i) => <Cell key={i} fill={c} />)}
+                      </Pie>
+                      <Tooltip formatter={(v) => fmtINR(v)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex items-center justify-center gap-5 mt-2 flex-wrap">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    <span className="w-2 h-2 rounded-full bg-indigo-500" /> PO: {fmtINR(stats.poSpend)} ({stats.totalSpend ? Math.round(stats.poSpend / stats.totalSpend * 100) : 0}%)
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" /> WO: {fmtINR(stats.woSpend)} ({stats.totalSpend ? Math.round(stats.woSpend / stats.totalSpend * 100) : 0}%)
+                  </span>
+                </div>
+              </>) : <p className="text-sm text-slate-400 italic py-16 text-center">No spend data</p>}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+              <h3 className="text-sm font-bold text-slate-700 mb-4">Monthly Spend Trend</h3>
+              {stats.monthlyTrend.length > 0 ? (
+                <div className="h-52">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={stats.monthlyTrend}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                      <XAxis dataKey="month" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                      <YAxis tick={{ fontSize: 11 }} stroke="#94a3b8" tickFormatter={(v) => `₹${Math.round(v / 1000)}k`} />
+                      <Tooltip formatter={(v) => fmtINR(v)} />
+                      <Line type="monotone" dataKey="spend" stroke="#6366f1" strokeWidth={2} dot={{ r: 3 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : <p className="text-sm text-slate-400 italic py-16 text-center">No trend data</p>}
+            </div>
+          </div>
+
+          {/* Status + Financial Summary */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+              <h3 className="text-sm font-bold text-slate-700 mb-4">Status Breakdown</h3>
+              <div className="space-y-2">
+                {stats.statusBreakdown.map(s => (
+                  <div key={s.status} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2 border border-slate-100/50">
+                    <span className="text-xs font-semibold text-slate-600">{s.status} <span className="text-slate-400 font-normal">× {s.count}</span></span>
+                    <span className="text-xs font-bold text-slate-700">{fmtINR(s.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+              <h3 className="text-sm font-bold text-slate-700 mb-4">Financial Summary</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between py-1.5 border-b border-slate-50">
+                  <span className="text-slate-500">Gross Amount (Subtotal)</span>
+                  <span className="font-semibold text-slate-800">{fmtINR(stats.subtotal)}</span>
+                </div>
+                <div className="flex items-center justify-between py-1.5 border-b border-slate-50">
+                  <span className="text-slate-500">Add: Tax Amount</span>
+                  <span className="font-semibold text-emerald-600">+{fmtINR(stats.tax)}</span>
+                </div>
+                <div className="flex items-center justify-between py-1.5 border-b border-slate-50">
+                  <span className="text-slate-500">Less: Discount Amount</span>
+                  <span className="font-semibold text-red-500">-{fmtINR(stats.discount)}</span>
+                </div>
+                <div className="flex items-center justify-between pt-2">
+                  <span className="font-bold text-slate-700">Net Spend</span>
+                  <span className="font-bold text-indigo-600 text-base">{fmtINR(stats.netSpend)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Top Materials */}
+          <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-slate-700">Top Materials by Spend</h3>
+              <span className="text-[11px] text-slate-400">{stats.topMaterials.length} materials</span>
+            </div>
+            {stats.topMaterials.length > 0 ? (
+              <div className="space-y-3">
+                {stats.topMaterials.map((m, i) => (
+                  <div key={m.name}>
+                    <div className="flex items-center justify-between text-xs mb-1 gap-2">
+                      <span className="font-semibold text-slate-700 truncate">{i + 1}. {m.name}</span>
+                      <span className="text-slate-500 shrink-0">Qty {m.qty} · {m.orders} order{m.orders !== 1 ? "s" : ""} · <span className="font-bold text-slate-700">{fmtINR(m.amount)}</span></span>
+                    </div>
+                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.max((m.amount / stats.maxMaterialAmount) * 100, 3)}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : <p className="text-sm text-slate-400 italic py-6 text-center">No line items found</p>}
+          </div>
+
+          {/* Site breakdown */}
+          {stats.siteBreakdown.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-100 p-5 shadow-sm">
+              <h3 className="text-sm font-bold text-slate-700 mb-4">Spend by Site</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {stats.siteBreakdown.map(s => (
+                  <div key={s.site} className="bg-slate-50 rounded-xl p-3 border border-slate-100/50">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{s.site}</p>
+                    <p className="text-sm font-bold text-slate-700">{fmtINR(s.value)}</p>
+                    <p className="text-[11px] text-slate-400">{s.count} order{s.count !== 1 ? "s" : ""}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Materials Breakdown table */}
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-5 pt-5 pb-3">
+              <h3 className="text-sm font-bold text-slate-700">Materials Breakdown</h3>
+              <span className="text-[11px] text-slate-400">{stats.itemRows.length} items</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 border-y border-slate-100">
+                    <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">#</th>
+                    <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">Item Name</th>
+                    <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">Category</th>
+                    <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">Brand</th>
+                    <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-widest text-slate-400">Qty</th>
+                    <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-widest text-slate-400">Rate</th>
+                    <th className="px-4 py-2 text-right text-[10px] font-bold uppercase tracking-widest text-slate-400">Total</th>
+                    <th className="px-4 py-2 text-left text-[10px] font-bold uppercase tracking-widest text-slate-400">PO/WO</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {stats.itemRows.map((it, i) => (
+                    <tr key={i} className="hover:bg-slate-50/60 transition-colors">
+                      <td className="px-4 py-2.5 text-slate-400 text-xs">{i + 1}</td>
+                      <td className="px-4 py-2.5 font-semibold text-slate-700">{it.materialName}</td>
+                      <td className="px-4 py-2.5 text-slate-500 text-xs">{it.category || "—"}</td>
+                      <td className="px-4 py-2.5 text-slate-500 text-xs">{it.brand || "—"}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-600">{it.qty}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-600">{fmtINR(it.rate)}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-slate-800">{fmtINR(it.amount)}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${it.orderType === "PO" ? "bg-blue-50 text-blue-600" : "bg-purple-50 text-purple-600"}`}>{it.orderType}</span>
+                        <span className="ml-1.5 text-xs text-slate-500 font-mono">{it.orderNo}</span>
+                      </td>
+                    </tr>
+                  ))}
+                  {stats.itemRows.length === 0 && (
+                    <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-400 italic">No line items found</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>)}
       </div>
     </div>
   );
