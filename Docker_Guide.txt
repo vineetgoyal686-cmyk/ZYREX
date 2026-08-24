@@ -1,17 +1,19 @@
 ================================================================
-           BMS PROJECT - DOCKER COMPLETE GUIDE
+           ZYHAWK PROJECT - DOCKER & DEPLOYMENT GUIDE
 ================================================================
 
-DATE: April 2, 2026
-PROJECT: BMS (Building Management System)
+DATE: April 2, 2026 (last content update: Aug 24, 2026)
+PROJECT: Zyhawk (Business Management System — procurement, finance,
+         attendance, organisation, inventory)
 DEVELOPER: Jitendar Goyal
 
 ----------------------------------------------------------------
 PROJECT STRUCTURE
 ----------------------------------------------------------------
-BMS/
+Zyhawk/
 ├── backend/        (Node.js + Express, port 3000)
-├── frontend/       (React + Vite, port 80)
+├── frontend/       (React + Vite, served via nginx, host 80 -> container 8080)
+├── landing/        (static landing page, deployed separately)
 ├── docker-compose.yml
 ├── .env.example
 └── Docker_Guide.txt
@@ -19,27 +21,53 @@ BMS/
 ----------------------------------------------------------------
 TECH STACK
 ----------------------------------------------------------------
-Backend  : Node.js, Express, Microsoft Graph API (OneDrive/Excel)
-Frontend : React 19, Vite, Tailwind CSS, Three.js
-Database : Microsoft OneDrive (Excel files via Graph API)
-Docker   : Backend + Frontend containers
+Backend  : Node.js, Express, Supabase (Postgres), Puppeteer/Chromium
+           (PDF generation), ZeptoMail (transactional email)
+Frontend : React 19, Vite, Tailwind CSS
+Database : Supabase (Postgres) — hosted, prod + dev projects
+Storage  : Supabase Storage buckets (avatars, PO docs, vendor docs,
+           finance docs, historical data, 3D models)
+Docker   : Backend + Frontend containers (Dockerfile local testing
+           ke liye hai; live production Railway pe chalta hai)
 
 ----------------------------------------------------------------
-DOCKER FILES BANAYE
+LIVE DEPLOYMENT (RAILWAY) — YE ASLI PRODUCTION FLOW HAI
 ----------------------------------------------------------------
-1. backend/Dockerfile
-2. frontend/Dockerfile
-3. frontend/nginx.conf
-4. docker-compose.yml
-5. backend/.dockerignore
-6. frontend/.dockerignore
-7. .env.example
+Git remote: https://github.com/vineetgoyal686-cmyk/ZYREX.git
+
+Railway is repo ko GitHub se connected hai aur `backend/Dockerfile`
+/ `frontend/Dockerfile` khud detect karke build+deploy karta hai —
+manual `docker build`/`docker push` ki zaroorat NAHI hai.
+
+Live update karne ke liye bas itna karna hai:
+
+        git add <files>
+        git commit -m "message"
+        git push
+
+Push hote hi Railway naya build bana ke automatically deploy kar
+deta hai. Docker Desktop is machine par installed hone ki bhi
+zaroorat nahi hai sirf deploy karne ke liye.
 
 ----------------------------------------------------------------
-PEHLI BAAR DOCKER CHALANA (Is Machine Pe)
+LOCAL DEVELOPMENT (BINA DOCKER KE — ROZANA KA TAREEKA)
 ----------------------------------------------------------------
-Step 1: Docker Desktop install karo
-Step 2: Terminal me BMS folder me jao
+Docker sirf packaging/consistent-deploy ke liye hai — normal coding
+aur testing ke liye iski zaroorat nahi. Seedha chalao:
+
+        cd backend
+        npm run dev        (port 3000)
+
+        cd frontend
+        npm run dev        (Vite dev server)
+
+----------------------------------------------------------------
+LOCAL DOCKER TESTING (OPTIONAL — SIRF DOCKER BUILD KHUD TEST KARNA HO TOH)
+----------------------------------------------------------------
+Agar production jaisa poora Docker build local par test karna ho:
+
+Step 1: Docker Desktop install karo (docker.com/products/docker-desktop)
+Step 2: Terminal me Zyhawk folder me jao
 Step 3: Command chalao:
 
         docker-compose up --build
@@ -49,8 +77,14 @@ Step 4: Browser me kholo:
         - Backend  : http://localhost:3000
 
 ----------------------------------------------------------------
-DOCKER HUB PE PUSH KARNA
+DOCKER HUB (LEGACY — ABHI ACTIVE DEPLOYMENT FLOW NAHI HAI)
 ----------------------------------------------------------------
+Ye pehle ka manual deployment tareeka tha (Docker Hub pe image push
+karke kisi bhi server par pull karna). Ab Railway seedha GitHub se
+build karta hai, isliye ye step normally zaroori nahi. Sirf tab
+use karo agar kabhi Railway ke alawa kisi doosre server/machine par
+manually deploy karna pade.
+
 Docker Hub Account: jitendargoyal
 Images:
   - jitendargoyal/bms-frontend
@@ -58,77 +92,56 @@ Images:
 
 Commands:
         docker login
-
         docker tag bms-backend jitendargoyal/bms-backend
         docker tag bms-frontend jitendargoyal/bms-frontend
-
         docker push jitendargoyal/bms-backend
         docker push jitendargoyal/bms-frontend
 
 ----------------------------------------------------------------
-NAYE PC/LAPTOP PE CHALANA
-----------------------------------------------------------------
-Zaroorat:
-  1. Docker Desktop installed ho
-  2. backend/.env file (manually bhejo - WhatsApp/Email)
-  3. Code (git clone ya copy)
-
-Commands:
-        git clone <repo-url>
-        cd BMS
-        # backend/.env file banao aur credentials paste karo
-        docker-compose up
-
-NOTE: --build nahi lagega, Docker Hub se images automatically
-      pull ho jayengi.
-
-----------------------------------------------------------------
-TEAM MEMBER KO DENA
+TEAM MEMBER KO CODE DENA (LOCAL SETUP KE LIYE)
 ----------------------------------------------------------------
 Bhejo:
-  1. Git repo access (git push se code already uploaded hai)
+  1. Git repo access
   2. backend/.env file - MANUALLY bhejo (WhatsApp/Email)
      KABHI GIT ME PUSH MAT KARNA .env FILE
 
 Team member ke steps:
-  1. Docker Desktop install karo
-  2. git clone <repo-url>
-  3. backend/.env file banao
-  4. docker-compose up
-
-----------------------------------------------------------------
-CODE UPDATE KARNE KE STEPS
-----------------------------------------------------------------
-Step 1: Code changes karo (normal tarah)
-
-Step 2: Rebuild karo:
-        docker-compose up --build
-
-Step 3: Docker Hub pe push karo:
-        docker tag bms-backend jitendargoyal/bms-backend
-        docker tag bms-frontend jitendargoyal/bms-frontend
-        docker push jitendargoyal/bms-backend
-        docker push jitendargoyal/bms-frontend
-
-Step 4: Dusre PC pe update lene ke liye:
-        docker-compose pull
-        docker-compose up
+  1. git clone <repo-url>
+  2. backend/.env file banao
+  3. backend: npm install && npm run dev
+     frontend: npm install && npm run dev
+     (Docker install karna optional hai, sirf agar poora container
+     setup test karna ho)
 
 ----------------------------------------------------------------
 ENVIRONMENT VARIABLES (.env)
 ----------------------------------------------------------------
-File location: backend/.env
+File location: backend/.env  (prod credentials)
+             backend/.env.local  (local dev overrides — agar hai
+             toh ye .env se priority leta hai app start hote waqt)
 
-TENANT_ID=<your_tenant_id>
-CLIENT_ID=<your_client_id>
-CLIENT_SECRET=<your_client_secret>
+SUPABASE_URL=<supabase project url>
+SUPABASE_SERVICE_KEY=<supabase service role key>
+FRONTEND_URL=<deployed frontend url>
+ZEPTOMAIL_API_KEY=<zeptomail api key>
+ZEPTOMAIL_FROM_EMAIL=<sender email>
+ZEPTOMAIL_FROM_NAME=<sender name>
+ZEPTOMAIL_TEMPLATE_INVITE=<template id>
+ZEPTOMAIL_TEMPLATE_OTP=<template id>
+ZEPTOMAIL_TEMPLATE_RESET=<template id>
+ZEPTOMAIL_TEMPLATE_ORDER_ACTION=<template id>
+ZEPTOMAIL_TEMPLATE_ORDER_ACTION_DIRECT=<template id>
+ZEPTOMAIL_TEMPLATE_ORDER_ACTION_NOREASON=<template id>
 PORT=3000
 
+Railway pe ye variables Railway project ke apne "Variables" tab me
+set hote hain (backend/.env file wahan upload nahi hoti) — ye .env
+file sirf local development ke liye hai.
+
 IMPORTANT:
-  - .env file PRIVATE hai
-  - Git me nahi gayi (.gitignore me hai)
-  - Docker IMAGE me nahi gayi (.dockerignore me hai)
-  - Runtime pe container me inject hoti hai (safe)
+  - .env / .env.local dono PRIVATE hain
+  - Git me nahi jaate (.gitignore me hai)
+  - Docker IMAGE me nahi jaate (.dockerignore me hai)
 
 ----------------------------------------------------------------
 DOCKER HUB LINK

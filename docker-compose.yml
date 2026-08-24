@@ -14,7 +14,7 @@ services:
       args:
         VITE_API_URL: http://localhost:3000
     ports:
-      - "80:80"
+      - "80:8080"
     depends_on:
       - backend
     restart: unless-stopped
