@@ -53,6 +53,8 @@ export default function Approvals() {
   const [canManageAmend, setCanManageAmend] = useState(false);
   const [canManageActionRequests, setCanManageActionRequests] = useState(false);
   const [isIssueHandler, setIsIssueHandler] = useState(false);
+  const [issueHandlerUsers, setIssueHandlerUsers] = useState([]);
+  const [signAsModal, setSignAsModal] = useState({ open: false, orderId: null, selectedId: "" });
   const [actionRequests, setActionRequests] = useState([]);
   const [arActionLoading, setArActionLoading] = useState(null);
   const [arCommentModal, setArCommentModal] = useState({ open: false, requestId: null, action: null });
@@ -145,6 +147,7 @@ export default function Approvals() {
       setCanManageActionRequests(!!arCapData.canManage);
       setPendingApprovals(pas);
       setIsIssueHandler(issueHandlerFlag);
+      setIssueHandlerUsers(issueUsers);
       
       // 2. Update Cache for next time
       localStorage.setItem("last_approvals_data", JSON.stringify({
@@ -230,7 +233,7 @@ export default function Approvals() {
     setPdfDownloading(false);
   };
 
-  const handleOrderAction = async (orderId, action, comments = "") => {
+  const handleOrderAction = async (orderId, action, comments = "", signAsUserId = null) => {
     if (actionLoading === orderId) return; // prevent double-click
     setActionLoading(orderId);
     try {
@@ -239,7 +242,7 @@ export default function Approvals() {
       const res = await authFetch(`${API}/api/orders/${orderId}/issue-action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: apiAction, comment: comments }),
+        body: JSON.stringify({ action: apiAction, comment: comments, ...(signAsUserId ? { signAsUserId } : {}) }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -256,6 +259,17 @@ export default function Approvals() {
       showToast("Network error", "error");
     }
     setActionLoading(null);
+  };
+
+  // Global Admin emergency override — "sign as" picker before issuing on behalf of the
+  // designated issue handler when they're unavailable.
+  const openIssueFlow = (orderId) => {
+    const designated = issueHandlerUsers.filter(u => String(u.id) !== String(currentUser.id));
+    if (isGlobalAdmin && designated.length > 0) {
+      setSignAsModal({ open: true, orderId, selectedId: String(designated[0].id) });
+      return;
+    }
+    handleOrderAction(orderId, "Issued");
   };
 
   const handleActionRequest = async (requestId, action, comment = "") => {
@@ -631,7 +645,7 @@ export default function Approvals() {
                             <td className="px-5 py-4">
                               {(isIssueHandler && canOrderAct) ? (
                                 <div className="flex items-center justify-center gap-1.5">
-                                  <button disabled={actionLoading === o.id} onClick={() => handleOrderAction(o.id, "Issued")} title="Issue Order"
+                                  <button disabled={actionLoading === o.id} onClick={() => openIssueFlow(o.id)} title="Issue Order"
                                     className="h-8 w-8 rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 shadow-sm flex items-center justify-center transition-all"><CircleCheck size={18} /></button>
                                   <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Rejected" }); setCommentText(""); }} title="Reject Order"
                                     className="h-8 w-8 rounded-md bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-40 shadow-sm flex items-center justify-center transition-all"><CircleX size={18} /></button>
@@ -687,7 +701,7 @@ export default function Approvals() {
                             className="flex-1 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">Revert</button>
                           <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Rejected" }); setCommentText(""); }}
                             className="flex-1 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-all border-l border-slate-100">Reject</button>
-                          <button disabled={actionLoading === o.id} onClick={() => handleOrderAction(o.id, "Issued")}
+                          <button disabled={actionLoading === o.id} onClick={() => openIssueFlow(o.id)}
                             className="flex-1 py-2 text-sm font-bold text-white bg-emerald-700 hover:bg-emerald-800 transition-all flex items-center justify-center gap-1.5">
                             {actionLoading === o.id ? "..." : <>Issue <ArrowRight size={14} /></>}
                           </button>
@@ -1042,6 +1056,58 @@ export default function Approvals() {
                   }}
                   className={`flex-[2] py-3 text-xs font-bold text-white rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:grayscale ${commentModal.action === "Reverted" ? "bg-amber-500 hover:bg-amber-600" : "bg-rose-600 hover:bg-rose-700"}`}>
                   {commentModal.action === "Reverted" ? "Confirm Revert" : "Confirm Reject"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {signAsModal.open && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Issue Order</h3>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Sign this document as</p>
+              </div>
+              <button onClick={() => setSignAsModal({ open: false, orderId: null, selectedId: "" })}
+                className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-[13px] text-slate-600 font-medium bg-amber-50 p-3 rounded-xl border border-amber-100">
+                Aap Global Admin ke roop me issue kar rahe hain. Jiska naam/signature document par aana chahiye use select karein — emergency me kisi aur ki taraf se bhi issue kar sakte hain.
+              </p>
+              <div className="space-y-2">
+                {issueHandlerUsers.map(u => (
+                  <label key={u.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all ${String(signAsModal.selectedId) === String(u.id) ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                    <input type="radio" name="signAs" checked={String(signAsModal.selectedId) === String(u.id)}
+                      onChange={() => setSignAsModal(m => ({ ...m, selectedId: String(u.id) }))} className="accent-emerald-600" />
+                    <span className="text-sm font-semibold text-slate-800">{u.name}</span>
+                    {String(u.id) === String(currentUser.id) && <span className="text-[10px] text-slate-400 font-bold uppercase">(Myself)</span>}
+                  </label>
+                ))}
+                {!issueHandlerUsers.some(u => String(u.id) === String(currentUser.id)) && (
+                  <label className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all ${String(signAsModal.selectedId) === String(currentUser.id) ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                    <input type="radio" name="signAs" checked={String(signAsModal.selectedId) === String(currentUser.id)}
+                      onChange={() => setSignAsModal(m => ({ ...m, selectedId: String(currentUser.id) }))} className="accent-emerald-600" />
+                    <span className="text-sm font-semibold text-slate-800">{currentUser.name}</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase">(Myself)</span>
+                  </label>
+                )}
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setSignAsModal({ open: false, orderId: null, selectedId: "" })}
+                  className="flex-1 py-3 text-xs font-bold text-slate-500 rounded-xl hover:bg-slate-100 transition-all">Cancel</button>
+                <button
+                  disabled={!signAsModal.selectedId || actionLoading === signAsModal.orderId}
+                  onClick={() => {
+                    const { orderId, selectedId } = signAsModal;
+                    setSignAsModal({ open: false, orderId: null, selectedId: "" });
+                    handleOrderAction(orderId, "Issued", "", selectedId);
+                  }}
+                  className="flex-[2] py-3 text-xs font-bold text-white rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:grayscale bg-emerald-600 hover:bg-emerald-700">
+                  Confirm & Issue
                 </button>
               </div>
             </div>

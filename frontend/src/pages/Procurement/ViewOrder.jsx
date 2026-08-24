@@ -86,6 +86,8 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   const [actionModal, setActionModal] = useState({ open: false, type: "" });
   const [actionComment, setActionComment] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  // Global Admin emergency override — "sign as" picker shown before issuing on behalf of someone else
+  const [signAsModal, setSignAsModal] = useState({ open: false, selectedId: "" });
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfBlobUrl, setPdfBlobUrl] = useState(null);
   const [toast, setToast] = useState(null);
@@ -318,14 +320,14 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     } catch { }
   };
 
-  const handleIssueAction = async (action, comment = "") => {
+  const handleIssueAction = async (action, comment = "", signAsUserId = null) => {
     setActionLoading(true);
     const token = localStorage.getItem("bms_token") || "";
     try {
       const res = await fetch(`${API}/api/orders/${orderId}/issue-action`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action, comment }),
+        body: JSON.stringify({ action, comment, ...(signAsUserId ? { signAsUserId } : {}) }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "Action failed");
@@ -656,7 +658,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     if (newStatus === 'Review') {
       const preDocs = Array.isArray(order.pre_documents) ? order.pre_documents : [];
       const hasQuotation = !!order.quotation_url || preDocs.some(d => d.category === 'quotations');
-      const hasProof = !!order.comparative_sheet_url || preDocs.some(d => d.category === 'comparative' || d.category === 'vendor-docs');
+      const hasProof = !!order.comparative_sheet_url || preDocs.some(d => d.category === 'comparative' || d.category === 'vendor-docs' || d.category === 'mail-proof');
 
       if (!hasQuotation) {
         showToast("At least 1 Quotation Document is mandatory before submitting for Review.", "error");
@@ -1060,6 +1062,18 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
   const isRecallHandler = isGlobalAdmin || inHandlers("recall");
   const isAmendHandler  = isGlobalAdmin || inHandlers("amend");
   const isCancelHandler = isGlobalAdmin || inHandlers("cancel");
+
+  // Designated issue signatories for this order (configured in Setup → Request Handlers).
+  // Global Admin uses this list to issue "as" the real signatory when they're unavailable.
+  const issueHandlerUsers = handlers.order?.issue?.users || [];
+  const openIssueFlow = () => {
+    const designated = issueHandlerUsers.filter(u => String(u.id) !== String(thisUser.id));
+    if (isGlobalAdmin && designated.length > 0) {
+      setSignAsModal({ open: true, selectedId: String(designated[0].id) });
+      return;
+    }
+    handleIssueAction("issue");
+  };
 
   const userCanRecall = isRecallHandler;
   const userCanCancel = isCancelHandler;
@@ -1534,7 +1548,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
                     Reject
                   </button>
                   <button disabled={actionLoading}
-                    onClick={() => handleIssueAction("issue")}
+                    onClick={openIssueFlow}
                     className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm text-xs transition-all disabled:opacity-60">
                     {actionLoading ? "Issuing..." : "Issue Order"}
                   </button>
@@ -3383,6 +3397,65 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
           </div>
         );
       })()}
+
+      {signAsModal.open && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl flex items-center justify-center text-white shadow-sm bg-emerald-600">
+                  <ShieldQuestion size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Issue Order</h3>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Sign this document as</p>
+                </div>
+              </div>
+              <button onClick={() => setSignAsModal({ open: false, selectedId: "" })} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-[13px] text-slate-600 font-medium leading-relaxed bg-amber-50 p-3 rounded-xl border border-amber-100/50">
+                Aap Global Admin ke roop me issue kar rahe hain. Jiska naam/signature document par aana chahiye use select karein — emergency me kisi aur ki taraf se bhi issue kar sakte hain.
+              </p>
+              <div className="space-y-2">
+                {issueHandlerUsers.map(u => (
+                  <label key={u.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all ${String(signAsModal.selectedId) === String(u.id) ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                    <input type="radio" name="signAs" checked={String(signAsModal.selectedId) === String(u.id)}
+                      onChange={() => setSignAsModal(m => ({ ...m, selectedId: String(u.id) }))} className="accent-emerald-600" />
+                    <span className="text-sm font-semibold text-slate-800">{u.name}</span>
+                    {String(u.id) === String(thisUser.id) && <span className="text-[10px] text-slate-400 font-bold uppercase">(Myself)</span>}
+                  </label>
+                ))}
+                {!issueHandlerUsers.some(u => String(u.id) === String(thisUser.id)) && (
+                  <label className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all ${String(signAsModal.selectedId) === String(thisUser.id) ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'}`}>
+                    <input type="radio" name="signAs" checked={String(signAsModal.selectedId) === String(thisUser.id)}
+                      onChange={() => setSignAsModal(m => ({ ...m, selectedId: String(thisUser.id) }))} className="accent-emerald-600" />
+                    <span className="text-sm font-semibold text-slate-800">{thisUser.name}</span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase">(Myself)</span>
+                  </label>
+                )}
+              </div>
+              <div className="flex items-center gap-3 pt-2">
+                <button onClick={() => setSignAsModal({ open: false, selectedId: "" })}
+                  className="flex-1 py-3 text-xs font-bold text-slate-500 rounded-xl hover:bg-slate-100 transition-all">
+                  Cancel
+                </button>
+                <button disabled={actionLoading || !signAsModal.selectedId}
+                  onClick={() => {
+                    const chosen = signAsModal.selectedId;
+                    setSignAsModal({ open: false, selectedId: "" });
+                    handleIssueAction("issue", "", chosen);
+                  }}
+                  className="flex-[2] py-3 text-xs font-bold text-white rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:grayscale bg-emerald-600 hover:bg-emerald-700">
+                  Confirm & Issue
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </>
   );

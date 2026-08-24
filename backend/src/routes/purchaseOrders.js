@@ -3337,7 +3337,7 @@ router.delete("/:id/vendor-invoices/:invoiceId/docs/:docId", async (req, res) =>
    Issue handler acts on a "Pending Issue" order: issue | revert | reject
 ───────────────────────────────────────── */
 router.post("/:id/issue-action", async (req, res) => {
-  const { action, comment } = req.body; // action: "issue" | "revert" | "reject"
+  const { action, comment, signAsUserId } = req.body; // action: "issue" | "revert" | "reject"
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ error: "Login required" });
 
@@ -3376,11 +3376,30 @@ router.post("/:id/issue-action", async (req, res) => {
 
     const newStatus = action === "issue" ? "Issued" : action === "revert" ? "Review" : "Rejected";
     const actionLabel = action === "issue" ? "Issued" : action === "revert" ? "Reverted" : "Rejected";
+
+    // Global Admin emergency override: the actual signatory may be unavailable, so the
+    // clicking admin can issue "as" a designated signatory instead of stamping their own
+    // name/signature. Only Global Admin can do this — everyone else always signs as themselves.
+    let signatoryUser = user;
+    let isOverride = false;
+    if (action === "issue" && signAsUserId && String(signAsUserId) !== String(userId)) {
+      if (!isGlobalAdmin) {
+        return res.status(403).json({ error: "Sirf Global Admin kisi aur ki taraf se issue kar sakta hai" });
+      }
+      const { data: signatoryProfile } = await supabase.from("users")
+        .select("name, designation, profile_permissions").eq("id", signAsUserId).maybeSingle();
+      if (signatoryProfile) {
+        signatoryUser = signatoryProfile;
+        isOverride = true;
+      }
+    }
+
     actLog.push({
       action: actionLabel,
       action_by: user?.name || "",
       action_at: now,
       ...(comment ? { comments: comment } : {}),
+      ...(isOverride ? { signed_as: signatoryUser.name || "" } : {}),
     });
 
     // On final Issue, refresh the frozen vendor snapshot with the latest Vendor Master
@@ -3427,12 +3446,17 @@ router.post("/:id/issue-action", async (req, res) => {
 
     if (action === "issue") {
       const issuedBy = {
-        id:            userId,
-        name:          user?.name || "",
-        designation:   user?.designation || "",
-        signatureFile: user?.profile_permissions?.ui?.signature || null,
+        id:            isOverride ? signAsUserId : userId,
+        name:          signatoryUser?.name || "",
+        designation:   signatoryUser?.designation || "",
+        signatureFile: signatoryUser?.profile_permissions?.ui?.signature || null,
       };
-      updatePayload.totals = { ...(order.totals || {}), issuedBy, issuedAt: now };
+      updatePayload.totals = {
+        ...(order.totals || {}),
+        issuedBy,
+        issuedAt: now,
+        ...(isOverride ? { issuedActor: { id: userId, name: user?.name || "" } } : {}),
+      };
 
       // Assign final order number if still a draft number
       if (isDraftNumber(order.order_number) && order.site_id) {
