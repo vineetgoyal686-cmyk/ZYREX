@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
-import { Plus, Search, Pencil, Trash2, X, Wallet, Eye, FileSpreadsheet, ChevronDown, ArrowLeft, FileText, Upload, Download } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, X, Wallet, Eye, FileSpreadsheet, ChevronDown, ArrowLeft, FileText, Upload, Download, IndianRupee } from "lucide-react";
 import * as XLSX from "xlsx";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import EntitySelect from "../../components/EntitySelect";
@@ -50,6 +50,7 @@ const Field = ({ label, required, children }) => (
 // 15px text) so every box in the form looks the same, dropdowns included.
 const inp  = "w-full border border-slate-300 rounded h-14 px-4 text-[15px] outline-none focus:border-slate-400 text-slate-950 placeholder:text-slate-400";
 const cell = "w-full px-1.5 py-1.5 text-xs border-0 outline-none focus:bg-indigo-50 rounded text-slate-700 bg-transparent";
+const td   = "border border-slate-200 whitespace-nowrap";
 
 const Select = ({ value, onChange, className = inp, children }) => (
   <div className="relative">
@@ -105,6 +106,16 @@ export default function PaymentsTrack({ project }) {
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkResult, setBulkResult] = useState(null);
   const moreRef = useRef();
+
+  const [showRecordPayment, setShowRecordPayment] = useState(false);
+  const [payOrderId, setPayOrderId] = useState("");
+  const [payAmount, setPayAmount]   = useState("");
+  const [payDate, setPayDate]       = useState("");
+  const [payMode, setPayMode]       = useState("");
+  const [payRef, setPayRef]         = useState("");
+  const [payRemarks, setPayRemarks] = useState("");
+  const [payAllocations, setPayAllocations] = useState({}); // invoiceId -> amount string
+  const [paySaving, setPaySaving]   = useState(false);
   const bulkRef = useRef();
 
   const [view, setView]     = useState("list"); // "list" | "form"
@@ -383,6 +394,59 @@ export default function PaymentsTrack({ project }) {
 
   const showRefNo = (mode) => mode && mode !== "Cash";
 
+  // Record Payment — one lump payment split across whichever of an order's
+  // invoices it actually covers, since a vendor is often paid a round-sum
+  // amount that isn't tied to a single bill.
+  const openRecordPayment = () => {
+    setPayOrderId(""); setPayAmount(""); setPayDate(new Date().toISOString().slice(0, 10));
+    setPayMode(""); setPayRef(""); setPayRemarks(""); setPayAllocations({});
+    setShowRecordPayment(true);
+  };
+  const payOrderInvoices = useMemo(
+    () => invoices.filter(i => i.orderId === payOrderId && i.balance > 0)
+      .sort((a, b) => new Date(a.invoiceDate || 0) - new Date(b.invoiceDate || 0)),
+    [invoices, payOrderId]
+  );
+  const payAllocatedTotal = payOrderInvoices.reduce((sum, i) => sum + (Number(payAllocations[i.id]) || 0), 0);
+  const payAmountNum = Number(payAmount) || 0;
+
+  const autoFillOldestFirst = () => {
+    let remaining = payAmountNum;
+    const next = {};
+    for (const inv of payOrderInvoices) {
+      const take = Math.min(remaining, inv.balance);
+      next[inv.id] = take > 0 ? String(take) : "";
+      remaining -= take;
+    }
+    setPayAllocations(next);
+  };
+
+  const handleRecordPaymentSave = async () => {
+    if (!payOrderId) return showToast("Select an order", "error");
+    if (payAmountNum <= 0) return showToast("Amount must be greater than 0", "error");
+    if (Math.round(payAllocatedTotal * 100) !== Math.round(payAmountNum * 100)) {
+      return showToast("Allocated amount must exactly match the payment amount", "error");
+    }
+    setPaySaving(true);
+    try {
+      const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
+      const token = localStorage.getItem("bms_token") || "";
+      const allocations = payOrderInvoices
+        .map(i => ({ invoiceId: i.id, amount: Number(payAllocations[i.id]) || 0 }))
+        .filter(a => a.amount > 0);
+      const res = await fetch(`${API}/api/finance/orders/${payOrderId}/record-payment`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ paidDate: payDate, mode: payMode, referenceNo: payRef, remarks: payRemarks, allocations, createdByName: u.name || "" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not save payment");
+      showToast(`Payment recorded across ${data.count} invoice${data.count !== 1 ? "s" : ""}`);
+      setShowRecordPayment(false);
+      fetchInvoices();
+    } catch (err) { showToast(err.message, "error"); }
+    setPaySaving(false);
+  };
+
   if (view === "form") {
     return (
       <>
@@ -644,6 +708,12 @@ export default function PaymentsTrack({ project }) {
               </div>
             )}
             {canAdd && (
+              <button onClick={openRecordPayment}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
+                <IndianRupee size={14} className="text-emerald-600" /> Record Payment
+              </button>
+            )}
+            {canAdd && (
               <button onClick={openAdd}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 transition-all">
                 <Plus size={15} /> Add Invoice
@@ -871,6 +941,103 @@ export default function PaymentsTrack({ project }) {
                   </button>
                 )}
                 <button onClick={() => setViewInvoice(null)} className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 transition-all">Close</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Record Payment — one lump payment split across an order's invoices */}
+        {showRecordPayment && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+                <h2 className="text-base font-bold text-slate-800">Record Payment</h2>
+                <button onClick={() => setShowRecordPayment(false)} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+              </div>
+              <div className="px-6 py-5 space-y-4 overflow-y-auto">
+                <EntitySelect
+                  label="Select Order" required
+                  value={payOrderId}
+                  onChange={e => { setPayOrderId(e.target.value); setPayAllocations({}); }}
+                  options={orderOptions} valueKey="id" labelKey="vendorName" subLabelKey="orderNo"
+                  placeholder="Select order…"
+                />
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Field label="Amount" required>
+                    <input type="number" min="0" value={payAmount} onChange={e => setPayAmount(e.target.value)} className={inp} placeholder="0" />
+                  </Field>
+                  <Field label="Paid Date">
+                    <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} className={inp} />
+                  </Field>
+                  <Field label="Mode">
+                    <Select value={payMode} onChange={e => setPayMode(e.target.value)}>
+                      <option value="">—</option>
+                      {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
+                    </Select>
+                  </Field>
+                  {showRefNo(payMode) && (
+                    <Field label="Cheque/Ref No">
+                      <input value={payRef} onChange={e => setPayRef(e.target.value)} className={inp} placeholder="Cheque/UTR No" />
+                    </Field>
+                  )}
+                </div>
+                <Field label="Remarks">
+                  <input value={payRemarks} onChange={e => setPayRemarks(e.target.value)} className={inp} placeholder="Optional notes" />
+                </Field>
+
+                {payOrderId && (
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Allocate Across Invoices</p>
+                      <button type="button" onClick={autoFillOldestFirst} disabled={!payAmountNum}
+                        className="text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                        Auto-fill (oldest first)
+                      </button>
+                    </div>
+                    {payOrderInvoices.length === 0 ? (
+                      <p className="text-center text-slate-300 text-xs font-bold uppercase tracking-widest py-8 border border-dashed border-slate-200 rounded-xl">No outstanding invoices for this order</p>
+                    ) : (
+                      <div className="border border-slate-200 rounded-xl overflow-x-auto">
+                        <table className="border-collapse w-full">
+                          <thead>
+                            <tr className="bg-slate-50">
+                              {["Invoice No", "Invoice Amount", "Already Paid", "Balance", "Allocate"].map(c => (
+                                <th key={c} className="text-left px-2 py-2 text-[10px] font-semibold text-slate-500 uppercase whitespace-nowrap border border-slate-200">{c}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {payOrderInvoices.map(inv => (
+                              <tr key={inv.id}>
+                                <td className={`${td} px-2 py-2 text-xs font-semibold text-slate-700`}>{inv.invoiceNo}</td>
+                                <td className={`${td} px-2 py-2 text-xs text-slate-600 text-right`}>{fmtINR(inv.invoiceAmount)}</td>
+                                <td className={`${td} px-2 py-2 text-xs text-emerald-700 text-right`}>{fmtINR(inv.totalPaid)}</td>
+                                <td className={`${td} px-2 py-2 text-xs text-red-600 font-semibold text-right`}>{fmtINR(inv.balance)}</td>
+                                <td className="border border-slate-200">
+                                  <input type="number" min="0" max={inv.balance} value={payAllocations[inv.id] || ""}
+                                    onChange={e => setPayAllocations(prev => ({ ...prev, [inv.id]: e.target.value }))}
+                                    className={`${cell} w-28 text-right`} placeholder="0" />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-end gap-4 mt-2 text-sm">
+                      <span className="text-slate-500">Allocated: <b className={payAllocatedTotal === payAmountNum && payAmountNum > 0 ? "text-emerald-600" : "text-red-600"}>{fmtINR(payAllocatedTotal)}</b></span>
+                      <span className="text-slate-500">of <b className="text-slate-800">{fmtINR(payAmountNum)}</b></span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0">
+                <button onClick={() => setShowRecordPayment(false)}
+                  className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-200 transition-all">Cancel</button>
+                <button onClick={handleRecordPaymentSave} disabled={paySaving}
+                  className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 transition-all disabled:opacity-50">
+                  {paySaving ? "Saving…" : "Save Payment"}
+                </button>
               </div>
             </div>
           </div>

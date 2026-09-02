@@ -21,6 +21,7 @@ const mapOrder = (r) => ({
 });
 
 const num = (v) => Math.max(Number(v) || 0, 0);
+const PAYMENT_MODES = ["Cash", "Cheque", "NEFT", "RTGS", "UPI"];
 
 /* GET /api/finance/orders */
 router.get("/orders", async (req, res) => {
@@ -107,6 +108,48 @@ router.put("/orders/:id", requirePerm("payments_track", "can_edit"), async (req,
     res.json({ order: mapOrder(updated) });
   } catch (err) {
     console.error("Finance order update error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* POST /api/finance/orders/:id/record-payment — a vendor is often paid one
+   lump sum that covers more than one of their bills at once; this splits a
+   single payment across whichever of the order's invoices it's meant to
+   cover, instead of forcing it onto just one invoice. */
+router.post("/orders/:id/record-payment", requirePerm("payments_track", "can_add"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { paidDate, mode, referenceNo, remarks, allocations, createdByName } = req.body;
+
+    const list = (Array.isArray(allocations) ? allocations : []).filter(a => Number(a.amount) > 0);
+    if (!list.length) return res.status(400).json({ error: "Allocate the payment to at least one invoice" });
+
+    // Every invoice in the allocation must actually belong to this order —
+    // otherwise this endpoint could be used to pay off invoices from a
+    // completely different order.
+    const invoiceIds = list.map(a => a.invoiceId);
+    const { data: invoiceRows, error: invErr } = await supabase
+      .from("finance_invoices").select("id, order_id").in("id", invoiceIds).eq("order_id", id);
+    if (invErr) throw invErr;
+    const validIds = new Set((invoiceRows || []).map(r => r.id));
+
+    const rows = list.filter(a => validIds.has(a.invoiceId)).map(a => ({
+      invoice_id:      a.invoiceId,
+      paid_amount:     num(a.amount),
+      paid_date:       paidDate || null,
+      mode:            PAYMENT_MODES.includes(mode) ? mode : "",
+      reference_no:    referenceNo || "",
+      remarks:         remarks || "",
+      created_by_name: createdByName || "",
+    }));
+    if (!rows.length) return res.status(400).json({ error: "None of the selected invoices belong to this order" });
+
+    const { error } = await supabase.from("finance_invoice_payments").insert(rows);
+    if (error) throw error;
+
+    res.json({ success: true, count: rows.length });
+  } catch (err) {
+    console.error("Record order payment error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
