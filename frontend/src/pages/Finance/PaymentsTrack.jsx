@@ -344,13 +344,24 @@ export default function PaymentsTrack({ project }) {
   };
 
   const downloadTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([{
-      "Vendor Name": "Advance Infra", "Company Name": "Bharat Volt Pvt Ltd",
-      "Order No": "PO-1234", "Order Date": "2026-04-01", "Order Value": 500000,
-      "Invoice No": "INV-1234", "Invoice Date": "2026-04-10", "Invoice Amount": 125000,
-      "Expense Category": "Raw Material", "Expense Info": "Cement & steel for foundation",
-      "Tally Status": "No", "Bill Status": "Pending",
-    }]);
+    // Second row deliberately leaves Vendor/Order columns blank to show that
+    // a vendor with multiple invoices only needs them filled on its first row.
+    const ws = XLSX.utils.json_to_sheet([
+      {
+        "Vendor Name": "Advance Infra", "Company Name": "Bharat Volt Pvt Ltd",
+        "Order No": "PO-1234", "Order Date": "2026-04-01", "Order Value": 500000,
+        "Invoice No": "INV-1234", "Invoice Date": "2026-04-10", "Invoice Amount": 125000,
+        "Expense Category": "Raw Material", "Expense Info": "Cement & steel for foundation",
+        "Tally Status": "No", "Bill Status": "Pending",
+      },
+      {
+        "Vendor Name": "", "Company Name": "",
+        "Order No": "", "Order Date": "", "Order Value": "",
+        "Invoice No": "INV-1235", "Invoice Date": "2026-05-02", "Invoice Amount": 98000,
+        "Expense Category": "Raw Material", "Expense Info": "Second invoice against the same order",
+        "Tally Status": "No", "Bill Status": "Pending",
+      },
+    ]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Invoices");
     XLSX.writeFile(wb, "payments_track_bulk_template.xlsx");
@@ -365,7 +376,23 @@ export default function PaymentsTrack({ project }) {
       const wb   = XLSX.read(ev.target.result, { type: "array" });
       const ws   = wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws);
-      setBulkRows(data.filter(r => r["Vendor Name"] || r["Invoice No"]));
+
+      // Vendor/Order columns are often filled in only on a vendor's first
+      // row (merged-cell style, like most people's own trackers) — carry
+      // them down onto the blank rows below so every invoice row still has
+      // its Vendor Name / Order No without retyping it each time.
+      const CARRY_COLUMNS = ["Vendor Name", "Company Name", "Order No", "Order Date", "Order Value"];
+      const last = {};
+      const filled = data.map(row => {
+        const r = { ...row };
+        CARRY_COLUMNS.forEach(key => {
+          if (r[key] !== undefined && r[key] !== null && String(r[key]).trim() !== "") last[key] = r[key];
+          else if (last[key] !== undefined) r[key] = last[key];
+        });
+        return r;
+      });
+
+      setBulkRows(filled.filter(r => r["Invoice No"]));
       setBulkResult(null);
     };
     reader.readAsArrayBuffer(file);
@@ -761,7 +788,7 @@ export default function PaymentsTrack({ project }) {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="border border-slate-100 rounded-xl p-4">
                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Step 1 — Download Template</p>
-                <p className="text-xs text-slate-400 mb-3">Fill it in Excel — Vendor Name, Invoice No, Invoice Date & Invoice Amount are required.</p>
+                <p className="text-xs text-slate-400 mb-3">Fill it in Excel — Invoice No, Invoice Date & Invoice Amount are required per row. For a vendor with several invoices, fill Vendor/Order columns only on its first row and leave them blank below — they carry down automatically.</p>
                 <button onClick={downloadTemplate}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
                   <Download size={14} className="text-slate-400" /> Download Template
