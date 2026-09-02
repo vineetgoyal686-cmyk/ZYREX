@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
-import { Plus, Search, Pencil, Trash2, X, Wallet, Eye, FileSpreadsheet, ChevronDown, ArrowLeft, FileText, Upload, Download, IndianRupee } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, X, Wallet, Eye, FileSpreadsheet, ChevronDown, ArrowLeft, FileText, Upload, Download, IndianRupee, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import * as XLSX from "xlsx";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import EntitySelect from "../../components/EntitySelect";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
-const PER_PAGE = 10;
 
 const BILL_STATUSES      = ["Pending", "Approved", "Rejected", "Hold"];
 const PAYMENT_STATUSES   = ["Unpaid", "Partially Paid", "Fully Paid"];
@@ -98,6 +97,7 @@ export default function PaymentsTrack({ project }) {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo]     = useState("");
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(20);
 
   const [showMore, setShowMore] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
@@ -328,8 +328,8 @@ export default function PaymentsTrack({ project }) {
     const matchesTo   = dateRange === "all" || !customTo   || (i.invoiceDate && i.invoiceDate <= customTo);
     return matchesSearch && matchesVendor && matchesBill && matchesPayment && matchesCategory && matchesFrom && matchesTo;
   });
-  const totalPages = Math.ceil(filtered.length / PER_PAGE) || 1;
-  const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const totalPages = Math.ceil(filtered.length / perPage) || 1;
+  const paginated  = filtered.slice((page - 1) * perPage, page * perPage);
 
   const exportExcel = () => {
     const data = filtered.map((i, idx) => ({
@@ -816,16 +816,19 @@ export default function PaymentsTrack({ project }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50">
-                  {["S.No", "Vendor Name", "Invoice No", "Invoice Date", "Expense Category", "Invoice Amount", "Paid Amount", "Balance Amount", "Bill Status", "Tally Status", "Payment Status", "Actions"].map(c => (
+                  <th className="sticky left-0 z-30 w-14 text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 border-r-2 border-r-slate-300 whitespace-nowrap bg-slate-50">S.No</th>
+                  <th className="sticky left-14 z-30 w-48 text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 border-r-2 border-r-slate-300 whitespace-nowrap bg-slate-50">Vendor Name</th>
+                  {["Invoice No", "Invoice Date", "Expense Category", "Invoice Amount", "Paid Amount", "Balance Amount", "Bill Status", "Tally Status", "Payment Status"].map(c => (
                     <th key={c} className="text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 whitespace-nowrap">{c}</th>
                   ))}
+                  <th className="sticky right-0 z-30 text-left px-3 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide border border-slate-200 border-l-2 border-l-slate-300 whitespace-nowrap bg-slate-50">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {paginated.map((i, idx) => (
-                  <tr key={i.id} onClick={() => setViewInvoice(i)} className="hover:bg-slate-50 transition-colors cursor-pointer">
-                    <td className="px-3 py-3 text-sm text-slate-500 border border-slate-200 whitespace-nowrap">{(page - 1) * PER_PAGE + idx + 1}</td>
-                    <td className="px-3 py-3 text-sm font-semibold text-slate-800 border border-slate-200 whitespace-nowrap">{i.vendorName || "—"}</td>
+                  <tr key={i.id} onClick={() => setViewInvoice(i)} className="group hover:bg-slate-50 transition-colors cursor-pointer">
+                    <td className="sticky left-0 z-10 w-14 px-3 py-3 text-sm text-slate-500 border border-slate-200 border-r-2 border-r-slate-300 whitespace-nowrap bg-white group-hover:bg-slate-50">{(page - 1) * perPage + idx + 1}</td>
+                    <td className="sticky left-14 z-10 w-48 px-3 py-3 text-sm font-semibold text-slate-800 border border-slate-200 border-r-2 border-r-slate-300 whitespace-nowrap bg-white group-hover:bg-slate-50">{i.vendorName || "—"}</td>
                     <td className="px-3 py-3 text-sm text-slate-600 border border-slate-200 whitespace-nowrap">{i.invoiceNo}</td>
                     <td className="px-3 py-3 text-sm text-slate-600 border border-slate-200 whitespace-nowrap">{fmtDate(i.invoiceDate)}</td>
                     <td className="px-3 py-3 text-sm text-slate-600 border border-slate-200 whitespace-nowrap">{i.expenseCategory || "—"}</td>
@@ -841,8 +844,8 @@ export default function PaymentsTrack({ project }) {
                     <td className="px-3 py-3 text-sm border border-slate-200 whitespace-nowrap">
                       <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${PAYMENT_BADGE[i.paymentStatus]}`}>{i.paymentStatus}</span>
                     </td>
-                    <td className="px-3 py-3 border border-slate-200" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center justify-center gap-0.5">
+                    <td className="sticky right-0 z-10 border border-slate-200 border-l-2 border-l-slate-300 bg-white group-hover:bg-slate-50" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-center gap-0.5 px-3 py-3">
                         <button onClick={() => setViewInvoice(i)} className="p-1.5 rounded-lg text-slate-300 hover:text-blue-600 hover:bg-blue-50 transition-all"><Eye size={14} /></button>
                         {canEdit && <button onClick={() => openEdit(i)} className="p-1.5 rounded-lg text-slate-300 hover:text-slate-600 hover:bg-slate-100 transition-all"><Pencil size={14} /></button>}
                         {canDelete && <button onClick={() => handleDelete(i.id)} className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"><Trash2 size={14} /></button>}
@@ -852,32 +855,68 @@ export default function PaymentsTrack({ project }) {
                 ))}
               </tbody>
             </table>
-            <div className="px-4 py-3 border-t border-slate-100 bg-slate-50">
-              <div className="flex items-center justify-between flex-wrap gap-3">
-                <p className="text-xs text-slate-400">{filtered.length} invoice{filtered.length !== 1 ? "s" : ""} · Page {page} of {totalPages}</p>
-                {totalPages > 1 && (
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                      className="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 disabled:opacity-30 transition-all">‹</button>
-                    {Array.from({ length: Math.min(totalPages, 5) }, (_, i2) => {
-                      let n;
-                      if (totalPages <= 5) n = i2 + 1;
-                      else if (page <= 3) n = i2 + 1;
-                      else if (page >= totalPages - 2) n = totalPages - 4 + i2;
-                      else n = page - 2 + i2;
-                      return (
-                        <button key={n} onClick={() => setPage(n)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${page === n ? "bg-slate-900 text-white border-slate-900" : "text-slate-600 border-slate-200 hover:bg-slate-50"}`}>
-                          {n}
-                        </button>
-                      );
-                    })}
-                    <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                      className="px-2 py-1 rounded-lg text-xs font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 disabled:opacity-30 transition-all">›</button>
-                  </div>
-                )}
+            {filtered.length > 0 && (
+              <div className="shrink-0 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 md:gap-4 px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+                <p className="text-xs text-slate-500 order-1">
+                  {(page - 1) * perPage + 1}-{Math.min(page * perPage, filtered.length)} of {filtered.length} items
+                </p>
+                <div className="order-3 md:order-2 w-full md:w-auto flex justify-center">
+                  {totalPages > 1 && (
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setPage(1)} disabled={page === 1}
+                        className="p-1.5 rounded-lg text-slate-400 hover:bg-white disabled:opacity-30 transition-all">
+                        <ChevronsLeft size={14} />
+                      </button>
+                      <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                        className="p-1.5 rounded-lg text-slate-400 hover:bg-white disabled:opacity-30 transition-all">
+                        <ChevronLeft size={14} />
+                      </button>
+                      {(() => {
+                        const items = [];
+                        const addPage = n => items.push(n);
+                        if (totalPages <= 7) {
+                          for (let n = 1; n <= totalPages; n++) addPage(n);
+                        } else {
+                          addPage(1);
+                          if (page > 3) items.push("...");
+                          const start = Math.max(2, page - 1);
+                          const end = Math.min(totalPages - 1, page + 1);
+                          for (let n = start; n <= end; n++) addPage(n);
+                          if (page < totalPages - 2) items.push("...");
+                          addPage(totalPages);
+                        }
+                        return items.map((n, i2) =>
+                          n === "..." ? (
+                            <span key={`e${i2}`} className="px-1.5 text-xs text-slate-400 select-none">...</span>
+                          ) : (
+                            <button key={n} onClick={() => setPage(n)}
+                              className={`min-w-[26px] h-[26px] px-1.5 rounded-md text-xs font-medium transition-all
+                                ${page === n ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-white"}`}>
+                              {n}
+                            </button>
+                          )
+                        );
+                      })()}
+                      <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+                        className="p-1.5 rounded-lg text-slate-400 hover:bg-white disabled:opacity-30 transition-all">
+                        <ChevronRight size={14} />
+                      </button>
+                      <button onClick={() => setPage(totalPages)} disabled={page === totalPages}
+                        className="p-1.5 rounded-lg text-slate-400 hover:bg-white disabled:opacity-30 transition-all">
+                        <ChevronsRight size={14} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="relative order-2 md:order-3">
+                  <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                    className="appearance-none text-xs border border-slate-200 rounded-md pl-2.5 pr-6 py-1.5 text-slate-600 bg-white focus:outline-none">
+                    {[10, 20, 30, 40, 50].map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                  <ChevronDown size={11} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
