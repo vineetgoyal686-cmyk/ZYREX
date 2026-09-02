@@ -511,7 +511,7 @@ export default function PaymentsTrack({ project }) {
                   ref={expenseInfoRef}
                   value={form.expenseInfo}
                   onChange={e => { setForm(f => ({ ...f, expenseInfo: e.target.value })); e.target.style.height = "auto"; e.target.style.height = `${e.target.scrollHeight}px`; }}
-                  className={`${inp} resize-none overflow-hidden`}
+                  className={`${inp} min-h-14 py-4 leading-tight resize-none overflow-hidden`}
                   rows={1}
                   placeholder="What is this expense for?"
                 />
