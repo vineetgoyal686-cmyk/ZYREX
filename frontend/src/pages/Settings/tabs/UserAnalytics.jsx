@@ -37,6 +37,7 @@ const MODULE_LABELS = {
   master_data_orders_tab: "Master Data — Orders",
   master_data_intakes: "Master Data — Intakes",
   master_data_clauses: "Master Data — Clauses",
+  master_data_finance: "Master Data — Finance",
   vendor_list: "Vendor List",
   item_list: "Item List",
   category_list: "Category List",

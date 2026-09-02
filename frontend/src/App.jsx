@@ -101,8 +101,8 @@ const ClauseMasterData = lazy(() => import("./pages/ClauseMasterData"));
 const Approvals      = lazy(() => import("./pages/Approvals"));
 const View3D         = lazy(() => import("./pages/Model"));
 const Dashboard      = lazy(() => import("./pages/Dashboard"));
+const FinanceTrack   = lazy(() => import("./pages/Finance/FinanceTrack"));
 const PaymentsTrack  = lazy(() => import("./pages/Finance/PaymentsTrack"));
-const SiteExpenses   = lazy(() => import("./pages/Finance/SiteExpenses"));
 const GlobalCreateOrder = lazy(() => import("./pages/Create/CreateOrder"));
 const IntakeList     = lazy(() => import("./pages/Create/IntakeList"));
 const ItemList       = lazy(() => import("./pages/Procurement/ItemList"));
@@ -225,7 +225,7 @@ function AppLayout({
     if (activeTab === "master_data__products")
       return <ComingSoon label="PRODUCTS MASTER" />;
     if (activeTab === "master_data__finance")
-      return <ComingSoon label="FINANCE MASTER DATA" />;
+      return <FinanceTrack />;
     if (activeTab === "audit") return <ComingSoon label="Audit" />;
 
     // Project-specific tabs
@@ -248,7 +248,7 @@ function AppLayout({
       case "procurement__intake":             return <IntakeList project={selectedProject} />;
       case "operations__staff_attendance":     return <Attendance selectedProject={selectedProject} />;
       case "finance__payments_track":         return <PaymentsTrack project={selectedProject} />;
-      case "finance__site_expenses":          return <SiteExpenses project={selectedProject} />;
+      case "finance__site_expenses":
       case "finance__petty_cash":
       case "finance__reimbursement":
       case "inventory__received_material_grn":
@@ -281,7 +281,7 @@ function AppLayout({
          "procurement__intake","master_data__intakes","create__intake",
          "historical_data","approvals"].includes(activeTab))
       return "pt-0 px-0 pb-0 bg-[#f0f2f5]";
-    if (["finance__payments_track","finance__site_expenses"].includes(activeTab))
+    if (["master_data__finance","finance__payments_track"].includes(activeTab))
       return "pt-0 px-0 pb-0";
     return "pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4";
   })();

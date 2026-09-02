@@ -52,12 +52,12 @@ const managementRows = [
 ];
 
 const masterDataRows = [
-  { id: "master_data__vendor", label: "Vendor Master" },
-  { id: "master_data__products", label: "Products Master" },
-  { id: "master_data__orders", label: "Orders Master" },
-  { id: "master_data__intakes", label: "Intakes Master" },
-  { id: "master_data__clauses", label: "Clauses Master" },
-  { id: "master_data__finance", label: "Finance Master Data" },
+  { id: "master_data__vendor", label: "Vendors" },
+  { id: "master_data__products", label: "Products" },
+  { id: "master_data__orders", label: "Orders" },
+  { id: "master_data__intakes", label: "Intakes" },
+  { id: "master_data__clauses", label: "Clauses" },
+  { id: "master_data__finance", label: "Finance" },
 ];
 
 const setupRows = [

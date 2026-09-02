@@ -161,11 +161,14 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
     master_data_orders_tab: "Order Master",
     master_data_intakes:    "Item Master",
     master_data_clauses:    "Clauses Master",
+    master_data_finance:    "Finance Master",
   };
 
   const MASTER_DATA_COLUMNS = [
     { key: "can_view",          label: "View"          },
     { key: "can_add",           label: "Create"        },
+    { key: "can_edit",          label: "Edit"          },
+    { key: "can_delete",        label: "Delete"        },
     { key: "can_bulk_upload",   label: "Bulk Upload"   },
     { key: "can_export",        label: "Export"        },
     { key: "can_trash_view",    label: "Trash View"    },

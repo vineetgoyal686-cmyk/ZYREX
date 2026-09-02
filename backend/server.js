@@ -29,8 +29,9 @@ const contactRoutes          = require("./src/routes/contact");
 const organisationRoutes     = require("./src/routes/organisation");
 const screenTimeRoutes       = require("./src/routes/screenTime");
 const mailManagementRoutes   = require("./src/routes/mailManagement");
-const financeRoutes          = require("./src/routes/finance");
-const financeSiteExpensesRoutes = require("./src/routes/financeSiteExpenses");
+const financeTrackRoutes     = require("./src/routes/financeTrack");
+const financeInvoicesRoutes  = require("./src/routes/financeInvoices");
+const financeOrdersRoutes    = require("./src/routes/financeOrders");
 
 const app = express();
 
@@ -70,8 +71,9 @@ app.use("/api/contact",            contactRoutes);
 app.use("/api/organisation",       organisationRoutes);
 app.use("/api/screen-time",        screenTimeRoutes);
 app.use("/api/mail-management",    mailManagementRoutes);
-app.use("/api/finance",            financeRoutes);
-app.use("/api/finance",            financeSiteExpensesRoutes);
+app.use("/api/finance",            financeTrackRoutes);
+app.use("/api/finance",            financeInvoicesRoutes);
+app.use("/api/finance",            financeOrdersRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
