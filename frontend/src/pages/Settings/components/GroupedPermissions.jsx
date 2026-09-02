@@ -15,7 +15,7 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
     });
   };
 
-  const renderRow = (mod) => {
+  const renderRow = (mod, displayName) => {
     if (mod.module_key === "global_dashboard") {
       const overviewChecked = !!mod.order_overview_aging;
       const intakeChecked   = !!mod.order_intake;
@@ -117,7 +117,7 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <p className={`text-[13px] font-bold ${built ? "text-slate-800" : "text-slate-500"}`}>
-                {mod.module_name}
+                {displayName || mod.module_name}
               </p>
               {!built && (
                 <span title="Module not yet implemented — only View applies"
@@ -162,6 +162,13 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
     master_data_intakes:    "Item Master",
     master_data_clauses:    "Clauses Master",
     master_data_finance:    "Finance Master",
+  };
+
+  // "payment_request" is shared with the Inbox approval tab, where it really
+  // does mean Payment Request — only rename it here, where it's actually the
+  // Finance section's "Reimbursement" tab.
+  const FINANCE_DISPLAY_NAMES = {
+    payment_request: "Reimbursement",
   };
 
   const MASTER_DATA_COLUMNS = [
@@ -786,6 +793,11 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
                             </div>
                           );
                         })()
+                      : group.label === "Finance" ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                            {groupMods.map(m => renderRow(m, FINANCE_DISPLAY_NAMES[m.module_key]))}
+                          </div>
+                        )
                       : isCombined ? renderCombinedViewCard(group, groupMods)
                       : (
                       <div className={isSpecialCard ? "" : "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"}>

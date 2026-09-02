@@ -230,7 +230,7 @@ export const MODULE_SECTIONS = [
       { label: "Procurement", keys: ["order","intake"] },
       { label: "Inventory",    keys: ["received_record","stock_available","consumption_record"], combined_view: true },
       { label: "Operations",   keys: ["execution_plan","staff_attendance","daily_manpower"],      combined_view: true },
-      { label: "Finance",      keys: ["payments_track","payment_request","site_expense","petty_cash","bills_docs"], combined_view: true },
+      { label: "Finance",      keys: ["payments_track","site_expense","petty_cash","payment_request"] },
       { label: "Confidential", keys: ["loa","boq","drawings","ra_bills"],                          combined_view: true },
     ],
   },
