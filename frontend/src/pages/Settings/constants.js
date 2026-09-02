@@ -158,7 +158,7 @@ export const MODULE_PERM_CONFIG = {
   master_data_orders_tab:  ["can_view", "can_add", "can_bulk_upload", "can_export",
                             "can_trash_view", "can_trash_log", "can_trash_restore", "can_trash_delete"],
   master_data_clauses:     ["can_view", "can_export"],
-  master_data_finance:     ["can_view", "can_add", "can_edit", "can_delete", "can_export"],
+  master_data_finance:     ["can_view", "can_add", "can_edit", "can_delete", "can_export", "can_bulk_upload"],
   dashboard:               ["can_view"],
   view_3d:                 ["can_view"],
   intake:                  ["can_view"],

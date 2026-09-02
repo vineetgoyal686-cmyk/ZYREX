@@ -201,4 +201,77 @@ router.delete("/track/:id", requirePerm("master_data_finance", "can_delete"), as
   }
 });
 
+const norm = (v) => String(v || "").trim().toLowerCase();
+const excelDateToISO = (v) => {
+  if (!v) return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === "number") {
+    const ms = Math.round((v - 25569) * 86400 * 1000); // Excel serial date
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+  const parsed = new Date(v);
+  return isNaN(parsed) ? null : parsed.toISOString().slice(0, 10);
+};
+
+/* POST /api/finance/track/bulk — one row per payment/receipt entry. */
+router.post("/track/bulk", requirePerm("master_data_finance", "can_bulk_upload"), async (req, res) => {
+  try {
+    const { rows, createdByName } = req.body;
+    if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: "No rows to upload" });
+
+    const [{ data: sites }, { data: companies }] = await Promise.all([
+      supabase.from("projects").select("id, project_name"),
+      supabase.schema("organisation").from("companies").select("id, company_name"),
+    ]);
+    const siteByName    = new Map((sites || []).map(s => [norm(s.project_name), s]));
+    const companyByName = new Map((companies || []).map(c => [norm(c.company_name), c]));
+
+    const details = [];
+    let inserted = 0;
+
+    for (const row of rows) {
+      const typeRaw = norm(row["Type"]);
+      const entryType = typeRaw === "receipt" ? "receipt" : typeRaw === "payment" ? "payment" : "";
+      const partyName = String(row["Party Name"] || "").trim();
+      const entryDate = excelDateToISO(row["Date"]);
+      const amount    = Number(row["Amount"]) || 0;
+
+      if (!entryType) { details.push({ row: partyName || "(blank)", status: "skipped", reason: `Type must be "Payment" or "Receipt"` }); continue; }
+      if (!entryDate) { details.push({ row: partyName || "(blank)", status: "skipped", reason: "Date is missing or invalid" }); continue; }
+      if (!partyName) { details.push({ row: entryType, status: "skipped", reason: "Party Name is required" }); continue; }
+      if (amount <= 0) { details.push({ row: partyName, status: "skipped", reason: "Amount must be greater than 0" }); continue; }
+
+      const site    = siteByName.get(norm(row["Site Name"]));
+      const company = companyByName.get(norm(row["Company Name"]));
+
+      const { error } = await supabase.from("finance_track_entries").insert({
+        entry_type:           entryType,
+        entry_date:           entryDate,
+        site_id:               site?.id || null,
+        site_name:             site?.project_name || String(row["Site Name"] || "").trim(),
+        company_id:            company?.id || null,
+        company_name:          company?.company_name || String(row["Company Name"] || "").trim(),
+        party_name:            partyName,
+        description:           String(row["Description"] || "").trim(),
+        amount,
+        account_no_to:         String(row["Account No (To)"] || "").trim(),
+        account_no_from:       String(row["Account No (From)"] || "").trim(),
+        account_holder_name:   String(row["Account Holder Name"] || "").trim(),
+        remarks:               String(row["Remarks"] || "").trim(),
+        created_by_id:         req._authUserId || null,
+        created_by_name:       createdByName || "Bulk Upload",
+      });
+      if (error) { details.push({ row: partyName, status: "skipped", reason: "Could not save entry" }); continue; }
+
+      inserted++;
+      details.push({ row: partyName, status: "inserted", reason: `${entryType === "payment" ? "Payment" : "Receipt"} · ₹${amount.toLocaleString("en-IN")}` });
+    }
+
+    res.json({ success: true, inserted, skipped: rows.length - inserted, details });
+  } catch (err) {
+    console.error("Finance track bulk upload error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

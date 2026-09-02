@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
-import { Plus, Search, Pencil, Trash2, X, Wallet, FileText, Eye, Download, FileSpreadsheet, Paperclip, ChevronDown, ArrowDownCircle, ArrowUpCircle, ArrowLeft } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, X, Wallet, FileText, Eye, Download, FileSpreadsheet, Paperclip, ChevronDown, ArrowDownCircle, ArrowUpCircle, ArrowLeft, Upload } from "lucide-react";
 import * as XLSX from "xlsx";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import ProjectSelect from "../../components/ProjectSelect";
@@ -52,7 +52,7 @@ const LABELS = {
 };
 
 export default function FinanceTrack() {
-  const { canAdd, canEdit, canDelete, canExport } = useModulePermissions("master_data_finance");
+  const { canAdd, canEdit, canDelete, canExport, canBulk } = useModulePermissions("master_data_finance");
 
   const [sites, setSites]         = useState([]);
   const [companies, setCompanies] = useState([]);
@@ -69,6 +69,15 @@ export default function FinanceTrack() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo]     = useState("");
   const [page, setPage]             = useState(1);
+
+  const [showMore, setShowMore] = useState(false);
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkRows, setBulkRows]     = useState([]);
+  const [bulkFile, setBulkFile]     = useState("");
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkResult, setBulkResult] = useState(null);
+  const moreRef = useRef();
+  const bulkRef = useRef();
 
   const [view, setView]           = useState("list"); // "list" | "form"
   const [form, setForm]           = useState(emptyForm);
@@ -106,9 +115,64 @@ export default function FinanceTrack() {
   };
   useEffect(() => { fetchEntries(); }, []);
 
+  useEffect(() => {
+    if (!showMore) return;
+    const h = (e) => { if (moreRef.current && !moreRef.current.contains(e.target)) setShowMore(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [showMore]);
+
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const downloadTemplate = () => {
+    const ws = XLSX.utils.json_to_sheet([{
+      "Type": "Payment", "Date": "2026-04-10", "Site Name": "B-47 IAS House Noida", "Company Name": "Bharat Volt Pvt Ltd",
+      "Party Name": "Advance Infra", "Description": "Cement & steel for foundation", "Amount": 125000,
+      "Account No (To)": "1234567890", "Account No (From)": "0987654321", "Account Holder Name": "Advance Infra",
+      "Remarks": "",
+    }]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Entries");
+    XLSX.writeFile(wb, "finance_track_bulk_template.xlsx");
+  };
+
+  const handleBulkFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setBulkFile(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const wb   = XLSX.read(ev.target.result, { type: "array" });
+      const ws   = wb.Sheets[wb.SheetNames[0]];
+      const data = XLSX.utils.sheet_to_json(ws);
+      setBulkRows(data.filter(r => r["Party Name"] || r["Amount"]));
+      setBulkResult(null);
+    };
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
+  };
+
+  const handleBulkSave = async () => {
+    if (!bulkRows.length) return showToast("No valid rows to upload", "error");
+    setBulkSaving(true);
+    try {
+      const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
+      const token = localStorage.getItem("bms_token") || "";
+      const res = await fetch(`${API}/api/finance/track/bulk`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ rows: bulkRows, createdByName: u.name || "" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      showToast(`${data.inserted} entr${data.inserted !== 1 ? "ies" : "y"} uploaded${data.skipped ? `, ${data.skipped} skipped` : ""}`);
+      setBulkResult(data);
+      setBulkRows([]); setBulkFile("");
+      fetchEntries();
+    } catch (err) { showToast(err.message, "error"); }
+    setBulkSaving(false);
   };
 
   const openAdd = () => {
@@ -370,6 +434,27 @@ export default function FinanceTrack() {
                 <FileSpreadsheet size={14} className="text-green-600" /> Export
               </button>
             )}
+            {canBulk && (
+              <div className="relative" ref={moreRef}>
+                <button onClick={() => setShowMore(v => !v)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
+                  <Upload size={14} className="text-slate-500" /> Bulk Upload <ChevronDown size={12} className={`transition-transform ${showMore ? "rotate-180" : ""}`} />
+                </button>
+                {showMore && (
+                  <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-lg shadow-lg z-30 overflow-hidden">
+                    <button onClick={() => { downloadTemplate(); setShowMore(false); }}
+                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                      <Download size={14} className="text-slate-400" /> Download Template
+                    </button>
+                    <div className="border-t border-slate-100" />
+                    <button onClick={() => { setShowBulk(true); setShowMore(false); }}
+                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                      <Upload size={14} className="text-blue-500" /> Upload Excel File
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
             {canAdd && (
               <button onClick={openAdd}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 transition-all">
@@ -417,6 +502,60 @@ export default function FinanceTrack() {
       </div>
 
       <div className="px-3 sm:px-4 lg:px-6 pt-4 pb-32 w-full">
+        {showBulk && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mb-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-slate-700">Bulk Upload Entries</h3>
+              <button onClick={() => { setShowBulk(false); setBulkRows([]); setBulkFile(""); setBulkResult(null); }}
+                className="text-slate-400 hover:text-slate-600"><X size={16} /></button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="border border-slate-100 rounded-xl p-4">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Step 1 — Download Template</p>
+                <p className="text-xs text-slate-400 mb-3">Fill it in Excel — Type, Date, Party Name & Amount are required per row.</p>
+                <button onClick={downloadTemplate}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
+                  <Download size={14} className="text-slate-400" /> Download Template
+                </button>
+              </div>
+              <div className="border border-slate-100 rounded-xl p-4">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Step 2 — Choose File</p>
+                <p className="text-xs text-slate-400 mb-3">{bulkFile || "No file selected"}{bulkRows.length > 0 ? ` · ${bulkRows.length} row${bulkRows.length !== 1 ? "s" : ""} found` : ""}</p>
+                <button onClick={() => bulkRef.current.click()}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
+                  <Upload size={14} className="text-blue-500" /> Choose Excel File
+                </button>
+                <input ref={bulkRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleBulkFile} />
+              </div>
+            </div>
+            {bulkRows.length > 0 && (
+              <div className="flex items-center justify-end mt-4">
+                <button onClick={handleBulkSave} disabled={bulkSaving}
+                  className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 transition-all disabled:opacity-50">
+                  {bulkSaving ? "Uploading…" : `Upload ${bulkRows.length} Entr${bulkRows.length !== 1 ? "ies" : "y"}`}
+                </button>
+              </div>
+            )}
+            {bulkResult && (
+              <div className="mt-4">
+                <p className="text-xs font-bold text-slate-600 mb-2">{bulkResult.inserted} inserted · {bulkResult.skipped} skipped</p>
+                <div className="max-h-64 overflow-y-auto rounded-xl border border-slate-100 divide-y divide-slate-50">
+                  {bulkResult.details.map((d, i) => (
+                    <div key={i} className="flex items-start gap-3 px-4 py-2.5 text-xs">
+                      <span className={`shrink-0 px-1.5 py-0.5 rounded font-bold uppercase text-[10px] ${d.status === "inserted" ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-500"}`}>
+                        {d.status}
+                      </span>
+                      <div className="min-w-0">
+                        <span className="font-semibold text-slate-700">{d.row}</span>
+                        <span className="text-slate-400"> — {d.reason}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {loading ? (
           <div className="text-center py-16 text-slate-400 text-sm">Loading…</div>
         ) : filtered.length === 0 ? (
