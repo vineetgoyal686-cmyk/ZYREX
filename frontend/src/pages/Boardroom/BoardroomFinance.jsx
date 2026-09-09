@@ -234,6 +234,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
   const [showAddCompany, setShowAddCompany] = useState(false);
   const [showAddVendor, setShowAddVendor] = useState(false);
   const [showAddCoded, setShowAddCoded] = useState(null); // "purpose" | "account_no_to" | "account_no_from" | null
+  const [confirmModal, setConfirmModal] = useState(null); // { title, message, onConfirm } | null
   const [editOriginal, setEditOriginal] = useState(null);
   const [logEntry, setLogEntry] = useState(null);
   const fileRef = useRef();
@@ -363,14 +364,20 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
     } catch (err) { showToast(err.message, "error"); }
   };
 
-  const deleteColumn = async (slot, label) => {
-    if (!confirm(`Delete column "${label}"? This removes its data from every entry.`)) return;
-    try {
-      await fetch(`${BASE}/custom-columns/${slot}`, { method: "DELETE", headers: authHeaders() });
-      loadCustomColumns();
-      fetchEntries();
-      showToast("Column deleted");
-    } catch { showToast("Failed to delete column", "error"); }
+  const deleteColumn = (slot, label) => {
+    setConfirmModal({
+      title: "Delete this column?",
+      message: `"${label}" will be removed, along with its data on every entry. This can't be undone.`,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          await fetch(`${BASE}/custom-columns/${slot}`, { method: "DELETE", headers: authHeaders() });
+          loadCustomColumns();
+          fetchEntries();
+          showToast("Column deleted");
+        } catch { showToast("Failed to delete column", "error"); }
+      },
+    });
   };
 
   const openAdd = () => {
@@ -460,19 +467,25 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
     setSaving(false);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("Delete this entry?")) return;
-    try {
-      const u = currentUser();
-      const target = entries.find(x => x.id === id);
-      await fetch(`${BASE}/entries/${id}`, {
-        method: "DELETE", headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ deletedByName: u.name || "" }),
-      });
-      logAudit("boardroom_finance_entry", id, target?.partyName || target?.companyName || "Entry", "deleted", null);
-      showToast("Entry deleted");
-      fetchEntries();
-    } catch { showToast("Failed to delete", "error"); }
+  const handleDelete = (id) => {
+    const target = entries.find(x => x.id === id);
+    setConfirmModal({
+      title: "Delete this entry?",
+      message: `${target?.partyName || target?.companyName || "This entry"} will be permanently removed. This can't be undone.`,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          const u = currentUser();
+          await fetch(`${BASE}/entries/${id}`, {
+            method: "DELETE", headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ deletedByName: u.name || "" }),
+          });
+          logAudit("boardroom_finance_entry", id, target?.partyName || target?.companyName || "Entry", "deleted", null);
+          showToast("Entry deleted");
+          fetchEntries();
+        } catch { showToast("Failed to delete", "error"); }
+      },
+    });
   };
 
   const filterOptions = useMemo(() => {
@@ -996,6 +1009,15 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
             onClose={() => setLogEntry(null)}
           />
         )}
+
+        {confirmModal && (
+          <ConfirmModal
+            title={confirmModal.title}
+            message={confirmModal.message}
+            onConfirm={confirmModal.onConfirm}
+            onCancel={() => setConfirmModal(null)}
+          />
+        )}
       </div>
     </>
   );
@@ -1265,6 +1287,29 @@ function AddCodedValueModal({ title, fieldLabel, placeholder, onClose, onSave })
             className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 transition-all disabled:opacity-50">
             {saving ? "Adding…" : "Add"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Replaces the browser's native confirm() with something that matches the
+// rest of the app — used for anything destructive (delete entry, delete
+// custom column).
+function ConfirmModal({ title, message, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="px-6 pt-6 pb-5">
+          <div className="w-11 h-11 rounded-full bg-red-50 flex items-center justify-center mb-4">
+            <Trash2 size={18} className="text-red-500" />
+          </div>
+          <h2 className="text-base font-bold text-slate-800 mb-1.5">{title}</h2>
+          <p className="text-sm text-slate-500 leading-relaxed">{message}</p>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50">
+          <button onClick={onCancel} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-all">Cancel</button>
+          <button onClick={onConfirm} className="px-5 py-2 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition-all">Delete</button>
         </div>
       </div>
     </div>
