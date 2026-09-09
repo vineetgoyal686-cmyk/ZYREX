@@ -137,6 +137,7 @@ export const MODULE_PERM_CONFIG = {
   locations:               ["can_view", "can_add", "can_edit", "can_delete"],
   policy:                  ["can_view", "can_add", "can_edit", "can_delete"],
   audit:                   ["can_view"],
+  boardroom:               ["can_view", "can_add", "can_edit", "can_delete", "can_export"],
   inbox_orders:            ["can_view", "can_take_action"],
   inbox_intakes:           ["can_view", "can_take_action"],
   inbox_payments:          ["can_view", "can_take_action"],
@@ -187,7 +188,7 @@ export const MODULE_PERM_CONFIG = {
 export const DEFAULT_MODULE_PERMS = ["can_view", "can_add", "can_edit", "can_delete", "can_export"];
 
 export const MODULE_BUILT_STATUS = {
-  global_dashboard: true, inbox: true, audit: true, annexure: true,
+  global_dashboard: true, boardroom: true, inbox: true, audit: true, annexure: true,
   departments: true, teams: true, divisions: true, grades: true,
   designations: true, employees: true, locations: true, policy: true,
   master_data_vendor: true, master_data_products: true,
@@ -209,6 +210,7 @@ export const MODULE_SECTIONS = [
     section: "Global Tab",
     groups: [
       { label: "Global Dashboard",   keys: ["global_dashboard"] },
+      { label: "Boardroom",         keys: ["boardroom"], single: true },
       { label: "Inbox",             keys: ["inbox_orders","inbox_intakes","inbox_payments"] },
     ],
   },

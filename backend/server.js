@@ -30,6 +30,7 @@ const organisationRoutes     = require("./src/routes/organisation");
 const screenTimeRoutes       = require("./src/routes/screenTime");
 const mailManagementRoutes   = require("./src/routes/mailManagement");
 const financeTrackRoutes     = require("./src/routes/financeTrack");
+const boardroomFinanceRoutes = require("./src/routes/boardroomFinance");
 const financeInvoicesRoutes  = require("./src/routes/financeInvoices");
 const financeOrdersRoutes    = require("./src/routes/financeOrders");
 
@@ -72,6 +73,7 @@ app.use("/api/organisation",       organisationRoutes);
 app.use("/api/screen-time",        screenTimeRoutes);
 app.use("/api/mail-management",    mailManagementRoutes);
 app.use("/api/finance",            financeTrackRoutes);
+app.use("/api/boardroom/finance",  boardroomFinanceRoutes);
 app.use("/api/finance",            financeInvoicesRoutes);
 app.use("/api/finance",            financeOrdersRoutes);
 

@@ -42,6 +42,7 @@ const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
 const globalRows = [
   { id: "global_dashboard", label: "Global Dashboard", icon: LayoutDashboard, description: "Overall overview of all projects" },
+  { id: "boardroom", label: "Boardroom", icon: ShieldCheck, description: "Executive-only workspace" },
   { id: "approvals", label: "Inbox", icon: Inbox, description: "Pending approvals (Intake, Orders, Payments etc.)" },
 ];
 
@@ -332,6 +333,13 @@ export default React.memo(function Sidebar({
     if (tabId === "profile") return true;
     if (isGlobalAdmin) return true;
     if (!userTabPermissions) return false;
+    // Boardroom is executive-only — unlike every other tab here, an absent
+    // permission row must mean "hidden", not the fail-open default a few
+    // lines below applies to ordinary modules.
+    if (tabId === "boardroom") {
+      const map = userTabPermissions.map || {};
+      return map["boardroom"]?.can_view === true;
+    }
     // Inbox visibility is driven by its three sub-modules (Orders/Intake/Payment),
     // not the standalone "inbox" module_key, which the Settings UI never exposes a checkbox for.
     if (tabId === "approvals") {

@@ -3,6 +3,7 @@
 // Sidebar and App) lives in its own module instead.
 export const TAB_MODULE_KEY = {
   global_dashboard: "global_dashboard",
+  boardroom: "boardroom",
   approvals: "inbox",
   approvals__orders: "order",
   approvals__intake: "intake",

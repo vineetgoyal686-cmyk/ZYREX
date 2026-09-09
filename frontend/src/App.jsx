@@ -14,6 +14,7 @@ import MobileBottomNav from "./components/MobileBottomNav";
 // Global routes (no project)
 const ROUTE_TO_TAB = {
   "/dashboard":                   "global_dashboard",
+  "/boardroom":                   "boardroom",
   "/inbox":                       "approvals",
   "/profile":                     "profile",
   "/organisation":                "organisation",
@@ -101,6 +102,7 @@ const ClauseMasterData = lazy(() => import("./pages/ClauseMasterData"));
 const Approvals      = lazy(() => import("./pages/Approvals"));
 const View3D         = lazy(() => import("./pages/Model"));
 const Dashboard      = lazy(() => import("./pages/Dashboard"));
+const Boardroom      = lazy(() => import("./pages/Boardroom/Boardroom"));
 const FinanceTrack   = lazy(() => import("./pages/Finance/FinanceTrack"));
 const PaymentsTrack  = lazy(() => import("./pages/Finance/PaymentsTrack"));
 const GlobalCreateOrder = lazy(() => import("./pages/Create/CreateOrder"));
@@ -193,6 +195,7 @@ function AppLayout({
 
   const renderPage = () => {
     if (activeTab === "global_dashboard")     return <Dashboard project="All Project" />;
+    if (activeTab === "boardroom")            return <Boardroom />;
     if (activeTab === "profile")              return <Profile onProfileUpdate={onCurrentUserUpdate} onProjectsUpdate={onProjectsRefresh} />;
     if (activeTab === "organisation" || activeTab === "organisation__structure" || activeTab === "organisation__sop")
       return <Organisation currentUser={currentUser} />;
@@ -281,7 +284,7 @@ function AppLayout({
          "procurement__intake","master_data__intakes","create__intake",
          "historical_data","approvals"].includes(activeTab))
       return "pt-0 px-0 pb-0 bg-[#f0f2f5]";
-    if (["master_data__finance","finance__payments_track"].includes(activeTab))
+    if (["master_data__finance","finance__payments_track","boardroom"].includes(activeTab))
       return "pt-0 px-0 pb-0";
     return "pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4";
   })();
