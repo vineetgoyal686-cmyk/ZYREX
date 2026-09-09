@@ -473,8 +473,8 @@ export default function UserManagement({
           /* ── Permissions panel ── */
           <div className="bg-white rounded-none shadow-sm border border-slate-100">
 
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-4">
+            {/* Header — sticky so Save stays reachable without scrolling to the bottom */}
+            <div className="sticky top-0 z-20 bg-white px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 min-w-0">
                 <div className="w-9 h-9 rounded-sm bg-indigo-50 flex items-center justify-center shrink-0">
                   <ShieldCheck size={16} className="text-indigo-600" />
@@ -484,10 +484,16 @@ export default function UserManagement({
                   <p className="text-[12px] text-slate-500 truncate">{permUser.name} — {permUser.email}</p>
                 </div>
               </div>
-              <button onClick={closePermsPanel}
-                className="flex items-center gap-1.5 text-[12px] font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-sm hover:bg-slate-100 transition-colors border border-slate-200 shrink-0">
-                ← Back
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button onClick={closePermsPanel}
+                  className="flex items-center gap-1.5 text-[12px] font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-sm hover:bg-slate-100 transition-colors border border-slate-200">
+                  ← Back
+                </button>
+                <button onClick={savePerms} disabled={permLoading} className={btnPrimary}>
+                  {permLoading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                  Save Permissions
+                </button>
+              </div>
             </div>
 
             {permLoading ? (
@@ -621,14 +627,6 @@ export default function UserManagement({
                     selectedProjects={editingAllowedProjects}
                     onProjectChange={setEditingAllowedProjects}
                   />
-                </div>
-
-                {/* Save */}
-                <div className="pt-2 border-t border-slate-100">
-                  <button onClick={savePerms} disabled={permLoading} className={btnPrimary}>
-                    {permLoading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                    Save Permissions
-                  </button>
                 </div>
               </div>
             )}
