@@ -200,7 +200,7 @@ function SmartField({ label, value, onChange, options = [], placeholder, icon: I
 }
 
 export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }) {
-  const { canAdd, canEdit, canDelete, canExport } = useModulePermissions("boardroom");
+  const { canAdd, canEdit, canDelete, canExport, canManageColumns, canViewLog } = useModulePermissions("boardroom_finance");
 
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -548,7 +548,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
                   <p className="text-xs text-slate-400 text-center py-2">No custom columns yet</p>
                 )}
               </div>
-              {emptySlot && canAdd && (
+              {emptySlot && canManageColumns && (
                 <div className="flex items-center gap-2 p-3 border-t border-slate-100 bg-slate-50">
                   <input value={newColName} onChange={e => setNewColName(e.target.value)} placeholder="New column name"
                     onKeyDown={e => e.key === "Enter" && addColumn()}
@@ -853,7 +853,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
                         <button onClick={() => setViewEntry(e)} className="p-1.5 rounded-lg text-slate-300 hover:text-blue-600 hover:bg-blue-50 transition-all"><Eye size={14} /></button>
                         {canEdit && <button onClick={() => openEdit(e)} className="p-1.5 rounded-lg text-slate-300 hover:text-slate-600 hover:bg-slate-100 transition-all"><Pencil size={14} /></button>}
                         {canDelete && <button onClick={() => handleDelete(e.id)} className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"><Trash2 size={14} /></button>}
-                        <button onClick={() => setLogEntry(e)} title="Activity log" className="p-1.5 rounded-lg text-slate-300 hover:text-cyan-600 hover:bg-cyan-50 transition-all"><Clock size={14} /></button>
+                        {canViewLog && <button onClick={() => setLogEntry(e)} title="Activity log" className="p-1.5 rounded-lg text-slate-300 hover:text-cyan-600 hover:bg-cyan-50 transition-all"><Clock size={14} /></button>}
                       </div>
                     </td>
                   </tr>

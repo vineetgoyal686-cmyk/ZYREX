@@ -1,25 +1,45 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { LayoutDashboard, Wallet } from "lucide-react";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
 import BoardroomFinance from "./BoardroomFinance";
 
-const TABS = [
+const ALL_TABS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "finance",   label: "Finance",   icon: Wallet },
 ];
 
 export default function Boardroom() {
-  const [tab, setTab] = useState("dashboard");
+  const { canView: canViewDashboard } = useModulePermissions("boardroom_dashboard");
+  const { canView: canViewFinance }   = useModulePermissions("boardroom_finance");
+  const visibleTabs = ALL_TABS.filter(t => (t.id === "dashboard" ? canViewDashboard : canViewFinance));
+
+  const [tab, setTab] = useState(() => (canViewDashboard ? "dashboard" : "finance"));
   const [financeActions, setFinanceActions] = useState(null);
   const [financeView, setFinanceView] = useState("list");
 
-  const showNav = !(tab === "finance" && financeView === "form");
+  // Permissions can change while this page is open (Access Profile edited
+  // elsewhere) — jump off a tab the user no longer has if that happens.
+  useEffect(() => {
+    if (tab === "dashboard" && !canViewDashboard) setTab(canViewFinance ? "finance" : "dashboard");
+    if (tab === "finance" && !canViewFinance) setTab(canViewDashboard ? "dashboard" : "finance");
+  }, [canViewDashboard, canViewFinance]);
+
+  const showNav = visibleTabs.length > 1 && !(tab === "finance" && financeView === "form");
+
+  if (!canViewDashboard && !canViewFinance) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-6">
+        <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-sm">You don't have access to this area</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">
       {showNav && (
         <div className="flex items-center justify-between px-5 sm:px-6 py-3.5 bg-white border-b border-slate-200">
           <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 w-fit shrink-0">
-            {TABS.map(t => {
+            {visibleTabs.map(t => {
               const Icon = t.icon;
               const active = tab === t.id;
               return (
@@ -35,15 +55,15 @@ export default function Boardroom() {
         </div>
       )}
 
-      {tab === "dashboard" ? (
+      {tab === "dashboard" && canViewDashboard ? (
         <div className="p-6 md:p-10">
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-10 flex items-center justify-center">
             <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-sm">Coming Soon</p>
           </div>
         </div>
-      ) : (
+      ) : canViewFinance ? (
         <BoardroomFinance onHeaderActionsChange={setFinanceActions} onViewChange={setFinanceView} />
-      )}
+      ) : null}
     </div>
   );
 }

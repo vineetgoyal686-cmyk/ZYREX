@@ -3,7 +3,9 @@
 // Sidebar and App) lives in its own module instead.
 export const TAB_MODULE_KEY = {
   global_dashboard: "global_dashboard",
-  boardroom: "boardroom",
+  // "boardroom" isn't listed here on purpose — it maps to two module keys
+  // (boardroom_dashboard / boardroom_finance), so Sidebar.jsx special-cases
+  // its visibility directly instead of going through this single-key map.
   approvals: "inbox",
   approvals__orders: "order",
   approvals__intake: "intake",

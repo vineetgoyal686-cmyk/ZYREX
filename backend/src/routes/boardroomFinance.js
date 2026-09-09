@@ -81,7 +81,7 @@ const rememberFieldValues = async (fields) => {
 };
 
 /* GET /api/boardroom/finance/entries */
-router.get("/entries", requirePerm("boardroom", "can_view"), async (req, res) => {
+router.get("/entries", requirePerm("boardroom_finance", "can_view"), async (req, res) => {
   try {
     const { entryType, search, dateFrom, dateTo } = req.query;
     let query = supabase.from("boardroom_finance_entries").select("*").is("deleted_at", null);
@@ -110,7 +110,7 @@ router.get("/entries", requirePerm("boardroom", "can_view"), async (req, res) =>
 });
 
 /* GET /api/boardroom/finance/field-values?field=site_name */
-router.get("/field-values", requirePerm("boardroom", "can_view"), async (req, res) => {
+router.get("/field-values", requirePerm("boardroom_finance", "can_view"), async (req, res) => {
   try {
     const field = String(req.query.field || "");
     if (!SAVED_FIELD_KEYS.includes(field)) return res.status(400).json({ error: "Invalid field" });
@@ -142,7 +142,7 @@ const extractCityState = (addr) => {
   return [city, state].filter(Boolean).join(", ") || state || city || "";
 };
 
-router.get("/seed-options", requirePerm("boardroom", "can_view"), async (_req, res) => {
+router.get("/seed-options", requirePerm("boardroom_finance", "can_view"), async (_req, res) => {
   try {
     const [{ data: sites }, { data: companies }, { data: vendors }, { data: quickSites }, { data: quickCompanies }, { data: quickVendors }] = await Promise.all([
       supabase.from("projects").select("project_name, project_code, city, state"),
@@ -188,7 +188,7 @@ router.get("/seed-options", requirePerm("boardroom", "can_view"), async (_req, r
 
 /* POST /api/boardroom/finance/quick-sites — board-member-added site, kept
    isolated to this tab (never written to the real `projects` table). */
-router.post("/quick-sites", requirePerm("boardroom", "can_add"), async (req, res) => {
+router.post("/quick-sites", requirePerm("boardroom_finance", "can_add"), async (req, res) => {
   try {
     const name = String(req.body.name || "").trim();
     if (!name) return res.status(400).json({ error: "Site name is required" });
@@ -214,7 +214,7 @@ router.post("/quick-sites", requirePerm("boardroom", "can_add"), async (req, res
 
 /* POST /api/boardroom/finance/quick-companies — board-member-added company,
    kept isolated to this tab (never written to the real `companies` table). */
-router.post("/quick-companies", requirePerm("boardroom", "can_add"), async (req, res) => {
+router.post("/quick-companies", requirePerm("boardroom_finance", "can_add"), async (req, res) => {
   try {
     const name = String(req.body.name || "").trim();
     if (!name) return res.status(400).json({ error: "Company name is required" });
@@ -240,7 +240,7 @@ router.post("/quick-companies", requirePerm("boardroom", "can_add"), async (req,
 
 /* POST /api/boardroom/finance/quick-vendors — board-member-added vendor,
    kept isolated to this tab (never written to the real `vendors` table). */
-router.post("/quick-vendors", requirePerm("boardroom", "can_add"), async (req, res) => {
+router.post("/quick-vendors", requirePerm("boardroom_finance", "can_add"), async (req, res) => {
   try {
     const name = String(req.body.name || "").trim();
     if (!name) return res.status(400).json({ error: "Firm name is required" });
@@ -266,7 +266,7 @@ router.post("/quick-vendors", requirePerm("boardroom", "can_add"), async (req, r
 });
 
 /* GET /api/boardroom/finance/coded-values?field=purpose */
-router.get("/coded-values", requirePerm("boardroom", "can_view"), async (req, res) => {
+router.get("/coded-values", requirePerm("boardroom_finance", "can_view"), async (req, res) => {
   try {
     const field = String(req.query.field || "");
     if (!CODED_FIELD_KEYS[field]) return res.status(400).json({ error: "Invalid field" });
@@ -284,7 +284,7 @@ router.get("/coded-values", requirePerm("boardroom", "can_view"), async (req, re
 /* POST /api/boardroom/finance/coded-values — body: { field, value }.
    Assigns the next sequential code for that field (PUR-1, PUR-2, … /
    ACC-1, ACC-2, … — independent counters per field). */
-router.post("/coded-values", requirePerm("boardroom", "can_add"), async (req, res) => {
+router.post("/coded-values", requirePerm("boardroom_finance", "can_add"), async (req, res) => {
   try {
     const field = String(req.body.field || "");
     const prefix = CODED_FIELD_KEYS[field];
@@ -312,7 +312,7 @@ router.post("/coded-values", requirePerm("boardroom", "can_add"), async (req, re
 });
 
 /* GET /api/boardroom/finance/custom-columns */
-router.get("/custom-columns", requirePerm("boardroom", "can_view"), async (_req, res) => {
+router.get("/custom-columns", requirePerm("boardroom_finance", "can_view"), async (_req, res) => {
   try {
     const { data, error } = await supabase.from("boardroom_finance_custom_columns").select("*").order("slot");
     if (error) throw error;
@@ -324,7 +324,7 @@ router.get("/custom-columns", requirePerm("boardroom", "can_view"), async (_req,
 });
 
 /* PUT /api/boardroom/finance/custom-columns/:slot — body: { label } */
-router.put("/custom-columns/:slot", requirePerm("boardroom", "can_add"), async (req, res) => {
+router.put("/custom-columns/:slot", requirePerm("boardroom_finance", "can_add"), async (req, res) => {
   try {
     const slot = Number(req.params.slot);
     if (!CUSTOM_FIELD_COLS[slot]) return res.status(400).json({ error: "Invalid column slot" });
@@ -345,7 +345,7 @@ router.put("/custom-columns/:slot", requirePerm("boardroom", "can_add"), async (
 
 /* DELETE /api/boardroom/finance/custom-columns/:slot — clears the column
    and wipes its values off every entry. */
-router.delete("/custom-columns/:slot", requirePerm("boardroom", "can_delete"), async (req, res) => {
+router.delete("/custom-columns/:slot", requirePerm("boardroom_finance", "can_delete"), async (req, res) => {
   try {
     const slot = Number(req.params.slot);
     const col = CUSTOM_FIELD_COLS[slot];
@@ -368,7 +368,7 @@ router.delete("/custom-columns/:slot", requirePerm("boardroom", "can_delete"), a
 });
 
 /* POST /api/boardroom/finance/entries */
-router.post("/entries", requirePerm("boardroom", "can_add"), upload.any(), async (req, res) => {
+router.post("/entries", requirePerm("boardroom_finance", "can_add"), upload.any(), async (req, res) => {
   try {
     const {
       entryType, entryDate, siteName, companyName, partyName, description, amount,
@@ -425,7 +425,7 @@ router.post("/entries", requirePerm("boardroom", "can_add"), upload.any(), async
 });
 
 /* PUT /api/boardroom/finance/entries/:id */
-router.put("/entries/:id", requirePerm("boardroom", "can_edit"), upload.any(), async (req, res) => {
+router.put("/entries/:id", requirePerm("boardroom_finance", "can_edit"), upload.any(), async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -479,7 +479,7 @@ router.put("/entries/:id", requirePerm("boardroom", "can_edit"), upload.any(), a
 });
 
 /* DELETE /api/boardroom/finance/entries/:id — soft delete */
-router.delete("/entries/:id", requirePerm("boardroom", "can_delete"), async (req, res) => {
+router.delete("/entries/:id", requirePerm("boardroom_finance", "can_delete"), async (req, res) => {
   try {
     const { error } = await supabase
       .from("boardroom_finance_entries")

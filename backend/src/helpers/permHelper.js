@@ -15,7 +15,12 @@ const decodeToken = (token) => {
  * `user` must already include { id, role, access_profile_ids }.
  */
 const checkPermission = async (user, moduleKey, permKey) => {
-  if (BYPASS_ROLES.includes(user.role)) return true;
+  // Boardroom is executive-only — only global_admin bypasses (unlike every
+  // other module, where super_admin/admin bypass too). Everyone else needs
+  // the permission explicitly granted, per-user or via an Access Profile.
+  const isBoardroom = moduleKey.startsWith("boardroom");
+  const bypassAllowed = isBoardroom ? user.role === "global_admin" : BYPASS_ROLES.includes(user.role);
+  if (bypassAllowed) return true;
 
   const { data: mod } = await admin.from("modules").select("id").eq("module_key", moduleKey).maybeSingle();
   if (!mod) return false;

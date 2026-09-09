@@ -27,6 +27,8 @@ export function useModulePermissions(moduleKey) {
     canDelete:           isSuperOrGlobal || !!p.can_delete,
     canExport:           isSuperOrGlobal || !!p.can_export,
     canBulk:             isSuperOrGlobal || !!p.can_bulk_upload,
+    canManageColumns:    isSuperOrGlobal || !!p.can_manage_columns,
+    canViewLog:          isSuperOrGlobal || !!p.can_log,
     canDownload:         isSuperOrGlobal || !!p.can_download_document,
     canIssue:            isSuperOrGlobal || !!p.can_issue,
     canRecall:           isSuperOrGlobal || !!p.can_recall,

@@ -8,6 +8,12 @@
 -- Run this once by hand in the Supabase SQL editor (this project has no
 -- migration runner — see backend .env.local note).
 
+-- The "Add Column" permission on Boardroom Finance (gates the custom-column
+-- add/rename UI) is a brand-new permission key with no existing column on
+-- the shared `permissions` table — every other module_key here reuses
+-- existing columns (can_view/can_add/.../can_log), but this one needs adding.
+alter table permissions add column if not exists can_manage_columns boolean not null default false;
+
 create table if not exists boardroom_finance_entries (
   id                    uuid primary key default gen_random_uuid(),
   entry_type            text not null check (entry_type in ('payment', 'receipt')),
@@ -113,7 +119,18 @@ create table if not exists boardroom_finance_coded_values (
   unique (field_key, code)
 );
 
--- Registers the module so it shows up in Settings > Permissions.
+-- Registers the two Boardroom modules so they show up in Settings >
+-- Permissions as independent cards — access to each of Boardroom's two
+-- tabs (Dashboard / Finance) is granted separately, and neither has any
+-- role bypass (see permHelper.js): view is denied unless explicitly granted.
 insert into modules (module_key, module_name)
-select 'boardroom', 'Boardroom'
-where not exists (select 1 from modules where module_key = 'boardroom');
+select 'boardroom_dashboard', 'Boardroom Dashboard'
+where not exists (select 1 from modules where module_key = 'boardroom_dashboard');
+
+insert into modules (module_key, module_name)
+select 'boardroom_finance', 'Boardroom Finance'
+where not exists (select 1 from modules where module_key = 'boardroom_finance');
+
+-- If an earlier run of this file created the old combined "boardroom"
+-- module, retire it now that access is split per tab.
+update modules set is_active = false where module_key = 'boardroom';

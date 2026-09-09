@@ -105,6 +105,7 @@ export const PERM_LABELS = {
   can_export:            "Export",
   can_bulk_upload:       "Bulk Upload",
   can_log:               "Log",
+  can_manage_columns:    "Add Column",
   can_download_document: "Download",
   can_take_action:       "Take Action",
   can_submit:            "Submit",
@@ -137,7 +138,8 @@ export const MODULE_PERM_CONFIG = {
   locations:               ["can_view", "can_add", "can_edit", "can_delete"],
   policy:                  ["can_view", "can_add", "can_edit", "can_delete"],
   audit:                   ["can_view"],
-  boardroom:               ["can_view", "can_add", "can_edit", "can_delete", "can_export"],
+  boardroom_dashboard:     ["can_view"],
+  boardroom_finance:       ["can_view", "can_add", "can_edit", "can_delete", "can_export", "can_manage_columns", "can_log"],
   inbox_orders:            ["can_view", "can_take_action"],
   inbox_intakes:           ["can_view", "can_take_action"],
   inbox_payments:          ["can_view", "can_take_action"],
@@ -188,7 +190,7 @@ export const MODULE_PERM_CONFIG = {
 export const DEFAULT_MODULE_PERMS = ["can_view", "can_add", "can_edit", "can_delete", "can_export"];
 
 export const MODULE_BUILT_STATUS = {
-  global_dashboard: true, boardroom: true, inbox: true, audit: true, annexure: true,
+  global_dashboard: true, boardroom_dashboard: true, boardroom_finance: true, inbox: true, audit: true, annexure: true,
   departments: true, teams: true, divisions: true, grades: true,
   designations: true, employees: true, locations: true, policy: true,
   master_data_vendor: true, master_data_products: true,
@@ -210,7 +212,7 @@ export const MODULE_SECTIONS = [
     section: "Global Tab",
     groups: [
       { label: "Global Dashboard",   keys: ["global_dashboard"] },
-      { label: "Boardroom",         keys: ["boardroom"], single: true },
+      { label: "Boardroom",         keys: ["boardroom_dashboard", "boardroom_finance"] },
       { label: "Inbox",             keys: ["inbox_orders","inbox_intakes","inbox_payments"] },
     ],
   },
@@ -247,6 +249,7 @@ export const PERM_COLOR = {
   can_export:            "text-indigo-600",
   can_bulk_upload:       "text-cyan-600",
   can_log:               "text-teal-600",
+  can_manage_columns:    "text-fuchsia-600",
   can_download_document: "text-sky-600",
   can_take_action:       "text-blue-600",
   can_submit:            "text-green-600",

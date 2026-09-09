@@ -331,15 +331,19 @@ export default React.memo(function Sidebar({
 
   const isTabVisible = (tabId) => {
     if (tabId === "profile") return true;
+    // Boardroom is executive-only — checked before the generic admin bypass
+    // below, on purpose: only global_admin gets a free pass here (unlike
+    // every other tab, where super_admin/admin bypass too). Anyone else,
+    // super_admin included, needs the permission explicitly granted — an
+    // absent row means "hidden", not fail-open like other tabs. Visible if
+    // either of its two sub-tabs is granted.
+    if (tabId === "boardroom") {
+      if (currentUser.role === "global_admin") return true;
+      const map = userTabPermissions?.map || {};
+      return map["boardroom_dashboard"]?.can_view === true || map["boardroom_finance"]?.can_view === true;
+    }
     if (isGlobalAdmin) return true;
     if (!userTabPermissions) return false;
-    // Boardroom is executive-only — unlike every other tab here, an absent
-    // permission row must mean "hidden", not the fail-open default a few
-    // lines below applies to ordinary modules.
-    if (tabId === "boardroom") {
-      const map = userTabPermissions.map || {};
-      return map["boardroom"]?.can_view === true;
-    }
     // Inbox visibility is driven by its three sub-modules (Orders/Intake/Payment),
     // not the standalone "inbox" module_key, which the Settings UI never exposes a checkbox for.
     if (tabId === "approvals") {

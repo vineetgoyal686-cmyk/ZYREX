@@ -801,7 +801,7 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
                       : isCombined ? renderCombinedViewCard(group, groupMods)
                       : (
                       <div className={isSpecialCard ? "" : "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"}>
-                        {groupMods.map(renderRow)}
+                        {groupMods.map(m => renderRow(m))}
                       </div>
                     )}
                   </div>
