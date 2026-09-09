@@ -497,4 +497,72 @@ router.delete("/entries/:id", requirePerm("boardroom_finance", "can_delete"), as
   }
 });
 
+/* GET /api/boardroom/finance/dashboard-stats — high-level summary of the
+   Boardroom Finance ledger, for the separate Boardroom Dashboard tab. Gated
+   by boardroom_dashboard, not boardroom_finance — a board member can be
+   given the summary without the raw ledger, or vice versa. */
+router.get("/dashboard-stats", requirePerm("boardroom_dashboard", "can_view"), async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("boardroom_finance_entries")
+      .select("id, entry_type, entry_date, site_name, company_name, party_name, amount, created_at")
+      .is("deleted_at", null);
+    if (error) throw error;
+
+    const rows = data || [];
+    const sum = (list) => list.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+    const payments = rows.filter(r => r.entry_type === "payment");
+    const receipts = rows.filter(r => r.entry_type === "receipt");
+    const totalPaid = sum(payments);
+    const totalReceived = sum(receipts);
+
+    // Last 6 months, oldest first, keyed by entry_date (falls back to created_at
+    // if entry_date is somehow blank).
+    const monthKey = (r) => String(r.entry_date || r.created_at || "").slice(0, 7);
+    const now = new Date();
+    const months = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+      return { key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, label: d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" }) };
+    });
+    const monthlyTrend = months.map(({ key, label }) => ({
+      month: label,
+      paid: sum(payments.filter(r => monthKey(r) === key)),
+      received: sum(receipts.filter(r => monthKey(r) === key)),
+    }));
+
+    const topByField = (field) => {
+      const totals = new Map();
+      rows.forEach(r => {
+        const name = (r[field] || "").trim();
+        if (!name) return;
+        totals.set(name, (totals.get(name) || 0) + (Number(r.amount) || 0));
+      });
+      return [...totals.entries()]
+        .map(([name, amount]) => ({ name, amount }))
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 5);
+    };
+
+    const recentEntries = [...rows]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .slice(0, 8)
+      .map(r => ({
+        id: r.id, entryType: r.entry_type, entryDate: r.entry_date,
+        partyName: r.party_name || "", companyName: r.company_name || "", amount: Number(r.amount) || 0,
+      }));
+
+    res.json({
+      totalPaid, totalReceived, netBalance: totalReceived - totalPaid, totalEntries: rows.length,
+      monthlyTrend,
+      topSites: topByField("site_name"),
+      topCompanies: topByField("company_name"),
+      recentEntries,
+      typeSplit: { payment: totalPaid, receipt: totalReceived },
+    });
+  } catch (err) {
+    console.error("Boardroom dashboard-stats error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

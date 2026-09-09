@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { LayoutDashboard, Wallet } from "lucide-react";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import BoardroomFinance from "./BoardroomFinance";
+import BoardroomDashboard from "./BoardroomDashboard";
 
 const ALL_TABS = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -56,11 +57,7 @@ export default function Boardroom() {
       )}
 
       {tab === "dashboard" && canViewDashboard ? (
-        <div className="p-6 md:p-10">
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-10 flex items-center justify-center">
-            <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-sm">Coming Soon</p>
-          </div>
-        </div>
+        <BoardroomDashboard />
       ) : canViewFinance ? (
         <BoardroomFinance onHeaderActionsChange={setFinanceActions} onViewChange={setFinanceView} />
       ) : null}
