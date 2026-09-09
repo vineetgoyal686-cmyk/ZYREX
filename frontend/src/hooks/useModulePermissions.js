@@ -4,7 +4,11 @@ export function useModulePermissions(moduleKey) {
   const read = () => {
     const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
     const isGlobalAdmin    = u.role === "global_admin";
-    const isSuperOrGlobal  = isGlobalAdmin || u.role === "super_admin";
+    // Boardroom is executive-only — only global_admin bypasses (matches
+    // Sidebar.jsx and permHelper.js). super_admin/admin need every one of
+    // these granted explicitly, same as anyone else, on every other module.
+    const isBoardroom      = moduleKey.startsWith("boardroom");
+    const isSuperOrGlobal  = isBoardroom ? isGlobalAdmin : (isGlobalAdmin || u.role === "super_admin");
     const p = (u.app_permissions || []).find(ap => ap.module_key === moduleKey) || {};
     return { isGlobalAdmin, isSuperOrGlobal, p };
   };
