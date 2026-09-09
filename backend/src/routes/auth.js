@@ -101,7 +101,7 @@ router.post("/login", async (req, res) => {
   const BOOL_KEYS = [
     "can_view","can_add","can_edit","can_delete","can_bulk_upload","can_export",
     "can_download_document","can_issue","can_recall","can_reject","can_revert",
-    "can_cancel","can_manage_amend","can_log","can_trash","can_take_action",
+    "can_cancel","can_manage_amend","can_log","can_manage_columns","can_trash","can_take_action",
     "can_submit","can_approve","can_request","can_withdraw",
     "can_request_recall","can_request_amend","can_request_cancel",
     "can_withdraw_recall","can_withdraw_amend","can_withdraw_cancel","can_withdraw_submission",
@@ -791,7 +791,7 @@ router.get("/my-permissions", async (req, res) => {
   const BOOL_KEYS = [
     "can_view","can_add","can_edit","can_delete","can_bulk_upload","can_export",
     "can_download_document","can_issue","can_recall","can_reject","can_revert",
-    "can_cancel","can_manage_amend","can_log","can_trash","can_take_action",
+    "can_cancel","can_manage_amend","can_log","can_manage_columns","can_trash","can_take_action",
     "can_submit","can_approve","can_request","can_withdraw",
     "can_request_recall","can_request_amend","can_request_cancel",
     "can_withdraw_recall","can_withdraw_amend","can_withdraw_cancel","can_withdraw_submission",

@@ -289,7 +289,7 @@ export const makeBlankModule = (m) => {
     module_name: m.module_name,
     can_view: false, can_add: false, can_edit: false, can_delete: false,
     can_trash: false, can_bulk_upload: false, can_export: false,
-    can_log: false, can_download_document: false,
+    can_log: false, can_manage_columns: false, can_download_document: false,
     can_take_action: false, can_submit: false, can_approve: false,
     can_reject: false, can_revert: false,
     can_request: false, can_request_recall: false, can_request_amend: false, can_request_cancel: false,
