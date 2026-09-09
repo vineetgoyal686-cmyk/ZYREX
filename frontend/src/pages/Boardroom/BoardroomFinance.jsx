@@ -529,6 +529,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
 
     onHeaderActionsChange(
       <div className="flex items-center gap-2 shrink-0">
+        {canManageColumns && (
         <div className="relative" ref={columnsRef}>
           <button onClick={() => setShowColumns(v => !v)}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
@@ -559,6 +560,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
             </div>
           )}
         </div>
+        )}
         {canExport && (
           <button onClick={exportExcel}
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
