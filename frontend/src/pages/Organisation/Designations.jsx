@@ -6,6 +6,7 @@ import { gradeCls, parseDescriptions } from "./Grades";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { useOrgId, scopedUrl } from "./orgScope";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -15,6 +16,7 @@ const EMPTY_FORM = { title: "", grade: "", active: true };
 
 export default function Designations({ actionsRef }) {
   const { canEdit, canDelete } = useModulePermissions("designations");
+  const orgId = useOrgId();
   const [rows,      setRows]      = useState([]);
   const [grades,    setGrades]    = useState([]);
   const [search,    setSearch]    = useState("");
@@ -29,14 +31,14 @@ export default function Designations({ actionsRef }) {
   const gradeDropRef = useRef(null);
 
   const fetchDesigs = async () => {
-    const res = await fetch(`${API}/api/organisation/org-designations`, { headers: { Authorization: `Bearer ${TOKEN()}` } });
+    const res = await fetch(scopedUrl(`${API}/api/organisation/org-designations`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } });
     const d   = await res.json();
     setRows((d.designations || []).map(mapDesig));
   };
   useEffect(() => { fetchDesigs(); }, []);
 
   useEffect(() => {
-    fetch(`${API}/api/organisation/grades`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
+    fetch(scopedUrl(`${API}/api/organisation/grades`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } })
       .then(r => r.json())
       .then(d => setGrades((d.grades || []).map(g => ({ ...g, gradeId: g.grade_id || g.gradeId, order: g.sort_order ?? g.order ?? 1 })).filter(g => g.status === "active").sort((a, b) => (a.order || 0) - (b.order || 0))));
   }, []);
@@ -146,7 +148,7 @@ export default function Designations({ actionsRef }) {
         fetch(`${API}/api/organisation/org-designations`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` },
-          body: JSON.stringify({ title: r.title, grade: r.grade, status: r.active ? "active" : "inactive" }),
+          body: JSON.stringify({ title: r.title, grade: r.grade, status: r.active ? "active" : "inactive", company_id: orgId }),
         })
       ));
       await fetchDesigs();
@@ -162,7 +164,7 @@ export default function Designations({ actionsRef }) {
   /* ── Modal save ── */
   const handleSave = async () => {
     if (!form.title.trim()) { setFormErr("Designation name is required."); return; }
-    const payload = { title: form.title.trim(), grade: form.grade, status: form.active ? "active" : "inactive" };
+    const payload = { title: form.title.trim(), grade: form.grade, status: form.active ? "active" : "inactive", company_id: orgId };
     const isAdd = modal.mode === "add";
     const url = isAdd ? `${API}/api/organisation/org-designations` : `${API}/api/organisation/org-designations/${modal.data.id}`;
     await fetch(url, { method: isAdd ? "POST" : "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify(payload) });

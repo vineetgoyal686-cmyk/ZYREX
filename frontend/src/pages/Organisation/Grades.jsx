@@ -5,6 +5,7 @@ import { StatusBadge } from "./helpers";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { useOrgId, scopedUrl } from "./orgScope";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -221,6 +222,7 @@ function Modal({ item, usedLetters, onClose, onSaved }) {
 
 export default function Grades({ actionsRef, onChange }) {
   const { canEdit, canDelete } = useModulePermissions("grades");
+  const orgId = useOrgId();
   const [grades,       setGrades]       = useState([]);
   const [search,       setSearch]       = useState("");
   const [modal,        setModal]        = useState(null);
@@ -231,7 +233,7 @@ export default function Grades({ actionsRef, onChange }) {
   const importRef = useRef(null);
 
   const fetchGrades = async () => {
-    const res = await fetch(`${API}/api/organisation/grades`, { headers: { Authorization: `Bearer ${TOKEN()}` } });
+    const res = await fetch(scopedUrl(`${API}/api/organisation/grades`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } });
     const d   = await res.json();
     const arr = sortByGrade((d.grades || []).map(mapGrade));
     setGrades(arr); onChange?.(arr);
@@ -256,7 +258,7 @@ export default function Grades({ actionsRef, onChange }) {
   const handleSaved = async (form) => {
     const isAdd = modal === "add";
     const maxOrder = grades.length ? Math.max(...grades.map(g => g.order || 0)) : 0;
-    const body = isAdd ? { grade: form.grade, descriptions: form.descriptions, sort_order: maxOrder + 1, status: form.status }
+    const body = isAdd ? { grade: form.grade, descriptions: form.descriptions, sort_order: maxOrder + 1, status: form.status, company_id: orgId }
                        : { descriptions: form.descriptions, status: form.status };
     const url = isAdd ? `${API}/api/organisation/grades` : `${API}/api/organisation/grades/${modal.id}`;
     await fetch(url, { method: isAdd ? "POST" : "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify(body) });
@@ -393,7 +395,7 @@ export default function Grades({ actionsRef, onChange }) {
 
       let maxOrder = grades.length ? Math.max(...grades.map(g => g.order || 0)) : 0;
       await Promise.all(parsed.map((r, i) =>
-        fetch(`${API}/api/organisation/grades`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify({ ...r, sort_order: maxOrder + i + 1 }) })
+        fetch(`${API}/api/organisation/grades`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify({ ...r, sort_order: maxOrder + i + 1, company_id: orgId }) })
       ));
       await fetchGrades();
       alert(`${parsed.length} grade(s) imported successfully.`);

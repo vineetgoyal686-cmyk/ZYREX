@@ -6,6 +6,7 @@ const { uploadStorageFile, removeStorageFile, createSignedStorageUrl } = require
 const { renderPdf } = require("../services/pdfService");
 const { renderPolicyHtml, renderPolicyHeader, renderPolicyFooter } = require("../pdf/policyTemplate");
 const { requirePerm } = require("../helpers/permHelper");
+const { companyIdFrom, scopeQuery } = require("../helpers/companyScope");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -30,6 +31,7 @@ const missingColumn = (err) => {
 
 const mapEmployee = (r) => ({
   id:             r.id,
+  companyId:      r.company_id      || null,
   contactCode:    r.contact_code    || "",
   personName:     r.person_name     || "",
   contactNumber:  r.contact_number  || "",
@@ -57,10 +59,10 @@ const mapEmployee = (r) => ({
 });
 
 /* GET /api/organisation/employees */
-router.get("/employees", async (_req, res) => {
+router.get("/employees", async (req, res) => {
   try {
-    const { data, error } = await supabase
-      .schema("organisation").from("employees").select("*").order("contact_code", { ascending: true });
+    const { data, error } = await scopeQuery(supabase
+      .schema("organisation").from("employees").select("*"), req).order("contact_code", { ascending: true });
     if (error) throw error;
     res.json({ contacts: (data || []).map(mapEmployee) });
   } catch (err) {
@@ -81,13 +83,16 @@ router.post("/employees", requirePerm("employees", "can_add"), async (req, res) 
     if (!employeeId || !employeeId.trim())
       return res.status(400).json({ error: "Employee ID is required" });
 
-    const { data: byId } = await supabase.schema("organisation").from("employees")
-      .select("id").eq("employee_id", employeeId.trim()).maybeSingle();
+    const company_id = companyIdFrom(req.body);
+    const inCompany = (q) => company_id ? q.eq("company_id", company_id) : q.is("company_id", null);
+
+    const { data: byId } = await inCompany(supabase.schema("organisation").from("employees")
+      .select("id").eq("employee_id", employeeId.trim())).limit(1).maybeSingle();
     if (byId) return res.status(409).json({ duplicate: true, message: "Employee with this ID already exists" });
 
     if (personName?.trim()) {
-      const { data: byName } = await supabase.schema("organisation").from("employees")
-        .select("id").ilike("person_name", personName.trim()).maybeSingle();
+      const { data: byName } = await inCompany(supabase.schema("organisation").from("employees")
+        .select("id").ilike("person_name", personName.trim())).limit(1).maybeSingle();
       if (byName) return res.status(409).json({ duplicate: true, message: `"${personName.trim()}" naam ka employee already exists` });
     }
 
@@ -104,6 +109,7 @@ router.post("/employees", requirePerm("employees", "can_add"), async (req, res) 
       alternate_phone: alternatePhone || "", address: address || "",
       joining_date: joiningDate || null,
       created_by_id: createdById || null, created_by_name: createdByName || null,
+      company_id,
     };
 
     let { data, error } = await supabase.schema("organisation").from("employees").insert(payload).select().single();
@@ -194,7 +200,10 @@ router.post("/employees/bulk", requirePerm("employees", "can_add"), async (req, 
   try {
     const { rows } = req.body;
     if (!rows?.length) return res.status(400).json({ error: "No rows provided" });
-    const { data: existing } = await supabase.schema("organisation").from("employees").select("employee_id, person_name");
+    const company_id = companyIdFrom(req.body);
+    let existingQ = supabase.schema("organisation").from("employees").select("employee_id, person_name");
+    existingQ = company_id ? existingQ.eq("company_id", company_id) : existingQ.is("company_id", null);
+    const { data: existing } = await existingQ;
     const existingIds   = new Set((existing || []).map(r => String(r.employee_id || "").trim().toLowerCase()).filter(Boolean));
     const existingNames = new Set((existing || []).map(r => String(r.person_name || "").trim().toLowerCase()).filter(Boolean));
     const results = { inserted: 0, skipped: 0, errors: [] };
@@ -214,6 +223,7 @@ router.post("/employees/bulk", requirePerm("employees", "can_add"), async (req, 
         team: String(row["Team"] || ""), employee_id: empId,
         joining_date: row["Joining Date"] || null, date_of_birth: row["Date of Birth"] || null,
         gender: String(row["Gender"] || ""),
+        company_id,
       });
       if (error) results.errors.push({ row: name, error: error.message });
       else { results.inserted++; existingIds.add(empId.toLowerCase()); existingNames.add(name.toLowerCase()); }
@@ -363,8 +373,8 @@ const nextDivId = async () => {
   return `DIV-${String(max + 1).padStart(3, "0")}`;
 };
 
-router.get("/divisions", async (_req, res) => {
-  const { data, error } = await supabase.schema("organisation").from("divisions").select("*").order("name");
+router.get("/divisions", async (req, res) => {
+  const { data, error } = await scopeQuery(supabase.schema("organisation").from("divisions").select("*"), req).order("name");
   if (error) return res.status(500).json({ error: error.message });
   res.json({ divisions: data || [] });
 });
@@ -372,7 +382,7 @@ router.post("/divisions", requirePerm("divisions", "can_add"), async (req, res) 
   const { name, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: "Name is required" });
   const div_id = await nextDivId();
-  const { data, error } = await supabase.schema("organisation").from("divisions").insert({ div_id, name: name.trim(), status: status || "active" }).select().single();
+  const { data, error } = await supabase.schema("organisation").from("divisions").insert({ div_id, name: name.trim(), status: status || "active", company_id: companyIdFrom(req.body) }).select().single();
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, division: data });
 });
@@ -397,8 +407,8 @@ const nextGradeId = async () => {
   return `GRD-${String(max + 1).padStart(3, "0")}`;
 };
 
-router.get("/grades", async (_req, res) => {
-  const { data, error } = await supabase.schema("organisation").from("grades").select("*").order("sort_order");
+router.get("/grades", async (req, res) => {
+  const { data, error } = await scopeQuery(supabase.schema("organisation").from("grades").select("*"), req).order("sort_order");
   if (error) return res.status(500).json({ error: error.message });
   res.json({ grades: data || [] });
 });
@@ -407,7 +417,7 @@ router.post("/grades", requirePerm("grades", "can_add"), async (req, res) => {
   if (!grade?.trim()) return res.status(400).json({ error: "Grade is required" });
   const grade_id = await nextGradeId();
   const { data, error } = await supabase.schema("organisation").from("grades")
-    .insert({ grade_id, grade: grade.trim(), descriptions: descriptions || [], sort_order: sort_order || 1, status: status || "active" }).select().single();
+    .insert({ grade_id, grade: grade.trim(), descriptions: descriptions || [], sort_order: sort_order || 1, status: status || "active", company_id: companyIdFrom(req.body) }).select().single();
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, grade: data });
 });
@@ -437,8 +447,8 @@ const nextDesigId = async () => {
   return `DSIG-${String(max + 1).padStart(3, "0")}`;
 };
 
-router.get("/org-designations", async (_req, res) => {
-  const { data, error } = await supabase.schema("organisation").from("designations").select("*").order("title");
+router.get("/org-designations", async (req, res) => {
+  const { data, error } = await scopeQuery(supabase.schema("organisation").from("designations").select("*"), req).order("title");
   if (error) return res.status(500).json({ error: error.message });
   res.json({ designations: data || [] });
 });
@@ -447,7 +457,7 @@ router.post("/org-designations", requirePerm("designations", "can_add"), async (
   if (!title?.trim()) return res.status(400).json({ error: "Title is required" });
   const desig_id = await nextDesigId();
   const { data, error } = await supabase.schema("organisation").from("designations")
-    .insert({ desig_id, title: title.trim(), grade: grade || null, active: active !== false }).select().single();
+    .insert({ desig_id, title: title.trim(), grade: grade || null, active: active !== false, company_id: companyIdFrom(req.body) }).select().single();
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, designation: data });
 });
@@ -470,8 +480,8 @@ router.delete("/org-designations/:id", requirePerm("designations", "can_delete")
 /* ════════════════════════════════════
    BRANCHES
 ════════════════════════════════════ */
-router.get("/branches", async (_req, res) => {
-  const { data, error } = await supabase.schema("organisation").from("branches").select("*").order("created_at");
+router.get("/branches", async (req, res) => {
+  const { data, error } = await scopeQuery(supabase.schema("organisation").from("branches").select("*"), req).order("created_at");
   if (error) return res.status(500).json({ error: error.message });
   res.json({ branches: data || [] });
 });
@@ -479,7 +489,7 @@ router.post("/branches", requirePerm("locations", "can_add"), async (req, res) =
   const { code, label, type, status, gstin, phone, email, is_main, state, city, pincode, address, contacts } = req.body;
   if (!label?.trim()) return res.status(400).json({ error: "Label is required" });
   const { data, error } = await supabase.schema("organisation").from("branches")
-    .insert({ code, label: label.trim(), type: type || "Branch", status: (status || "active").toLowerCase(), gstin, phone, email, is_main: is_main || false, state, city, pincode, address, contacts: contacts || [] }).select().single();
+    .insert({ code, label: label.trim(), type: type || "Branch", status: (status || "active").toLowerCase(), gstin, phone, email, is_main: is_main || false, state, city, pincode, address, contacts: contacts || [], company_id: companyIdFrom(req.body) }).select().single();
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, branch: data });
 });

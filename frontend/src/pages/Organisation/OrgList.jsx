@@ -115,9 +115,15 @@ export default function OrgList({ onSelectOrg, showAdd, onAddDone, actionsRef, v
   const fetchCompanies = async () => {
     setLoading(true);
     try {
-      const res  = await fetch(`${API}/api/procurement/companies`, { headers: { Authorization: `Bearer ${TOKEN()}` } });
-      const data = await res.json();
-      setCompanies(data.companies || []);
+      const h = { headers: { Authorization: `Bearer ${TOKEN()}` } };
+      const get = (path) => fetch(`${API}${path}`, h).then(r => r.json()).catch(() => ({}));
+      const [data, divs, depts, emps] = await Promise.all([
+        get("/api/procurement/companies"), get("/api/organisation/divisions"),
+        get("/api/departments"), get("/api/organisation/employees"),
+      ]);
+      const countBy = (rows, key) => (rows || []).reduce((m, r) => { const id = r[key]; if (id) m[id] = (m[id] || 0) + 1; return m; }, {});
+      const divC = countBy(divs.divisions, "company_id"), deptC = countBy(depts.departments, "company_id"), empC = countBy(emps.contacts, "companyId");
+      setCompanies((data.companies || []).map(c => ({ ...c, _divCount: divC[c.id] || 0, _deptCount: deptC[c.id] || 0, _empCount: empC[c.id] || 0 })));
     } catch { setCompanies([]); }
     finally { setLoading(false); }
   };

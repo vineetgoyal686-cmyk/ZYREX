@@ -4,6 +4,7 @@ import { cx } from "./helpers";
 import LogPanel from "../../components/LogPanel";
 import CompanyList from "../Procurement/CompanyList";
 import { Star } from "lucide-react";
+import { useOrgId, scopedUrl } from "./orgScope";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -44,12 +45,13 @@ export default function OrgOverview({ org: initialOrg, onDeleted }) {
   const [showMore,  setShowMore]  = useState(false);
   const moreRef = useRef(null);
   const clRef   = useRef({});
+  const orgId = useOrgId();
 
   useEffect(() => {
     const h = { Authorization: `Bearer ${TOKEN()}` };
-    fetch(`${API}/api/departments`, { headers: h }).then(r => r.json()).then(j => setDeptCount((j.departments || []).length)).catch(() => {});
-    fetch(`${API}/api/organisation/divisions`, { headers: h }).then(r => r.json()).then(j => setDivCount((j.divisions || []).length)).catch(() => {});
-    fetch(`${API}/api/sub-departments`, { headers: h }).then(r => r.json()).then(j => setSubCount((j.sub_departments || j.subDepartments || []).length)).catch(() => {});
+    fetch(scopedUrl(`${API}/api/departments`, orgId), { headers: h }).then(r => r.json()).then(j => setDeptCount((j.departments || []).length)).catch(() => {});
+    fetch(scopedUrl(`${API}/api/organisation/divisions`, orgId), { headers: h }).then(r => r.json()).then(j => setDivCount((j.divisions || []).length)).catch(() => {});
+    fetch(scopedUrl(`${API}/api/teams`, orgId), { headers: h }).then(r => r.json()).then(j => setSubCount((j.teams || []).length)).catch(() => {});
   }, []);
 
   useEffect(() => {

@@ -4,6 +4,7 @@ const admin = require("../helpers/supabaseHelper");
 const getAdminClient = () => admin;
 const { requireAuth } = require("../middleware/auth");
 const { requirePerm } = require("../helpers/permHelper");
+const { companyIdFrom, scopeQuery } = require("../helpers/companyScope");
 
 /* Auto-generate next dept_id e.g. DEPT-001 */
 const generateDeptId = async (admin) => {
@@ -22,9 +23,9 @@ const generateDeptId = async (admin) => {
 /* GET /api/departments */
 router.get("/", requireAuth, async (req, res) => {
   const admin = getAdminClient();
-  const { data, error } = await admin
+  const { data, error } = await scopeQuery(admin
     .schema("organisation").from("departments")
-    .select("*")
+    .select("*"), req)
     .order("name", { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
   res.json({ departments: data });
@@ -36,8 +37,11 @@ router.post("/", requirePerm("departments", "can_add"), async (req, res) => {
   if (!name || !name.trim()) return res.status(400).json({ error: "Department name is required" });
 
   const admin = getAdminClient();
+  const company_id = companyIdFrom(req.body);
 
-  const { data: existing } = await admin.schema("organisation").from("departments").select("id").ilike("name", name.trim()).single();
+  let dupQ = admin.schema("organisation").from("departments").select("id").ilike("name", name.trim());
+  dupQ = company_id ? dupQ.eq("company_id", company_id) : dupQ.is("company_id", null);
+  const { data: existing } = await dupQ.limit(1).maybeSingle();
   if (existing) return res.status(400).json({ error: "Department with this name already exists" });
 
   const dept_id = await generateDeptId(admin);
@@ -48,6 +52,7 @@ router.post("/", requirePerm("departments", "can_add"), async (req, res) => {
     head:        head?.trim()  || null,
     status:      status        || "active",
     division_id: division_id   || null,
+    company_id,
   }).select().single();
 
   if (error) return res.status(500).json({ error: error.message });

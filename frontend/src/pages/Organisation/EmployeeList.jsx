@@ -11,6 +11,7 @@ import { gradeCls, descriptionsLabel } from "./Grades";
 import { authFetch } from "../../utils/authFetch";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { ContactLogModal } from "../Create/FullMasterModals";
+import { useOrgId, scopedUrl } from "./orgScope";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -263,17 +264,18 @@ const INP = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:o
 const LBL = "block text-xs font-semibold text-slate-500 mb-1";
 
 function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, allEmps }) {
+  const orgId = useOrgId();
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
   const [gradeList, setGradeList] = useState([]);
   const [desigList, setDesigList] = useState([]);
   useEffect(() => {
-    fetch(`${API}/api/organisation/grades`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
+    fetch(scopedUrl(`${API}/api/organisation/grades`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } })
       .then(r => r.json()).then(d => setGradeList(
         (d.grades || []).map(g => ({ ...g, gradeId: g.grade_id || g.gradeId, order: g.sort_order ?? g.order ?? 1 }))
           .filter(g => g.status === "active").sort((a, b) => (a.order || 0) - (b.order || 0))
       )).catch(() => {});
-    fetch(`${API}/api/organisation/org-designations`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
+    fetch(scopedUrl(`${API}/api/organisation/org-designations`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } })
       .then(r => r.json()).then(d => setDesigList(
         (d.designations || []).map(x => ({ ...x, desigId: x.desig_id || x.desigId, active: x.status === "active" }))
       )).catch(() => {});
@@ -494,6 +496,7 @@ const EMPTY_FORM = {
 ═══════════════════════════════ */
 export default function EmployeeList({ actionsRef, view = "card", onViewChange, onCountChange }) {
   const { canEdit, canDelete } = useModulePermissions("employees");
+  const orgId = useOrgId();
   const [emps,    setEmps]    = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -517,7 +520,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
 
   const [divisions, setDivisions] = useState([]);
   useEffect(() => {
-    fetch(`${API}/api/organisation/divisions`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
+    fetch(scopedUrl(`${API}/api/organisation/divisions`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } })
       .then(r => r.json()).then(d => setDivisions(d.divisions || [])).catch(() => {});
   }, []);
 
@@ -568,7 +571,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const fetchEmps = async () => {
     setLoading(true);
     try {
-      const res  = await authFetch(`${API}/api/organisation/employees`);
+      const res  = await authFetch(scopedUrl(`${API}/api/organisation/employees`, orgId));
       const data = await res.json();
       setEmps(data.contacts || []);
     } catch { setEmps([]); }
@@ -606,7 +609,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     setSaving(true);
     try {
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
-      const payload = { ...form, createdById: u.id || "", createdByName: u.name || "" };
+      const payload = { ...form, createdById: u.id || "", createdByName: u.name || "", company_id: orgId };
       const before = editId ? emps.find(e => e.id === editId) : null;
       const url    = editId ? `${API}/api/organisation/employees/${editId}` : `${API}/api/organisation/employees`;
       const method = editId ? "PUT" : "POST";
@@ -790,7 +793,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         const res = await authFetch(`${API}/api/organisation/employees`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(row),
+          body: JSON.stringify({ ...row, company_id: orgId }),
         });
         if (res.ok) imported++; else failed++;
       }

@@ -4,6 +4,7 @@ const admin = require("../helpers/supabaseHelper");
 const getAdminClient = () => admin;
 const { requireAuth } = require("../middleware/auth");
 const { requirePerm } = require("../helpers/permHelper");
+const { companyIdFrom, scopeQuery } = require("../helpers/companyScope");
 
 const generateTeamId = async (admin) => {
   const { data } = await admin
@@ -21,9 +22,9 @@ const generateTeamId = async (admin) => {
 /* GET /api/teams */
 router.get("/", requireAuth, async (req, res) => {
   const admin = getAdminClient();
-  const { data, error } = await admin
+  const { data, error } = await scopeQuery(admin
     .schema("organisation").from("teams")
-    .select("*")
+    .select("*"), req)
     .order("created_at", { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
   res.json({ teams: data });
@@ -44,6 +45,7 @@ router.post("/", requirePerm("teams", "can_add"), async (req, res) => {
     leader_id:     leader_id     || null,
     member_ids:    Array.isArray(member_ids) ? member_ids : [],
     status:        status        || "active",
+    company_id:    companyIdFrom(req.body),
   }).select().single();
 
   if (error) return res.status(500).json({ error: error.message });

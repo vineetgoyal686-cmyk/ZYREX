@@ -5,6 +5,7 @@ import { StatusBadge } from "./helpers";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { useOrgId, scopedUrl } from "./orgScope";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -87,6 +88,7 @@ function MemberSelect({ users, selected, onChange }) {
 
 /* ── Team Modal ─────────────────────────────────── */
 function TeamModal({ item, depts, users, onClose, onSaved }) {
+  const orgId = useOrgId();
   const [form, setForm] = useState(
     item
       ? { name: item.name, department_id: item.department_id || "", leader_id: item.leader_id || "", member_ids: item.member_ids || [], status: item.status || "active" }
@@ -106,7 +108,7 @@ function TeamModal({ item, depts, users, onClose, onSaved }) {
       const res    = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` },
-        body: JSON.stringify({ ...form, leader_id: form.leader_id || null }),
+        body: JSON.stringify({ ...form, leader_id: form.leader_id || null, company_id: orgId }),
       });
       const json = await res.json();
       if (!res.ok) { setErr(json.error || "Failed to save"); return; }
@@ -170,6 +172,7 @@ function TeamModal({ item, depts, users, onClose, onSaved }) {
 /* ── Main ───────────────────────────────────────── */
 export default function SubDepts({ actionsRef, onChange }) {
   const { canEdit, canDelete } = useModulePermissions("teams");
+  const orgId = useOrgId();
   const [teams,    setTeams]    = useState([]);
   const [depts,    setDepts]    = useState([]);
   const [users,    setUsers]    = useState([]);
@@ -184,8 +187,8 @@ export default function SubDepts({ actionsRef, onChange }) {
     setLoading(true);
     try {
       const [tRes, dRes, uRes] = await Promise.all([
-        fetch(`${API}/api/teams`,       { headers: { Authorization: `Bearer ${TOKEN()}` } }),
-        fetch(`${API}/api/departments`, { headers: { Authorization: `Bearer ${TOKEN()}` } }),
+        fetch(scopedUrl(`${API}/api/teams`, orgId),       { headers: { Authorization: `Bearer ${TOKEN()}` } }),
+        fetch(scopedUrl(`${API}/api/departments`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } }),
         fetch(`${API}/api/users`,       { headers: { Authorization: `Bearer ${TOKEN()}` } }),
       ]);
       const [tJson, dJson, uJson] = await Promise.all([tRes.json(), dRes.json(), uRes.json()]);
@@ -333,7 +336,7 @@ export default function SubDepts({ actionsRef, onChange }) {
         const res = await fetch(`${API}/api/teams`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` },
-          body: JSON.stringify(row),
+          body: JSON.stringify({ ...row, company_id: orgId }),
         });
         if (res.ok) imported++; else failed++;
       }

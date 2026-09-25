@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Eye, Edit2, Trash2, Plus, X, Star, MapPin, Phone, Mail, FileText, Building2 } from "lucide-react";
 import { INDIA_STATES } from "../../data/indiaStateCities";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
+import { useOrgId, scopedUrl } from "./orgScope";
 
 const API          = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN        = () => localStorage.getItem("bms_token") || "";
@@ -372,12 +373,13 @@ function BranchCard({ branch, onView, onEdit, onDelete }) {
 /* ── Main ────────────────────────────────────────────── */
 export default function Locations({ actionsRef }) {
   const { canAdd, canEdit, canDelete } = useModulePermissions("locations");
+  const orgId = useOrgId();
   const [branches, setBranches] = useState([]);
   const [modal,    setModal]    = useState(null);
   const [viewing,  setViewing]  = useState(null);
 
   const fetchBranches = async () => {
-    const res = await fetch(`${API}/api/organisation/branches`, { headers: { Authorization: `Bearer ${TOKEN()}` } });
+    const res = await fetch(scopedUrl(`${API}/api/organisation/branches`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } });
     const d   = await res.json();
     setBranches((d.branches || []).map(mapBranch));
   };
@@ -389,7 +391,7 @@ export default function Locations({ actionsRef }) {
   });
 
   const save = async branch => {
-    const payload = { ...branch, is_main: branch.isMain, status: branch.status?.toLowerCase() };
+    const payload = { ...branch, is_main: branch.isMain, status: branch.status?.toLowerCase(), company_id: orgId };
     delete payload.isMain;
     const isAdd = !branch.id;
     const url = isAdd ? `${API}/api/organisation/branches` : `${API}/api/organisation/branches/${branch.id}`;

@@ -5,6 +5,7 @@ import { StatusBadge } from "./helpers";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { useOrgId, scopedUrl } from "./orgScope";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -56,6 +57,7 @@ function Modal({ item, onClose, onSaved }) {
 
 export default function Divisions({ actionsRef, onChange }) {
   const { canEdit, canDelete } = useModulePermissions("divisions");
+  const orgId = useOrgId();
   const [divs, setDivs]           = useState([]);
   const [search, setSearch]       = useState("");
   const [modal, setModal]         = useState(null);
@@ -63,7 +65,7 @@ export default function Divisions({ actionsRef, onChange }) {
   const importRef = useRef(null);
 
   const fetchDivs = async () => {
-    const res = await fetch(`${API}/api/organisation/divisions`, { headers: { Authorization: `Bearer ${TOKEN()}` } });
+    const res = await fetch(scopedUrl(`${API}/api/organisation/divisions`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } });
     const d   = await res.json();
     const arr = d.divisions || [];
     setDivs(arr); onChange?.(arr);
@@ -86,7 +88,7 @@ export default function Divisions({ actionsRef, onChange }) {
   const handleSaved = async (form) => {
     const isAdd = modal === "add";
     const url    = isAdd ? `${API}/api/organisation/divisions` : `${API}/api/organisation/divisions/${modal.id}`;
-    await fetch(url, { method: isAdd ? "POST" : "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify(form) });
+    await fetch(url, { method: isAdd ? "POST" : "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify({ ...form, company_id: orgId }) });
     setModal(null);
     fetchDivs();
   };
@@ -171,7 +173,7 @@ export default function Divisions({ actionsRef, onChange }) {
       if (!parsed.length) { alert("No valid rows found.\nMake sure column is: Division Name"); return; }
 
       await Promise.all(parsed.map(r =>
-        fetch(`${API}/api/organisation/divisions`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify(r) })
+        fetch(`${API}/api/organisation/divisions`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify({ ...r, company_id: orgId }) })
       ));
       await fetchDivs();
       alert(`${parsed.length} division(s) imported successfully.`);

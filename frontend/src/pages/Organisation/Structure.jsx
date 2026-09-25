@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { ChevronRight, ChevronDown, LayoutList, Share2, Search, Edit2 } from "lucide-react";
 import { cx } from "./helpers";
+import { useOrgId, scopedUrl } from "./orgScope";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -47,6 +48,7 @@ function ChartNode({ node, depth }) {
 
 /* ─── Main ──────────────────────────────────────────────── */
 export default function Structure() {
+  const orgId = useOrgId();
   const [view, setView]       = useState("table");
   const [depts, setDepts]     = useState([]);
   const [loading, setLoading] = useState(true);
@@ -59,15 +61,15 @@ export default function Structure() {
   useEffect(() => {
     const h = { Authorization: `Bearer ${TOKEN()}` };
     Promise.all([
-      fetch(`${API}/api/departments`, { headers: h }).then(r => r.json()),
-      fetch(`${API}/api/organisation/divisions`, { headers: h }).then(r => r.json()),
-      fetch(`${API}/api/sub-departments`, { headers: h }).then(r => r.json()),
+      fetch(scopedUrl(`${API}/api/departments`, orgId), { headers: h }).then(r => r.json()),
+      fetch(scopedUrl(`${API}/api/organisation/divisions`, orgId), { headers: h }).then(r => r.json()),
+      fetch(scopedUrl(`${API}/api/teams`, orgId), { headers: h }).then(r => r.json()),
     ]).then(([d, div, sub]) => {
       setDepts(d.departments || []);
       setDivisions(div.divisions || []);
-      setSubdepts(sub.sub_departments || sub.subDepartments || []);
+      setSubdepts((sub.teams || []).map(t => ({ ...t, dept_id: t.department_id, sub_id: t.team_id })));
     }).catch(() => {}).finally(() => setLoading(false));
-  }, []);
+  }, [orgId]);
 
   /* ── build flat rows ─────────────────────────────────── */
   const buildRows = () => {

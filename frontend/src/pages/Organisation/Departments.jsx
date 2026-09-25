@@ -5,6 +5,7 @@ import { useModulePermissions } from "../../hooks/useModulePermissions";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { useOrgId, scopedUrl } from "./orgScope";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -12,6 +13,7 @@ const TOKEN = () => localStorage.getItem("bms_token") || "";
 const TEMPLATE_HEADERS = ["Department Name", "Division", "Department Head", "Status"];
 
 function DeptModal({ dept, divisions, onClose, onSaved }) {
+  const orgId = useOrgId();
   const [form, setForm] = useState(
     dept
       ? { name: dept.name, head: dept.head || "", status: dept.status || "active", division_id: dept.division_id || "" }
@@ -29,7 +31,7 @@ function DeptModal({ dept, divisions, onClose, onSaved }) {
     try {
       const url    = dept ? `${API}/api/departments/${dept.id}` : `${API}/api/departments`;
       const method = dept ? "PUT" : "POST";
-      const res    = await fetch(url, { method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify(form) });
+      const res    = await fetch(url, { method, headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` }, body: JSON.stringify({ ...form, company_id: orgId }) });
       const json   = await res.json();
       if (!res.ok) { setErr(json.error || "Failed to save"); return; }
       onSaved(json.department);
@@ -90,6 +92,7 @@ function DeptModal({ dept, divisions, onClose, onSaved }) {
 
 export default function Departments({ actionsRef }) {
   const { canEdit, canDelete } = useModulePermissions("departments");
+  const orgId = useOrgId();
   const [depts, setDepts]         = useState([]);
   const [loading, setLoading]     = useState(true);
   const [importing, setImporting] = useState(false);
@@ -100,14 +103,14 @@ export default function Departments({ actionsRef }) {
 
   const [divisions, setDivisions] = useState([]);
   useEffect(() => {
-    fetch(`${API}/api/organisation/divisions`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
+    fetch(scopedUrl(`${API}/api/organisation/divisions`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } })
       .then(r => r.json()).then(d => setDivisions(d.divisions || [])).catch(() => {});
   }, []);
 
   const load = async () => {
     setLoading(true);
     try {
-      const res  = await fetch(`${API}/api/departments`, { headers: { Authorization: `Bearer ${TOKEN()}` } });
+      const res  = await fetch(scopedUrl(`${API}/api/departments`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } });
       const json = await res.json();
       setDepts(json.departments || []);
     } catch { setDepts([]); }
@@ -233,7 +236,7 @@ export default function Departments({ actionsRef }) {
         const res = await fetch(`${API}/api/departments`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN()}` },
-          body: JSON.stringify(row),
+          body: JSON.stringify({ ...row, company_id: orgId }),
         });
         if (res.ok) imported++; else failed++;
       }
