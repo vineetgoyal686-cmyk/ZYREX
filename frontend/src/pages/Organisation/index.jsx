@@ -3,7 +3,7 @@ import {
   Plus, LayoutGrid, GitBranch, Building2, Briefcase,
   MapPin, PanelLeftClose, PanelLeftOpen,
   Download, Upload, ChevronDown, FileSpreadsheet, FileText,
-  Layers, Network, UserSquare2, FolderTree, ArrowLeft, Table2, BarChart2, ClipboardList,
+  Layers, Network, UserSquare2, FolderTree, ArrowLeft, Table2, BarChart2, ClipboardList, FileSignature,
 } from "lucide-react";
 import OrgOverview   from "./OrgOverview";
 import Departments   from "./Departments";
@@ -18,6 +18,8 @@ import EmployeeList  from "./EmployeeList";
 import OrgList       from "./OrgList";
 import SOPTab        from "../Settings/tabs/SOP";
 import Policy        from "./Policy";
+import HRLetter      from "./HRLetter";
+import { OrgScopeContext, scopedUrl } from "./orgScope";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
@@ -48,6 +50,7 @@ const NAV_SECTIONS = [
     label: "People",
     items: [
       { id: "employees", label: "Employees", icon: UserSquare2, hasAdd: true,  hasExport: true,  btnLabel: "Add Employee" },
+      { id: "hr_letters", label: "Offer & Appointment", icon: FileSignature, hasAdd: false, hasExport: false },
     ],
   },
   {
@@ -108,12 +111,13 @@ function OrgDetail({ org, onBack, currentUser }) {
 
   useEffect(() => {
     const h = { Authorization: `Bearer ${TOKEN()}` };
-    fetch(`${API}/api/departments`, { headers: h }).then(r => r.json()).then(j => setDeptCount((j.departments || []).length)).catch(() => {});
-    fetch(`${API}/api/organisation/divisions`, { headers: h }).then(r => r.json()).then(j => setDivCount((j.divisions || []).length)).catch(() => {});
-    fetch(`${API}/api/organisation/grades`, { headers: h }).then(r => r.json()).then(j => setLvlCount((j.grades || []).length)).catch(() => {});
-    fetch(`${API}/api/sub-departments`, { headers: h }).then(r => r.json()).then(j => setSubCount((j.sub_departments || j.subDepartments || []).length)).catch(() => {});
-    fetch(`${API}/api/organisation/branches`, { headers: h }).then(r => r.json()).then(j => setBranchCount((j.branches || []).length)).catch(() => {});
-  }, [activeTab]);
+    const u = (path) => scopedUrl(`${API}${path}`, org.id);
+    fetch(u("/api/departments"), { headers: h }).then(r => r.json()).then(j => setDeptCount((j.departments || []).length)).catch(() => {});
+    fetch(u("/api/organisation/divisions"), { headers: h }).then(r => r.json()).then(j => setDivCount((j.divisions || []).length)).catch(() => {});
+    fetch(u("/api/organisation/grades"), { headers: h }).then(r => r.json()).then(j => setLvlCount((j.grades || []).length)).catch(() => {});
+    fetch(u("/api/teams"), { headers: h }).then(r => r.json()).then(j => setSubCount((j.teams || []).length)).catch(() => {});
+    fetch(u("/api/organisation/branches"), { headers: h }).then(r => r.json()).then(j => setBranchCount((j.branches || []).length)).catch(() => {});
+  }, [activeTab, org.id]);
 
   useEffect(() => {
     const h = (e) => {
@@ -146,11 +150,13 @@ function OrgDetail({ org, onBack, currentUser }) {
       case "employees":       return <EmployeeList actionsRef={actionsRef} view={empView} onViewChange={setEmpView} onCountChange={setEmpCount} />;
       case "locations":       return <Locations   actionsRef={actionsRef} />;
       case "policy":          return <Policy actionsRef={actionsRef} companyId={org?.id} orgName={org?.companyName || org?.company_name} />;
+      case "hr_letters":      return <HRLetter org={org} showToast={showToast} />;
       default:                return null;
     }
   };
 
   return (
+    <OrgScopeContext.Provider value={org.id}>
     <div className="flex w-full min-w-0 flex-1">
 
       {/* Toast notification */}
@@ -328,6 +334,7 @@ function OrgDetail({ org, onBack, currentUser }) {
         </div>
       </div>
     </div>
+    </OrgScopeContext.Provider>
   );
 }
 
