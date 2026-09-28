@@ -5,7 +5,7 @@ import api from "../../utils/api";
 import Pagination from "./Pagination";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import {
-  CATEGORIES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
+  CATEGORIES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
 } from "./pettyCashConstants";
 
 const monthStart = () => `${todayStr().slice(0, 8)}01`;
@@ -43,11 +43,16 @@ export default function PettyCashAccounts() {
   const downloadExcel = () => {
     if (!data) return;
     const { summary, rows } = data;
-    const maxDocs = rows.reduce((m, r) => Math.max(m, r.documentUrls.length), 0);
+    // One link column per file slot per attachment section, e.g. "Bills 1",
+    // "Bills 2", "Payment Docs" — only for sections that have any files.
+    const docCols = DOC_SECTIONS.flatMap(s => {
+      const max = rows.reduce((m, r) => Math.max(m, r.documents[s.key]?.length || 0), 0);
+      return Array.from({ length: max }, (_, i) => ({ key: s.key, idx: i, header: max > 1 ? `${s.label} ${i + 1}` : s.label }));
+    });
     const header = [
       "Date", "Particular Items", "Tax Invoice / Non Tax Invoice", "Bill Type", "Payment Mode",
       "Cost Center/ Project Name", "Location", ...CATEGORIES, "Total Exps. Only", "Remarks",
-      ...Array.from({ length: maxDocs }, (_, i) => (maxDocs > 1 ? `Bill ${i + 1}` : "Bill")),
+      ...docCols.map(c => c.header),
     ];
     const catStart = 7;
     const totalCol = catStart + CATEGORIES.length;
@@ -71,7 +76,7 @@ export default function PettyCashAccounts() {
         labelOf(PAYMENT_MODES, r.paymentMode), r.project, r.location,
         ...CATEGORIES.map(c => ((CATEGORIES.includes(r.category) ? r.category : "Others") === c ? r.amount : "")),
         r.amount, r.remarks,
-        ...Array.from({ length: maxDocs }, (_, i) => (r.documentUrls[i] ? "View" : "")),
+        ...docCols.map(c => (r.documents[c.key]?.[c.idx] ? "View" : "")),
       ];
       aoa.push(line);
     });
@@ -83,12 +88,13 @@ export default function PettyCashAccounts() {
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-    // Clickable bill links.
+    // Clickable attachment links.
     rows.forEach((r, i) => {
-      r.documentUrls.forEach((url, d) => {
+      docCols.forEach((c, d) => {
+        const url = r.documents[c.key]?.[c.idx];
         if (!url) return;
         const ref = XLSX.utils.encode_cell({ r: headerRow + 1 + i, c: totalCol + 2 + d });
-        if (ws[ref]) ws[ref].l = { Target: url, Tooltip: "Open bill" };
+        if (ws[ref]) ws[ref].l = { Target: url, Tooltip: `Open ${c.header}` };
       });
     });
 
@@ -158,7 +164,7 @@ export default function PettyCashAccounts() {
           <table className={GRID_TABLE}>
             <thead className="bg-slate-50 text-slate-600">
               <tr>
-                {["Date", "Particular Items", "Tax / Non Tax", "Bill Type", "Payment", "Project", "Location", "Category", "Amount", "Remarks", "Bill"].map(h => (
+                {["Date", "Particular Items", "Tax / Non Tax", "Bill Type", "Payment", "Project", "Location", "Category", "Amount", "Remarks", "Attachments"].map(h => (
                   <th key={h} className={`px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
@@ -180,11 +186,16 @@ export default function PettyCashAccounts() {
                   <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{r.category}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{fmtAmount(r.amount)}</td>
                   <td className="px-4 py-2.5 max-w-[180px] truncate text-slate-500" title={r.remarks}>{r.remarks || "—"}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">
-                    {r.documentUrls.length ? r.documentUrls.map((url, i) => (
-                      <a key={i} href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 mr-2 text-blue-600 hover:underline">
-                        <Paperclip size={12} />{r.documentUrls.length > 1 ? i + 1 : "View"}
-                      </a>
+                  <td className="px-4 py-2.5 whitespace-nowrap text-xs">
+                    {DOC_SECTIONS.some(s => r.documents[s.key]?.length) ? DOC_SECTIONS.filter(s => r.documents[s.key]?.length).map(s => (
+                      <div key={s.key} className="flex items-center gap-1.5">
+                        <span className="text-slate-500">{s.label}:</span>
+                        {r.documents[s.key].map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 text-blue-600 hover:underline">
+                            <Paperclip size={11} />{i + 1}
+                          </a>
+                        ))}
+                      </div>
                     )) : "—"}
                   </td>
                 </tr>

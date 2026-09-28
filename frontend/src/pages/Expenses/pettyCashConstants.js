@@ -26,7 +26,20 @@ export const PAYMENT_MODES = [
   { value: "credit_card", label: "Credit Card" },
 ];
 
-export const labelOf = (list, value) => list.find(o => o.value === value)?.label || "";
+// Attachment sections — keys match DOC_SECTIONS in backend/src/routes/pettyCash.js.
+export const DOC_SECTIONS = [
+  { key: "bill",     label: "Bills" },
+  { key: "voucher",  label: "Voucher" },
+  { key: "payment",  label: "Payment Docs" },
+  { key: "material", label: "Material Image" },
+];
+// Received / Given entries only carry payment proof.
+export const docSectionsFor = (entryType) =>
+  entryType === "expense" ? DOC_SECTIONS : DOC_SECTIONS.filter(s => s.key === "payment");
+export const docCount = (documents) =>
+  DOC_SECTIONS.reduce((n, s) => n + (documents?.[s.key]?.length || 0), 0);
+
+export const labelOf =(list, value) => list.find(o => o.value === value)?.label || "";
 export const taxLabel = (proofType) => (proofType === "tax_invoice" ? "Tax Invoice" : "Non Tax Invoice");
 
 export const fmtAmount = (n) =>

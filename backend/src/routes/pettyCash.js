@@ -7,7 +7,7 @@ const express  = require("express");
 const router   = express.Router();
 const multer   = require("multer");
 const supabase = require("../helpers/supabaseHelper");
-const { uploadStorageFile, createSignedStorageUrl } = require("../helpers/storageHelper");
+const { uploadStorageFile, createSignedStorageUrl, normalizeStoragePath } = require("../helpers/storageHelper");
 const { requirePerm } = require("../helpers/permHelper");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -25,6 +25,15 @@ const CATEGORIES = [
   "Petrol Car/ Bike", "Tolls & Parking", "Kitchen & Grocery", "Meals", "Electric Item",
   "Repair & Maintance charges", "Housekeeping Charges", "Software", "Bank Charges", "Others",
 ];
+
+// Attachments are kept in four separate sections, each its own column.
+// Uploads arrive as multipart fields "doc_<section>"; on edit, the files
+// to keep come back as { <section>: [path|signedUrl, ...] } in docKeep.
+const DOC_SECTIONS = { bill: "bill_docs", voucher: "voucher_docs", payment: "payment_docs", material: "material_docs" };
+
+const signDocs = async (r) => Object.fromEntries(await Promise.all(
+  Object.entries(DOC_SECTIONS).map(async ([key, col]) => [key, await Promise.all((r[col] || []).map(signDoc))])
+));
 
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
@@ -44,7 +53,7 @@ const mapEntry = async (r, peopleById) => ({
   project:       r.project || "",
   location:      r.location || "",
   remarks:       r.remarks || "",
-  documentUrls:  await Promise.all((r.document_urls || []).map(signDoc)),
+  documents:     await signDocs(r),
   createdAt:     r.created_at,
   createdByName: r.created_by_name || "",
   updatedAt:     r.updated_at,
@@ -56,22 +65,31 @@ const loadPeopleMap = async () => {
   return Object.fromEntries((data || []).map(p => [p.id, p]));
 };
 
+// Uploads every "doc_<section>" file and returns { <column>: [paths] }.
 const uploadDocs = async (files, pathPrefix) => {
-  const matches = (files || []).filter(f => f.fieldname === "document");
-  const paths = [];
-  for (let i = 0; i < matches.length; i++) {
-    const file = matches[i];
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const path = `${pathPrefix}/${Date.now()}_${i}_${safeName}`;
-    await uploadStorageFile(supabase, BUCKET, path, file.buffer, file.mimetype);
-    paths.push(path);
+  const out = {};
+  for (const [key, col] of Object.entries(DOC_SECTIONS)) {
+    const matches = (files || []).filter(f => f.fieldname === `doc_${key}`);
+    out[col] = [];
+    for (let i = 0; i < matches.length; i++) {
+      const file = matches[i];
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${pathPrefix}/${key}/${Date.now()}_${i}_${safeName}`;
+      await uploadStorageFile(supabase, BUCKET, path, file.buffer, file.mimetype);
+      out[col].push(path);
+    }
   }
-  return paths;
+  return out;
 };
 
-const parseJsonField = (raw) => {
-  if (!raw) return [];
-  try { const v = JSON.parse(raw); return Array.isArray(v) ? v : []; } catch { return []; }
+// docKeep → { <column>: [storage paths] }, stripping any signed-URL wrapper
+// the client echoed back so only bare paths are stored.
+const parseDocKeep = (raw) => {
+  let v = {};
+  try { v = JSON.parse(raw || "{}") || {}; } catch { v = {}; }
+  return Object.fromEntries(Object.entries(DOC_SECTIONS).map(([key, col]) => [
+    col, (Array.isArray(v[key]) ? v[key] : []).map(p => normalizeStoragePath(p, BUCKET)).filter(Boolean),
+  ]));
 };
 
 const rememberLocation = async (name) => {
@@ -205,11 +223,11 @@ router.post("/entries", requirePerm("petty_cash_staff", "can_add"), upload.any()
       .single();
     if (insertError) throw insertError;
 
-    const documentUrls = await uploadDocs(req.files, `entries/${created.id}`);
+    const uploaded = await uploadDocs(req.files, `entries/${created.id}`);
     let finalRow = created;
-    if (documentUrls.length) {
+    if (Object.values(uploaded).some(list => list.length)) {
       const { data, error } = await supabase.from("petty_cash_entries")
-        .update({ document_urls: documentUrls }).eq("id", created.id).select("*").single();
+        .update(uploaded).eq("id", created.id).select("*").single();
       if (error) throw error;
       finalRow = data;
     }
@@ -229,12 +247,13 @@ router.put("/entries/:id", requirePerm("petty_cash_staff", "can_edit"), upload.a
     let row;
     try { row = buildRow(req.body); } catch (e) { return res.status(400).json({ error: e.message }); }
 
-    const keepDocs = parseJsonField(req.body.documentKeep);
-    const newDocs  = await uploadDocs(req.files, `entries/${id}`);
+    const keep = parseDocKeep(req.body.docKeep);
+    const uploaded = await uploadDocs(req.files, `entries/${id}`);
+    const docCols = Object.fromEntries(Object.values(DOC_SECTIONS).map(col => [col, [...keep[col], ...uploaded[col]]]));
 
     const { data: updated, error } = await supabase
       .from("petty_cash_entries")
-      .update({ ...row, document_urls: [...keepDocs, ...newDocs], updated_at: new Date().toISOString() })
+      .update({ ...row, ...docCols, updated_at: new Date().toISOString() })
       .eq("id", id)
       .is("deleted_at", null)
       .select("*")
@@ -373,7 +392,7 @@ router.get("/accounts", requirePerm("petty_cash_accounts", "can_view"), async (r
       location:     r.location || "",
       remarks:      r.remarks || "",
       amount:       Number(r.amount) || 0,
-      documentUrls: await Promise.all((r.document_urls || []).map(signDoc)),
+      documents:    await signDocs(r),
     })));
 
     res.json({

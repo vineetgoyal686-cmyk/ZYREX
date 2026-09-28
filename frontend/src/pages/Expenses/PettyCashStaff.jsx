@@ -11,7 +11,7 @@ import LogPanel from "../../components/LogPanel";
 import Pagination from "./Pagination";
 import { logAudit } from "../../utils/auditLog";
 import {
-  CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
+  CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, docSectionsFor, docCount, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
 } from "./pettyCashConstants";
 
 const LAST_PROJECT_KEY  = "petty_cash_last_project";
@@ -128,7 +128,7 @@ export default function PettyCashStaff() {
 
   const [formOpen, setFormOpen]     = useState(false);
   const [form, setForm]             = useState(emptyForm());
-  const [docs, setDocs]             = useState([]);
+  const [docs, setDocs]             = useState(emptyDocs());
   const [editOriginal, setEditOriginal] = useState(null);
   const [saving, setSaving]         = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
@@ -219,7 +219,7 @@ export default function PettyCashStaff() {
   // ── Form ────────────────────────────────────────────────────────────────
   const openAdd = (entryType) => {
     setForm(emptyForm(entryType));
-    setDocs([]);
+    setDocs(emptyDocs());
     setEditOriginal(null);
     setAddMenuOpen(false);
     setFormOpen(true);
@@ -231,20 +231,22 @@ export default function PettyCashStaff() {
       particular: e.particular, category: e.category, proofType: e.proofType, paymentMode: e.paymentMode,
       project: e.project, location: e.location, remarks: e.remarks,
     });
-    setDocs((e.documentUrls || []).map(url => ({ url, keepPath: url })));
+    setDocs(Object.fromEntries(DOC_SECTIONS.map(s => [s.key, (e.documents?.[s.key] || []).map(url => ({ url, keepPath: url }))])));
     setEditOriginal(e);
     setFormOpen(true);
   };
   const closeForm = () => {
-    docs.forEach(d => d.previewUrl && URL.revokeObjectURL(d.previewUrl));
+    Object.values(docs).flat().forEach(d => d.previewUrl && URL.revokeObjectURL(d.previewUrl));
     setFormOpen(false);
   };
   const set = (key) => (ev) => setForm(f => ({ ...f, [key]: ev.target.value }));
 
-  const addFiles = (files) => setDocs(prev => [...prev, ...files.map(file => ({ file, previewUrl: URL.createObjectURL(file) }))]);
-  const removeDoc = (idx) => setDocs(prev => {
-    if (prev[idx]?.previewUrl) URL.revokeObjectURL(prev[idx].previewUrl);
-    return prev.filter((_, i) => i !== idx);
+  const addFiles = (section, files) => setDocs(prev => ({
+    ...prev, [section]: [...prev[section], ...files.map(file => ({ file, previewUrl: URL.createObjectURL(file) }))],
+  }));
+  const removeDoc = (section, idx) => setDocs(prev => {
+    if (prev[section][idx]?.previewUrl) URL.revokeObjectURL(prev[section][idx].previewUrl);
+    return { ...prev, [section]: prev[section].filter((_, i) => i !== idx) };
   });
 
   const personName = (id) => people.find(p => p.id === id)?.name || "";
@@ -299,8 +301,13 @@ export default function PettyCashStaff() {
       const fd = new FormData();
       Object.entries(f).forEach(([k, v]) => fd.append(k, v ?? ""));
       fd.append("createdByName", currentUser().name || "");
-      if (editOriginal) fd.append("documentKeep", JSON.stringify(docs.filter(d => d.keepPath).map(d => d.keepPath)));
-      docs.filter(d => d.file).forEach(d => fd.append("document", d.file));
+      // Only the sections shown for this entry type are sent, so switching an
+      // expense to Received drops its Bills / Voucher / Material files.
+      const sections = docSectionsFor(f.entryType);
+      if (editOriginal) {
+        fd.append("docKeep", JSON.stringify(Object.fromEntries(sections.map(s => [s.key, docs[s.key].filter(d => d.keepPath).map(d => d.keepPath)]))));
+      }
+      sections.forEach(s => docs[s.key].filter(d => d.file).forEach(d => fd.append(`doc_${s.key}`, d.file)));
 
       const { data } = editOriginal
         ? await api.put(`/api/petty-cash/entries/${editOriginal.id}`, fd)
@@ -661,10 +668,10 @@ export default function PettyCashStaff() {
                   )}
                   <td className="px-4 py-2.5 text-slate-500 max-w-[220px] truncate" title={e.remarks}>{e.remarks || "—"}</td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
-                    {e.documentUrls?.length > 0 ? (
+                    {docCount(e.documents) > 0 ? (
                       <button onClick={() => setDocsEntry(e)} title="View attachments"
                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-blue-600 hover:bg-blue-50 font-medium">
-                        <Paperclip size={13} /> {e.documentUrls.length}
+                        <Paperclip size={13} /> {docCount(e.documents)}
                       </button>
                     ) : <span className="text-slate-400">—</span>}
                   </td>
@@ -765,23 +772,34 @@ export default function PettyCashStaff() {
                 </Field>
 
                 <Field label="Attachments" wide>
-                  <label className="flex items-center justify-center gap-2 h-11 border border-dashed border-slate-300 rounded-lg text-sm text-slate-500 cursor-pointer hover:border-slate-500 hover:text-slate-700">
-                    <UploadCloud size={16} /> Upload bill / voucher
-                    <input type="file" multiple accept="image/*,application/pdf" className="hidden"
-                      onChange={e => { addFiles(Array.from(e.target.files || [])); e.target.value = ""; }} />
-                  </label>
-                  {docs.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      {docs.map((d, i) => (
-                        <div key={i} className="flex items-center justify-between gap-2 px-3 py-1.5 rounded-lg bg-slate-50 text-sm">
-                          <a href={d.previewUrl || d.url} target="_blank" rel="noreferrer" className="truncate text-blue-600 hover:underline">
-                            {d.file ? d.file.name : `Attachment ${i + 1}`}
-                          </a>
-                          <button type="button" onClick={() => removeDoc(i)} className="p-1 text-slate-400 hover:text-red-600"><X size={14} /></button>
+                  <div className={`grid gap-3 ${docSectionsFor(form.entryType).length > 1 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
+                    {docSectionsFor(form.entryType).map(s => (
+                      <div key={s.key} className="rounded-lg border border-slate-200 p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[13px] font-semibold text-slate-700">{s.label}</p>
+                          <label className="flex items-center gap-1 text-xs font-medium text-blue-600 cursor-pointer hover:underline">
+                            <UploadCloud size={13} /> Upload
+                            <input type="file" multiple accept="image/*,application/pdf" className="hidden"
+                              onChange={e => { addFiles(s.key, Array.from(e.target.files || [])); e.target.value = ""; }} />
+                          </label>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        {docs[s.key].length === 0 ? (
+                          <p className="text-xs text-slate-400">No files</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {docs[s.key].map((d, i) => (
+                              <div key={i} className="flex items-center justify-between gap-2 px-2 py-1 rounded-md bg-slate-50 text-xs">
+                                <a href={d.previewUrl || d.url} target="_blank" rel="noreferrer" className="truncate text-blue-600 hover:underline">
+                                  {d.file ? d.file.name : `${s.label} ${i + 1}`}
+                                </a>
+                                <button type="button" onClick={() => removeDoc(s.key, i)} className="p-0.5 text-slate-400 hover:text-red-600"><X size={13} /></button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </Field>
               </div>
             </div>
@@ -833,13 +851,8 @@ export default function PettyCashStaff() {
               <h2 className="text-base font-bold text-slate-900">Attachments</h2>
               <button onClick={() => setDocsEntry(null)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
             </div>
-            <div className="px-6 py-4 space-y-1.5">
-              {docsEntry.documentUrls.map((url, i) => (
-                <a key={i} href={url} target="_blank" rel="noreferrer"
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-50 text-sm text-blue-600 hover:bg-slate-100">
-                  <Paperclip size={14} /> Attachment {i + 1}
-                </a>
-              ))}
+            <div className="px-6 py-4">
+              <DocSectionsList documents={docsEntry.documents} />
             </div>
           </div>
         </div>
@@ -892,6 +905,31 @@ export default function PettyCashStaff() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const emptyDocs = () => Object.fromEntries(DOC_SECTIONS.map(s => [s.key, []]));
+
+// Saved attachments grouped by section; empty sections are skipped.
+function DocSectionsList({ documents }) {
+  const filled = DOC_SECTIONS.filter(s => documents?.[s.key]?.length);
+  if (!filled.length) return <p className="text-sm text-slate-400">No attachments</p>;
+  return (
+    <div className="space-y-3">
+      {filled.map(s => (
+        <div key={s.key}>
+          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">{s.label}</p>
+          <div className="space-y-1">
+            {documents[s.key].map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noreferrer"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 text-sm text-blue-600 hover:bg-slate-100">
+                <Paperclip size={13} /> {s.label} {i + 1}
+              </a>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1035,12 +1073,8 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
             ))}
             <div className="grid grid-cols-[130px_1fr] gap-3 py-2.5 text-sm">
               <dt className="text-slate-500">Attachments</dt>
-              <dd className="space-y-1">
-                {e.documentUrls?.length ? e.documentUrls.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-blue-600 hover:underline">
-                    <Paperclip size={13} /> Attachment {i + 1}
-                  </a>
-                )) : <span className="text-slate-900 font-medium">—</span>}
+              <dd>
+                {docCount(e.documents) ? <DocSectionsList documents={e.documents} /> : <span className="text-slate-900 font-medium">—</span>}
               </dd>
             </div>
           </dl>
