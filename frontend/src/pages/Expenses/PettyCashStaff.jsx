@@ -136,6 +136,7 @@ export default function PettyCashStaff() {
   const [personModal, setPersonModal] = useState(null); // field name the new person fills
   const [docsEntry, setDocsEntry]   = useState(null);
   const [viewEntry, setViewEntry]   = useState(null);
+  const [viewPerson, setViewPerson] = useState(null); // a balances.list row
   const [logEntry, setLogEntry]     = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [bulkResult, setBulkResult] = useState(null);
@@ -552,14 +553,14 @@ export default function PettyCashStaff() {
           <table className={GRID_TABLE}>
             <thead className="bg-slate-50 text-slate-600">
               <tr>
-                {["Person", "From Accounts", "Got from Others", "Given to Others", "Expense", "Balance"].map((h, i) => (
-                  <th key={h} className={`px-4 py-2.5 font-semibold whitespace-nowrap ${i ? "text-right" : "text-left"}`}>{h}</th>
+                {["Person", "From Accounts", "Got from Others", "Given to Others", "Expense", "Balance", "Action"].map((h, i) => (
+                  <th key={h} className={`px-4 py-2.5 font-semibold whitespace-nowrap ${i && h !== "Action" ? "text-right" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {balances.list.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400">No entries yet</td></tr>
+                <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-400">No entries yet</td></tr>
               ) : peopleRows.map(b => (
                 <tr key={b.id} className="border-t border-slate-200">
                   <td className="px-4 py-2.5 font-medium text-slate-800">{b.name}</td>
@@ -568,6 +569,9 @@ export default function PettyCashStaff() {
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(b.givenToOthers)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(b.expense)}</td>
                   <td className={`px-4 py-2.5 text-right tabular-nums font-bold ${b.balance < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtAmount(b.balance)}</td>
+                  <td className="px-4 py-2.5">
+                    <button onClick={() => setViewPerson(b)} title="View entries" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100"><Eye size={14} /></button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -580,6 +584,7 @@ export default function PettyCashStaff() {
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(balances.list.reduce((s, b) => s + b.givenToOthers, 0))}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(balances.totalExpense)}</td>
                   <td className={`px-4 py-2.5 text-right tabular-nums ${balances.totalBalance < 0 ? "text-rose-600" : "text-emerald-700"}`}>{fmtAmount(balances.totalBalance)}</td>
+                  <td />
                 </tr>
               </tfoot>
             )}
@@ -803,6 +808,15 @@ export default function PettyCashStaff() {
         />
       )}
 
+      {viewPerson && (
+        <PersonLedger
+          person={viewPerson}
+          entries={entries}
+          onViewEntry={setViewEntry}
+          onClose={() => setViewPerson(null)}
+        />
+      )}
+
       {viewEntry && (
         <EntryDetails
           entry={viewEntry}
@@ -885,6 +899,95 @@ export default function PettyCashStaff() {
 const fmtStamp = (iso) => (iso ? new Date(iso).toLocaleString("en-IN", {
   day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true,
 }) : "");
+
+// Every entry that moved money in or out of one person's hands, oldest
+// first, with a running balance — explains how the Person-wise figure
+// was reached.
+function PersonLedger({ person, entries, onViewEntry, onClose }) {
+  const rows = useMemo(() => {
+    const mine = entries
+      .filter(e => e.personId === person.id || e.fromPersonId === person.id)
+      .sort((a, b) => (a.entryDate === b.entryDate
+        ? String(a.createdAt).localeCompare(String(b.createdAt))
+        : a.entryDate.localeCompare(b.entryDate)));
+    const describe = (e) => {
+      if (e.entryType === "expense") return [`${e.particular}${e.category ? ` (${e.category})` : ""}`, -e.amount];
+      if (e.entryType === "received") return ["From Accounts", e.amount];
+      if (e.personId === person.id) return [`From ${e.fromPersonName}`, e.amount];
+      return [`To ${e.personName}`, -e.amount];
+    };
+    return mine.reduce((acc, e) => {
+      const [detail, signed] = describe(e);
+      const running = (acc.length ? acc[acc.length - 1].running : 0) + signed;
+      return [...acc, { e, detail, signed, running }];
+    }, []);
+  }, [entries, person.id]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">{person.name}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Balance <b className={`tabular-nums ${person.balance < 0 ? "text-rose-600" : "text-emerald-700"}`}>₹ {fmtAmount(person.balance)}</b>
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-100 border-b border-slate-100 shrink-0">
+          {[
+            ["From Accounts", person.fromAccounts],
+            ["Got from Others", person.gotFromOthers],
+            ["Given to Others", person.givenToOthers],
+            ["Expense", person.expense],
+          ].map(([label, value]) => (
+            <div key={label} className="bg-white px-5 py-3">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{label}</p>
+              <p className="text-sm font-bold text-slate-900 tabular-nums mt-0.5">₹ {fmtAmount(value)}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="overflow-auto">
+          <table className={GRID_TABLE}>
+            <thead className="bg-slate-50 text-slate-600 sticky top-0">
+              <tr>
+                {["Date", "Type", "Details", "In", "Out", "Balance", ""].map((h, i) => (
+                  <th key={i} className={`px-4 py-2.5 font-semibold whitespace-nowrap ${["In", "Out", "Balance"].includes(h) ? "text-right" : "text-left"}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">No entries</td></tr>
+              ) : rows.map(({ e, detail, signed, running }) => (
+                <tr key={e.id} className="border-t border-slate-200">
+                  <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{fmtDate(e.entryDate)}</td>
+                  <td className="px-4 py-2.5 whitespace-nowrap">
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${TYPE_BADGE[e.entryType]}`}>{labelOf(ENTRY_TYPES, e.entryType)}</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-slate-700 max-w-[220px] truncate" title={detail}>{detail}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-emerald-700">{signed > 0 ? fmtAmount(signed) : ""}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-rose-700">{signed < 0 ? fmtAmount(-signed) : ""}</td>
+                  <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${running < 0 ? "text-rose-600" : "text-slate-900"}`}>{fmtAmount(running)}</td>
+                  <td className="px-4 py-2.5">
+                    <button onClick={() => onViewEntry(e)} title="View entry" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100"><Eye size={14} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex justify-end px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0">
+          <button onClick={onClose} className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
   const rows = [
