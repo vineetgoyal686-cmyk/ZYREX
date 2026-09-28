@@ -396,7 +396,6 @@ export default function VoucherModal({ entry, paidTo, onClose, onDone }) {
                 );
               })}
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
           </div>
 
           {/* Preview */}
@@ -411,7 +410,9 @@ export default function VoucherModal({ entry, paidTo, onClose, onDone }) {
           <button onClick={printPreview} disabled={!previewUrl} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40">
             <Printer size={15} /> Print
           </button>
-          <div className="flex items-center gap-2">
+          {/* Shown here, next to Done, so a validation error is never hidden below the scrolled form. */}
+          {error && <p className="flex-1 text-sm font-medium text-red-600 text-right">{error}</p>}
+          <div className="flex items-center gap-2 shrink-0">
             <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
             <button onClick={done} disabled={busy} className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-60 flex items-center gap-2">
               {busy && <Loader2 size={14} className="animate-spin" />} Done — Add Voucher

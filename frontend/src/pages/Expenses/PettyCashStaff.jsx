@@ -840,9 +840,13 @@ export default function PettyCashStaff() {
           entry={form}
           paidTo={personName(form.personId)}
           onClose={() => setVoucherOpen(false)}
-          onDone={(file) => {
+          onDone={(file, total) => {
             addFiles("voucher", [file]);
-            setForm(f => ({ ...f, proofType: f.proofType || "voucher" }));
+            setForm(f => ({
+              ...f,
+              proofType: f.proofType || "voucher",
+              amount: Number(f.amount) > 0 ? f.amount : String(total),
+            }));
             setVoucherOpen(false);
             showToast("Voucher added to attachments");
           }}
