@@ -3,9 +3,6 @@ import api from "../utils/api";
 import { AnimatePresence, motion } from "framer-motion";
 import { TAB_MODULE_KEY } from "../utils/tabModuleKeys";
 import {
-  Activity,
-  BarChart3,
-  BookOpen,
   Box,
   Building2,
   CheckCircle2,
@@ -20,13 +17,12 @@ import {
   Image as ImageIcon,
   IndianRupee,
   LayoutDashboard,
-  Lock,
   LogOut,
   MapPinned,
-  Network,
   Package,
   PanelLeftClose,
   PanelLeftOpen,
+  Receipt,
   ChevronRight,
   Settings2,
   ShieldCheck,
@@ -46,15 +42,18 @@ const globalRows = [
   { id: "approvals", label: "Inbox", icon: Inbox, description: "Pending approvals (Intake, Orders, Payments etc.)" },
 ];
 
+const expenseRows = [
+  { id: "expenses__petty_cash", label: "Petty Cash", description: "Petty cash entries" },
+  { id: "expenses__cheque_record", label: "Cheque Record", description: "Cheque records" },
+];
+
 const managementRows = [
   { id: "organisation",   label: "Organisation",   icon: Building2,      description: "Org structure, hierarchy and SOPs" },
-  { id: "audit",          label: "Audit",          icon: Activity,       description: "System audit logs and history" },
   { id: "historical_data", label: "Historical Data", icon: FileSpreadsheet, description: "Pre-system order records" },
 ];
 
 const masterDataRows = [
   { id: "master_data__vendor", label: "Vendors" },
-  { id: "master_data__products", label: "Products" },
   { id: "master_data__orders", label: "Orders" },
   { id: "master_data__intakes", label: "Intakes" },
   { id: "master_data__clauses", label: "Clauses" },
@@ -75,18 +74,12 @@ const clauseRows = [
   { id: "proc_setup__annexure", label: "Annexure", description: "Manage annexures and documents" },
 ];
 
-const organisationRows = [
-  { id: "organisation__structure", label: "Structure", description: "Organisation hierarchy and structure" },
-  { id: "organisation__sop", label: "SOP", description: "Standard Operating Procedures" },
-];
-
 const projectSections = [
   {
     key: "project",
     label: null,
     icon: LayoutDashboard,
     rows: [
-      { id: "dashboard", label: "Dashboard", icon: BarChart3, description: "Project overview, progress, summary" },
       { id: "view_3d", label: "3D View", icon: Box, description: "Project 3D model visualization" },
     ],
   },
@@ -100,23 +93,11 @@ const projectSections = [
     ],
   },
   {
-    key: "inventory",
-    label: "Inventory",
-    icon: Package,
-    rows: [
-      { id: "inventory__received_material_grn", label: "Received Material (GRN)", description: "Record received material / GRN" },
-      { id: "inventory__stock_inventory", label: "Stock / Inventory", description: "View stock and inventory" },
-      { id: "inventory__material_issue", label: "Material Issue", description: "Issue material to sites / projects" },
-    ],
-  },
-  {
     key: "operations",
     label: "Operations",
     icon: Hammer,
     rows: [
-      { id: "operations__work_activity", label: "Work Activity", description: "Daily work activity & progress" },
       { id: "operations__staff_attendance", label: "Staff Attendance", description: "Staff attendance tracking" },
-      { id: "operations__manpower", label: "Manpower", description: "Manpower planning & tracking" },
     ],
   },
   {
@@ -125,20 +106,6 @@ const projectSections = [
     icon: Wallet,
     rows: [
       { id: "finance__payments_track", label: "Payments Track", description: "Invoices & bills tracking" },
-      { id: "finance__site_expenses", label: "Site Expenses", description: "Site expense bills" },
-      { id: "finance__petty_cash", label: "Petty Cash", description: "Petty cash entries" },
-      { id: "finance__reimbursement", label: "Reimbursement", description: "Reimbursement claims" },
-    ],
-  },
-  {
-    key: "confidential",
-    label: "Confidential",
-    icon: Lock,
-    rows: [
-      { id: "confidential__loa", label: "LOA", description: "Letter of Award" },
-      { id: "confidential__boq", label: "BOQ", description: "Boq documents" },
-      { id: "confidential__drawings", label: "Drawings", description: "Project drawings" },
-      { id: "confidential__ra_bills", label: "RA Bills", description: "RA bills and documents" },
     ],
   },
 ];
@@ -152,9 +119,6 @@ const iconById = {
   proc_setup__payment_terms: IndianRupee,
   proc_setup__government_laws: ShieldCheck,
   proc_setup__annexure: ClipboardEdit,
-  boq_prepare: FileSpreadsheet,
-  organisation__structure: Network,
-  organisation__sop: BookOpen,
 };
 
 const Tip = ({ label, show, children }) => {
@@ -203,29 +167,27 @@ export default React.memo(function Sidebar({
 
   const [openSections, setOpenSections] = useState({
     setup: false,
+    expenses: false,
     master_data: false,
     clauses: false,
     organisation: false,
     procurement: false,
-    inventory: false,
     operations: false,
     finance: false,
-    confidential: false,
   });
 
   useEffect(() => {
     if (isCollapsed) {
       setOpenSections({
         setup: false,
+        expenses: false,
         master_data: false,
         clauses: false,
         organisation: false,
         procurement: false,
-        inventory: false,
         operations: false,
         finance: false,
-        confidential: false,
-      });
+          });
     }
   }, [isCollapsed]);
 
@@ -349,6 +311,16 @@ export default React.memo(function Sidebar({
     if (tabId === "approvals") {
       const map = userTabPermissions.map || {};
       return ["inbox_orders", "inbox_intakes", "inbox_payments"].some(k => map[k]?.can_view === true);
+    }
+    // Expenses sub-tabs are hidden unless explicitly granted — an absent
+    // row means "hidden", not fail-open like the generic check below.
+    // Petty Cash has two separately-granted tabs (Staff / Accounts).
+    if (tabId === "expenses__petty_cash") {
+      const map = userTabPermissions.map || {};
+      return ["petty_cash_staff", "petty_cash_accounts"].some(k => map[k]?.can_view === true);
+    }
+    if (tabId.startsWith("expenses__")) {
+      return userTabPermissions.map?.[TAB_MODULE_KEY[tabId]]?.can_view === true;
     }
     // Item was split into item_supply/item_sitc; the standalone "item_list" key
     // is no longer exposed in Settings, so it can never be granted to a non-admin.
@@ -495,6 +467,18 @@ export default React.memo(function Sidebar({
         <div className="flex-1 overflow-y-auto px-3 py-3" style={{ scrollbarWidth: "none" }}>
           <Group title="Global">
             {globalRows.map((row) => <RowButton key={row.id} row={row} />)}
+            {anyRowVisible(expenseRows) && (
+              <>
+                <SectionHeader icon={Receipt} label="Expenses" sectionKey="expenses" />
+                <AnimatePresence initial={false}>
+                  {openSections.expenses && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                      <NestedRows rows={expenseRows} />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </>
+            )}
           </Group>
 
           {(() => {
