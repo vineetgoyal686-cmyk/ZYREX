@@ -180,6 +180,22 @@ router.get("/users", requirePerm("petty_cash_staff", "can_add"), async (_req, re
   }
 });
 
+/* GET /api/petty-cash/users/:id/signature — the user's profile signature
+   (Settings > Personal Info, stored in the "picture" bucket), for signing
+   an expense voucher. signatureUrl is null when they haven't set one. */
+router.get("/users/:id/signature", requirePerm("petty_cash_staff", "can_add"), async (req, res) => {
+  try {
+    const { data, error } = await supabase.from("users").select("profile_permissions").eq("id", req.params.id).maybeSingle();
+    if (error) throw error;
+    const file = data?.profile_permissions?.ui?.signature;
+    const signatureUrl = file ? await createSignedStorageUrl(supabase, "picture", file) : "";
+    res.json({ signatureUrl: signatureUrl || null });
+  } catch (err) {
+    console.error("Petty cash signature read error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* GET /api/petty-cash/locations */
 router.get("/locations", requirePerm("petty_cash_staff", "can_view"), async (_req, res) => {
   try {

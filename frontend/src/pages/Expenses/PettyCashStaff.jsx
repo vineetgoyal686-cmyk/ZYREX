@@ -2,13 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
-  ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye,
+  ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye, FilePlus2,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import LogPanel from "../../components/LogPanel";
 import Pagination from "./Pagination";
+import VoucherModal from "./PettyCashVoucher";
 import { logAudit } from "../../utils/auditLog";
 import {
   CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, docSectionsFor, docCount, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
@@ -137,6 +138,7 @@ export default function PettyCashStaff() {
   const [docsEntry, setDocsEntry]   = useState(null);
   const [viewEntry, setViewEntry]   = useState(null);
   const [viewPerson, setViewPerson] = useState(null); // a balances.list row
+  const [voucherOpen, setVoucherOpen] = useState(false);
   const [logEntry, setLogEntry]     = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [bulkResult, setBulkResult] = useState(null);
@@ -777,11 +779,18 @@ export default function PettyCashStaff() {
                       <div key={s.key} className="rounded-lg border border-slate-200 p-3">
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-[13px] font-semibold text-slate-700">{s.label}</p>
-                          <label className="flex items-center gap-1 text-xs font-medium text-blue-600 cursor-pointer hover:underline">
-                            <UploadCloud size={13} /> Upload
-                            <input type="file" multiple accept="image/*,application/pdf" className="hidden"
-                              onChange={e => { addFiles(s.key, Array.from(e.target.files || [])); e.target.value = ""; }} />
-                          </label>
+                          <div className="flex items-center gap-3">
+                            {s.key === "voucher" && (
+                              <button type="button" onClick={() => setVoucherOpen(true)} className="flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline">
+                                <FilePlus2 size={13} /> Create Voucher
+                              </button>
+                            )}
+                            <label className="flex items-center gap-1 text-xs font-medium text-blue-600 cursor-pointer hover:underline">
+                              <UploadCloud size={13} /> Upload
+                              <input type="file" multiple accept="image/*,application/pdf" className="hidden"
+                                onChange={e => { addFiles(s.key, Array.from(e.target.files || [])); e.target.value = ""; }} />
+                            </label>
+                          </div>
                         </div>
                         {docs[s.key].length === 0 ? (
                           <p className="text-xs text-slate-400">No files</p>
@@ -822,6 +831,20 @@ export default function PettyCashStaff() {
             setForm(f => ({ ...f, [personModal]: person.id }));
             setPersonModal(null);
             showToast(`"${person.name}" added`);
+          }}
+        />
+      )}
+
+      {voucherOpen && formOpen && (
+        <VoucherModal
+          entry={form}
+          paidTo={personName(form.personId)}
+          onClose={() => setVoucherOpen(false)}
+          onDone={(file) => {
+            addFiles("voucher", [file]);
+            setForm(f => ({ ...f, proofType: f.proofType || "voucher" }));
+            setVoucherOpen(false);
+            showToast("Voucher added to attachments");
           }}
         />
       )}
