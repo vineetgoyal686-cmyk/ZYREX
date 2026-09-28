@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
-  ChevronDown, ChevronLeft, ChevronRight, UserPlus, Loader2, Receipt, Users,
+  ChevronDown, ChevronLeft, ChevronRight, UserPlus, Loader2, Receipt, Users, ArrowLeftRight,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -58,9 +58,16 @@ const FilterSelect = ({ value, onChange, children }) => (
 );
 
 const STAFF_TABS = [
-  { id: "entries", label: "Expenses",   icon: Receipt },
-  { id: "people",  label: "Person-wise", icon: Users },
+  { id: "entries",  label: "Expenses",         icon: Receipt },
+  { id: "movement", label: "Received & Given", icon: ArrowLeftRight },
+  { id: "people",   label: "Person-wise",      icon: Users },
 ];
+
+// Which entry types each list tab shows.
+const TAB_TYPES = { entries: ["expense"], movement: ["received", "transfer"] };
+
+// What the row's person did — shown under the name in the Person column.
+const PERSON_ROLE = { expense: "Paid by", received: "Received by", transfer: "Given to" };
 
 const TYPE_BADGE = {
   expense:  "bg-rose-50 text-rose-700 border-rose-200",
@@ -182,7 +189,9 @@ export default function PettyCashStaff() {
   // ── Filtering ───────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const tabTypes = TAB_TYPES[subTab];
     return entries.filter(e => {
+      if (tabTypes && !tabTypes.includes(e.entryType)) return false;
       if (typeFilter && e.entryType !== typeFilter) return false;
       if (personFilter && e.personId !== personFilter && e.fromPersonId !== personFilter) return false;
       if (dateRange !== "all" && customFrom && e.entryDate < customFrom) return false;
@@ -191,7 +200,11 @@ export default function PettyCashStaff() {
       return [e.particular, e.personName, e.fromPersonName, e.remarks, e.category, e.location, e.project]
         .some(v => String(v || "").toLowerCase().includes(q));
     });
-  }, [entries, search, typeFilter, personFilter, dateRange, customFrom, customTo]);
+  }, [entries, subTab, search, typeFilter, personFilter, dateRange, customFrom, customTo]);
+
+  const columns = subTab === "entries"
+    ? ["Date", "Expense", "Amount", "Paid By", "Bill Type", "Payment", "Remarks", ""]
+    : ["Date", "Type", "From", "To", "Amount", "Remarks", ""];
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const pageRows = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -407,7 +420,7 @@ export default function PettyCashStaff() {
       Type: labelOf(ENTRY_TYPES, e.entryType),
       Expense: e.entryType === "expense" ? e.particular : e.entryType === "transfer" ? `Given by ${e.fromPersonName}` : "Received from Accounts",
       Amount: e.amount,
-      "Paid By / Person": e.personName,
+      Person: `${e.personName} (${PERSON_ROLE[e.entryType]})`,
       "Bill Type": labelOf(PROOF_TYPES, e.proofType),
       Payment: labelOf(PAYMENT_MODES, e.paymentMode),
       Remarks: e.remarks,
@@ -467,7 +480,7 @@ export default function PettyCashStaff() {
             const Icon = t.icon;
             const active = subTab === t.id;
             return (
-              <button key={t.id} type="button" onClick={() => setSubTab(t.id)}
+              <button key={t.id} type="button" onClick={() => { setSubTab(t.id); setTypeFilter(""); setPage(1); }}
                 className={`-mb-px flex items-center gap-1.5 pb-3 border-b-2 text-sm font-semibold transition-colors
                   ${active ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"}`}>
                 <Icon size={15} /> {t.label}
@@ -570,8 +583,8 @@ export default function PettyCashStaff() {
       </div>
       )}
 
-      {/* Entries */}
-      {subTab === "entries" && (
+      {/* Expenses / Received & Given */}
+      {TAB_TYPES[subTab] && (
       <>
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px] max-w-xs">
@@ -580,10 +593,12 @@ export default function PettyCashStaff() {
             className="w-full h-9 pl-9 pr-3 border border-slate-200 bg-white rounded-lg text-sm outline-none focus:border-slate-400" />
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <FilterSelect value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1); }}>
-            <option value="">All types</option>
-            {ENTRY_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </FilterSelect>
+          {subTab === "movement" && (
+            <FilterSelect value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1); }}>
+              <option value="">All types</option>
+              {ENTRY_TYPES.filter(t => t.value !== "expense").map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </FilterSelect>
+          )}
           <FilterSelect value={personFilter} onChange={e => { setPersonFilter(e.target.value); setPage(1); }}>
             <option value="">All people</option>
             {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -599,39 +614,41 @@ export default function PettyCashStaff() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
-                {["Date", "Type", "Expense", "Amount", "Paid By", "Bill Type", "Payment", "Remarks", ""].map((h, i) => (
+                {columns.map((h, i) => (
                   <th key={i} className={`px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
+                <tr><td colSpan={columns.length} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
               ) : pageRows.length === 0 ? (
-                <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-400">No entries found</td></tr>
+                <tr><td colSpan={columns.length} className="px-4 py-10 text-center text-slate-400">No entries found</td></tr>
               ) : pageRows.map(e => (
                 <tr key={e.id} className="border-t border-slate-100 hover:bg-slate-50/60">
                   <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{fmtDate(e.entryDate)}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">
-                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${TYPE_BADGE[e.entryType]}`}>{labelOf(ENTRY_TYPES, e.entryType)}</span>
-                  </td>
-                  <td className="px-4 py-2.5 text-slate-800 max-w-[260px]">
-                    {e.entryType === "expense" ? (
-                      <>
+                  {subTab === "entries" ? (
+                    <>
+                      <td className="px-4 py-2.5 text-slate-800 max-w-[280px]">
                         <p className="truncate">{e.particular}</p>
                         <p className="text-[11px] text-slate-400 truncate">{e.category}</p>
-                      </>
-                    ) : e.entryType === "transfer" ? (
-                      <span className="text-slate-500">Given by <b className="text-slate-700">{e.fromPersonName}</b></span>
-                    ) : (
-                      <span className="text-slate-500">Received from Accounts</span>
-                    )}
-                  </td>
-                  <td className={`px-4 py-2.5 text-right tabular-nums font-semibold whitespace-nowrap ${e.entryType === "expense" ? "text-rose-700" : "text-emerald-700"}`}>{fmtAmount(e.amount)}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{e.personName}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{labelOf(PROOF_TYPES, e.proofType) || "—"}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{labelOf(PAYMENT_MODES, e.paymentMode) || "—"}</td>
-                  <td className="px-4 py-2.5 text-slate-500 max-w-[200px] truncate" title={e.remarks}>{e.remarks || "—"}</td>
+                      </td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold whitespace-nowrap text-rose-700">{fmtAmount(e.amount)}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{e.personName}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{labelOf(PROOF_TYPES, e.proofType)}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{labelOf(PAYMENT_MODES, e.paymentMode)}</td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="px-4 py-2.5 whitespace-nowrap">
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${TYPE_BADGE[e.entryType]}`}>{labelOf(ENTRY_TYPES, e.entryType)}</span>
+                      </td>
+                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{e.entryType === "received" ? "Accounts" : e.fromPersonName}</td>
+                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{e.personName}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold whitespace-nowrap text-emerald-700">{fmtAmount(e.amount)}</td>
+                    </>
+                  )}
+                  <td className="px-4 py-2.5 text-slate-500 max-w-[220px] truncate" title={e.remarks}>{e.remarks || "—"}</td>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center justify-end gap-0.5">
                       {e.documentUrls?.length > 0 && (
