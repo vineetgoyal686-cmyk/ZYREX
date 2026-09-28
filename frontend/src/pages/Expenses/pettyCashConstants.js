@@ -44,3 +44,6 @@ export const todayStr = () => {
 };
 
 export const apiError = (err, fallback) => err?.response?.data?.error || err?.message || fallback;
+
+// Boxed table: a line between every column (rows already carry border-t).
+export const GRID_TABLE = "w-full text-sm [&_tr>*]:border-r [&_tr>*]:border-slate-200 [&_tr>*:last-child]:border-r-0";

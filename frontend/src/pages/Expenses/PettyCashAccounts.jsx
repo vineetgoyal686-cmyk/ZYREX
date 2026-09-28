@@ -4,7 +4,7 @@ import { FileSpreadsheet, Loader2, Paperclip } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import {
-  CATEGORIES, PROOF_TYPES, PAYMENT_MODES, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
+  CATEGORIES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
 } from "./pettyCashConstants";
 
 const monthStart = () => `${todayStr().slice(0, 8)}01`;
@@ -151,7 +151,7 @@ export default function PettyCashAccounts() {
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className={GRID_TABLE}>
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 {["Date", "Particular Items", "Tax / Non Tax", "Bill Type", "Payment", "Project", "Location", "Category", "Amount", "Remarks", "Bill"].map(h => (
@@ -165,7 +165,7 @@ export default function PettyCashAccounts() {
               ) : !data || data.rows.length === 0 ? (
                 <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400">No expenses in this period</td></tr>
               ) : data.rows.map(r => (
-                <tr key={r.id} className="border-t border-slate-100">
+                <tr key={r.id} className="border-t border-slate-200">
                   <td className="px-4 py-2.5 whitespace-nowrap">{fmtDate(r.entryDate)}</td>
                   <td className="px-4 py-2.5 max-w-[260px] truncate" title={r.particular}>{r.particular}</td>
                   <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{taxLabel(r.proofType)}</td>

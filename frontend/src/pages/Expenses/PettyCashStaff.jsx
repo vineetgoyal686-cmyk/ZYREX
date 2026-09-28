@@ -10,7 +10,7 @@ import DateRangeFilter from "../../components/DateRangeFilter";
 import LogPanel from "../../components/LogPanel";
 import { logAudit } from "../../utils/auditLog";
 import {
-  CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
+  CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
 } from "./pettyCashConstants";
 
 const PER_PAGE = 25;
@@ -545,7 +545,7 @@ export default function PettyCashStaff() {
       {subTab === "people" && (
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className={GRID_TABLE}>
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 {["Person", "From Accounts", "Got from Others", "Given to Others", "Expense", "Balance"].map((h, i) => (
@@ -557,7 +557,7 @@ export default function PettyCashStaff() {
               {balances.list.length === 0 ? (
                 <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400">No entries yet</td></tr>
               ) : balances.list.map(b => (
-                <tr key={b.id} className="border-t border-slate-100">
+                <tr key={b.id} className="border-t border-slate-200">
                   <td className="px-4 py-2.5 font-medium text-slate-800">{b.name}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(b.fromAccounts)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(b.gotFromOthers)}</td>
@@ -612,7 +612,7 @@ export default function PettyCashStaff() {
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className={GRID_TABLE}>
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 {columns.map((h, i) => (
@@ -626,7 +626,7 @@ export default function PettyCashStaff() {
               ) : pageRows.length === 0 ? (
                 <tr><td colSpan={columns.length} className="px-4 py-10 text-center text-slate-400">No entries found</td></tr>
               ) : pageRows.map(e => (
-                <tr key={e.id} className="border-t border-slate-100 hover:bg-slate-50/60">
+                <tr key={e.id} className="border-t border-slate-200 hover:bg-slate-50/60">
                   <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{fmtDate(e.entryDate)}</td>
                   {subTab === "entries" ? (
                     <>
