@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import { FileSpreadsheet, Loader2, Paperclip } from "lucide-react";
 import api from "../../utils/api";
+import Pagination from "./Pagination";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import {
   CATEGORIES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
@@ -16,6 +17,8 @@ export default function PettyCashAccounts() {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
+  const [page, setPage]       = useState(1);
+  const [perPage, setPerPage] = useState(20);
 
   useEffect(() => {
     if (!from || !to) return;
@@ -23,6 +26,7 @@ export default function PettyCashAccounts() {
     let alive = true;
     setLoading(true);
     setError("");
+    setPage(1);
     api.get("/api/petty-cash/accounts", { params: { from, to } })
       .then(({ data }) => { if (alive) setData(data); })
       .catch(err => { if (alive) { setError(apiError(err, "Failed to load")); setData(null); } })
@@ -164,7 +168,7 @@ export default function PettyCashAccounts() {
                 <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
               ) : !data || data.rows.length === 0 ? (
                 <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400">No expenses in this period</td></tr>
-              ) : data.rows.map(r => (
+              ) : data.rows.slice((page - 1) * perPage, page * perPage).map(r => (
                 <tr key={r.id} className="border-t border-slate-200">
                   <td className="px-4 py-2.5 whitespace-nowrap">{fmtDate(r.entryDate)}</td>
                   <td className="px-4 py-2.5 max-w-[260px] truncate" title={r.particular}>{r.particular}</td>
@@ -188,6 +192,9 @@ export default function PettyCashAccounts() {
             </tbody>
           </table>
         </div>
+        {!loading && data && (
+          <Pagination page={page} setPage={setPage} perPage={perPage} setPerPage={setPerPage} total={data.rows.length} />
+        )}
       </div>
     </div>
   );

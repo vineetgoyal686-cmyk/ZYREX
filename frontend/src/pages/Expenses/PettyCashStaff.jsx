@@ -2,18 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
-  ChevronDown, ChevronLeft, ChevronRight, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye,
+  ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import LogPanel from "../../components/LogPanel";
+import Pagination from "./Pagination";
 import { logAudit } from "../../utils/auditLog";
 import {
   CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
 } from "./pettyCashConstants";
 
-const PER_PAGE = 25;
 const LAST_PROJECT_KEY  = "petty_cash_last_project";
 const LAST_LOCATION_KEY = "petty_cash_last_location";
 
@@ -123,6 +123,7 @@ export default function PettyCashStaff() {
   const [customFrom, setCustomFrom]   = useState("");
   const [customTo, setCustomTo]       = useState("");
   const [page, setPage]               = useState(1);
+  const [perPage, setPerPage]         = useState(20);
   const [subTab, setSubTab]           = useState("entries");
 
   const [formOpen, setFormOpen]     = useState(false);
@@ -207,8 +208,11 @@ export default function PettyCashStaff() {
     ? ["Date", "Expense", "Amount", "Paid By", "Bill Type", "Payment", "Remarks", "Attachments", "Action"]
     : ["Date", "Type", "From", "To", "Amount", "Remarks", "Attachments", "Action"];
 
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
-  const pageRows = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  // One pager shared by all three tabs (switching tabs resets to page 1).
+  const listTotal = subTab === "people" ? balances.list.length : filtered.length;
+  const pageCount = Math.max(1, Math.ceil(listTotal / perPage));
+  const pageRows = filtered.slice((page - 1) * perPage, page * perPage);
+  const peopleRows = balances.list.slice((page - 1) * perPage, page * perPage);
   useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
 
   // ── Form ────────────────────────────────────────────────────────────────
@@ -556,7 +560,7 @@ export default function PettyCashStaff() {
             <tbody>
               {balances.list.length === 0 ? (
                 <tr><td colSpan={6} className="px-4 py-6 text-center text-slate-400">No entries yet</td></tr>
-              ) : balances.list.map(b => (
+              ) : peopleRows.map(b => (
                 <tr key={b.id} className="border-t border-slate-200">
                   <td className="px-4 py-2.5 font-medium text-slate-800">{b.name}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(b.fromAccounts)}</td>
@@ -581,6 +585,7 @@ export default function PettyCashStaff() {
             )}
           </table>
         </div>
+        <Pagination page={page} setPage={setPage} perPage={perPage} setPerPage={setPerPage} total={balances.list.length} />
       </div>
       )}
 
@@ -672,16 +677,7 @@ export default function PettyCashStaff() {
           </table>
         </div>
 
-        {filtered.length > PER_PAGE && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 text-sm text-slate-500">
-            <span>{(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, filtered.length)} of {filtered.length}</span>
-            <div className="flex items-center gap-1">
-              <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-30"><ChevronLeft size={16} /></button>
-              <span className="px-2">{page} / {pageCount}</span>
-              <button disabled={page === pageCount} onClick={() => setPage(p => p + 1)} className="p-1.5 rounded-lg hover:bg-slate-100 disabled:opacity-30"><ChevronRight size={16} /></button>
-            </div>
-          </div>
-        )}
+        {!loading && <Pagination page={page} setPage={setPage} perPage={perPage} setPerPage={setPerPage} total={filtered.length} />}
       </div>
       </>
       )}
