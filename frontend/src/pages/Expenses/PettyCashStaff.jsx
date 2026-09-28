@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
-  ChevronDown, ChevronLeft, ChevronRight, UserPlus, Loader2, Receipt, Users, ArrowLeftRight,
+  ChevronDown, ChevronLeft, ChevronRight, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -10,7 +10,7 @@ import DateRangeFilter from "../../components/DateRangeFilter";
 import LogPanel from "../../components/LogPanel";
 import { logAudit } from "../../utils/auditLog";
 import {
-  CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, labelOf, fmtAmount, fmtDate, todayStr, apiError,
+  CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
 } from "./pettyCashConstants";
 
 const PER_PAGE = 25;
@@ -134,6 +134,7 @@ export default function PettyCashStaff() {
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [personModal, setPersonModal] = useState(null); // field name the new person fills
   const [docsEntry, setDocsEntry]   = useState(null);
+  const [viewEntry, setViewEntry]   = useState(null);
   const [logEntry, setLogEntry]     = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [bulkResult, setBulkResult] = useState(null);
@@ -203,8 +204,8 @@ export default function PettyCashStaff() {
   }, [entries, subTab, search, typeFilter, personFilter, dateRange, customFrom, customTo]);
 
   const columns = subTab === "entries"
-    ? ["Date", "Expense", "Amount", "Paid By", "Bill Type", "Payment", "Remarks", ""]
-    : ["Date", "Type", "From", "To", "Amount", "Remarks", ""];
+    ? ["Date", "Expense", "Amount", "Paid By", "Bill Type", "Payment", "Remarks", "Attachments", "Action"]
+    : ["Date", "Type", "From", "To", "Amount", "Remarks", "Attachments", "Action"];
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PER_PAGE));
   const pageRows = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
@@ -649,13 +650,17 @@ export default function PettyCashStaff() {
                     </>
                   )}
                   <td className="px-4 py-2.5 text-slate-500 max-w-[220px] truncate" title={e.remarks}>{e.remarks || "—"}</td>
+                  <td className="px-4 py-2.5 whitespace-nowrap">
+                    {e.documentUrls?.length > 0 ? (
+                      <button onClick={() => setDocsEntry(e)} title="View attachments"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-blue-600 hover:bg-blue-50 font-medium">
+                        <Paperclip size={13} /> {e.documentUrls.length}
+                      </button>
+                    ) : <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-4 py-2.5">
-                    <div className="flex items-center justify-end gap-0.5">
-                      {e.documentUrls?.length > 0 && (
-                        <button onClick={() => setDocsEntry(e)} title="Attachments" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center gap-0.5">
-                          <Paperclip size={14} /><span className="text-[11px]">{e.documentUrls.length}</span>
-                        </button>
-                      )}
+                    <div className="flex items-center gap-0.5">
+                      <button onClick={() => setViewEntry(e)} title="View" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100"><Eye size={14} /></button>
                       {canViewLog && <button onClick={() => setLogEntry(e)} title="Activity log" className="p-1.5 rounded-lg text-slate-300 hover:text-cyan-600 hover:bg-cyan-50"><Clock size={14} /></button>}
                       {canEdit && <button onClick={() => openEdit(e)} title="Edit" className="p-1.5 rounded-lg text-slate-300 hover:text-blue-600 hover:bg-blue-50"><Pencil size={14} /></button>}
                       {canDelete && <button onClick={() => setConfirmDelete(e)} title="Delete" className="p-1.5 rounded-lg text-slate-300 hover:text-red-600 hover:bg-red-50"><Trash2 size={14} /></button>}
@@ -802,8 +807,17 @@ export default function PettyCashStaff() {
         />
       )}
 
+      {viewEntry && (
+        <EntryDetails
+          entry={viewEntry}
+          canEdit={canEdit}
+          onEdit={() => { const e = viewEntry; setViewEntry(null); openEdit(e); }}
+          onClose={() => setViewEntry(null)}
+        />
+      )}
+
       {docsEntry && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[55] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <h2 className="text-base font-bold text-slate-900">Attachments</h2>
@@ -868,6 +882,80 @@ export default function PettyCashStaff() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+const fmtStamp = (iso) => (iso ? new Date(iso).toLocaleString("en-IN", {
+  day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true,
+}) : "");
+
+function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
+  const rows = [
+    ["Type", labelOf(ENTRY_TYPES, e.entryType)],
+    ["Date", fmtDate(e.entryDate)],
+    ["Amount", `₹ ${fmtAmount(e.amount)}`],
+    ...(e.entryType === "expense" ? [
+      ["Expense", e.particular],
+      ["Category", e.category],
+      ["Paid By", e.personName],
+      ["Bill Type", `${labelOf(PROOF_TYPES, e.proofType)} (${taxLabel(e.proofType)})`],
+      ["Payment", labelOf(PAYMENT_MODES, e.paymentMode)],
+      ["Project", e.project],
+      ["Location", e.location],
+    ] : e.entryType === "received" ? [
+      ["From", "Accounts"],
+      ["Received By", e.personName],
+    ] : [
+      ["Given By", e.fromPersonName],
+      ["Given To", e.personName],
+    ]),
+    ["Remarks", e.remarks],
+    ["Added By", [e.createdByName, fmtStamp(e.createdAt)].filter(Boolean).join(" · ")],
+    ...(e.updatedAt ? [["Last Updated", fmtStamp(e.updatedAt)]] : []),
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-base font-bold text-slate-900">Entry Details</h2>
+            <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${TYPE_BADGE[e.entryType]}`}>{labelOf(ENTRY_TYPES, e.entryType)}</span>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+
+        <div className="px-6 py-4 overflow-y-auto">
+          <dl className="divide-y divide-slate-100">
+            {rows.map(([label, value]) => (
+              <div key={label} className="grid grid-cols-[130px_1fr] gap-3 py-2.5 text-sm">
+                <dt className="text-slate-500">{label}</dt>
+                <dd className="text-slate-900 font-medium break-words">{value || "—"}</dd>
+              </div>
+            ))}
+            <div className="grid grid-cols-[130px_1fr] gap-3 py-2.5 text-sm">
+              <dt className="text-slate-500">Attachments</dt>
+              <dd className="space-y-1">
+                {e.documentUrls?.length ? e.documentUrls.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-blue-600 hover:underline">
+                    <Paperclip size={13} /> Attachment {i + 1}
+                  </a>
+                )) : <span className="text-slate-900 font-medium">—</span>}
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Close</button>
+          {canEdit && (
+            <button onClick={onEdit} className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 flex items-center gap-1.5">
+              <Pencil size={14} /> Edit
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
