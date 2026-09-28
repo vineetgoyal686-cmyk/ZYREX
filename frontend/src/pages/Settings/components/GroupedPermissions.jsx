@@ -164,13 +164,6 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
     master_data_finance:    "Finance Master",
   };
 
-  // "payment_request" is shared with the Inbox approval tab, where it really
-  // does mean Payment Request — only rename it here, where it's actually the
-  // Finance section's "Reimbursement" tab.
-  const FINANCE_DISPLAY_NAMES = {
-    payment_request: "Reimbursement",
-  };
-
   const MASTER_DATA_COLUMNS = [
     { key: "can_view",          label: "View"          },
     { key: "can_add",           label: "Create"        },
@@ -795,7 +788,7 @@ export default function GroupedPermissions({ modules, onChange, readOnly = false
                         })()
                       : group.label === "Finance" ? (
                           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                            {groupMods.map(m => renderRow(m, FINANCE_DISPLAY_NAMES[m.module_key]))}
+                            {groupMods.map(m => renderRow(m))}
                           </div>
                         )
                       : isCombined ? renderCombinedViewCard(group, groupMods)

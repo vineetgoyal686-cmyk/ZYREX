@@ -52,7 +52,6 @@ const emptyForm = {
 
 const MASTER_DATA_MODULE_KEY = {
   vendor:   "master_data_vendor",
-  products: "master_data_products",
   orders:   "master_data_orders_tab",
   intakes:  "master_data_intakes",
   clauses:  "master_data_clauses",

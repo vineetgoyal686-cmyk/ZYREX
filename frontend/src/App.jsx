@@ -16,9 +16,10 @@ const ROUTE_TO_TAB = {
   "/dashboard":                   "global_dashboard",
   "/boardroom":                   "boardroom",
   "/inbox":                       "approvals",
+  "/expenses/petty-cash":         "expenses__petty_cash",
+  "/expenses/cheque-record":      "expenses__cheque_record",
   "/profile":                     "profile",
   "/organisation":                "organisation",
-  "/audit":                       "audit",
   "/historical-data":             "historical_data",
   "/create/order":                "create__order",
   "/create/intake":               "create__intake",
@@ -33,7 +34,6 @@ const ROUTE_TO_TAB = {
   "/master-data":                 "master_data",
   "/master-data/vendors":         "master_data__vendor",
   "/master-data/clauses":         "master_data__clauses",
-  "/master-data/products":        "master_data__products",
   "/master-data/orders":          "master_data__orders",
   "/master-data/intakes":         "master_data__intakes",
   "/master-data/finance":         "master_data__finance",
@@ -47,24 +47,11 @@ const TAB_TO_ROUTE = Object.fromEntries(
 
 // Project-specific sub-paths (appended after /p/:project)
 const PROJECT_SUB_TO_TAB = {
-  "/dashboard":                   "dashboard",
   "/3d":                          "view_3d",
   "/procurement/intake":          "procurement__intake",
   "/procurement/orders":          "procurement__orders",
-  "/inventory/grn":               "inventory__received_material_grn",
-  "/inventory/stock":             "inventory__stock_inventory",
-  "/inventory/issues":            "inventory__material_issue",
-  "/operations/work":             "operations__work_activity",
   "/operations/attendance":       "operations__staff_attendance",
-  "/operations/manpower":         "operations__manpower",
   "/finance/payments-track":      "finance__payments_track",
-  "/finance/site-expenses":       "finance__site_expenses",
-  "/finance/petty-cash":          "finance__petty_cash",
-  "/finance/reimbursement":       "finance__reimbursement",
-  "/confidential/loa":            "confidential__loa",
-  "/confidential/boq":            "confidential__boq",
-  "/confidential/drawings":       "confidential__drawings",
-  "/confidential/ra-bills":       "confidential__ra_bills",
 };
 
 const PROJECT_TAB_TO_SUB = Object.fromEntries(
@@ -75,10 +62,10 @@ function pathToTabAndProject(pathname) {
   if (pathname.startsWith("/p/")) {
     const rest = pathname.slice(3); // strip "/p/"
     const slashIdx = rest.indexOf("/");
-    if (slashIdx === -1) return { tab: "dashboard", project: decodeURIComponent(rest) };
+    if (slashIdx === -1) return { tab: "procurement__orders", project: decodeURIComponent(rest) };
     const project = decodeURIComponent(rest.slice(0, slashIdx));
     const sub = rest.slice(slashIdx);
-    const tab = PROJECT_SUB_TO_TAB[sub] || "dashboard";
+    const tab = PROJECT_SUB_TO_TAB[sub] || "procurement__orders";
     return { tab, project };
   }
   const tab = ROUTE_TO_TAB[pathname] || "global_dashboard";
@@ -101,8 +88,9 @@ const MasterData     = lazy(() => import("./pages/MasterData"));
 const ClauseMasterData = lazy(() => import("./pages/ClauseMasterData"));
 const Approvals      = lazy(() => import("./pages/Approvals"));
 const View3D         = lazy(() => import("./pages/Model"));
-const Dashboard      = lazy(() => import("./pages/Dashboard"));
+const GlobalDashboard = lazy(() => import("./pages/GlobalDashboard"));
 const Boardroom      = lazy(() => import("./pages/Boardroom/Boardroom"));
+const Expenses       = lazy(() => import("./pages/Expenses/Expenses"));
 const FinanceTrack   = lazy(() => import("./pages/Finance/FinanceTrack"));
 const PaymentsTrack  = lazy(() => import("./pages/Finance/PaymentsTrack"));
 const GlobalCreateOrder = lazy(() => import("./pages/Create/CreateOrder"));
@@ -194,8 +182,10 @@ function AppLayout({
   }, []);
 
   const renderPage = () => {
-    if (activeTab === "global_dashboard")     return <Dashboard project="All Project" />;
+    if (activeTab === "global_dashboard")     return <GlobalDashboard />;
     if (activeTab === "boardroom")            return <Boardroom />;
+    if (activeTab === "expenses__petty_cash")    return <Expenses view="petty_cash" />;
+    if (activeTab === "expenses__cheque_record") return <Expenses view="cheque_record" />;
     if (activeTab === "profile")              return <Profile onProfileUpdate={onCurrentUserUpdate} onProjectsUpdate={onProjectsRefresh} />;
     if (activeTab === "organisation" || activeTab === "organisation__structure" || activeTab === "organisation__sop")
       return <Organisation currentUser={currentUser} />;
@@ -225,11 +215,8 @@ function AppLayout({
     if (activeTab === "master_data__orders")
       return <GlobalCreateOrder editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
 
-    if (activeTab === "master_data__products")
-      return <ComingSoon label="PRODUCTS MASTER" />;
     if (activeTab === "master_data__finance")
       return <FinanceTrack />;
-    if (activeTab === "audit") return <ComingSoon label="Audit" />;
 
     // Project-specific tabs
     if (!selectedProject || selectedProject === "All Project" || selectedProject === "select-project") {
@@ -245,24 +232,11 @@ function AppLayout({
     }
 
     switch (activeTab) {
-      case "dashboard":                        return <Dashboard project={selectedProject} />;
       case "view_3d":                          return <View3D project={selectedProject} />;
       case "procurement__orders":             return <GlobalCreateOrder project={selectedProject} editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
       case "procurement__intake":             return <IntakeList project={selectedProject} />;
       case "operations__staff_attendance":     return <Attendance selectedProject={selectedProject} />;
       case "finance__payments_track":         return <PaymentsTrack project={selectedProject} />;
-      case "finance__site_expenses":
-      case "finance__petty_cash":
-      case "finance__reimbursement":
-      case "inventory__received_material_grn":
-      case "inventory__stock_inventory":
-      case "inventory__material_issue":
-      case "operations__work_activity":
-      case "operations__manpower":
-      case "confidential__loa":
-      case "confidential__boq":
-      case "confidential__drawings":
-      case "confidential__ra_bills":          return <ComingSoon label="Coming Soon" />;
       default:
         return (
           <div className="flex min-h-screen items-center justify-center text-slate-400 font-bold text-xl uppercase tracking-widest">
@@ -284,7 +258,7 @@ function AppLayout({
          "procurement__intake","master_data__intakes","create__intake",
          "historical_data","approvals"].includes(activeTab))
       return "pt-0 px-0 pb-0 bg-[#f0f2f5]";
-    if (["master_data__finance","finance__payments_track","boardroom"].includes(activeTab))
+    if (["master_data__finance","finance__payments_track","boardroom","expenses__petty_cash","expenses__cheque_record"].includes(activeTab))
       return "pt-0 px-0 pb-0";
     return "pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4";
   })();
@@ -353,18 +327,6 @@ function AppLayout({
             </Suspense>
           </ChunkErrorBoundary>
         </main>
-      </div>
-    </div>
-  );
-}
-
-function ComingSoon({ label }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center p-4 md:p-10 bg-[#f8fafc]">
-      <div className="bg-white p-8 md:p-20 rounded-2xl md:rounded-[3rem] shadow-sm border border-slate-100 flex items-center justify-center w-full max-w-4xl">
-        <p className="text-slate-400 font-bold uppercase tracking-wider md:tracking-[0.3em] text-center text-sm md:text-base">
-          {label} — Coming Soon
-        </p>
       </div>
     </div>
   );
@@ -598,9 +560,9 @@ function App() {
     if (project && project !== "All Project") {
       localStorage.setItem("last_selected_project", project);
       // If currently on a project-specific tab, keep that tab for new project;
-      // otherwise navigate to project dashboard.
+      // otherwise navigate to project orders.
       const isProjectTab = !!PROJECT_TAB_TO_SUB[activeTab];
-      const targetTab = isProjectTab ? activeTab : "dashboard";
+      const targetTab = isProjectTab ? activeTab : "procurement__orders";
       navigate(buildPath(targetTab, project));
     } else {
       localStorage.removeItem("last_selected_project");
