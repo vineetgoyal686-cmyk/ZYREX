@@ -290,7 +290,9 @@ router.get("/entries", requirePerm("petty_cash_staff", "can_view"), async (_req,
     const [peopleById, entriesRes] = await Promise.all([
       loadPeopleMap(),
       supabase.from("petty_cash_entries").select("*").is("deleted_at", null)
-        .order("entry_date", { ascending: false }).order("created_at", { ascending: false }),
+        // id breaks ties (bulk-uploaded rows share created_at), so a row
+        // doesn't jump around the list after it's edited.
+        .order("entry_date", { ascending: false }).order("created_at", { ascending: false }).order("id"),
     ]);
     if (entriesRes.error) throw entriesRes.error;
     const entries = await Promise.all((entriesRes.data || []).map(r => mapEntry(r, peopleById)));
@@ -481,7 +483,8 @@ router.get("/accounts", requirePerm("petty_cash_accounts", "can_view"), async (r
       .in("entry_type", ["expense", "received"])
       .lte("entry_date", to)
       .order("entry_date", { ascending: true })
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true })
+      .order("id");
     if (error) throw error;
 
     let opening = 0, received = 0, expense = 0;

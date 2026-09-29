@@ -1177,9 +1177,9 @@ function PersonLedger({ person, entries, onViewEntry, onClose }) {
   const rows = useMemo(() => {
     const mine = entries
       .filter(e => e.personId === person.id || e.fromPersonId === person.id)
-      .sort((a, b) => (a.entryDate === b.entryDate
-        ? String(a.createdAt).localeCompare(String(b.createdAt))
-        : a.entryDate.localeCompare(b.entryDate)));
+      .sort((a, b) => a.entryDate.localeCompare(b.entryDate)
+        || String(a.createdAt).localeCompare(String(b.createdAt))
+        || String(a.id).localeCompare(String(b.id)));
     const describe = (e) => {
       if (e.entryType === "expense") return [`${e.particular}${e.category ? ` (${e.category})` : ""}`, -e.amount];
       if (e.entryType === "received") return ["From Accounts", e.amount];
