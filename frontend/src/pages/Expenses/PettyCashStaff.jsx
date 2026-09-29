@@ -1299,7 +1299,7 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
       <style>{`@keyframes pcSlideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}@keyframes pcFade{from{opacity:0}to{opacity:1}}`}</style>
       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]" style={{ animation: "pcFade .2s ease-out" }} onClick={onClose} />
 
-      <aside className="absolute right-0 top-0 h-full w-full sm:w-[480px] bg-slate-50 shadow-2xl flex flex-col"
+      <aside className="absolute right-0 top-0 h-full w-full sm:w-[620px] lg:w-[720px] bg-slate-50 shadow-2xl flex flex-col"
         style={{ animation: "pcSlideIn .25s cubic-bezier(.2,.8,.2,1)" }}>
         {/* Header */}
         <div className="bg-white border-b border-slate-200 px-6 pt-5 pb-5 shrink-0">
@@ -1342,7 +1342,7 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
                   <tbody>
                     {e.items.map((it, i) => (
                       <tr key={i} className="border-t border-slate-100">
-                        <td className="px-3 py-2 text-slate-800 font-medium">{it.name}</td>
+                        <td className="px-3 py-2 text-slate-800 font-medium break-words">{it.name}</td>
                         <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-slate-600">{it.qty}{it.unit ? ` ${it.unit}` : ""}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-slate-600">{it.rate ? fmtAmount(it.rate) : "—"}</td>
                         <td className="px-3 py-2 text-right tabular-nums font-semibold text-slate-900">{fmtAmount(it.amount)}</td>
