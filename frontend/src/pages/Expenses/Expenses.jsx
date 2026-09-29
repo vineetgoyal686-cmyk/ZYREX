@@ -22,9 +22,9 @@ function PettyCash() {
 
   if (!tabs.length) return <NoAccess />;
 
-  // Accounts fills the screen: summary and pager stay put, only its table scrolls.
+  // Both tabs fill the screen: summary and pager stay put, only the table scrolls.
   return (
-    <div className={`min-h-screen bg-[#f8fafc] ${tab === "accounts" ? "md:min-h-0 md:h-full md:flex md:flex-col" : ""}`}>
+    <div className="min-h-screen bg-[#f8fafc] md:min-h-0 md:h-full md:flex md:flex-col">
       <div className="shrink-0 flex items-center justify-between px-5 sm:px-6 py-3.5 bg-white border-b border-slate-200">
         <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 w-fit shrink-0">
           {tabs.map(t => {

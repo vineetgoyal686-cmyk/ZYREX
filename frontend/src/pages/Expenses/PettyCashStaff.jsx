@@ -548,7 +548,7 @@ export default function PettyCashStaff() {
   );
 
   return (
-    <div className="p-4 sm:p-6 space-y-5">
+    <div className="p-4 sm:p-6 space-y-5 md:flex-1 md:min-h-0 md:flex md:flex-col md:space-y-0 md:gap-5">
       {toast && (
         <div className={`fixed top-5 right-5 z-[60] px-4 py-3 rounded-xl text-sm font-medium shadow-lg
           ${toast.type === "error" ? "bg-red-50 text-red-700 border border-red-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
@@ -557,7 +557,7 @@ export default function PettyCashStaff() {
       )}
 
       {/* Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
           { label: "Total Received (from Accounts)", value: balances.totalReceived, color: "text-emerald-700" },
           { label: "Total Expense", value: balances.totalExpense, color: "text-rose-700" },
@@ -570,7 +570,7 @@ export default function PettyCashStaff() {
         ))}
       </div>
 
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200">
+      <div className="shrink-0 flex flex-wrap items-end justify-between gap-3 border-b border-slate-200">
         <div className="flex items-center gap-6">
           {STAFF_TABS.map(t => {
             const Icon = t.icon;
@@ -638,13 +638,13 @@ export default function PettyCashStaff() {
 
       {/* Person-wise */}
       {subTab === "people" && (
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
+        <div className="overflow-auto md:flex-1 md:min-h-0">
           <table className={GRID_TABLE}>
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="text-slate-600">
               <tr>
                 {["Person", "From Accounts", "Got from Others", "Given to Others", "Expense", "Balance", "Action"].map((h, i) => (
-                  <th key={h} className={`px-4 py-2.5 font-semibold whitespace-nowrap ${i && h !== "Action" ? "text-right" : "text-left"}`}>{h}</th>
+                  <th key={h} className={`sticky top-0 z-20 bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${i && h !== "Action" ? "text-right" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -666,7 +666,7 @@ export default function PettyCashStaff() {
               ))}
             </tbody>
             {balances.list.length > 0 && (
-              <tfoot className="bg-slate-50 font-bold text-slate-800">
+              <tfoot className="sticky bottom-0 z-20 bg-slate-50 font-bold text-slate-800">
                 <tr className="border-t border-slate-200">
                   <td className="px-4 py-2.5">Total</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(balances.totalReceived)}</td>
@@ -686,7 +686,7 @@ export default function PettyCashStaff() {
 
       {/* Expenses / Received & Given / Item-wise */}
       {(TAB_TYPES[subTab] || subTab === "items") && (
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="shrink-0 flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search..."
@@ -710,13 +710,13 @@ export default function PettyCashStaff() {
       )}
 
       {subTab === "items" && (
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
+        <div className="overflow-auto md:flex-1 md:min-h-0">
           <table className={GRID_TABLE}>
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="text-slate-600">
               <tr>
                 {["Item", "Unit", "Total Qty", "Total Amount", "Avg Rate", "Times Bought", "Action"].map((h, i) => (
-                  <th key={h} className={`px-4 py-2.5 font-semibold whitespace-nowrap ${i >= 2 && h !== "Action" ? "text-right" : "text-left"}`}>{h}</th>
+                  <th key={h} className={`sticky top-0 z-20 bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${i >= 2 && h !== "Action" ? "text-right" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -740,7 +740,7 @@ export default function PettyCashStaff() {
               ))}
             </tbody>
             {itemSummary.length > 0 && (
-              <tfoot className="bg-slate-50 font-bold text-slate-800">
+              <tfoot className="sticky bottom-0 z-20 bg-slate-50 font-bold text-slate-800">
                 <tr className="border-t border-slate-200">
                   <td className="px-4 py-2.5" colSpan={3}>Total</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(itemSummary.reduce((s, g) => s + g.amount, 0))}</td>
@@ -757,14 +757,14 @@ export default function PettyCashStaff() {
       {TAB_TYPES[subTab] && (
       <>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
 
-        <div className="overflow-x-auto">
+        <div className="overflow-auto md:flex-1 md:min-h-0">
           <table className={GRID_TABLE}>
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="text-slate-600">
               <tr>
                 {columns.map((h, i) => (
-                  <th key={i} className={`px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : "text-left"}`}>{h}</th>
+                  <th key={i} className={`sticky top-0 z-20 bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
