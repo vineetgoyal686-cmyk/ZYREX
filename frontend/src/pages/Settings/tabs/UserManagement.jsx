@@ -409,7 +409,7 @@ export default function UserManagement({
       if (permUser.id === currentUser.id) {
         // Use the full (merged) permissions list for the local cache, not just
         // the touched subset — untouched modules still resolve via the profile.
-        const updatedSelf = { ...currentUser, app_permissions: permissions, profile_permissions: editingProfilePerms };
+        const updatedSelf = { ...currentUser, app_permissions: permissions, profile_permissions: { ...(currentUser.profile_permissions || {}), ...editingProfilePerms } };
         localStorage.setItem("bms_user", JSON.stringify(updatedSelf));
         onProfileUpdate?.(updatedSelf);
       }

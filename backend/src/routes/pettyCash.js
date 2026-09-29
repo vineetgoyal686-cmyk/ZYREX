@@ -214,7 +214,15 @@ router.get("/users/:id/signature", requirePerm("petty_cash_staff", "can_add"), a
   try {
     const { data, error } = await supabase.from("users").select("profile_permissions").eq("id", req.params.id).maybeSingle();
     if (error) throw error;
-    const file = data?.profile_permissions?.ui?.signature;
+    let file = data?.profile_permissions?.ui?.signature;
+    // Profile link missing (e.g. wiped by an old permissions save) but the
+    // uploaded file may still be in storage — use the newest one, the same
+    // file work orders keep showing.
+    if (!file && data) {
+      const { data: files } = await supabase.storage.from("picture").list("sign", { search: `sig_${req.params.id}_` });
+      const latest = (files || []).filter(f => f.name.startsWith(`sig_${req.params.id}_`)).sort((a, b) => b.name.localeCompare(a.name))[0];
+      if (latest) file = `sign/${latest.name}`;
+    }
     const signatureUrl = file ? await createSignedStorageUrl(supabase, "picture", file) : "";
     res.json({ signatureUrl: signatureUrl || null });
   } catch (err) {

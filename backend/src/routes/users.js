@@ -460,7 +460,20 @@ router.put("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
   }
 
   const userUpdates = {};
-  if (profile_permissions) userUpdates.profile_permissions = profile_permissions;
+  if (profile_permissions) {
+    // The Permissions screen only sends the permission sections, but the
+    // same column also holds personal ui data (signature, cover image) and
+    // flags like user_analytics. Merge onto the stored blob so saving
+    // permissions never wipes those; ui always comes from the stored copy.
+    const { data: target } = await admin.from("users").select("profile_permissions").eq("id", id).single();
+    const existing = target?.profile_permissions || {};
+    const { ui: _ignored, ...incoming } = profile_permissions;
+    userUpdates.profile_permissions = {
+      ...existing,
+      ...incoming,
+      ...(existing.ui !== undefined ? { ui: existing.ui } : {}),
+    };
+  }
   if (designation !== undefined) userUpdates.designation = designation || "";
   if (designation_id !== undefined) userUpdates.designation_id = designation_id || null;
   if (access_profile_ids !== undefined) userUpdates.access_profile_ids = access_profile_ids || [];
