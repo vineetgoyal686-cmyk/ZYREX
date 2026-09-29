@@ -31,6 +31,11 @@ const emptyForm = (entryType = "expense") => ({
 
 // Optional line items behind an expense's total. In the form every field is
 // a string; the saved entry holds numbers.
+// A voucher file made by Create Voucher is named Voucher_<no>.pdf; the
+// saved storage path keeps that name, which is how its details are matched.
+const voucherFileName = (no) => `Voucher_${String(no).replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf`;
+const isVoucherDoc = (d, no) => !!no && (d.voucherNo === no || (!d.file && String(d.url || "").includes(voucherFileName(no))));
+
 const emptyItem = () => ({ name: "", qty: "", unit: "", rate: "", amount: "" });
 const UNITS = ["nos", "pcs", "kg", "gm", "ltr", "mtr", "ft", "bag", "box", "set", "pkt"];
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -182,6 +187,11 @@ export default function PettyCashStaff() {
   const [viewPerson, setViewPerson] = useState(null); // a balances.list row
   const [viewItem, setViewItem]     = useState(null); // an itemSummary row
   const [voucherOpen, setVoucherOpen] = useState(false);
+  // The voucher made for the entry in the form: { voucherNo, data, dirty }.
+  // data is loaded on demand for saved entries; dirty means it must be sent
+  // on save (data null + dirty = the voucher was removed).
+  const [voucher, setVoucher] = useState(null);
+  const [voucherEdit, setVoucherEdit] = useState(null); // details being edited
   const [logEntry, setLogEntry]     = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [bulkResult, setBulkResult] = useState(null);
@@ -286,6 +296,7 @@ export default function PettyCashStaff() {
   const openAdd = (entryType) => {
     setForm(emptyForm(entryType));
     setDocs(emptyDocs());
+    setVoucher(null);
     setEditOriginal(null);
     setAddMenuOpen(false);
     setFormOpen(true);
@@ -301,6 +312,7 @@ export default function PettyCashStaff() {
       })),
     });
     setDocs(Object.fromEntries(DOC_SECTIONS.map(s => [s.key, (e.documents?.[s.key] || []).map(url => ({ url, keepPath: url }))])));
+    setVoucher(e.voucherNo ? { voucherNo: e.voucherNo, data: null, dirty: false } : null);
     setEditOriginal(e);
     setFormOpen(true);
   };
@@ -327,10 +339,31 @@ export default function PettyCashStaff() {
   const addFiles = (section, files) => setDocs(prev => ({
     ...prev, [section]: [...prev[section], ...files.map(file => ({ file, previewUrl: URL.createObjectURL(file) }))],
   }));
-  const removeDoc = (section, idx) => setDocs(prev => {
+  const removeDoc = (section, idx) => {
+    if (section === "voucher" && voucher && isVoucherDoc(docs.voucher[idx], voucher.voucherNo)) {
+      setVoucher({ voucherNo: "", data: null, dirty: true });
+    }
+    removeDocFile(section, idx);
+  };
+  const removeDocFile = (section, idx) => setDocs(prev => {
     if (prev[section][idx]?.previewUrl) URL.revokeObjectURL(prev[section][idx].previewUrl);
     return { ...prev, [section]: prev[section].filter((_, i) => i !== idx) };
   });
+
+  // Opens the entry's voucher with its saved details (fetched for saved entries).
+  const openVoucherEdit = async () => {
+    let data = voucher?.data;
+    if (!data && editOriginal) {
+      try {
+        const res = await api.get(`/api/petty-cash/entries/${editOriginal.id}/voucher`);
+        data = res.data.voucher;
+      } catch (err) { return showToast(apiError(err, "Could not load voucher"), "error"); }
+    }
+    if (!data) return showToast("This voucher's details weren't saved — remove it and create a new one", "error");
+    setVoucher(v => ({ ...v, data }));
+    setVoucherEdit(data);
+    setVoucherOpen(true);
+  };
 
   const personName = (id) => people.find(p => p.id === id)?.name || "";
   const entryLabel = (f) =>
@@ -392,6 +425,7 @@ export default function PettyCashStaff() {
       const fd = new FormData();
       Object.entries(f).forEach(([k, v]) => k !== "items" && fd.append(k, v ?? ""));
       fd.append("items", JSON.stringify(items.map(it => ({ ...it, name: String(it.name).trim(), unit: String(it.unit).trim() }))));
+      if (voucher?.dirty) fd.append("voucherData", voucher.data ? JSON.stringify(voucher.data) : "");
       fd.append("createdByName", currentUser().name || "");
       // Only the sections shown for this entry type are sent, so switching an
       // expense to Received drops its Bills / Voucher / Material files.
@@ -945,7 +979,14 @@ export default function PettyCashStaff() {
                                 <a href={d.previewUrl || d.url} target="_blank" rel="noreferrer" className="truncate text-blue-600 hover:underline">
                                   {d.file ? d.file.name : `${s.label} ${i + 1}`}
                                 </a>
-                                <button type="button" onClick={() => removeDoc(s.key, i)} className="p-0.5 text-slate-400 hover:text-red-600"><X size={13} /></button>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {s.key === "voucher" && voucher && isVoucherDoc(d, voucher.voucherNo) && (
+                                    <button type="button" onClick={openVoucherEdit} title="Edit voucher" className="flex items-center gap-0.5 px-1 text-emerald-700 hover:underline font-medium">
+                                      <Pencil size={11} /> Edit
+                                    </button>
+                                  )}
+                                  <button type="button" onClick={() => removeDoc(s.key, i)} className="p-0.5 text-slate-400 hover:text-red-600"><X size={13} /></button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -983,9 +1024,25 @@ export default function PettyCashStaff() {
         <VoucherModal
           entry={form}
           paidTo={personName(form.personId)}
-          onClose={() => setVoucherOpen(false)}
-          onDone={(file, total) => {
-            addFiles("voucher", [file]);
+          initial={voucherEdit}
+          onClose={() => { setVoucherOpen(false); setVoucherEdit(null); }}
+          onDone={(file, total, details) => {
+            if (voucherEdit) {
+              // Swap the old voucher PDF for the edited one.
+              setDocs(prev => {
+                const idx = prev.voucher.findIndex(d => isVoucherDoc(d, voucherEdit.voucherNo));
+                if (idx >= 0 && prev.voucher[idx].previewUrl) URL.revokeObjectURL(prev.voucher[idx].previewUrl);
+                const next = { file, previewUrl: URL.createObjectURL(file), voucherNo: details.voucherNo };
+                return { ...prev, voucher: idx >= 0 ? prev.voucher.map((d, i) => (i === idx ? next : d)) : [...prev.voucher, next] };
+              });
+              setVoucher({ voucherNo: details.voucherNo, data: details, dirty: true });
+              setVoucherEdit(null);
+              setVoucherOpen(false);
+              showToast("Voucher updated — click Update to save");
+              return;
+            }
+            setDocs(prev => ({ ...prev, voucher: [...prev.voucher, { file, previewUrl: URL.createObjectURL(file), voucherNo: details.voucherNo }] }));
+            setVoucher({ voucherNo: details.voucherNo, data: details, dirty: true });
             setForm(f => ({
               ...f,
               proofType: f.proofType || "voucher",

@@ -217,15 +217,17 @@ async function buildVoucherPdf(v) {
 const inp = "w-full h-9 border border-slate-300 rounded-lg px-2.5 text-sm outline-none bg-white text-slate-900 focus:border-slate-500";
 const lbl = "block text-xs font-semibold text-slate-600 mb-1";
 
-const defaultVoucherNo = (date) => {
-  const d = new Date();
-  const stamp = `${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}${String(d.getSeconds()).padStart(2, "0")}`;
-  return `PCV-${(date || "").replace(/-/g, "") || "NA"}-${stamp}`;
-};
-
-export default function VoucherModal({ entry, paidTo, onClose, onDone }) {
-  const [v, setV] = useState(() => ({
-    voucherNo: defaultVoucherNo(entry.entryDate),
+// `initial` (saved voucher details) opens an existing voucher for editing:
+// it keeps its number, and Done returns a fresh PDF to replace the old one.
+export default function VoucherModal({ entry, paidTo, initial, onClose, onDone }) {
+  const editing = !!initial;
+  const [v, setV] = useState(() => initial ? {
+    ...initial,
+    signs: Object.fromEntries(SIGN_SLOTS.map(s => [s.key, { userId: "", name: "", image: "", ...(initial.signs?.[s.key] || {}) }])),
+  } : ({
+    // BVPL-VH-<n> comes from the server: the preview shows the next number,
+    // and it is only taken (used up) when Done is clicked.
+    voucherNo: "",
     date: entry.entryDate || "",
     paidTo: paidTo || "",
     items: [{ details: entry.particular || "", category: entry.category || "", amount: entry.amount || "" }],
@@ -242,6 +244,17 @@ export default function VoucherModal({ entry, paidTo, onClose, onDone }) {
 
   useEffect(() => {
     api.get("/api/petty-cash/users").then(({ data }) => setUsers(data.users || [])).catch(() => {});
+    if (editing) {
+      // Profile signatures aren't stored with the voucher — pull them again.
+      SIGN_SLOTS.forEach(s => {
+        const sign = initial.signs?.[s.key];
+        if (sign?.userId && !sign.image) loadSignature(s.key, sign.userId, sign.name);
+      });
+      return;
+    }
+    api.get("/api/petty-cash/voucher-no")
+      .then(({ data }) => setV(p => ({ ...p, voucherNo: p.voucherNo || data.voucherNo })))
+      .catch(err => setError(apiError(err, "Could not load voucher number")));
   }, []);
 
   const total = useMemo(() => v.items.reduce((s, it) => s + (Number(it.amount) || 0), 0), [v.items]);
@@ -268,11 +281,7 @@ export default function VoucherModal({ entry, paidTo, onClose, onDone }) {
   const removeItem = (i) => setV(p => ({ ...p, items: p.items.filter((_, j) => j !== i) }));
   const setSign = (slot, patch) => setV(p => ({ ...p, signs: { ...p.signs, [slot]: { ...p.signs[slot], ...patch } } }));
 
-  // Picking a login user fills the name and pulls their profile signature.
-  const pickUser = async (slot, userId) => {
-    const u = users.find(x => x.id === userId);
-    setSign(slot, { userId, name: u?.name || "", image: "" });
-    if (!userId) return;
+  async function loadSignature(slot, userId, name) {
     setSignLoading(slot);
     setError("");
     try {
@@ -281,10 +290,17 @@ export default function VoucherModal({ entry, paidTo, onClose, onDone }) {
         const blob = await fetch(data.signatureUrl).then(r => r.blob());
         setSign(slot, { image: await blobToDataUrl(blob) });
       } else {
-        setError(`${u?.name || "This user"} has no signature in their profile — upload one instead.`);
+        setError(`${name || "This user"} has no signature in their profile — upload one instead.`);
       }
     } catch (err) { setError(apiError(err, "Could not load signature")); }
     setSignLoading("");
+  }
+
+  // Picking a login user fills the name and pulls their profile signature.
+  const pickUser = async (slot, userId) => {
+    const u = users.find(x => x.id === userId);
+    setSign(slot, { userId, name: u?.name || "", image: "" });
+    if (userId) await loadSignature(slot, userId, u?.name);
   };
   const uploadSign = async (slot, file) => {
     if (!file) return;
@@ -292,15 +308,29 @@ export default function VoucherModal({ entry, paidTo, onClose, onDone }) {
   };
 
   const done = async () => {
-    if (!v.voucherNo.trim()) return setError("Voucher No. is required");
     if (!v.paidTo.trim()) return setError("Paid To is required");
     if (!v.items.some(it => String(it.details).trim() && Number(it.amount) > 0)) return setError("Add at least one expense line with an amount");
     setBusy(true);
     try {
-      const blob = await buildVoucherPdf(voucherData);
-      const safeNo = v.voucherNo.replace(/[^a-zA-Z0-9._-]/g, "_");
-      onDone(new File([blob], `Voucher_${safeNo}.pdf`, { type: "application/pdf" }), total);
-    } catch (err) { setError(err.message || "Could not create voucher"); setBusy(false); }
+      let voucherNo = v.voucherNo;
+      if (!editing) {
+        const { data } = await api.post("/api/petty-cash/voucher-no");
+        voucherNo = data.voucherNo;
+        setV(p => ({ ...p, voucherNo }));
+      }
+      const blob = await buildVoucherPdf({ ...voucherData, voucherNo });
+      const safeNo = voucherNo.replace(/[^a-zA-Z0-9._-]/g, "_");
+      // Saved with the entry so the voucher can be reopened. Profile
+      // signatures are re-fetched on edit, so only uploaded images are kept.
+      const details = {
+        voucherNo, date: v.date, paidTo: v.paidTo, items: v.items, paymentMode: v.paymentMode, refNo: v.refNo,
+        signs: Object.fromEntries(SIGN_SLOTS.map(s => {
+          const sign = v.signs[s.key];
+          return [s.key, { userId: sign.userId, name: sign.name, image: sign.userId ? "" : sign.image }];
+        })),
+      };
+      onDone(new File([blob], `Voucher_${safeNo}.pdf`, { type: "application/pdf" }), total, details);
+    } catch (err) { setError(apiError(err, "Could not create voucher")); setBusy(false); }
   };
 
   const printPreview = () => {
@@ -314,7 +344,7 @@ export default function VoucherModal({ entry, paidTo, onClose, onDone }) {
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-6 py-3.5 border-b border-slate-100 shrink-0">
-          <h2 className="text-base font-bold text-slate-900">Create Expense Voucher</h2>
+          <h2 className="text-base font-bold text-slate-900">{editing ? `Edit Voucher ${v.voucherNo}` : "Create Expense Voucher"}</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
 
@@ -322,7 +352,7 @@ export default function VoucherModal({ entry, paidTo, onClose, onDone }) {
           {/* Form */}
           <div className="overflow-y-auto px-5 py-4 space-y-4 border-r border-slate-100">
             <div className="grid grid-cols-2 gap-3">
-              <div><label className={lbl}>Voucher No.</label><input value={v.voucherNo} onChange={setField("voucherNo")} className={inp} /></div>
+              <div><label className={lbl}>Voucher No.</label><input value={v.voucherNo} readOnly placeholder="Loading…" title="Assigned automatically when the voucher is created" className={`${inp} bg-slate-50`} /></div>
               <div><label className={lbl}>Date</label><input type="date" value={v.date} onChange={setField("date")} className={inp} /></div>
             </div>
             <div><label className={lbl}>Paid To</label><input value={v.paidTo} onChange={setField("paidTo")} className={inp} /></div>

@@ -54,6 +54,7 @@ const mapEntry = async (r, peopleById) => ({
   location:      r.location || "",
   remarks:       r.remarks || "",
   items:         Array.isArray(r.items) ? r.items : [],
+  voucherNo:     r.voucher_data?.voucherNo || "",
   documents:     await signDocs(r),
   createdAt:     r.created_at,
   createdByName: r.created_by_name || "",
@@ -119,6 +120,20 @@ const parseItems = (raw) => {
     if (!(amount > 0)) throw new Error(`Item ${i + 1}: amount must be greater than 0`);
     return { name, qty, unit: String(it?.unit || "").trim(), rate, amount };
   });
+};
+
+// Saved Create-Voucher details, so the voucher can be reopened and edited.
+// Returns undefined when the request doesn't touch it, null to clear it.
+const parseVoucherData = (body, entryType) => {
+  if (entryType !== "expense") return null;
+  if (!Object.prototype.hasOwnProperty.call(body, "voucherData")) return undefined;
+  const raw = body.voucherData;
+  if (!raw) return null;
+  if (String(raw).length > 2 * 1024 * 1024) throw new Error("Voucher details are too large");
+  let v;
+  try { v = JSON.parse(raw); } catch { throw new Error("Invalid voucher details"); }
+  if (!v || typeof v !== "object" || !v.voucherNo) throw new Error("Invalid voucher details");
+  return v;
 };
 
 // Validates a request body and returns the DB row (minus audit columns), or
@@ -243,6 +258,31 @@ router.get("/locations", requirePerm("petty_cash_staff", "can_view"), async (_re
   }
 });
 
+/* Expense voucher numbers — BVPL-VH-<n> from one DB sequence
+   (sql/petty_cash_voucher_no.sql). GET only shows the next number for the
+   preview; POST takes it, and is called when the voucher is created. */
+const VOUCHER_PREFIX = "BVPL-VH-";
+router.get("/voucher-no", requirePerm("petty_cash_staff", "can_view"), async (_req, res) => {
+  try {
+    const { data, error } = await supabase.rpc("peek_petty_cash_voucher_no");
+    if (error) throw error;
+    res.json({ voucherNo: `${VOUCHER_PREFIX}${data}` });
+  } catch (err) {
+    console.error("Petty cash voucher no peek error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+router.post("/voucher-no", requirePerm("petty_cash_staff", "can_view"), async (_req, res) => {
+  try {
+    const { data, error } = await supabase.rpc("next_petty_cash_voucher_no");
+    if (error) throw error;
+    res.json({ voucherNo: `${VOUCHER_PREFIX}${data}` });
+  } catch (err) {
+    console.error("Petty cash voucher no error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* GET /api/petty-cash/entries — the full active ledger (balances are
    computed over all of it, so no date filtering server-side) */
 router.get("/entries", requirePerm("petty_cash_staff", "can_view"), async (_req, res) => {
@@ -265,7 +305,11 @@ router.get("/entries", requirePerm("petty_cash_staff", "can_view"), async (_req,
 router.post("/entries", requirePerm("petty_cash_staff", "can_add"), upload.any(), async (req, res) => {
   try {
     let row;
-    try { row = buildRow(req.body); } catch (e) { return res.status(400).json({ error: e.message }); }
+    try {
+      row = buildRow(req.body);
+      const voucherData = parseVoucherData(req.body, row.entry_type);
+      if (voucherData !== undefined) row.voucher_data = voucherData;
+    } catch (e) { return res.status(400).json({ error: e.message }); }
 
     const { data: created, error: insertError } = await supabase
       .from("petty_cash_entries")
@@ -296,7 +340,11 @@ router.put("/entries/:id", requirePerm("petty_cash_staff", "can_edit"), upload.a
   try {
     const { id } = req.params;
     let row;
-    try { row = buildRow(req.body); } catch (e) { return res.status(400).json({ error: e.message }); }
+    try {
+      row = buildRow(req.body);
+      const voucherData = parseVoucherData(req.body, row.entry_type);
+      if (voucherData !== undefined) row.voucher_data = voucherData;
+    } catch (e) { return res.status(400).json({ error: e.message }); }
 
     const keep = parseDocKeep(req.body.docKeep);
     const uploaded = await uploadDocs(req.files, `entries/${id}`);
@@ -315,6 +363,20 @@ router.put("/entries/:id", requirePerm("petty_cash_staff", "can_edit"), upload.a
     res.json({ entry: await mapEntry(updated, await loadPeopleMap()) });
   } catch (err) {
     console.error("Petty cash update error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* GET /api/petty-cash/entries/:id/voucher — saved Create-Voucher details
+   (kept out of the list response; only needed when editing a voucher) */
+router.get("/entries/:id/voucher", requirePerm("petty_cash_staff", "can_view"), async (req, res) => {
+  try {
+    const { data, error } = await supabase.from("petty_cash_entries").select("voucher_data")
+      .eq("id", req.params.id).is("deleted_at", null).maybeSingle();
+    if (error) throw error;
+    res.json({ voucher: data?.voucher_data || null });
+  } catch (err) {
+    console.error("Petty cash voucher read error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
