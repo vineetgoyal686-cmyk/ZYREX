@@ -146,19 +146,6 @@ export default function PettyCashAccounts() {
         ))}
       </div>
 
-      {data && data.rows.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 px-5 py-4">
-          <h2 className="text-sm font-bold text-slate-800 mb-3">Category-wise Expense</h2>
-          <div className="flex flex-wrap gap-2">
-            {CATEGORIES.filter(c => categoryTotals[c] > 0).map(c => (
-              <span key={c} className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-sm">
-                <span className="text-slate-500">{c}:</span> <b className="tabular-nums text-slate-800">₹ {fmtAmount(categoryTotals[c])}</b>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className={GRID_TABLE}>

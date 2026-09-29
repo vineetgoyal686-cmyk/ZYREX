@@ -779,7 +779,8 @@ export default function PettyCashStaff() {
                   {subTab === "entries" ? (
                     <>
                       <td className="px-4 py-2.5 text-slate-800 max-w-[280px]">
-                        <p className="truncate">{e.particular}</p>
+                        <button type="button" onClick={() => setViewEntry(e)} title="View details"
+                          className="block max-w-full truncate text-left hover:text-blue-600 hover:underline">{e.particular}</button>
                         <p className="text-[11px] text-slate-400 truncate">
                           {e.category}
                           {e.items?.length > 0 && <span className="ml-1.5 px-1.5 py-px rounded bg-slate-100 text-slate-600 font-medium">{e.items.length} item{e.items.length > 1 ? "s" : ""}</span>}
