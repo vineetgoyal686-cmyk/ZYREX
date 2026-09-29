@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
-  ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye, FilePlus2,
+  ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye, FilePlus2, Package,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -26,7 +26,16 @@ const emptyForm = (entryType = "expense") => ({
   entryType, entryDate: todayStr(), amount: "", personId: "", fromPersonId: "",
   particular: "", category: "", proofType: "", paymentMode: "",
   project: readLocal(LAST_PROJECT_KEY), location: readLocal(LAST_LOCATION_KEY), remarks: "",
+  items: [],
 });
+
+// Optional line items behind an expense's total. In the form every field is
+// a string; the saved entry holds numbers.
+const emptyItem = () => ({ name: "", qty: "", unit: "", rate: "", amount: "" });
+const UNITS = ["nos", "pcs", "kg", "gm", "ltr", "mtr", "ft", "bag", "box", "set", "pkt"];
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+const itemsTotal = (items) => round2(items.reduce((s, it) => s + (Number(it.amount) || 0), 0));
+const isBlankItem = (it) => !String(it.name).trim() && !it.qty && !it.rate && !it.amount;
 
 const inp = "w-full h-11 border border-slate-300 rounded-lg px-3 text-sm outline-none bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-500 transition-colors";
 
@@ -62,6 +71,7 @@ const STAFF_TABS = [
   { id: "entries",  label: "Expenses",         icon: Receipt },
   { id: "movement", label: "Received & Given", icon: ArrowLeftRight },
   { id: "people",   label: "Person-wise",      icon: Users },
+  { id: "items",    label: "Item-wise",        icon: Package },
 ];
 
 // Which entry types each list tab shows.
@@ -76,11 +86,43 @@ const TYPE_BADGE = {
   transfer: "bg-sky-50 text-sky-700 border-sky-200",
 };
 
-// Bulk-upload template columns, in order. The Type / Bill Type / Payment
-// Mode / Category cells take the same labels the form shows.
-const TEMPLATE_HEADERS = [
-  "Type", "Date", "Amount", "Person", "Given By", "Expense", "Category",
-  "Bill Type", "Payment Mode", "Project", "Location", "Remarks",
+// Bulk-upload templates, one per list tab. The Bill Type / Payment Mode /
+// Category cells take the same labels the form shows. Tax / Non Tax is not
+// a column: it follows from Bill Type (only Tax Invoice counts as Tax).
+const TEMPLATES = {
+  entries: {
+    file: "petty_cash_expense_template.xlsx",
+    headers: ["Date", "Amount", "Paid By", "Expense", "Category", "Bill Type", "Payment Mode", "Project", "Location", "Remarks"],
+    sample: [
+      ["2026-09-14", 729, "Jitendar", "Mithai", "Kitchen & Grocery", "Local Bill", "Cash", "", "Noida", ""],
+      ["2026-09-14", 1871.94, "Jitendar", "Food charge (Zomato)", "Meals", "Tax Invoice", "Online", "", "Noida", ""],
+    ],
+    options: () => {
+      const max = Math.max(CATEGORIES.length, PROOF_TYPES.length, PAYMENT_MODES.length);
+      return [["Category", "Bill Type", "Payment Mode"],
+        ...Array.from({ length: max }, (_, i) => [CATEGORIES[i] || "", PROOF_TYPES[i]?.label || "", PAYMENT_MODES[i]?.label || ""])];
+    },
+    notes: [
+      "Every row is an expense. Date, Amount, Paid By, Expense, Category, Bill Type and Payment Mode are required.",
+      "Tax / Non Tax is set automatically from Bill Type: Tax Invoice = Tax; Local Bill and Voucher = Non Tax.",
+    ],
+  },
+  movement: {
+    file: "petty_cash_received_given_template.xlsx",
+    headers: ["Type", "Date", "Amount", "From", "To", "Remarks"],
+    sample: [
+      ["Received", "2026-09-01", 20000, "Accounts", "Jitendar", "Petty cash for September"],
+      ["Given", "2026-09-02", 5000, "Jitendar", "Lalit", ""],
+    ],
+    options: () => [["Type"], ["Received"], ["Given"]],
+    notes: [
+      "Type: Received = money from Accounts; Given = one person gave money to another.",
+      "From: for Received write Accounts (or leave blank); for Given, the person who gave. To: the person who got the money.",
+    ],
+  },
+};
+const COMMON_TEMPLATE_NOTES = [
+  "Date: YYYY-MM-DD, DD-MM-YYYY or 14-Sep-26. New person names are created automatically.",
 ];
 
 const byLabel = (list, raw) => {
@@ -138,6 +180,7 @@ export default function PettyCashStaff() {
   const [docsEntry, setDocsEntry]   = useState(null);
   const [viewEntry, setViewEntry]   = useState(null);
   const [viewPerson, setViewPerson] = useState(null); // a balances.list row
+  const [viewItem, setViewItem]     = useState(null); // an itemSummary row
   const [voucherOpen, setVoucherOpen] = useState(false);
   const [logEntry, setLogEntry]     = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -194,28 +237,49 @@ export default function PettyCashStaff() {
   // ── Filtering ───────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const tabTypes = TAB_TYPES[subTab];
+    const tabTypes = subTab === "items" ? ["expense"] : TAB_TYPES[subTab];
     return entries.filter(e => {
       if (tabTypes && !tabTypes.includes(e.entryType)) return false;
       if (typeFilter && e.entryType !== typeFilter) return false;
       if (personFilter && e.personId !== personFilter && e.fromPersonId !== personFilter) return false;
       if (dateRange !== "all" && customFrom && e.entryDate < customFrom) return false;
       if (dateRange !== "all" && customTo && e.entryDate > customTo) return false;
-      if (!q) return true;
+      if (!q || subTab === "items") return true;
       return [e.particular, e.personName, e.fromPersonName, e.remarks, e.category, e.location, e.project]
         .some(v => String(v || "").toLowerCase().includes(q));
     });
   }, [entries, subTab, search, typeFilter, personFilter, dateRange, customFrom, customTo]);
+
+  // Item-wise: every item line across the filtered expenses, grouped by
+  // name + unit (case-insensitive). Search matches the item name here.
+  const itemSummary = useMemo(() => {
+    if (subTab !== "items") return [];
+    const q = search.trim().toLowerCase();
+    const map = {};
+    filtered.forEach(e => (e.items || []).forEach(it => {
+      if (q && !it.name.toLowerCase().includes(q)) return;
+      const key = `${it.name.trim().toLowerCase()}|${String(it.unit || "").trim().toLowerCase()}`;
+      const g = (map[key] ||= { key, name: it.name.trim(), unit: it.unit || "", qty: 0, amount: 0, lines: [] });
+      g.qty += Number(it.qty) || 0;
+      g.amount += Number(it.amount) || 0;
+      g.lines.push({ e, it });
+    }));
+    return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
+  }, [filtered, subTab, search]);
+
+  // Names used before, offered as suggestions in the item rows.
+  const itemNames = useMemo(() => [...new Set(entries.flatMap(e => (e.items || []).map(it => it.name.trim())))].sort(), [entries]);
 
   const columns = subTab === "entries"
     ? ["Date", "Expense", "Amount", "Paid By", "Bill Type", "Payment", "Remarks", "Attachments", "Action"]
     : ["Date", "Type", "From", "To", "Amount", "Remarks", "Attachments", "Action"];
 
   // One pager shared by all three tabs (switching tabs resets to page 1).
-  const listTotal = subTab === "people" ? balances.list.length : filtered.length;
+  const listTotal = subTab === "people" ? balances.list.length : subTab === "items" ? itemSummary.length : filtered.length;
   const pageCount = Math.max(1, Math.ceil(listTotal / perPage));
   const pageRows = filtered.slice((page - 1) * perPage, page * perPage);
   const peopleRows = balances.list.slice((page - 1) * perPage, page * perPage);
+  const itemPageRows = itemSummary.slice((page - 1) * perPage, page * perPage);
   useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
 
   // ── Form ────────────────────────────────────────────────────────────────
@@ -232,6 +296,9 @@ export default function PettyCashStaff() {
       personId: e.personId || "", fromPersonId: e.fromPersonId || "",
       particular: e.particular, category: e.category, proofType: e.proofType, paymentMode: e.paymentMode,
       project: e.project, location: e.location, remarks: e.remarks,
+      items: (e.items || []).map(it => ({
+        name: it.name, qty: String(it.qty), unit: it.unit || "", rate: it.rate ? String(it.rate) : "", amount: String(it.amount),
+      })),
     });
     setDocs(Object.fromEntries(DOC_SECTIONS.map(s => [s.key, (e.documents?.[s.key] || []).map(url => ({ url, keepPath: url }))])));
     setEditOriginal(e);
@@ -242,6 +309,20 @@ export default function PettyCashStaff() {
     setFormOpen(false);
   };
   const set = (key) => (ev) => setForm(f => ({ ...f, [key]: ev.target.value }));
+
+  // While there are items, the entry amount is always their total.
+  const setItems = (fn) => setForm(f => {
+    const items = fn(f.items);
+    return { ...f, items, amount: items.length ? String(itemsTotal(items)) : f.amount };
+  });
+  const updateItem = (idx, key, value) => setItems(items => items.map((it, i) => {
+    if (i !== idx) return it;
+    const next = { ...it, [key]: value };
+    if ((key === "qty" || key === "rate") && Number(next.qty) > 0 && next.rate !== "") {
+      next.amount = String(round2(Number(next.qty) * Number(next.rate)));
+    }
+    return next;
+  }));
 
   const addFiles = (section, files) => setDocs(prev => ({
     ...prev, [section]: [...prev[section], ...files.map(file => ({ file, previewUrl: URL.createObjectURL(file) }))],
@@ -260,13 +341,14 @@ export default function PettyCashStaff() {
   const LOG_FIELDS = {
     entryType: "Type", entryDate: "Date", amount: "Amount", personId: "Person", fromPersonId: "Given By",
     particular: "Expense", category: "Category", proofType: "Bill Type", paymentMode: "Payment Mode",
-    project: "Project", location: "Location", remarks: "Remarks",
+    project: "Project", location: "Location", remarks: "Remarks", items: "Items",
   };
   const displayValue = (key, value) => {
     if (key === "personId" || key === "fromPersonId") return personName(value);
     if (key === "entryType") return labelOf(ENTRY_TYPES, value);
     if (key === "proofType") return labelOf(PROOF_TYPES, value);
     if (key === "paymentMode") return labelOf(PAYMENT_MODES, value);
+    if (key === "items") return (value || []).map(it => `${String(it.name).trim()} ${Number(it.qty)}${it.unit ? ` ${it.unit}` : ""} = ${Number(it.amount)}`).join(", ");
     return String(value ?? "").trim();
   };
   const diff = (original, next) => {
@@ -284,6 +366,13 @@ export default function PettyCashStaff() {
   const handleSave = async () => {
     const f = form;
     if (!f.entryDate) return showToast("Date is required", "error");
+    const items = f.entryType === "expense" ? f.items.filter(it => !isBlankItem(it)) : [];
+    for (let i = 0; i < items.length; i++) {
+      if (!String(items[i].name).trim()) return showToast(`Item ${i + 1}: name is required`, "error");
+      if (!(Number(items[i].qty) > 0)) return showToast(`Item ${i + 1}: quantity must be greater than 0`, "error");
+      if (!(Number(items[i].amount) > 0)) return showToast(`Item ${i + 1}: amount must be greater than 0`, "error");
+    }
+    if (items.length && Math.abs(itemsTotal(items) - Number(f.amount)) > 0.01) return showToast("Items total must equal the amount", "error");
     if (!(Number(f.amount) > 0)) return showToast("Amount must be greater than 0", "error");
     if (f.entryType === "expense") {
       if (!f.particular.trim()) return showToast("Expense is required", "error");
@@ -301,7 +390,8 @@ export default function PettyCashStaff() {
     setSaving(true);
     try {
       const fd = new FormData();
-      Object.entries(f).forEach(([k, v]) => fd.append(k, v ?? ""));
+      Object.entries(f).forEach(([k, v]) => k !== "items" && fd.append(k, v ?? ""));
+      fd.append("items", JSON.stringify(items.map(it => ({ ...it, name: String(it.name).trim(), unit: String(it.unit).trim() }))));
       fd.append("createdByName", currentUser().name || "");
       // Only the sections shown for this entry type are sent, so switching an
       // expense to Received drops its Bills / Voucher / Material files.
@@ -316,7 +406,7 @@ export default function PettyCashStaff() {
         : await api.post("/api/petty-cash/entries", fd);
 
       if (editOriginal) {
-        const changes = diff({ ...editOriginal, amount: String(editOriginal.amount) }, f);
+        const changes = diff({ ...editOriginal, amount: String(editOriginal.amount) }, { ...f, items });
         logAudit("petty_cash_entry", editOriginal.id, entryLabel(f), "updated", Object.keys(changes).length ? changes : null);
       } else if (data.entry?.id) {
         logAudit("petty_cash_entry", data.entry.id, entryLabel(f), "created", {
@@ -348,36 +438,18 @@ export default function PettyCashStaff() {
 
   // ── Bulk upload ─────────────────────────────────────────────────────────
   const downloadTemplate = () => {
+    const t = TEMPLATES[subTab];
+    if (!t) return;
     const wb = XLSX.utils.book_new();
-    const sample = [
-      TEMPLATE_HEADERS,
-      ["Received", "2026-09-01", 20000, "Jitendar", "", "", "", "", "", "", "", "Petty cash for September"],
-      ["Transfer", "2026-09-02", 5000, "Lalit", "Jitendar", "", "", "", "", "", "", ""],
-      ["Expense", "2026-09-14", 729, "Jitendar", "", "Mithai", "Kitchen & Grocery", "Local Bill", "Cash", "", "Noida", ""],
-    ];
-    const ws = XLSX.utils.aoa_to_sheet(sample);
-    ws["!cols"] = TEMPLATE_HEADERS.map(h => ({ wch: Math.max(14, h.length + 4) }));
+    const ws = XLSX.utils.aoa_to_sheet([t.headers, ...t.sample]);
+    ws["!cols"] = t.headers.map(h => ({ wch: h === "Expense" || h === "Category" || h === "Remarks" ? 26 : Math.max(14, h.length + 4) }));
     XLSX.utils.book_append_sheet(wb, ws, "Entries");
 
-    const maxLen = Math.max(CATEGORIES.length, ENTRY_TYPES.length, PROOF_TYPES.length, PAYMENT_MODES.length);
-    const opts = [["Type", "Category", "Bill Type", "Payment Mode"]];
-    const typeWords = ["Expense", "Received", "Transfer"];
-    for (let i = 0; i < maxLen; i++) {
-      opts.push([typeWords[i] || "", CATEGORIES[i] || "", PROOF_TYPES[i]?.label || "", PAYMENT_MODES[i]?.label || ""]);
-    }
-    const notes = [
-      [],
-      ["How to fill"],
-      ["Type: Expense = money spent, Received = money from Accounts, Transfer = one person gave money to another."],
-      ["Person: who spent (Expense), who got it from Accounts (Received), or who got it (Transfer)."],
-      ["Given By: only for Transfer — who gave the money."],
-      ["Expense, Category, Bill Type, Payment Mode: required for Expense rows only."],
-      ["Date: YYYY-MM-DD, DD-MM-YYYY or 14-Sep-26. New person names are created automatically."],
-    ];
-    const wsOpts = XLSX.utils.aoa_to_sheet([...opts, ...notes]);
-    wsOpts["!cols"] = [{ wch: 14 }, { wch: 34 }, { wch: 14 }, { wch: 14 }];
+    const notes = [[], ["How to fill"], ...[...t.notes, ...COMMON_TEMPLATE_NOTES].map(n => [n])];
+    const wsOpts = XLSX.utils.aoa_to_sheet([...t.options(), ...notes]);
+    wsOpts["!cols"] = [{ wch: 34 }, { wch: 14 }, { wch: 14 }];
     XLSX.utils.book_append_sheet(wb, wsOpts, "Options");
-    XLSX.writeFile(wb, "petty_cash_template.xlsx");
+    XLSX.writeFile(wb, t.file);
   };
 
   const handleBulkFile = async (file) => {
@@ -390,16 +462,20 @@ export default function PettyCashStaff() {
         .map((r, i) => ({ r, rowNumber: i + 2 }))
         .filter(({ r }) => Object.values(r).some(v => String(v).trim() !== ""))
         .map(({ r, rowNumber }) => {
+          // The Expense template has no Type column — every row is an expense.
+          // The Received & Given template (and older all-in-one files) do.
           const typeWord = String(r["Type"] || "").trim().toLowerCase();
-          const entryType = { expense: "expense", received: "received", transfer: "transfer" }[typeWord]
-            || byLabel(ENTRY_TYPES, r["Type"]);
+          const entryType = !("Type" in r) ? "expense"
+            : { expense: "expense", received: "received", given: "transfer", transfer: "transfer" }[typeWord]
+              || byLabel(ENTRY_TYPES, r["Type"]);
+          const from = String(r["From"] ?? r["Given By"] ?? "").trim();
           return {
             rowNumber,
             entryType,
             entryDate: parseSheetDate(r["Date"]),
             amount: r["Amount"],
-            personName: r["Person"],
-            fromPersonName: r["Given By"],
+            personName: r["Paid By"] ?? r["To"] ?? r["Person"],
+            fromPersonName: entryType === "received" || from.toLowerCase() === "accounts" ? "" : from,
             particular: r["Expense"],
             category: CATEGORIES.find(c => c.toLowerCase() === String(r["Category"] || "").trim().toLowerCase()) || String(r["Category"] || "").trim(),
             proofType: byLabel(PROOF_TYPES, r["Bill Type"]),
@@ -447,6 +523,11 @@ export default function PettyCashStaff() {
       "Given to Others": b.givenToOthers, Expense: b.expense, Balance: b.balance,
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "Person-wise");
+    const itemRows = filtered.flatMap(e => (e.items || []).map(it => ({
+      Date: fmtDate(e.entryDate), "Paid By": e.personName, Expense: e.particular, Project: e.project,
+      Item: it.name, Qty: it.qty, Unit: it.unit, Rate: it.rate, Amount: it.amount,
+    })));
+    if (itemRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemRows), "Items");
     XLSX.writeFile(wb, "petty_cash_staff.xlsx");
   };
 
@@ -504,7 +585,7 @@ export default function PettyCashStaff() {
           })}
         </div>
         <div className="flex items-center gap-2 pb-2.5">
-          {(canBulk || canExport) && (
+          {((canBulk && TEMPLATES[subTab]) || canExport) && (
             <div className="relative">
               <button onClick={() => setMoreMenuOpen(o => !o)} className="h-9 px-3 flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50">
                 More <ChevronDown size={14} />
@@ -513,7 +594,7 @@ export default function PettyCashStaff() {
                 <>
                   <div className="fixed inset-0 z-10" onClick={() => setMoreMenuOpen(false)} />
                   <div className="absolute right-0 mt-1 z-20 w-48 bg-white rounded-xl border border-slate-200 shadow-lg p-1">
-                    {canBulk && (
+                    {canBulk && TEMPLATES[subTab] && (
                       <>
                         <button onClick={() => { setMoreMenuOpen(false); downloadTemplate(); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
                           <Download size={14} className="text-slate-400" /> Download Template
@@ -603,9 +684,8 @@ export default function PettyCashStaff() {
       </div>
       )}
 
-      {/* Expenses / Received & Given */}
-      {TAB_TYPES[subTab] && (
-      <>
+      {/* Expenses / Received & Given / Item-wise */}
+      {(TAB_TYPES[subTab] || subTab === "items") && (
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -627,6 +707,55 @@ export default function PettyCashStaff() {
             customFrom={customFrom} setCustomFrom={setCustomFrom} customTo={customTo} setCustomTo={v => { setCustomTo(v); setPage(1); }} />
         </div>
       </div>
+      )}
+
+      {subTab === "items" && (
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className={GRID_TABLE}>
+            <thead className="bg-slate-50 text-slate-600">
+              <tr>
+                {["Item", "Unit", "Total Qty", "Total Amount", "Avg Rate", "Times Bought", "Action"].map((h, i) => (
+                  <th key={h} className={`px-4 py-2.5 font-semibold whitespace-nowrap ${i >= 2 && h !== "Action" ? "text-right" : "text-left"}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
+              ) : itemSummary.length === 0 ? (
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">No items found — add items to an expense to see them here</td></tr>
+              ) : itemPageRows.map(g => (
+                <tr key={g.key} className="border-t border-slate-200 hover:bg-slate-50/60">
+                  <td className="px-4 py-2.5 font-medium text-slate-800">{g.name}</td>
+                  <td className="px-4 py-2.5 text-slate-600">{g.unit || "—"}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{round2(g.qty)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold text-rose-700">{fmtAmount(g.amount)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(g.qty ? g.amount / g.qty : 0)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{g.lines.length}</td>
+                  <td className="px-4 py-2.5">
+                    <button onClick={() => setViewItem(g)} title="View purchases" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100"><Eye size={14} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            {itemSummary.length > 0 && (
+              <tfoot className="bg-slate-50 font-bold text-slate-800">
+                <tr className="border-t border-slate-200">
+                  <td className="px-4 py-2.5" colSpan={3}>Total</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(itemSummary.reduce((s, g) => s + g.amount, 0))}</td>
+                  <td colSpan={3} />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+        {!loading && <Pagination page={page} setPage={setPage} perPage={perPage} setPerPage={setPerPage} total={itemSummary.length} />}
+      </div>
+      )}
+
+      {TAB_TYPES[subTab] && (
+      <>
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
 
@@ -651,7 +780,10 @@ export default function PettyCashStaff() {
                     <>
                       <td className="px-4 py-2.5 text-slate-800 max-w-[280px]">
                         <p className="truncate">{e.particular}</p>
-                        <p className="text-[11px] text-slate-400 truncate">{e.category}</p>
+                        <p className="text-[11px] text-slate-400 truncate">
+                          {e.category}
+                          {e.items?.length > 0 && <span className="ml-1.5 px-1.5 py-px rounded bg-slate-100 text-slate-600 font-medium">{e.items.length} item{e.items.length > 1 ? "s" : ""}</span>}
+                        </p>
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold whitespace-nowrap text-rose-700">{fmtAmount(e.amount)}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{e.personName}</td>
@@ -717,7 +849,13 @@ export default function PettyCashStaff() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Field label="Date" required><input type="date" value={form.entryDate} onChange={set("entryDate")} className={inp} /></Field>
-                <Field label="Amount" required><input type="number" min="0" step="0.01" value={form.amount} onChange={set("amount")} placeholder="0.00" className={inp} /></Field>
+                <Field label="Amount" required>
+                  {form.entryType === "expense" && form.items.length > 0 ? (
+                    <input readOnly value={form.amount} title="Total of the items below" className={`${inp} bg-slate-50 font-semibold`} />
+                  ) : (
+                    <input type="number" min="0" step="0.01" value={form.amount} onChange={set("amount")} placeholder="0.00" className={inp} />
+                  )}
+                </Field>
 
                 {form.entryType === "expense" && (
                   <>
@@ -754,6 +892,11 @@ export default function PettyCashStaff() {
                     <Field label="Location">
                       <input list="petty-cash-locations" value={form.location} onChange={set("location")} placeholder="Type or pick" className={inp} />
                       <datalist id="petty-cash-locations">{locations.map(l => <option key={l} value={l} />)}</datalist>
+                    </Field>
+                    <Field label="Items (optional)" wide>
+                      <ItemsEditor items={form.items} itemNames={itemNames} onChange={updateItem}
+                        onAdd={() => setItems(items => [...items, emptyItem()])}
+                        onRemove={(idx) => setItems(items => items.filter((_, i) => i !== idx))} />
                     </Field>
                   </>
                 )}
@@ -860,6 +1003,10 @@ export default function PettyCashStaff() {
           onViewEntry={setViewEntry}
           onClose={() => setViewPerson(null)}
         />
+      )}
+
+      {viewItem && (
+        <ItemHistory item={viewItem} onViewEntry={setViewEntry} onClose={() => setViewItem(null)} />
       )}
 
       {viewEntry && (
@@ -1098,6 +1245,36 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
                 <dd className="text-slate-900 font-medium break-words">{value || "—"}</dd>
               </div>
             ))}
+            {e.items?.length > 0 && (
+              <div className="py-2.5 text-sm">
+                <dt className="text-slate-500 mb-2">Items</dt>
+                <dd className="border border-slate-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-slate-600 text-xs">
+                      <tr>
+                        {["Item", "Qty", "Rate", "Amount"].map((h, i) => <th key={h} className={`px-3 py-1.5 font-semibold ${i ? "text-right" : "text-left"}`}>{h}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {e.items.map((it, i) => (
+                        <tr key={i} className="border-t border-slate-100">
+                          <td className="px-3 py-1.5 text-slate-800">{it.name}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{it.qty}{it.unit ? ` ${it.unit}` : ""}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums">{it.rate ? fmtAmount(it.rate) : "—"}</td>
+                          <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmtAmount(it.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-slate-50 font-semibold">
+                      <tr className="border-t border-slate-200">
+                        <td className="px-3 py-1.5" colSpan={3}>Total</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{fmtAmount(e.amount)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </dd>
+              </div>
+            )}
             <div className="grid grid-cols-[130px_1fr] gap-3 py-2.5 text-sm">
               <dt className="text-slate-500">Attachments</dt>
               <dd>
@@ -1114,6 +1291,95 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
               <Pencil size={14} /> Edit
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Item rows inside the Add/Edit form. Amount fills from Qty x Rate but can
+// be typed over (e.g. when the bill rounds off).
+function ItemsEditor({ items, itemNames, onChange, onAdd, onRemove }) {
+  const cell = "w-full h-9 border border-slate-300 rounded-md px-2 text-sm outline-none bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-500";
+  const cols = "grid grid-cols-[minmax(140px,1fr)_70px_80px_80px_90px_28px] gap-2 items-center";
+  return (
+    <div className="rounded-lg border border-slate-200 p-3">
+      {items.length === 0 ? (
+        <p className="text-xs text-slate-400 mb-2">Add items to record what was bought — the amount becomes their total.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <div className="min-w-[520px] space-y-2 mb-2">
+            <div className={`${cols} text-[11px] font-semibold text-slate-500 uppercase tracking-wide`}>
+              <span>Item</span><span className="text-right">Qty</span><span>Unit</span><span className="text-right">Rate</span><span className="text-right">Amount</span><span />
+            </div>
+            {items.map((it, i) => (
+              <div key={i} className={cols}>
+                <input list="petty-cash-item-names" value={it.name} onChange={e => onChange(i, "name", e.target.value)} placeholder="e.g. Cement" className={cell} />
+                <input type="number" min="0" step="any" value={it.qty} onChange={e => onChange(i, "qty", e.target.value)} className={`${cell} text-right`} />
+                <input list="petty-cash-units" value={it.unit} onChange={e => onChange(i, "unit", e.target.value)} placeholder="nos" className={cell} />
+                <input type="number" min="0" step="0.01" value={it.rate} onChange={e => onChange(i, "rate", e.target.value)} className={`${cell} text-right`} />
+                <input type="number" min="0" step="0.01" value={it.amount} onChange={e => onChange(i, "amount", e.target.value)} className={`${cell} text-right`} />
+                <button type="button" onClick={() => onRemove(i)} title="Remove item" className="p-1 text-slate-400 hover:text-red-600"><X size={15} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <datalist id="petty-cash-item-names">{itemNames.map(n => <option key={n} value={n} />)}</datalist>
+      <datalist id="petty-cash-units">{UNITS.map(u => <option key={u} value={u} />)}</datalist>
+      <div className="flex items-center justify-between">
+        <button type="button" onClick={onAdd} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline">
+          <Plus size={13} /> Add Item
+        </button>
+        {items.length > 0 && <p className="text-sm text-slate-600">Total <b className="tabular-nums text-slate-900">₹ {fmtAmount(itemsTotal(items))}</b></p>}
+      </div>
+    </div>
+  );
+}
+
+// Every purchase of one item (an itemSummary row).
+function ItemHistory({ item, onViewEntry, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">{item.name}{item.unit ? ` (${item.unit})` : ""}</h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Total <b className="tabular-nums text-slate-800">{round2(item.qty)}{item.unit ? ` ${item.unit}` : ""}</b> for <b className="tabular-nums text-rose-700">₹ {fmtAmount(item.amount)}</b>
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+        <div className="overflow-auto">
+          <table className={GRID_TABLE}>
+            <thead className="bg-slate-50 text-slate-600 sticky top-0">
+              <tr>
+                {["Date", "Expense", "Paid By", "Project", "Qty", "Rate", "Amount", ""].map((h, i) => (
+                  <th key={i} className={`px-4 py-2.5 font-semibold whitespace-nowrap ${["Qty", "Rate", "Amount"].includes(h) ? "text-right" : "text-left"}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {item.lines.map(({ e, it }, i) => (
+                <tr key={`${e.id}-${i}`} className="border-t border-slate-200">
+                  <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{fmtDate(e.entryDate)}</td>
+                  <td className="px-4 py-2.5 text-slate-700 max-w-[200px] truncate" title={e.particular}>{e.particular}</td>
+                  <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{e.personName}</td>
+                  <td className="px-4 py-2.5 text-slate-600 max-w-[160px] truncate">{e.project || "—"}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">{it.qty}{it.unit ? ` ${it.unit}` : ""}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{it.rate ? fmtAmount(it.rate) : "—"}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{fmtAmount(it.amount)}</td>
+                  <td className="px-4 py-2.5">
+                    <button onClick={() => onViewEntry(e)} title="View entry" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100"><Eye size={14} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex justify-end px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0">
+          <button onClick={onClose} className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700">Close</button>
         </div>
       </div>
     </div>

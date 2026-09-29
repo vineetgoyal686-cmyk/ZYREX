@@ -53,6 +53,7 @@ const mapEntry = async (r, peopleById) => ({
   project:       r.project || "",
   location:      r.location || "",
   remarks:       r.remarks || "",
+  items:         Array.isArray(r.items) ? r.items : [],
   documents:     await signDocs(r),
   createdAt:     r.created_at,
   createdByName: r.created_by_name || "",
@@ -99,6 +100,27 @@ const rememberLocation = async (name) => {
   if (!existing) await supabase.from("petty_cash_locations").insert({ name: value });
 };
 
+// Optional line items on an expense. Arrives as a JSON string (the form is
+// multipart) or an array; returns the cleaned list, or throws.
+const parseItems = (raw) => {
+  let list = raw;
+  if (typeof raw === "string") {
+    try { list = JSON.parse(raw || "[]"); } catch { throw new Error("Invalid items"); }
+  }
+  if (list == null) return [];
+  if (!Array.isArray(list)) throw new Error("Invalid items");
+  return list.map((it, i) => {
+    const name = String(it?.name || "").trim();
+    const qty = round2(it?.qty);
+    const rate = round2(it?.rate);
+    const amount = round2(it?.amount);
+    if (!name) throw new Error(`Item ${i + 1}: name is required`);
+    if (!(qty > 0)) throw new Error(`Item ${i + 1}: quantity must be greater than 0`);
+    if (!(amount > 0)) throw new Error(`Item ${i + 1}: amount must be greater than 0`);
+    return { name, qty, unit: String(it?.unit || "").trim(), rate, amount };
+  });
+};
+
 // Validates a request body and returns the DB row (minus audit columns), or
 // throws with a user-facing message. Only the fields that belong to the
 // entry's type are kept, so switching an expense to a transfer on edit
@@ -115,7 +137,7 @@ const buildRow = (b) => {
     entry_type: entryType, entry_date: b.entryDate, amount,
     person_id: b.personId, from_person_id: null,
     particular: "", category: "", proof_type: "", payment_mode: "", project: "", location: "",
-    remarks: String(b.remarks || "").trim(),
+    remarks: String(b.remarks || "").trim(), items: [],
   };
 
   if (entryType === "expense") {
@@ -123,7 +145,12 @@ const buildRow = (b) => {
     if (!CATEGORIES.includes(b.category)) throw new Error("Category is required");
     if (!PROOF_TYPES.includes(b.proofType)) throw new Error("Bill type is required");
     if (!PAYMENT_MODES.includes(b.paymentMode)) throw new Error("Payment mode is required");
+    const items = parseItems(b.items);
+    if (items.length && Math.abs(round2(items.reduce((s, it) => s + it.amount, 0)) - amount) > 0.01) {
+      throw new Error("Items total must equal the amount");
+    }
     Object.assign(row, {
+      items,
       particular: String(b.particular).trim(), category: b.category, proof_type: b.proofType,
       payment_mode: b.paymentMode, project: String(b.project || "").trim(), location: String(b.location || "").trim(),
     });
