@@ -219,7 +219,7 @@ const lbl = "block text-xs font-semibold text-slate-600 mb-1";
 
 // `initial` (saved voucher details) opens an existing voucher for editing:
 // it keeps its number, and Done returns a fresh PDF to replace the old one.
-export default function VoucherModal({ entry, paidTo, initial, onClose, onDone }) {
+export default function VoucherModal({ entry, initial, onClose, onDone }) {
   const editing = !!initial;
   const [v, setV] = useState(() => initial ? {
     ...initial,
@@ -229,7 +229,7 @@ export default function VoucherModal({ entry, paidTo, initial, onClose, onDone }
     // and it is only taken (used up) when Done is clicked.
     voucherNo: "",
     date: entry.entryDate || "",
-    paidTo: paidTo || "",
+    paidTo: "", // the actual payee (shop / vendor), typed by the user
     items: [{ details: entry.particular || "", category: entry.category || "", amount: entry.amount || "" }],
     paymentMode: MODE_FROM_ENTRY[entry.paymentMode] || "",
     refNo: "",
@@ -355,7 +355,7 @@ export default function VoucherModal({ entry, paidTo, initial, onClose, onDone }
               <div><label className={lbl}>Voucher No.</label><input value={v.voucherNo} readOnly placeholder="Loading…" title="Assigned automatically when the voucher is created" className={`${inp} bg-slate-50`} /></div>
               <div><label className={lbl}>Date</label><input type="date" value={v.date} onChange={setField("date")} className={inp} /></div>
             </div>
-            <div><label className={lbl}>Paid To</label><input value={v.paidTo} onChange={setField("paidTo")} className={inp} /></div>
+            <div><label className={lbl}>Paid To</label><input value={v.paidTo} onChange={setField("paidTo")} placeholder="Who received the money (shop / vendor)" className={inp} /></div>
 
             <div>
               <div className="flex items-center justify-between mb-1">

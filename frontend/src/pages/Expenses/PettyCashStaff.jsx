@@ -1023,7 +1023,6 @@ export default function PettyCashStaff() {
       {voucherOpen && formOpen && (
         <VoucherModal
           entry={form}
-          paidTo={personName(form.personId)}
           initial={voucherEdit}
           onClose={() => { setVoucherOpen(false); setVoucherEdit(null); }}
           onDone={(file, total, details) => {
