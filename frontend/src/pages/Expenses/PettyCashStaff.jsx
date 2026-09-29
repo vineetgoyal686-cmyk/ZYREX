@@ -3,6 +3,7 @@ import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
   ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye, FilePlus2, Package,
+  User, Tag, CreditCard, Briefcase, MapPin, CalendarDays, FileText,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -1258,90 +1259,156 @@ function PersonLedger({ person, entries, onViewEntry, onClose }) {
   );
 }
 
+const IMAGE_EXT = /\.(png|jpe?g|webp|gif)$/i;
+const fileExt = (url) => String(url || "").split("?")[0];
+
+// Entry details as a panel sliding in from the right.
 function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
-  const rows = [
-    ["Type", labelOf(ENTRY_TYPES, e.entryType)],
-    ["Date", fmtDate(e.entryDate)],
-    ["Amount", `₹ ${fmtAmount(e.amount)}`],
-    ...(e.entryType === "expense" ? [
-      ["Expense", e.particular],
-      ["Category", e.category],
-      ["Paid By", e.personName],
-      ["Bill Type", `${labelOf(PROOF_TYPES, e.proofType)} (${taxLabel(e.proofType)})`],
-      ["Payment", labelOf(PAYMENT_MODES, e.paymentMode)],
-      ["Project", e.project],
-      ["Location", e.location],
-    ] : e.entryType === "received" ? [
-      ["From", "Accounts"],
-      ["Received By", e.personName],
-    ] : [
-      ["Given By", e.fromPersonName],
-      ["Given To", e.personName],
-    ]),
-    ["Remarks", e.remarks],
-    ["Added By", [e.createdByName, fmtStamp(e.createdAt)].filter(Boolean).join(" · ")],
-    ...(e.updatedAt ? [["Last Updated", fmtStamp(e.updatedAt)]] : []),
+  useEffect(() => {
+    const onKey = (ev) => ev.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const isExpense = e.entryType === "expense";
+  const title = isExpense ? e.particular
+    : e.entryType === "received" ? "Received from Accounts"
+    : `${e.fromPersonName} → ${e.personName}`;
+
+  const facts = isExpense ? [
+    { icon: User,        label: "Paid By",   value: e.personName },
+    { icon: Tag,         label: "Category",  value: e.category },
+    { icon: Receipt,     label: "Bill Type", value: e.proofType && `${labelOf(PROOF_TYPES, e.proofType)}`, sub: e.proofType && taxLabel(e.proofType) },
+    { icon: CreditCard,  label: "Payment",   value: labelOf(PAYMENT_MODES, e.paymentMode) },
+    { icon: Briefcase,   label: "Project",   value: e.project },
+    { icon: MapPin,      label: "Location",  value: e.location },
+  ] : e.entryType === "received" ? [
+    { icon: ArrowLeftRight, label: "From",        value: "Accounts" },
+    { icon: User,           label: "Received By", value: e.personName },
+  ] : [
+    { icon: User, label: "Given By", value: e.fromPersonName },
+    { icon: User, label: "Given To", value: e.personName },
   ];
 
+  const docSections = DOC_SECTIONS.filter(s => e.documents?.[s.key]?.length);
+  const card = "rounded-xl border border-slate-200 bg-white";
+  const heading = "text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2.5";
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-slate-900">Entry Details</h2>
-            <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${TYPE_BADGE[e.entryType]}`}>{labelOf(ENTRY_TYPES, e.entryType)}</span>
+    <div className="fixed inset-0 z-[55]">
+      <style>{`@keyframes pcSlideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}@keyframes pcFade{from{opacity:0}to{opacity:1}}`}</style>
+      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]" style={{ animation: "pcFade .2s ease-out" }} onClick={onClose} />
+
+      <aside className="absolute right-0 top-0 h-full w-full sm:w-[480px] bg-slate-50 shadow-2xl flex flex-col"
+        style={{ animation: "pcSlideIn .25s cubic-bezier(.2,.8,.2,1)" }}>
+        {/* Header */}
+        <div className="bg-white border-b border-slate-200 px-6 pt-5 pb-5 shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${TYPE_BADGE[e.entryType]}`}>{labelOf(ENTRY_TYPES, e.entryType)}</span>
+              <span className="flex items-center gap-1 text-xs text-slate-500"><CalendarDays size={13} /> {fmtDate(e.entryDate)}</span>
+            </div>
+            <button onClick={onClose} title="Close (Esc)" className="p-1.5 -mr-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"><X size={18} /></button>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+          <h2 className="mt-3 text-lg font-bold text-slate-900 leading-snug break-words">{title || "—"}</h2>
+          <p className={`mt-1 text-3xl font-extrabold tabular-nums ${isExpense ? "text-rose-700" : "text-emerald-700"}`}>₹ {fmtAmount(e.amount)}</p>
+          {e.items?.length > 0 && (
+            <p className="mt-1 text-xs text-slate-500">{e.items.length} item{e.items.length > 1 ? "s" : ""}</p>
+          )}
         </div>
 
-        <div className="px-6 py-4 overflow-y-auto">
-          <dl className="divide-y divide-slate-100">
-            {rows.map(([label, value]) => (
-              <div key={label} className="grid grid-cols-[130px_1fr] gap-3 py-2.5 text-sm">
-                <dt className="text-slate-500">{label}</dt>
-                <dd className="text-slate-900 font-medium break-words">{value || "—"}</dd>
+        {/* Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto px-5 py-5 space-y-4">
+          <div className={`${card} grid grid-cols-2 gap-px bg-slate-100 overflow-hidden`}>
+            {facts.map(f => (
+              <div key={f.label} className="bg-white px-4 py-3 min-w-0">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wide"><f.icon size={12} /> {f.label}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900 break-words">{f.value || "—"}</p>
+                {f.sub && <p className="text-[11px] text-slate-500">{f.sub}</p>}
               </div>
             ))}
-            {e.items?.length > 0 && (
-              <div className="py-2.5 text-sm">
-                <dt className="text-slate-500 mb-2">Items</dt>
-                <dd className="border border-slate-200 rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-slate-600 text-xs">
-                      <tr>
-                        {["Item", "Qty", "Rate", "Amount"].map((h, i) => <th key={h} className={`px-3 py-1.5 font-semibold ${i ? "text-right" : "text-left"}`}>{h}</th>)}
+          </div>
+
+          {e.items?.length > 0 && (
+            <div>
+              <p className={heading}>Items</p>
+              <div className={`${card} overflow-hidden`}>
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wide">
+                    <tr>
+                      {["Item", "Qty", "Rate", "Amount"].map((h, i) => <th key={h} className={`px-3 py-2 font-semibold ${i ? "text-right" : "text-left"}`}>{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {e.items.map((it, i) => (
+                      <tr key={i} className="border-t border-slate-100">
+                        <td className="px-3 py-2 text-slate-800 font-medium">{it.name}</td>
+                        <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap text-slate-600">{it.qty}{it.unit ? ` ${it.unit}` : ""}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-600">{it.rate ? fmtAmount(it.rate) : "—"}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold text-slate-900">{fmtAmount(it.amount)}</td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {e.items.map((it, i) => (
-                        <tr key={i} className="border-t border-slate-100">
-                          <td className="px-3 py-1.5 text-slate-800">{it.name}</td>
-                          <td className="px-3 py-1.5 text-right tabular-nums whitespace-nowrap">{it.qty}{it.unit ? ` ${it.unit}` : ""}</td>
-                          <td className="px-3 py-1.5 text-right tabular-nums">{it.rate ? fmtAmount(it.rate) : "—"}</td>
-                          <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmtAmount(it.amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-slate-50 font-semibold">
-                      <tr className="border-t border-slate-200">
-                        <td className="px-3 py-1.5" colSpan={3}>Total</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">{fmtAmount(e.amount)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </dd>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-slate-200 bg-slate-50 font-bold">
+                      <td className="px-3 py-2" colSpan={3}>Total</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtAmount(e.amount)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {e.remarks && (
+            <div>
+              <p className={heading}>Remarks</p>
+              <div className={`${card} px-4 py-3 text-sm text-slate-700 whitespace-pre-wrap break-words`}>{e.remarks}</div>
+            </div>
+          )}
+
+          <div>
+            <p className={heading}>Attachments</p>
+            {docSections.length === 0 ? (
+              <div className={`${card} px-4 py-6 text-center text-sm text-slate-400`}>No attachments</div>
+            ) : (
+              <div className="space-y-3">
+                {docSections.map(s => (
+                  <div key={s.key} className={`${card} p-3`}>
+                    <p className="text-xs font-semibold text-slate-700 mb-2">{s.label} <span className="text-slate-400 font-normal">· {e.documents[s.key].length}</span></p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {e.documents[s.key].map((url, i) => {
+                        const isImage = IMAGE_EXT.test(fileExt(url));
+                        return (
+                          <a key={i} href={url} target="_blank" rel="noreferrer" title={`Open ${s.label} ${i + 1}`}
+                            className="group relative aspect-[4/3] rounded-lg border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center hover:border-blue-400 hover:shadow-sm transition">
+                            {isImage ? (
+                              <img src={url} alt={`${s.label} ${i + 1}`} loading="lazy" className="h-full w-full object-cover" />
+                            ) : (
+                              <div className="flex flex-col items-center gap-1 text-slate-500 group-hover:text-blue-600">
+                                <FileText size={22} />
+                                <span className="text-[10px] font-semibold uppercase">PDF</span>
+                              </div>
+                            )}
+                            <span className="absolute bottom-0 inset-x-0 bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 truncate">{s.label} {i + 1}</span>
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
-            <div className="grid grid-cols-[130px_1fr] gap-3 py-2.5 text-sm">
-              <dt className="text-slate-500">Attachments</dt>
-              <dd>
-                {docCount(e.documents) ? <DocSectionsList documents={e.documents} /> : <span className="text-slate-900 font-medium">—</span>}
-              </dd>
-            </div>
-          </dl>
+          </div>
+
+          <div className="flex flex-col gap-1 px-1 pt-1 text-[11px] text-slate-500">
+            <p>Added by <b className="text-slate-700">{e.createdByName || "—"}</b>{e.createdAt ? ` · ${fmtStamp(e.createdAt)}` : ""}</p>
+            {e.updatedAt && <p>Last updated · {fmtStamp(e.updatedAt)}</p>}
+          </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0">
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-200 bg-white shrink-0">
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Close</button>
           {canEdit && (
             <button onClick={onEdit} className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 flex items-center gap-1.5">
@@ -1349,7 +1416,7 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
             </button>
           )}
         </div>
-      </div>
+      </aside>
     </div>
   );
 }
