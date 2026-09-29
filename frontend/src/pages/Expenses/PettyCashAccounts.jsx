@@ -10,6 +10,13 @@ import {
 
 const monthStart = () => `${todayStr().slice(0, 8)}01`;
 
+// First (Date) and last (Attachments) columns stay pinned while the middle
+// scrolls sideways; the header row stays pinned while rows scroll.
+const HEADERS = ["Date", "Particular Items", "Tax / Non Tax", "Bill Type", "Payment", "Project", "Location", "Category", "Amount", "Remarks", "Attachments"];
+const PIN_LEFT  = "sticky left-0 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]";
+const PIN_RIGHT = "sticky right-0 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.12)]";
+const pinFor = (i) => (i === 0 ? PIN_LEFT : i === HEADERS.length - 1 ? PIN_RIGHT : "");
+
 export default function PettyCashAccounts() {
   const { canExport } = useModulePermissions("petty_cash_accounts");
   const [from, setFrom]       = useState(monthStart());
@@ -110,8 +117,8 @@ export default function PettyCashAccounts() {
 
   const s = data?.summary;
   return (
-    <div className="p-4 sm:p-6 space-y-5">
-      <div className="flex flex-wrap items-end gap-3 bg-white rounded-xl border border-slate-200 px-5 py-4">
+    <div className="p-4 sm:p-6 space-y-5 md:flex-1 md:min-h-0 md:flex md:flex-col md:space-y-0 md:gap-5">
+      <div className="shrink-0 flex flex-wrap items-end gap-3 bg-white rounded-xl border border-slate-200 px-5 py-4">
         <label className="text-sm">
           <span className="block text-xs font-semibold text-slate-500 mb-1">From</span>
           <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="h-10 border border-slate-300 rounded-lg px-3 outline-none focus:border-slate-500" />
@@ -128,9 +135,9 @@ export default function PettyCashAccounts() {
         )}
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="shrink-0 text-sm text-red-600">{error}</p>}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="shrink-0 grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: "Opening Balance", value: s?.opening },
           { label: "Received from Accounts", value: s?.received, color: "text-emerald-700" },
@@ -146,13 +153,13 @@ export default function PettyCashAccounts() {
         ))}
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
+        <div className="overflow-auto md:flex-1 md:min-h-0 thin-scroll">
           <table className={GRID_TABLE}>
-            <thead className="bg-slate-50 text-slate-600">
+            <thead className="text-slate-600">
               <tr>
-                {["Date", "Particular Items", "Tax / Non Tax", "Bill Type", "Payment", "Project", "Location", "Category", "Amount", "Remarks", "Attachments"].map(h => (
-                  <th key={h} className={`px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : "text-left"}`}>{h}</th>
+                {HEADERS.map((h, i) => (
+                  <th key={h} className={`sticky top-0 bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : "text-left"} ${pinFor(i) ? `${pinFor(i)} z-30` : "z-20"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -163,7 +170,7 @@ export default function PettyCashAccounts() {
                 <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400">No expenses in this period</td></tr>
               ) : data.rows.slice((page - 1) * perPage, page * perPage).map(r => (
                 <tr key={r.id} className="border-t border-slate-200">
-                  <td className="px-4 py-2.5 whitespace-nowrap">{fmtDate(r.entryDate)}</td>
+                  <td className={`px-4 py-2.5 whitespace-nowrap bg-white z-10 ${PIN_LEFT}`}>{fmtDate(r.entryDate)}</td>
                   <td className="px-4 py-2.5 max-w-[260px] truncate" title={r.particular}>{r.particular}</td>
                   <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{taxLabel(r.proofType)}</td>
                   <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{labelOf(PROOF_TYPES, r.proofType)}</td>
@@ -173,7 +180,7 @@ export default function PettyCashAccounts() {
                   <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{r.category}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums font-semibold">{fmtAmount(r.amount)}</td>
                   <td className="px-4 py-2.5 max-w-[180px] truncate text-slate-500" title={r.remarks}>{r.remarks || "—"}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap text-xs">
+                  <td className={`px-4 py-2.5 whitespace-nowrap text-xs bg-white z-10 ${PIN_RIGHT}`}>
                     {DOC_SECTIONS.some(s => r.documents[s.key]?.length) ? DOC_SECTIONS.filter(s => r.documents[s.key]?.length).map(s => (
                       <div key={s.key} className="flex items-center gap-1.5">
                         <span className="text-slate-500">{s.label}:</span>
