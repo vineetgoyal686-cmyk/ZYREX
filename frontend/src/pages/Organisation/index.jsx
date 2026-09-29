@@ -3,7 +3,7 @@ import {
   Plus, LayoutGrid, GitBranch, Building2, Briefcase,
   MapPin, PanelLeftClose, PanelLeftOpen,
   Download, Upload, ChevronDown, FileSpreadsheet, FileText,
-  Layers, Network, UserSquare2, FolderTree, ArrowLeft, Table2, BarChart2, ClipboardList, FileSignature,
+  Layers, Network, UserSquare2, FolderTree, ArrowLeft, Table2, BarChart2, ClipboardList, FileSignature, FolderKanban,
 } from "lucide-react";
 import OrgOverview   from "./OrgOverview";
 import Departments   from "./Departments";
@@ -19,6 +19,7 @@ import OrgList       from "./OrgList";
 import SOPTab        from "../Settings/tabs/SOP";
 import Policy        from "./Policy";
 import HRLetter      from "./HRLetter";
+import Projects      from "./Projects";
 import { OrgScopeContext, scopedUrl } from "./orgScope";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 
@@ -30,6 +31,7 @@ const NAV_SECTIONS = [
     label: "Organisation",
     items: [
       { id: "overview",   label: "Overview",   icon: LayoutGrid,    hasAdd: false, hasExport: false },
+      { id: "projects",   label: "Projects",   icon: FolderKanban,  hasAdd: true,  hasExport: false, btnLabel: "Add Project" },
       { id: "structure",  label: "Structure",  icon: FolderTree,    hasAdd: false, hasExport: false },
       { id: "org_chart",  label: "Org Chart",  icon: GitBranch,     hasAdd: false, hasExport: false },
       { id: "sop",        label: "SOP",        icon: ClipboardList, hasAdd: false, hasExport: false },
@@ -75,6 +77,7 @@ function OrgDetail({ org, onBack, currentUser }) {
   const [lvlCount,    setLvlCount]    = useState(0);
   const [deptCount,   setDeptCount]   = useState(0);
   const [branchCount, setBranchCount] = useState(0);
+  const [projectCount, setProjectCount] = useState(0);
   const [empView,  setEmpView]  = useState("card");
   const [empCount, setEmpCount] = useState(null);
 
@@ -101,12 +104,13 @@ function OrgDetail({ org, onBack, currentUser }) {
   const permStructure    = useModulePermissions("structure");
   const permOrgChart     = useModulePermissions("org_chart");
   const permSop          = useModulePermissions("sop");
+  const permProjects     = useModulePermissions("org_projects");
 
   const TAB_PERMS = {
     departments: permDepartments, sub_departments: permTeams, divisions: permDivisions,
     grades: permGrades, designations: permDesignations, employees: permEmployees,
     structure: permStructure, org_chart: permOrgChart, sop: permSop,
-    locations: permLocations, policy: permPolicy,
+    locations: permLocations, policy: permPolicy, projects: permProjects,
   };
 
   useEffect(() => {
@@ -117,6 +121,7 @@ function OrgDetail({ org, onBack, currentUser }) {
     fetch(u("/api/organisation/grades"), { headers: h }).then(r => r.json()).then(j => setLvlCount((j.grades || []).length)).catch(() => {});
     fetch(u("/api/teams"), { headers: h }).then(r => r.json()).then(j => setSubCount((j.teams || []).length)).catch(() => {});
     fetch(u("/api/organisation/branches"), { headers: h }).then(r => r.json()).then(j => setBranchCount((j.branches || []).length)).catch(() => {});
+    fetch(u("/api/organisation/projects"), { headers: h }).then(r => r.json()).then(j => setProjectCount((j.projects || []).length)).catch(() => {});
   }, [activeTab, org.id]);
 
   useEffect(() => {
@@ -134,6 +139,7 @@ function OrgDetail({ org, onBack, currentUser }) {
     sub_departments: subCount    || null,
     grades:          lvlCount    || null,
     locations:       branchCount || null,
+    projects:        projectCount || null,
   };
 
   const renderContent = () => {
@@ -149,6 +155,7 @@ function OrgDetail({ org, onBack, currentUser }) {
       case "designations":    return <Designations actionsRef={actionsRef} />;
       case "employees":       return <EmployeeList actionsRef={actionsRef} view={empView} onViewChange={setEmpView} onCountChange={setEmpCount} />;
       case "locations":       return <Locations   actionsRef={actionsRef} />;
+      case "projects":        return <Projects    actionsRef={actionsRef} onChange={d => setProjectCount(d.length)} />;
       case "policy":          return <Policy actionsRef={actionsRef} companyId={org?.id} orgName={org?.companyName || org?.company_name} />;
       case "hr_letters":      return <HRLetter org={org} showToast={showToast} />;
       default:                return null;

@@ -506,4 +506,53 @@ router.delete("/branches/:id", requirePerm("locations", "can_delete"), async (re
   res.json({ success: true });
 });
 
+/* ════════════════════════════════════
+   PROJECTS (per organisation)
+════════════════════════════════════ */
+const PROJECT_STATUSES = ["active", "on_hold", "completed"];
+const projectRow = (b) => ({
+  project_code: String(b.project_code || "").trim(),
+  project_name: String(b.project_name || "").trim(),
+  client_name:  String(b.client_name || "").trim(),
+  city:         String(b.city || "").trim(),
+  state:        String(b.state || "").trim(),
+  address:      String(b.address || "").trim(),
+  start_date:   b.start_date || null,
+  end_date:     b.end_date || null,
+  status:       PROJECT_STATUSES.includes(b.status) ? b.status : "active",
+  remarks:      String(b.remarks || "").trim(),
+});
+const projectError = (res, error) => res.status(error.code === "23505" ? 400 : 500)
+  .json({ error: error.code === "23505" ? "A project with this name already exists in this organisation" : error.message });
+
+router.get("/projects", async (req, res) => {
+  const { data, error } = await scopeQuery(supabase.schema("organisation").from("org_projects").select("*"), req).order("project_name");
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ projects: data || [] });
+});
+router.post("/projects", requirePerm("org_projects", "can_add"), async (req, res) => {
+  const row = projectRow(req.body);
+  const company_id = companyIdFrom(req.body);
+  if (!row.project_name) return res.status(400).json({ error: "Project name is required" });
+  if (!company_id) return res.status(400).json({ error: "Organisation is required" });
+  if (row.start_date && row.end_date && row.end_date < row.start_date) return res.status(400).json({ error: "End date can't be before start date" });
+  const { data, error } = await supabase.schema("organisation").from("org_projects").insert({ ...row, company_id }).select().single();
+  if (error) return projectError(res, error);
+  res.json({ success: true, project: data });
+});
+router.put("/projects/:id", requirePerm("org_projects", "can_edit"), async (req, res) => {
+  const row = projectRow(req.body);
+  if (!row.project_name) return res.status(400).json({ error: "Project name is required" });
+  if (row.start_date && row.end_date && row.end_date < row.start_date) return res.status(400).json({ error: "End date can't be before start date" });
+  const { data, error } = await supabase.schema("organisation").from("org_projects")
+    .update({ ...row, updated_at: new Date().toISOString() }).eq("id", req.params.id).select().single();
+  if (error) return projectError(res, error);
+  res.json({ success: true, project: data });
+});
+router.delete("/projects/:id", requirePerm("org_projects", "can_delete"), async (req, res) => {
+  const { error } = await supabase.schema("organisation").from("org_projects").delete().eq("id", req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ success: true });
+});
+
 module.exports = router;
