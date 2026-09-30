@@ -7,12 +7,12 @@ import { fmtDate, apiError } from "./pettyCashConstants";
 // Expense Voucher — same layout as the company's expense_voucher.html
 // (A5 landscape), drawn with jsPDF so it can be attached to the entry as a
 // PDF and printed from there.
-const COMPANY = {
-  name: "BHARAT VOLT PRIVATE LIMITED",
-  address: [
-    "15th Floor, Gate No. 3, Unit No. F-1505/1504, Silver & Platinum Lobby, Wave One Building,",
-    "L-2A, Pocket G, Sector 18, Noida, Uttar Pradesh-201301",
-  ],
+// Voucher header: the entity's name, and the project's address when it has
+// one (the site where the money was spent), else the entity's address.
+const voucherHeader = (company, project) => {
+  const projectAddr = [project?.address, [project?.city, project?.state].filter(Boolean).join(", ")].filter(Boolean).join(", ");
+  const companyAddr = [company?.address, [company?.state, company?.pincode].filter(Boolean).join("-")].filter(Boolean).join(", ");
+  return { name: String(company?.name || "").toUpperCase(), address: projectAddr || companyAddr };
 };
 
 const MODES = [
@@ -100,9 +100,10 @@ async function buildVoucherPdf(v) {
   doc.rect(L, T, W, H);
 
   doc.setFont("helvetica", "bold"); doc.setFontSize(16);
-  doc.text(COMPANY.name, 105, T + 9, { align: "center" });
+  doc.text(v.header?.name || "", 105, T + 9, { align: "center" });
   doc.setFont("helvetica", "normal"); doc.setFontSize(7.5);
-  COMPANY.address.forEach((line, i) => doc.text(line, 105, T + 13.5 + i * 3.4, { align: "center" }));
+  doc.splitTextToSize(v.header?.address || "", W - 20).slice(0, 2)
+    .forEach((line, i) => doc.text(line, 105, T + 13.5 + i * 3.4, { align: "center" }));
 
   const titleY = T + 21.5;
   doc.setLineWidth(0.3);
@@ -219,15 +220,17 @@ const lbl = "block text-xs font-semibold text-slate-600 mb-1";
 
 // `initial` (saved voucher details) opens an existing voucher for editing:
 // it keeps its number, and Done returns a fresh PDF to replace the old one.
-export default function VoucherModal({ entry, initial, onClose, onDone }) {
+export default function VoucherModal({ entry, company, project, initial, onClose, onDone }) {
   const editing = !!initial;
   const [v, setV] = useState(() => initial ? {
     ...initial,
+    header: initial.header || voucherHeader(company, project),
     signs: Object.fromEntries(SIGN_SLOTS.map(s => [s.key, { userId: "", name: "", image: "", ...(initial.signs?.[s.key] || {}) }])),
   } : ({
     // BVPL-VH-<n> comes from the server: the preview shows the next number,
     // and it is only taken (used up) when Done is clicked.
     voucherNo: "",
+    header: voucherHeader(company, project),
     date: entry.entryDate || "",
     paidTo: "", // the actual payee (shop / vendor), typed by the user
     items: [{ details: entry.particular || "", category: entry.category || "", amount: entry.amount || "" }],
@@ -252,7 +255,7 @@ export default function VoucherModal({ entry, initial, onClose, onDone }) {
       });
       return;
     }
-    api.get("/api/petty-cash/voucher-no")
+    api.get("/api/petty-cash/voucher-no", { params: { company_id: company?.id } })
       .then(({ data }) => setV(p => ({ ...p, voucherNo: p.voucherNo || data.voucherNo })))
       .catch(err => setError(apiError(err, "Could not load voucher number")));
   }, []);
@@ -314,7 +317,7 @@ export default function VoucherModal({ entry, initial, onClose, onDone }) {
     try {
       let voucherNo = v.voucherNo;
       if (!editing) {
-        const { data } = await api.post("/api/petty-cash/voucher-no");
+        const { data } = await api.post("/api/petty-cash/voucher-no", { companyId: company?.id });
         voucherNo = data.voucherNo;
         setV(p => ({ ...p, voucherNo }));
       }
@@ -323,7 +326,7 @@ export default function VoucherModal({ entry, initial, onClose, onDone }) {
       // Saved with the entry so the voucher can be reopened. Profile
       // signatures are re-fetched on edit, so only uploaded images are kept.
       const details = {
-        voucherNo, date: v.date, paidTo: v.paidTo, items: v.items, paymentMode: v.paymentMode, refNo: v.refNo,
+        voucherNo, header: v.header, date: v.date, paidTo: v.paidTo, items: v.items, paymentMode: v.paymentMode, refNo: v.refNo,
         signs: Object.fromEntries(SIGN_SLOTS.map(s => {
           const sign = v.signs[s.key];
           return [s.key, { userId: sign.userId, name: sign.name, image: sign.userId ? "" : sign.image }];

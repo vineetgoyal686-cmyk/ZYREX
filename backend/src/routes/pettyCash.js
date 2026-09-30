@@ -8,7 +8,7 @@ const router   = express.Router();
 const multer   = require("multer");
 const supabase = require("../helpers/supabaseHelper");
 const { uploadStorageFile, createSignedStorageUrl, normalizeStoragePath } = require("../helpers/storageHelper");
-const { requirePerm } = require("../helpers/permHelper");
+const { requirePerm, hasPerm } = require("../helpers/permHelper");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
@@ -53,6 +53,8 @@ const mapEntry = async (r, peopleById) => ({
   project:       r.project || "",
   location:      r.location || "",
   remarks:       r.remarks || "",
+  companyId:     r.company_id || null,
+  orgProjectId:  r.org_project_id || null,
   items:         Array.isArray(r.items) ? r.items : [],
   voucherNo:     r.voucher_data?.voucherNo || "",
   documents:     await signDocs(r),
@@ -99,6 +101,42 @@ const rememberLocation = async (name) => {
   if (!value) return;
   const { data: existing } = await supabase.from("petty_cash_locations").select("id").ilike("name", value).maybeSingle();
   if (!existing) await supabase.from("petty_cash_locations").insert({ name: value });
+};
+
+// Every entry belongs to an Entity (company) and one of its projects
+// (organisation.org_projects). Checks the pair and stamps it on the row;
+// the project's name is also copied into the legacy `project` text column,
+// which lists and exports still read.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const loadProject = async (companyId, projectId) => {
+  if (!UUID_RE.test(String(companyId || ""))) throw new Error("Entity is required");
+  if (!UUID_RE.test(String(projectId || ""))) throw new Error("Project is required");
+  const { data, error } = await supabase.schema("organisation").from("org_projects")
+    .select("id, company_id, project_name").eq("id", projectId).maybeSingle();
+  if (error) throw error;
+  if (!data || data.company_id !== companyId) throw new Error("Project doesn't belong to the selected entity");
+  return data;
+};
+const applyScope = (row, project) => Object.assign(row, {
+  company_id: project.company_id, org_project_id: project.id, project: project.project_name,
+});
+
+// GET filters: ?company_id= (and optionally ?project_id=).
+const scopeFilter = (query, q) => {
+  if (UUID_RE.test(String(q.company_id || ""))) query = query.eq("company_id", q.company_id);
+  if (UUID_RE.test(String(q.project_id || ""))) query = query.eq("org_project_id", q.project_id);
+  return query;
+};
+
+// Staff or Accounts viewers both need the Entity / Project pickers.
+const requireAnyView = async (req, res, next) => {
+  const token = req.headers.authorization?.split(" ")[1];
+  let sub = null;
+  try { sub = JSON.parse(Buffer.from(String(token).split(".")[1], "base64url").toString()).sub; } catch { /* invalid */ }
+  if (!sub) return res.status(401).json({ error: "Login required" });
+  const ok = await hasPerm(sub, "petty_cash_staff", "can_view") || await hasPerm(sub, "petty_cash_accounts", "can_view");
+  if (!ok) return res.status(403).json({ error: "Permission denied" });
+  next();
 };
 
 // Optional line items on an expense. Arrives as a JSON string (the form is
@@ -258,38 +296,71 @@ router.get("/locations", requirePerm("petty_cash_staff", "can_view"), async (_re
   }
 });
 
-/* Expense voucher numbers — BVPL-VH-<n> from one DB sequence
-   (sql/petty_cash_voucher_no.sql). GET only shows the next number for the
-   preview; POST takes it, and is called when the voucher is created. */
-const VOUCHER_PREFIX = "BVPL-VH-";
-router.get("/voucher-no", requirePerm("petty_cash_staff", "can_view"), async (_req, res) => {
+/* GET /api/petty-cash/scopes — active entities and their projects, for the
+   Entity / Project pickers in the Petty Cash header. */
+router.get("/scopes", requireAnyView, async (_req, res) => {
   try {
-    const { data, error } = await supabase.rpc("peek_petty_cash_voucher_no");
-    if (error) throw error;
-    res.json({ voucherNo: `${VOUCHER_PREFIX}${data}` });
+    const [companiesRes, projectsRes] = await Promise.all([
+      supabase.schema("organisation").from("companies")
+        .select("id, company_code, company_name, address, state, pincode, status").order("company_name"),
+      supabase.schema("organisation").from("org_projects")
+        .select("id, company_id, project_code, project_name, address, city, state, status").order("project_name"),
+    ]);
+    if (companiesRes.error) throw companiesRes.error;
+    if (projectsRes.error) throw projectsRes.error;
+    res.json({
+      companies: (companiesRes.data || []).filter(c => String(c.status || "active").toLowerCase() === "active").map(c => ({
+        id: c.id, code: c.company_code || "", name: c.company_name || "",
+        address: c.address || "", state: c.state || "", pincode: c.pincode || "",
+      })),
+      projects: (projectsRes.data || []).map(p => ({
+        id: p.id, companyId: p.company_id, code: p.project_code || "", name: p.project_name || "",
+        address: p.address || "", city: p.city || "", state: p.state || "", status: p.status || "active",
+      })),
+    });
   } catch (err) {
-    console.error("Petty cash voucher no peek error:", err.message);
+    console.error("Petty cash scopes read error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
-router.post("/voucher-no", requirePerm("petty_cash_staff", "can_view"), async (_req, res) => {
+
+/* Expense voucher numbers — <COMPANY_CODE>-VH-<n>, one counter per entity
+   (sql/petty_cash_scope.sql). GET only shows the next number for the
+   preview; POST takes it, and is called when the voucher is created. */
+const voucherNoFor = async (companyId, fn) => {
+  if (!UUID_RE.test(String(companyId || ""))) throw Object.assign(new Error("Entity is required"), { status: 400 });
+  const [{ data: company, error: cErr }, { data: n, error }] = await Promise.all([
+    supabase.schema("organisation").from("companies").select("company_code").eq("id", companyId).maybeSingle(),
+    supabase.rpc(fn, { p_company: companyId }),
+  ]);
+  if (cErr) throw cErr;
+  if (error) throw error;
+  return `${company?.company_code || "PC"}-VH-${n}`;
+};
+router.get("/voucher-no", requirePerm("petty_cash_staff", "can_view"), async (req, res) => {
   try {
-    const { data, error } = await supabase.rpc("next_petty_cash_voucher_no");
-    if (error) throw error;
-    res.json({ voucherNo: `${VOUCHER_PREFIX}${data}` });
+    res.json({ voucherNo: await voucherNoFor(req.query.company_id, "peek_petty_cash_voucher_no") });
+  } catch (err) {
+    console.error("Petty cash voucher no peek error:", err.message);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+router.post("/voucher-no", requirePerm("petty_cash_staff", "can_view"), async (req, res) => {
+  try {
+    res.json({ voucherNo: await voucherNoFor(req.body?.companyId, "next_petty_cash_voucher_no") });
   } catch (err) {
     console.error("Petty cash voucher no error:", err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
 /* GET /api/petty-cash/entries — the full active ledger (balances are
    computed over all of it, so no date filtering server-side) */
-router.get("/entries", requirePerm("petty_cash_staff", "can_view"), async (_req, res) => {
+router.get("/entries", requirePerm("petty_cash_staff", "can_view"), async (req, res) => {
   try {
     const [peopleById, entriesRes] = await Promise.all([
       loadPeopleMap(),
-      supabase.from("petty_cash_entries").select("*").is("deleted_at", null)
+      scopeFilter(supabase.from("petty_cash_entries").select("*"), req.query).is("deleted_at", null)
         // id breaks ties (bulk-uploaded rows share created_at), so a row
         // doesn't jump around the list after it's edited.
         .order("entry_date", { ascending: false }).order("created_at", { ascending: false }).order("id"),
@@ -311,6 +382,7 @@ router.post("/entries", requirePerm("petty_cash_staff", "can_add"), upload.any()
       row = buildRow(req.body);
       const voucherData = parseVoucherData(req.body, row.entry_type);
       if (voucherData !== undefined) row.voucher_data = voucherData;
+      applyScope(row, await loadProject(req.body.companyId, req.body.projectId));
     } catch (e) { return res.status(400).json({ error: e.message }); }
 
     const { data: created, error: insertError } = await supabase
@@ -346,6 +418,7 @@ router.put("/entries/:id", requirePerm("petty_cash_staff", "can_edit"), upload.a
       row = buildRow(req.body);
       const voucherData = parseVoucherData(req.body, row.entry_type);
       if (voucherData !== undefined) row.voucher_data = voucherData;
+      applyScope(row, await loadProject(req.body.companyId, req.body.projectId));
     } catch (e) { return res.status(400).json({ error: e.message }); }
 
     const keep = parseDocKeep(req.body.docKeep);
@@ -411,6 +484,9 @@ router.post("/entries/bulk", requirePerm("petty_cash_staff", "can_bulk_upload"),
     const rows = Array.isArray(req.body.rows) ? req.body.rows : [];
     if (!rows.length) return res.status(400).json({ error: "No rows to import" });
     if (rows.length > 5000) return res.status(400).json({ error: "Too many rows (max 5000 per upload)" });
+    let project;
+    try { project = await loadProject(req.body.companyId, req.body.projectId); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
 
     const { data: peopleData, error: peopleErr } = await supabase.from("petty_cash_people").select("id, name");
     if (peopleErr) throw peopleErr;
@@ -431,7 +507,7 @@ router.post("/entries/bulk", requirePerm("petty_cash_staff", "can_bulk_upload"),
     const errors = [];
     const built = rows.map((r, i) => {
       try {
-        return buildRow({ ...r, personId: resolve(r.personName), fromPersonId: resolve(r.fromPersonName) });
+        return applyScope(buildRow({ ...r, personId: resolve(r.personName), fromPersonId: resolve(r.fromPersonName) }), project);
       } catch (e) {
         errors.push(`Row ${r.rowNumber || i + 2}: ${e.message}`);
         return null;
@@ -476,9 +552,7 @@ router.get("/accounts", requirePerm("petty_cash_accounts", "can_view"), async (r
     if (!from || !to) return res.status(400).json({ error: "from and to dates are required" });
     if (from > to) return res.status(400).json({ error: "From date must be before To date" });
 
-    const { data, error } = await supabase
-      .from("petty_cash_entries")
-      .select("*")
+    const { data, error } = await scopeFilter(supabase.from("petty_cash_entries").select("*"), req.query)
       .is("deleted_at", null)
       .in("entry_type", ["expense", "received"])
       .lte("entry_date", to)

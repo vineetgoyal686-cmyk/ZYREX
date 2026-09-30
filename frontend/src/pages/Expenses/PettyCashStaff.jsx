@@ -16,17 +16,16 @@ import {
   CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, docSectionsFor, docCount, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
 } from "./pettyCashConstants";
 
-const LAST_PROJECT_KEY  = "petty_cash_last_project";
 const LAST_LOCATION_KEY = "petty_cash_last_location";
 
 const readLocal = (key) => { try { return localStorage.getItem(key) || ""; } catch { return ""; } };
 const writeLocal = (key, value) => { try { localStorage.setItem(key, value); } catch { /* ignore */ } };
 const currentUser = () => { try { return JSON.parse(localStorage.getItem("bms_user") || "{}"); } catch { return {}; } };
 
-const emptyForm = (entryType = "expense") => ({
+const emptyForm = (entryType = "expense", projectId = "") => ({
   entryType, entryDate: todayStr(), amount: "", personId: "", fromPersonId: "",
   particular: "", category: "", proofType: "", paymentMode: "",
-  project: readLocal(LAST_PROJECT_KEY), location: readLocal(LAST_LOCATION_KEY), remarks: "",
+  projectId, location: readLocal(LAST_LOCATION_KEY), remarks: "",
   items: [],
 });
 
@@ -98,10 +97,10 @@ const TYPE_BADGE = {
 const TEMPLATES = {
   entries: {
     file: "petty_cash_expense_template.xlsx",
-    headers: ["Date", "Amount", "Paid By", "Expense", "Category", "Bill Type", "Payment Mode", "Project", "Location", "Remarks"],
+    headers: ["Date", "Amount", "Paid By", "Expense", "Category", "Bill Type", "Payment Mode", "Location", "Remarks"],
     sample: [
-      ["2026-09-14", 729, "Jitendar", "Mithai", "Kitchen & Grocery", "Local Bill", "Cash", "", "Noida", ""],
-      ["2026-09-14", 1871.94, "Jitendar", "Food charge (Zomato)", "Meals", "Tax Invoice", "Online", "", "Noida", ""],
+      ["2026-09-14", 729, "Jitendar", "Mithai", "Kitchen & Grocery", "Local Bill", "Cash", "Noida", ""],
+      ["2026-09-14", 1871.94, "Jitendar", "Food charge (Zomato)", "Meals", "Tax Invoice", "Online", "Noida", ""],
     ],
     options: () => {
       const max = Math.max(CATEGORIES.length, PROOF_TYPES.length, PAYMENT_MODES.length);
@@ -128,6 +127,7 @@ const TEMPLATES = {
   },
 };
 const COMMON_TEMPLATE_NOTES = [
+  "Every row is saved under the Entity and Project selected at the top of Petty Cash — pick a project before uploading.",
   "Date: YYYY-MM-DD, DD-MM-YYYY or 14-Sep-26. New person names are created automatically.",
 ];
 
@@ -156,13 +156,14 @@ const parseSheetDate = (raw) => {
   return `__invalid:${s}`;
 };
 
-export default function PettyCashStaff() {
+// scope = { company, project (null = all projects), projects } from the
+// Petty Cash header; the page is remounted whenever it changes.
+export default function PettyCashStaff({ scope }) {
   const { canAdd, canEdit, canDelete, canExport, canBulk, canViewLog } = useModulePermissions("petty_cash_staff");
 
   const [entries, setEntries]     = useState([]);
   const [people, setPeople]       = useState([]);
   const [locations, setLocations] = useState([]);
-  const [projects, setProjects]   = useState([]);
   const [loading, setLoading]     = useState(true);
 
   const [search, setSearch]           = useState("");
@@ -206,7 +207,9 @@ export default function PettyCashStaff() {
 
   const fetchEntries = async () => {
     try {
-      const { data } = await api.get("/api/petty-cash/entries");
+      const { data } = await api.get("/api/petty-cash/entries", {
+        params: { company_id: scope.company.id, project_id: scope.project?.id || undefined },
+      });
       setEntries(data.entries || []);
     } catch (err) { showToast(apiError(err, "Failed to load entries"), "error"); }
     setLoading(false);
@@ -222,7 +225,6 @@ export default function PettyCashStaff() {
     fetchEntries();
     fetchPeople();
     fetchLocations();
-    api.get("/api/projects").then(({ data }) => setProjects((data.projects || []).filter(p => p.isActive))).catch(() => {});
   }, []);
 
   // ── Balances (always over the whole ledger, not the filtered view) ──────
@@ -294,8 +296,13 @@ export default function PettyCashStaff() {
   useEffect(() => { if (page > pageCount) setPage(pageCount); }, [page, pageCount]);
 
   // ── Form ────────────────────────────────────────────────────────────────
+  // New entries go to the header's project; with "All projects" and only
+  // one project, that one.
+  const defaultProjectId = scope.project?.id || (scope.projects.length === 1 ? scope.projects[0].id : "");
+  const projectName = (id) => scope.projects.find(p => p.id === id)?.name || "";
+
   const openAdd = (entryType) => {
-    setForm(emptyForm(entryType));
+    setForm(emptyForm(entryType, defaultProjectId));
     setDocs(emptyDocs());
     setVoucher(null);
     setEditOriginal(null);
@@ -307,7 +314,7 @@ export default function PettyCashStaff() {
       entryType: e.entryType, entryDate: String(e.entryDate || "").slice(0, 10), amount: String(e.amount),
       personId: e.personId || "", fromPersonId: e.fromPersonId || "",
       particular: e.particular, category: e.category, proofType: e.proofType, paymentMode: e.paymentMode,
-      project: e.project, location: e.location, remarks: e.remarks,
+      projectId: e.orgProjectId || "", location: e.location, remarks: e.remarks,
       items: (e.items || []).map(it => ({
         name: it.name, qty: String(it.qty), unit: it.unit || "", rate: it.rate ? String(it.rate) : "", amount: String(it.amount),
       })),
@@ -375,13 +382,14 @@ export default function PettyCashStaff() {
   const LOG_FIELDS = {
     entryType: "Type", entryDate: "Date", amount: "Amount", personId: "Person", fromPersonId: "Given By",
     particular: "Expense", category: "Category", proofType: "Bill Type", paymentMode: "Payment Mode",
-    project: "Project", location: "Location", remarks: "Remarks", items: "Items",
+    projectId: "Project", location: "Location", remarks: "Remarks", items: "Items",
   };
   const displayValue = (key, value) => {
     if (key === "personId" || key === "fromPersonId") return personName(value);
     if (key === "entryType") return labelOf(ENTRY_TYPES, value);
     if (key === "proofType") return labelOf(PROOF_TYPES, value);
     if (key === "paymentMode") return labelOf(PAYMENT_MODES, value);
+    if (key === "projectId") return projectName(value);
     if (key === "items") return (value || []).map(it => `${String(it.name).trim()} ${Number(it.qty)}${it.unit ? ` ${it.unit}` : ""} = ${Number(it.amount)}`).join(", ");
     return String(value ?? "").trim();
   };
@@ -400,6 +408,7 @@ export default function PettyCashStaff() {
   const handleSave = async () => {
     const f = form;
     if (!f.entryDate) return showToast("Date is required", "error");
+    if (!f.projectId) return showToast("Project is required", "error");
     const items = f.entryType === "expense" ? f.items.filter(it => !isBlankItem(it)) : [];
     for (let i = 0; i < items.length; i++) {
       if (!String(items[i].name).trim()) return showToast(`Item ${i + 1}: name is required`, "error");
@@ -425,6 +434,7 @@ export default function PettyCashStaff() {
     try {
       const fd = new FormData();
       Object.entries(f).forEach(([k, v]) => k !== "items" && fd.append(k, v ?? ""));
+      fd.append("companyId", scope.company.id);
       fd.append("items", JSON.stringify(items.map(it => ({ ...it, name: String(it.name).trim(), unit: String(it.unit).trim() }))));
       if (voucher?.dirty) fd.append("voucherData", voucher.data ? JSON.stringify(voucher.data) : "");
       fd.append("createdByName", currentUser().name || "");
@@ -441,7 +451,7 @@ export default function PettyCashStaff() {
         : await api.post("/api/petty-cash/entries", fd);
 
       if (editOriginal) {
-        const changes = diff({ ...editOriginal, amount: String(editOriginal.amount) }, { ...f, items });
+        const changes = diff({ ...editOriginal, amount: String(editOriginal.amount), projectId: editOriginal.orgProjectId }, { ...f, items });
         logAudit("petty_cash_entry", editOriginal.id, entryLabel(f), "updated", Object.keys(changes).length ? changes : null);
       } else if (data.entry?.id) {
         logAudit("petty_cash_entry", data.entry.id, entryLabel(f), "created", {
@@ -449,10 +459,7 @@ export default function PettyCashStaff() {
         });
       }
 
-      if (f.entryType === "expense") {
-        writeLocal(LAST_PROJECT_KEY, f.project);
-        writeLocal(LAST_LOCATION_KEY, f.location);
-      }
+      if (f.entryType === "expense") writeLocal(LAST_LOCATION_KEY, f.location);
       showToast(editOriginal ? "Entry updated" : "Entry added");
       closeForm();
       fetchEntries();
@@ -489,6 +496,10 @@ export default function PettyCashStaff() {
 
   const handleBulkFile = async (file) => {
     if (!file) return;
+    if (!scope.project) {
+      if (bulkInputRef.current) bulkInputRef.current.value = "";
+      return setBulkResult({ ok: false, message: "Select a project at the top first — uploaded rows are saved under that project." });
+    }
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
       const ws = wb.Sheets["Entries"] || wb.Sheets[wb.SheetNames[0]];
@@ -515,7 +526,7 @@ export default function PettyCashStaff() {
             category: CATEGORIES.find(c => c.toLowerCase() === String(r["Category"] || "").trim().toLowerCase()) || String(r["Category"] || "").trim(),
             proofType: byLabel(PROOF_TYPES, r["Bill Type"]),
             paymentMode: byLabel(PAYMENT_MODES, r["Payment Mode"]),
-            project: r["Project"], location: r["Location"], remarks: r["Remarks"],
+            location: r["Location"], remarks: r["Remarks"],
           };
         });
       if (!rows.length) return showToast("The file has no rows", "error");
@@ -527,7 +538,9 @@ export default function PettyCashStaff() {
       });
       if (localErrors.length) return setBulkResult({ ok: false, message: "Fix these rows and upload again", details: localErrors.slice(0, 50) });
 
-      const { data } = await api.post("/api/petty-cash/entries/bulk", { rows, createdByName: currentUser().name || "" });
+      const { data } = await api.post("/api/petty-cash/entries/bulk", {
+        rows, createdByName: currentUser().name || "", companyId: scope.company.id, projectId: scope.project.id,
+      });
       setBulkResult({ ok: true, message: `${data.inserted} entries imported${data.newPeople ? `, ${data.newPeople} new people added` : ""}.` });
       fetchEntries();
       fetchPeople();
@@ -547,6 +560,7 @@ export default function PettyCashStaff() {
       Expense: e.entryType === "expense" ? e.particular : e.entryType === "transfer" ? `Given by ${e.fromPersonName}` : "Received from Accounts",
       Amount: e.amount,
       Person: `${e.personName} (${PERSON_ROLE[e.entryType]})`,
+      Project: e.project,
       "Bill Type": labelOf(PROOF_TYPES, e.proofType),
       Payment: labelOf(PAYMENT_MODES, e.paymentMode),
       Remarks: e.remarks,
@@ -818,6 +832,7 @@ export default function PettyCashStaff() {
                           className="block max-w-full truncate text-left hover:text-blue-600 hover:underline">{e.particular}</button>
                         <p className="text-[11px] text-slate-400 truncate">
                           {e.category}
+                          {!scope.project && e.project && <span className="ml-1.5 text-slate-500">· {e.project}</span>}
                           {e.items?.length > 0 && <span className="ml-1.5 px-1.5 py-px rounded bg-slate-100 text-slate-600 font-medium">{e.items.length} item{e.items.length > 1 ? "s" : ""}</span>}
                         </p>
                       </td>
@@ -884,6 +899,13 @@ export default function PettyCashStaff() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Field label="Project" required wide>
+                  <Select value={form.projectId} onChange={set("projectId")}>
+                    <option value="">Select project ({scope.company.code || scope.company.name})</option>
+                    {scope.projects.map(p => <option key={p.id} value={p.id}>{p.code ? `${p.name} (${p.code})` : p.name}</option>)}
+                  </Select>
+                  {scope.projects.length === 0 && <p className="mt-1 text-xs text-amber-700">This entity has no projects yet — add one under Organisation → Projects.</p>}
+                </Field>
                 <Field label="Date" required><input type="date" value={form.entryDate} onChange={set("entryDate")} className={inp} /></Field>
                 <Field label="Amount" required>
                   {form.entryType === "expense" && form.items.length > 0 ? (
@@ -913,16 +935,6 @@ export default function PettyCashStaff() {
                       <Select value={form.paymentMode} onChange={set("paymentMode")}>
                         <option value="">Select payment mode</option>
                         {PAYMENT_MODES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </Select>
-                    </Field>
-                    <Field label="Project">
-                      <Select value={form.project} onChange={set("project")}>
-                        <option value="">—</option>
-                        {form.project && !projects.some(p => (p.projectName || p.projectCode) === form.project) && <option value={form.project}>{form.project}</option>}
-                        {projects.map(p => {
-                          const value = p.projectName || p.projectCode;
-                          return <option key={p.id} value={value}>{p.projectCode && p.projectName ? `${p.projectName} (${p.projectCode})` : value}</option>;
-                        })}
                       </Select>
                     </Field>
                     <Field label="Location">
@@ -1024,6 +1036,8 @@ export default function PettyCashStaff() {
       {voucherOpen && formOpen && (
         <VoucherModal
           entry={form}
+          company={scope.company}
+          project={scope.projects.find(p => p.id === form.projectId) || null}
           initial={voucherEdit}
           onClose={() => { setVoucherOpen(false); setVoucherEdit(null); }}
           onDone={(file, total, details) => {

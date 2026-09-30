@@ -17,7 +17,8 @@ const PIN_LEFT  = "sticky left-0 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]";
 const PIN_RIGHT = "sticky right-0 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.12)]";
 const pinFor = (i) => (i === 0 ? PIN_LEFT : i === HEADERS.length - 1 ? PIN_RIGHT : "");
 
-export default function PettyCashAccounts() {
+// scope = { company, project (null = all), projects } from the Petty Cash header.
+export default function PettyCashAccounts({ scope }) {
   const { canExport } = useModulePermissions("petty_cash_accounts");
   const [from, setFrom]       = useState(monthStart());
   const [to, setTo]           = useState(todayStr());
@@ -34,7 +35,7 @@ export default function PettyCashAccounts() {
     setLoading(true);
     setError("");
     setPage(1);
-    api.get("/api/petty-cash/accounts", { params: { from, to } })
+    api.get("/api/petty-cash/accounts", { params: { from, to, company_id: scope.company.id, project_id: scope.project?.id || undefined } })
       .then(({ data }) => { if (alive) setData(data); })
       .catch(err => { if (alive) { setError(apiError(err, "Failed to load")); setData(null); } })
       .finally(() => { if (alive) setLoading(false); });
@@ -65,8 +66,8 @@ export default function PettyCashAccounts() {
     const totalCol = catStart + CATEGORIES.length;
 
     const aoa = [
-      ["Petty Cash — Accounts Statement"],
-      [`Period: ${fmtDate(from)} to ${fmtDate(to)}`],
+      [`Petty Cash — Accounts Statement · ${scope.company.name}`],
+      [`Project: ${scope.project?.name || "All projects"}   |   Period: ${fmtDate(from)} to ${fmtDate(to)}`],
       [],
       ["Opening Balance", summary.opening],
       ["Received from Accounts", summary.received],
@@ -112,7 +113,8 @@ export default function PettyCashAccounts() {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Petty Cash");
-    XLSX.writeFile(wb, `petty_cash_${from}_to_${to}.xlsx`);
+    const tag = [scope.company.code, scope.project?.name].filter(Boolean).join("_").replace(/[^a-zA-Z0-9_-]+/g, "_");
+    XLSX.writeFile(wb, `petty_cash_${tag ? `${tag}_` : ""}${from}_to_${to}.xlsx`);
   };
 
   const s = data?.summary;
