@@ -619,7 +619,7 @@ export default function PettyCashStaff({ scope }) {
         ))}
       </div>
 
-      <div className="shrink-0 flex flex-wrap items-end justify-between gap-3 border-b border-slate-200">
+      <div className="relative z-30 shrink-0 flex flex-wrap items-end justify-between gap-3 border-b border-slate-200">
         <div className="flex items-center gap-6">
           {STAFF_TABS.map(t => {
             const Icon = t.icon;

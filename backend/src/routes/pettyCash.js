@@ -302,7 +302,7 @@ router.get("/scopes", requireAnyView, async (_req, res) => {
   try {
     const [companiesRes, projectsRes] = await Promise.all([
       supabase.schema("organisation").from("companies")
-        .select("id, company_code, company_name, address, state, pincode, status").order("company_name"),
+        .select("id, company_code, company_name, gstin, address, state, pincode, status").order("company_name"),
       supabase.schema("organisation").from("org_projects")
         .select("id, company_id, project_code, project_name, address, city, state, status").order("project_name"),
     ]);
@@ -310,7 +310,7 @@ router.get("/scopes", requireAnyView, async (_req, res) => {
     if (projectsRes.error) throw projectsRes.error;
     res.json({
       companies: (companiesRes.data || []).filter(c => String(c.status || "active").toLowerCase() === "active").map(c => ({
-        id: c.id, code: c.company_code || "", name: c.company_name || "",
+        id: c.id, code: c.company_code || "", name: c.company_name || "", gstin: c.gstin || "",
         address: c.address || "", state: c.state || "", pincode: c.pincode || "",
       })),
       projects: (projectsRes.data || []).map(p => ({
