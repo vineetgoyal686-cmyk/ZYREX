@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
   ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye, FilePlus2, Package,
-  User, Tag, CreditCard, Store, Check, ArrowLeft, Briefcase, MapPin, CalendarDays, FileText,
+  User, Tag, CreditCard, Store, Check, ArrowLeft, ArrowDownLeft, ArrowUpRight, Wallet, Briefcase, MapPin, CalendarDays, FileText,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -928,17 +928,37 @@ export default function PettyCashStaff({ scope }) {
 
       {!formOpen && (<>
       {/* Summary */}
-      <div className="shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {[
-          { label: "Total Received (from Accounts)", value: balances.totalReceived, color: "text-emerald-700" },
-          { label: "Total Expense", value: balances.totalExpense, color: "text-rose-700" },
-          { label: "Balance", value: balances.totalBalance, color: balances.totalBalance < 0 ? "text-rose-700" : "text-slate-900" },
-        ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl border border-slate-200 px-4 py-2.5 flex items-center justify-between gap-3">
-            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{c.label}</p>
-            <p className={`text-xl font-extrabold tabular-nums whitespace-nowrap ${c.color}`}>₹ {fmtAmount(c.value)}</p>
-          </div>
-        ))}
+      {/* One strip, three stats; Balance also shows how much of the money received is spent. */}
+      <div className="shrink-0 grid grid-cols-1 sm:grid-cols-3 bg-white rounded-xl border border-slate-200 divide-y sm:divide-y-0 sm:divide-x divide-slate-200">
+        {(() => {
+          const spentPct = balances.totalReceived > 0 ? Math.min(100, Math.round((balances.totalExpense / balances.totalReceived) * 100)) : 0;
+          return [
+            { label: "Received from Accounts", value: balances.totalReceived, icon: ArrowDownLeft, tile: "bg-emerald-50 text-emerald-600", color: "text-slate-900" },
+            { label: "Total Expense", value: balances.totalExpense, icon: ArrowUpRight, tile: "bg-rose-50 text-rose-600", color: "text-slate-900" },
+            {
+              label: "Balance", value: balances.totalBalance, icon: Wallet,
+              tile: balances.totalBalance < 0 ? "bg-rose-50 text-rose-600" : "bg-sky-50 text-sky-600",
+              color: balances.totalBalance < 0 ? "text-rose-700" : "text-slate-900",
+              extra: balances.totalReceived > 0 && (
+                <div className="ml-auto w-28 hidden md:block">
+                  <div className="flex justify-between text-[11px] text-slate-500 mb-1"><span>Spent</span><span className="font-semibold text-slate-700">{spentPct}%</span></div>
+                  <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    <div className={`h-full rounded-full ${spentPct >= 90 ? "bg-rose-500" : spentPct >= 70 ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${spentPct}%` }} />
+                  </div>
+                </div>
+              ),
+            },
+          ].map(c => (
+            <div key={c.label} className="flex items-center gap-3 px-4 py-2.5 min-w-0">
+              <span className={`h-9 w-9 shrink-0 rounded-lg inline-flex items-center justify-center ${c.tile}`}><c.icon size={17} /></span>
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide truncate">{c.label}</p>
+                <p className={`text-lg font-bold leading-tight tabular-nums whitespace-nowrap ${c.color}`}>₹ {fmtAmount(c.value)}</p>
+              </div>
+              {c.extra}
+            </div>
+          ));
+        })()}
       </div>
 
       <div className="relative z-30 shrink-0 flex flex-wrap items-end justify-between gap-3 border-b border-slate-200">
