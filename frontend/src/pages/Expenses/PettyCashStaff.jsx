@@ -918,7 +918,7 @@ export default function PettyCashStaff({ scope }) {
   );
 
   return (
-    <div className="p-4 sm:p-6 space-y-5 md:flex-1 md:min-h-0 md:flex md:flex-col md:space-y-0 md:gap-5">
+    <div className="p-3 sm:px-6 sm:py-4 space-y-3 md:flex-1 md:min-h-0 md:flex md:flex-col md:space-y-0 md:gap-3">
       {toast && (
         <div className={`fixed top-5 right-5 z-[60] px-4 py-3 rounded-xl text-sm font-medium shadow-lg
           ${toast.type === "error" ? "bg-red-50 text-red-700 border border-red-200" : "bg-emerald-50 text-emerald-700 border border-emerald-200"}`}>
@@ -934,9 +934,9 @@ export default function PettyCashStaff({ scope }) {
           { label: "Total Expense", value: balances.totalExpense, color: "text-rose-700" },
           { label: "Balance", value: balances.totalBalance, color: balances.totalBalance < 0 ? "text-rose-700" : "text-slate-900" },
         ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl border border-slate-200 px-5 py-4">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{c.label}</p>
-            <p className={`text-2xl font-extrabold mt-1 tabular-nums ${c.color}`}>₹ {fmtAmount(c.value)}</p>
+          <div key={c.label} className="bg-white rounded-xl border border-slate-200 px-4 py-2.5 flex items-center justify-between gap-3">
+            <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{c.label}</p>
+            <p className={`text-xl font-extrabold tabular-nums whitespace-nowrap ${c.color}`}>₹ {fmtAmount(c.value)}</p>
           </div>
         ))}
       </div>
