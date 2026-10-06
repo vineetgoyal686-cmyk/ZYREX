@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
   ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye, FilePlus2, Package,
-  User, Tag, CreditCard, Store, Check, Briefcase, MapPin, CalendarDays, FileText,
+  User, Tag, CreditCard, Store, Check, ArrowLeft, Briefcase, MapPin, CalendarDays, FileText,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -44,13 +44,25 @@ const isBlankItem = (it) => !String(it.name).trim() && !it.qty && !it.rate && !i
 
 const inp = "w-full h-11 border border-slate-300 rounded-lg px-3 text-sm outline-none bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-500 transition-colors";
 
-const Field = ({ label, required, children, wide }) => (
-  <div className={wide ? "sm:col-span-2" : ""}>
+const Field = ({ label, required, children, wide, className = "" }) => (
+  <div className={`${wide ? "sm:col-span-2" : ""} ${className}`}>
     <label className="block text-[13px] font-semibold text-slate-800 mb-1.5">
       {label} {required && <span className="text-red-500">*</span>}
     </label>
     {children}
   </div>
+);
+
+// A titled white section on the entry form page.
+const FormCard = ({ title, icon: Icon, hint, children }) => (
+  <section className="bg-white rounded-xl border border-slate-200">
+    <div className="flex items-center gap-2 px-5 py-3 border-b border-slate-100">
+      {Icon && <Icon size={15} className="text-slate-400" />}
+      <h3 className="text-sm font-bold text-slate-800">{title}</h3>
+      {hint && <span className="text-xs text-slate-400 truncate">· {hint}</span>}
+    </div>
+    <div className="p-5">{children}</div>
+  </section>
 );
 
 const Select = ({ value, onChange, children, disabled }) => (
@@ -836,6 +848,7 @@ export default function PettyCashStaff({ scope }) {
         </div>
       )}
 
+      {!formOpen && (<>
       {/* Summary */}
       <div className="shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
@@ -1140,95 +1153,115 @@ export default function PettyCashStaff({ scope }) {
       </>
       )}
 
-      {/* Add / edit form */}
+      </>)}
+
+      {/* Add / edit form — opens as its own page in place of the list */}
       {formOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full h-full flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
-              <h2 className="text-base font-bold text-slate-900">{editOriginal ? "Edit Entry" : "Add Entry"}</h2>
-              <button onClick={closeForm} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
-            </div>
-
-            <div className="flex-1 px-6 py-5 overflow-y-auto space-y-5">
-              <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
-                {ENTRY_TYPES.map(t => (
-                  <button key={t.value} type="button" onClick={() => setForm(f => ({ ...f, entryType: t.value }))}
-                    className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${form.entryType === t.value ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-                    {t.label}
-                  </button>
-                ))}
+        <div className="md:flex-1 md:min-h-0 flex flex-col bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b border-slate-200">
+            <div className="flex items-center gap-3 min-w-0">
+              <button onClick={closeForm} title="Back to Petty Cash"
+                className="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
+                <ArrowLeft size={16} />
+              </button>
+              <div className="min-w-0">
+                <h2 className="text-base font-bold text-slate-900 truncate">
+                  {editOriginal ? "Edit" : "New"} {labelOf(ENTRY_TYPES, form.entryType)}
+                </h2>
+                <p className="text-xs text-slate-500 truncate">Petty Cash · {scope.company.name}{projectName(form.projectId) ? ` · ${projectName(form.projectId)}` : ""}</p>
               </div>
+            </div>
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+              {ENTRY_TYPES.map(t => (
+                <button key={t.value} type="button" onClick={() => setForm(f => ({ ...f, entryType: t.value }))}
+                  className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${form.entryType === t.value ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <Field label="Project" required wide>
-                  <Select value={form.projectId} onChange={set("projectId")}>
-                    <option value="">Select project ({scope.company.code || scope.company.name})</option>
-                    {scope.projects.map(p => <option key={p.id} value={p.id}>{p.code ? `${p.name} (${p.code})` : p.name}</option>)}
-                  </Select>
-                  {scope.projects.length === 0 && <p className="mt-1 text-xs text-amber-700">This entity has no projects yet — add one under Organisation → Projects.</p>}
-                </Field>
-                <Field label="Date" required><input type="date" value={form.entryDate} onChange={set("entryDate")} className={inp} /></Field>
-                <Field label="Amount" required>
-                  {form.entryType === "expense" && form.items.length > 0 ? (
-                    <input readOnly value={form.amount} title="Total of the items below" className={`${inp} bg-slate-50 font-semibold`} />
-                  ) : (
-                    <input type="number" min="0" step="0.01" value={form.amount} onChange={set("amount")} placeholder="0.00" className={inp} />
-                  )}
-                </Field>
+          <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50/60">
+            <div className="max-w-[1400px] mx-auto p-5 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
+              <div className="space-y-5 min-w-0">
+                <FormCard title="Entry details" icon={FileText}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <Field label="Project" required>
+                      <Select value={form.projectId} onChange={set("projectId")}>
+                        <option value="">Select project ({scope.company.code || scope.company.name})</option>
+                        {scope.projects.map(p => <option key={p.id} value={p.id}>{p.code ? `${p.name} (${p.code})` : p.name}</option>)}
+                      </Select>
+                      {scope.projects.length === 0 && <p className="mt-1 text-xs text-amber-700">This entity has no projects yet — add one under Organisation → Projects.</p>}
+                    </Field>
+                    <Field label="Date" required><input type="date" value={form.entryDate} onChange={set("entryDate")} className={inp} /></Field>
+                    <Field label="Amount" required>
+                      {form.entryType === "expense" && form.items.length > 0 ? (
+                        <input readOnly value={form.amount} title="Total of the items below" className={`${inp} bg-slate-50 font-semibold`} />
+                      ) : (
+                        <input type="number" min="0" step="0.01" value={form.amount} onChange={set("amount")} placeholder="0.00" className={inp} />
+                      )}
+                    </Field>
+
+                    {form.entryType === "expense" && (
+                      <>
+                        <Field label="Expense" required wide><input value={form.particular} onChange={set("particular")} placeholder="e.g. Food charge (Zomato)" className={inp} /></Field>
+                        <Field label="Vendor Name"><NameCombo value={form.vendorName} onChange={v => setForm(f => ({ ...f, vendorName: v }))} options={vendors}
+                          noun="vendor" placeholder="Search or add a vendor" inputClass={inp} withIcon /></Field>
+                        <Field label="Paid By" required>{personSelect("personId", "Select person")}</Field>
+                        <Field label="Category" required>
+                          <Select value={form.category} onChange={set("category")}>
+                            <option value="">Select category</option>
+                            {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                          </Select>
+                        </Field>
+                        <Field label="Location">
+                          <input list="petty-cash-locations" value={form.location} onChange={set("location")} placeholder="Type or pick" className={inp} />
+                          <datalist id="petty-cash-locations">{locations.map(l => <option key={l} value={l} />)}</datalist>
+                        </Field>
+                        <Field label="Bill Type" required>
+                          <Select value={form.proofType} onChange={set("proofType")}>
+                            <option value="">Select bill type</option>
+                            {PROOF_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </Select>
+                        </Field>
+                        <Field label="Payment" required>
+                          <Select value={form.paymentMode} onChange={set("paymentMode")}>
+                            <option value="">Select payment mode</option>
+                            {PAYMENT_MODES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                          </Select>
+                        </Field>
+                      </>
+                    )}
+
+                    {form.entryType === "received" && (
+                      <Field label="Received By" required wide>{personSelect("personId", "Who got the money")}</Field>
+                    )}
+
+                    {form.entryType === "transfer" && (
+                      <>
+                        <Field label="Given By" required>{personSelect("fromPersonId", "Who gave")}</Field>
+                        <Field label="Given To" required>{personSelect("personId", "Who got")}</Field>
+                      </>
+                    )}
+                  </div>
+                </FormCard>
 
                 {form.entryType === "expense" && (
-                  <>
-                    <Field label="Expense" required wide><input value={form.particular} onChange={set("particular")} placeholder="e.g. Food charge (Zomato)" className={inp} /></Field>
-                    <Field label="Vendor Name" wide><NameCombo value={form.vendorName} onChange={v => setForm(f => ({ ...f, vendorName: v }))} options={vendors}
-                      noun="vendor" placeholder="Search or add a vendor (optional)" inputClass={inp} withIcon /></Field>
-                    <Field label="Paid By" required>{personSelect("personId", "Select person")}</Field>
-                    <Field label="Category" required>
-                      <Select value={form.category} onChange={set("category")}>
-                        <option value="">Select category</option>
-                        {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                      </Select>
-                    </Field>
-                    <Field label="Bill Type" required>
-                      <Select value={form.proofType} onChange={set("proofType")}>
-                        <option value="">Select bill type</option>
-                        {PROOF_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </Select>
-                    </Field>
-                    <Field label="Payment" required>
-                      <Select value={form.paymentMode} onChange={set("paymentMode")}>
-                        <option value="">Select payment mode</option>
-                        {PAYMENT_MODES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                      </Select>
-                    </Field>
-                    <Field label="Location">
-                      <input list="petty-cash-locations" value={form.location} onChange={set("location")} placeholder="Type or pick" className={inp} />
-                      <datalist id="petty-cash-locations">{locations.map(l => <option key={l} value={l} />)}</datalist>
-                    </Field>
-                    <Field label="Items (optional)" wide>
-                      <ItemsEditor items={form.items} itemNames={itemNames} onChange={updateItem}
-                        onAdd={() => setItems(items => [...items, emptyItem()])}
-                        onRemove={(idx) => setItems(items => items.filter((_, i) => i !== idx))} />
-                    </Field>
-                  </>
+                  <FormCard title="Items" icon={Package} hint="Optional — when added, the amount becomes their total">
+                    <ItemsEditor items={form.items} itemNames={itemNames} onChange={updateItem}
+                      onAdd={() => setItems(items => [...items, emptyItem()])}
+                      onRemove={(idx) => setItems(items => items.filter((_, i) => i !== idx))} />
+                  </FormCard>
                 )}
 
-                {form.entryType === "received" && (
-                  <Field label="Received By" required wide>{personSelect("personId", "Who got the money")}</Field>
-                )}
+                <FormCard title="Remarks" icon={Pencil}>
+                  <textarea value={form.remarks} onChange={set("remarks")} rows={3} placeholder="Anything worth noting (optional)" className={`${inp} h-auto py-2.5 resize-none`} />
+                </FormCard>
+              </div>
 
-                {form.entryType === "transfer" && (
-                  <>
-                    <Field label="Given By" required>{personSelect("fromPersonId", "Who gave")}</Field>
-                    <Field label="Given To" required>{personSelect("personId", "Who got")}</Field>
-                  </>
-                )}
-
-                <Field label="Remarks" wide>
-                  <textarea value={form.remarks} onChange={set("remarks")} rows={2} className={`${inp} h-auto py-2.5 resize-none`} />
-                </Field>
-
-                <Field label="Attachments" wide>
-                  <div className={`grid gap-3 ${docSectionsFor(form.entryType).length > 1 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
+              <div className="lg:sticky lg:top-0">
+                <FormCard title="Attachments" icon={Paperclip}>
+                  <div className={"grid gap-3 grid-cols-1"}>
                     {docSectionsFor(form.entryType).map(s => (
                       <div key={s.key} className="rounded-lg border border-slate-200 p-3">
                         <div className="flex items-center justify-between mb-2">
@@ -1270,13 +1303,16 @@ export default function PettyCashStaff({ scope }) {
                       </div>
                     ))}
                   </div>
-                </Field>
+                </FormCard>
               </div>
             </div>
+          </div>
 
-            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0">
-              <button onClick={closeForm} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
-              <button onClick={handleSave} disabled={saving} className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-60 flex items-center gap-2">
+          <div className="shrink-0 flex items-center justify-between gap-3 px-5 py-3 border-t border-slate-200 bg-white">
+            <p className="text-sm text-slate-500">Amount <b className="ml-1 text-lg tabular-nums text-slate-900">₹ {fmtAmount(form.amount)}</b></p>
+            <div className="flex items-center gap-2">
+              <button onClick={closeForm} className="h-10 px-4 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button onClick={handleSave} disabled={saving} className="h-10 px-6 rounded-lg text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-60 flex items-center gap-2">
                 {saving && <Loader2 size={14} className="animate-spin" />} {editOriginal ? "Update" : "Save"}
               </button>
             </div>
@@ -1705,7 +1741,7 @@ function ItemsEditor({ items, itemNames, onChange, onAdd, onRemove }) {
   const cell = "w-full h-9 border border-slate-300 rounded-md px-2 text-sm outline-none bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-500";
   const cols = "grid grid-cols-[minmax(220px,1fr)_90px_100px_110px_120px_28px] gap-2 items-center";
   return (
-    <div className="rounded-lg border border-slate-200 p-3">
+    <div>
       {items.length === 0 ? (
         <p className="text-xs text-slate-400 mb-2">Add items to record what was bought — the amount becomes their total.</p>
       ) : (
