@@ -189,6 +189,9 @@ const STAFF_TABS = [
 // Which entry types each list tab shows.
 const TAB_TYPES = { entries: ["expense"], movement: ["received", "transfer"] };
 
+// Row action buttons: small outlined squares that take a colour on hover.
+const ACTION_BTN = "h-[30px] w-[30px] shrink-0 inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors";
+
 const TYPE_BADGE = {
   expense:  "bg-rose-50 text-rose-700 border-rose-200",
   received: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -415,8 +418,12 @@ export default function PettyCashStaff({ scope }) {
   // inset shadows instead.
   const COL_W = {
     Date: 120, Vendor: 200, Expense: 280, Amount: 120, "Paid By": 160, "Bill Type": 130, Payment: 120,
-    Type: 130, From: 180, To: 180, Doc: 70, Action: 150,
+    Type: 130, From: 180, To: 180, Doc: 70,
   };
+  // Expenses open from the name, so only Received & Given needs a View button.
+  const showViewBtn = subTab !== "entries";
+  const actionCount = [showViewBtn, canViewLog, canEdit, canDelete].filter(Boolean).length;
+  COL_W.Action = Math.max(70, actionCount * 30 + (actionCount - 1) * 6 + 26);
   const tableMinW = columns.reduce((s, h) => s + (COL_W[h] || 220), 0);
   const LINE   = "shadow-[inset_-1px_0_0_#e2e8f0]";
   const EDGE_L = "shadow-[inset_-1px_0_0_#e2e8f0,6px_0_8px_-6px_rgba(15,23,42,0.25)]";
@@ -424,10 +431,11 @@ export default function PettyCashStaff({ scope }) {
   const pinCls = (h) => ({
     Date:   `sticky left-0 ${subTab === "entries" ? LINE : EDGE_L}`,
     Vendor: `sticky left-[120px] ${EDGE_L}`,
-    Doc:    `sticky right-[150px] ${EDGE_R}`,
+    Doc:    `sticky ${EDGE_R}`,
     Action: "sticky right-0",
   })[h] || "";
   const pinTd = (h) => `${pinCls(h)} z-[5] bg-white group-hover:bg-slate-50`;
+  const pinStyle = (h) => (h === "Doc" ? { right: COL_W.Action } : undefined);
 
   // One pager shared by all three tabs (switching tabs resets to page 1).
   const listTotal = subTab === "people" ? balances.list.length : subTab === "items" ? itemSummary.length : filtered.length;
@@ -1050,7 +1058,7 @@ export default function PettyCashStaff({ scope }) {
             <thead className="text-slate-600">
               <tr>
                 {columns.map((h, i) => (
-                  <th key={i} style={COL_W[h] ? { width: COL_W[h] } : undefined}
+                  <th key={i} style={{ ...pinStyle(h), ...(COL_W[h] && { width: COL_W[h] }) }}
                     className={`sticky top-0 ${pinCls(h) ? `${pinCls(h)} z-20` : "z-10"} bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : h === "Doc" ? "text-center !px-2" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
@@ -1091,7 +1099,7 @@ export default function PettyCashStaff({ scope }) {
                     </>
                   )}
                   <td className="px-4 py-2.5 text-slate-500 truncate" title={e.remarks}>{e.remarks || "—"}</td>
-                  <td className={`${pinTd("Doc")} px-2 py-2.5 whitespace-nowrap text-center`}>
+                  <td style={pinStyle("Doc")} className={`${pinTd("Doc")} px-2 py-2.5 whitespace-nowrap text-center`}>
                     {docCount(e.documents) > 0 ? (
                       <button onClick={() => setDocsEntry(e)} title="View attachments"
                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-blue-600 hover:bg-blue-50 font-medium">
@@ -1099,12 +1107,12 @@ export default function PettyCashStaff({ scope }) {
                       </button>
                     ) : <span className="text-slate-400">—</span>}
                   </td>
-                  <td className={`${pinTd("Action")} px-4 py-2.5`}>
-                    <div className="flex items-center gap-0.5">
-                      <button onClick={() => setViewEntry(e)} title="View" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100"><Eye size={14} /></button>
-                      {canViewLog && <button onClick={() => setLogEntry(e)} title="Activity log" className="p-1.5 rounded-lg text-slate-300 hover:text-cyan-600 hover:bg-cyan-50"><Clock size={14} /></button>}
-                      {canEdit && <button onClick={() => openEdit(e)} title="Edit" className="p-1.5 rounded-lg text-slate-300 hover:text-blue-600 hover:bg-blue-50"><Pencil size={14} /></button>}
-                      {canDelete && <button onClick={() => setConfirmDelete(e)} title="Delete" className="p-1.5 rounded-lg text-slate-300 hover:text-red-600 hover:bg-red-50"><Trash2 size={14} /></button>}
+                  <td className={`${pinTd("Action")} px-3 py-2.5`}>
+                    <div className="flex items-center gap-1.5">
+                      {showViewBtn && <button onClick={() => setViewEntry(e)} title="View" className={`${ACTION_BTN} hover:text-slate-900 hover:border-slate-300 hover:bg-slate-50`}><Eye size={14} /></button>}
+                      {canViewLog && <button onClick={() => setLogEntry(e)} title="Activity log" className={`${ACTION_BTN} hover:text-cyan-700 hover:border-cyan-200 hover:bg-cyan-50`}><Clock size={14} /></button>}
+                      {canEdit && <button onClick={() => openEdit(e)} title="Edit" className={`${ACTION_BTN} hover:text-blue-700 hover:border-blue-200 hover:bg-blue-50`}><Pencil size={14} /></button>}
+                      {canDelete && <button onClick={() => setConfirmDelete(e)} title="Delete" className={`${ACTION_BTN} hover:text-red-600 hover:border-red-200 hover:bg-red-50`}><Trash2 size={14} /></button>}
                     </div>
                   </td>
                 </tr>
