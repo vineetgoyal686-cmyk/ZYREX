@@ -915,7 +915,7 @@ export default function PettyCashStaff({ scope }) {
                           {e.items?.length > 0 && <span className="ml-1.5 px-1.5 py-px rounded bg-slate-100 text-slate-600 font-medium">{e.items.length} item{e.items.length > 1 ? "s" : ""}</span>}
                         </p>
                       </td>
-                      <td className="px-4 py-2.5 text-slate-700 max-w-[180px] truncate" title={e.vendorName}>{e.vendorName || <span className="text-slate-400">—</span>}</td>
+                      <td className="px-4 py-2.5 text-slate-700 min-w-[200px] whitespace-nowrap" title={e.vendorName}>{e.vendorName || <span className="text-slate-400">—</span>}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold whitespace-nowrap text-rose-700">{fmtAmount(e.amount)}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{e.personName}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{labelOf(PROOF_TYPES, e.proofType)}</td>
