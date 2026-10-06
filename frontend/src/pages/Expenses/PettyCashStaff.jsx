@@ -407,20 +407,30 @@ export default function PettyCashStaff({ scope }) {
   const itemNames = useMemo(() => [...new Set(entries.flatMap(e => (e.items || []).map(it => it.name.trim())))].sort(), [entries]);
 
   const columns = subTab === "entries"
-    ? ["Date", "Vendor", "Expense", "Amount", "Paid By", "Bill Type", "Payment", "Remarks", "Attachments", "Action"]
-    : ["Date", "Type", "From", "To", "Amount", "Remarks", "Attachments", "Action"];
+    ? ["Date", "Vendor", "Expense", "Amount", "Paid By", "Bill Type", "Payment", "Remarks", "Doc", "Action"]
+    : ["Date", "Type", "From", "To", "Amount", "Remarks", "Doc", "Action"];
 
   // Date (+ Vendor on Expenses) stay pinned on the left and Attachments +
   // Action on the right; the columns between them scroll sideways.
+  // The table uses a fixed layout so these widths are exact and the sticky
+  // offsets line up; Remarks has no width and takes whatever is left.
+  // Sticky cells lose the collapsed borders, so their lines are drawn with
+  // inset shadows instead.
+  const COL_W = {
+    Date: 120, Vendor: 200, Expense: 280, Amount: 120, "Paid By": 160, "Bill Type": 130, Payment: 120,
+    Type: 130, From: 180, To: 180, Doc: 70, Action: 150,
+  };
+  const tableMinW = columns.reduce((s, h) => s + (COL_W[h] || 220), 0);
+  const LINE   = "shadow-[inset_-1px_0_0_#e2e8f0]";
   const EDGE_L = "shadow-[inset_-1px_0_0_#e2e8f0,6px_0_8px_-6px_rgba(15,23,42,0.25)]";
-  const EDGE_R = "shadow-[inset_1px_0_0_#e2e8f0,-6px_0_8px_-6px_rgba(15,23,42,0.25)]";
+  const EDGE_R = "shadow-[inset_1px_0_0_#e2e8f0,inset_-1px_0_0_#e2e8f0,-6px_0_8px_-6px_rgba(15,23,42,0.25)]";
   const pinCls = (h) => ({
-    Date:        `sticky left-0 w-[130px] min-w-[130px] ${subTab === "entries" ? "" : EDGE_L}`,
-    Vendor:      `sticky left-[130px] w-[220px] min-w-[220px] max-w-[220px] ${EDGE_L}`,
-    Attachments: `sticky right-[150px] w-[130px] min-w-[130px] ${EDGE_R}`,
-    Action:      "sticky right-0 w-[150px] min-w-[150px]",
+    Date:   `sticky left-0 ${subTab === "entries" ? LINE : EDGE_L}`,
+    Vendor: `sticky left-[120px] ${EDGE_L}`,
+    Doc:    `sticky right-[150px] ${EDGE_R}`,
+    Action: "sticky right-0",
   })[h] || "";
-  const pinTd = (h) => `${pinCls(h)} z-10 bg-white group-hover:bg-slate-50`;
+  const pinTd = (h) => `${pinCls(h)} z-[5] bg-white group-hover:bg-slate-50`;
 
   // One pager shared by all three tabs (switching tabs resets to page 1).
   const listTotal = subTab === "people" ? balances.list.length : subTab === "items" ? itemSummary.length : filtered.length;
@@ -949,7 +959,7 @@ export default function PettyCashStaff({ scope }) {
 
       {/* Expenses / Received & Given / Item-wise */}
       {(TAB_TYPES[subTab] || subTab === "items") && (
-      <div className="shrink-0 flex flex-wrap items-center gap-2">
+      <div className="relative z-20 shrink-0 flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} placeholder="Search..."
@@ -1023,14 +1033,15 @@ export default function PettyCashStaff({ scope }) {
       {TAB_TYPES[subTab] && (
       <>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
+      <div className="relative z-0 bg-white rounded-xl border border-slate-200 overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
 
         <div className="overflow-auto md:flex-1 md:min-h-0">
-          <table className={GRID_TABLE}>
+          <table className={`${GRID_TABLE} table-fixed`} style={{ minWidth: tableMinW }}>
             <thead className="text-slate-600">
               <tr>
                 {columns.map((h, i) => (
-                  <th key={i} className={`sticky top-0 ${pinCls(h) ? `${pinCls(h)} z-30` : "z-20"} bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : "text-left"}`}>{h}</th>
+                  <th key={i} style={COL_W[h] ? { width: COL_W[h] } : undefined}
+                    className={`sticky top-0 ${pinCls(h) ? `${pinCls(h)} z-20` : "z-10"} bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : h === "Doc" ? "text-center !px-2" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -1045,7 +1056,7 @@ export default function PettyCashStaff({ scope }) {
                   {subTab === "entries" ? (
                     <>
                       <td className={`${pinTd("Vendor")} px-4 py-2.5 text-slate-700 whitespace-nowrap truncate`} title={e.vendorName}>{e.vendorName || <span className="text-slate-400">—</span>}</td>
-                      <td className="px-4 py-2.5 text-slate-800 max-w-[280px]">
+                      <td className="px-4 py-2.5 text-slate-800 overflow-hidden">
                         <button type="button" onClick={() => setViewEntry(e)} title="View details"
                           className="block max-w-full truncate text-left hover:text-blue-600 hover:underline">{e.particular}</button>
                         <p className="text-[11px] text-slate-400 truncate">
@@ -1054,23 +1065,23 @@ export default function PettyCashStaff({ scope }) {
                           {e.items?.length > 0 && <span className="ml-1.5 px-1.5 py-px rounded bg-slate-100 text-slate-600 font-medium">{e.items.length} item{e.items.length > 1 ? "s" : ""}</span>}
                         </p>
                       </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold whitespace-nowrap text-rose-700">{fmtAmount(e.amount)}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{e.personName}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{labelOf(PROOF_TYPES, e.proofType)}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{labelOf(PAYMENT_MODES, e.paymentMode)}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold truncate text-rose-700">{fmtAmount(e.amount)}</td>
+                      <td className="px-4 py-2.5 truncate text-slate-700" title={e.personName}>{e.personName}</td>
+                      <td className="px-4 py-2.5 truncate text-slate-600">{labelOf(PROOF_TYPES, e.proofType)}</td>
+                      <td className="px-4 py-2.5 truncate text-slate-600">{labelOf(PAYMENT_MODES, e.paymentMode)}</td>
                     </>
                   ) : (
                     <>
                       <td className="px-4 py-2.5 whitespace-nowrap">
                         <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${TYPE_BADGE[e.entryType]}`}>{labelOf(ENTRY_TYPES, e.entryType)}</span>
                       </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{e.entryType === "received" ? "Accounts" : e.fromPersonName}</td>
-                      <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{e.personName}</td>
-                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold whitespace-nowrap text-emerald-700">{fmtAmount(e.amount)}</td>
+                      <td className="px-4 py-2.5 truncate text-slate-700">{e.entryType === "received" ? "Accounts" : e.fromPersonName}</td>
+                      <td className="px-4 py-2.5 truncate text-slate-700">{e.personName}</td>
+                      <td className="px-4 py-2.5 text-right tabular-nums font-semibold truncate text-emerald-700">{fmtAmount(e.amount)}</td>
                     </>
                   )}
-                  <td className="px-4 py-2.5 text-slate-500 max-w-[220px] truncate" title={e.remarks}>{e.remarks || "—"}</td>
-                  <td className={`${pinTd("Attachments")} px-4 py-2.5 whitespace-nowrap`}>
+                  <td className="px-4 py-2.5 text-slate-500 truncate" title={e.remarks}>{e.remarks || "—"}</td>
+                  <td className={`${pinTd("Doc")} px-2 py-2.5 whitespace-nowrap text-center`}>
                     {docCount(e.documents) > 0 ? (
                       <button onClick={() => setDocsEntry(e)} title="View attachments"
                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-blue-600 hover:bg-blue-50 font-medium">
