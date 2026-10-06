@@ -187,8 +187,11 @@ function NameCombo({ value, onChange, options, noun, placeholder, inputClass, wi
   );
 }
 
-// Vendor filter above the table: searchable list with a found count.
-function VendorFilter({ value, onChange, vendors }) {
+// Filter above the table (vendor, item name): searchable list with a found count.
+function ListFilter({ value, onChange, options: vendors, noun, icon }) {
+  const Icon = icon;
+  const nouns = `${noun}s`;
+  const allLabel = `All ${nouns}`;
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useRef(null);
@@ -208,21 +211,21 @@ function VendorFilter({ value, onChange, vendors }) {
     <div ref={ref} className="relative">
       <button type="button" onClick={() => setOpen(o => !o)}
         className={`h-9 w-[170px] flex items-center gap-2 border rounded-lg pl-3 pr-2.5 bg-white text-left text-sm text-slate-700 ${open ? "border-slate-400" : "border-slate-200"}`}>
-        <Store size={14} className="text-slate-400 shrink-0" />
-        <span className="flex-1 min-w-0 truncate">{value || "All vendors"}</span>
+        <Icon size={14} className="text-slate-400 shrink-0" />
+        <span className="flex-1 min-w-0 truncate">{value || allLabel}</span>
         <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
         <div className="absolute right-0 mt-1 w-[260px] bg-white border border-slate-200 rounded-lg shadow-xl z-40 overflow-hidden">
           <div className="p-2 border-b border-slate-100">
-            <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vendor..."
+            <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${noun}...`}
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded outline-none focus:border-slate-400 text-slate-700" />
           </div>
           <div className="px-3 py-1.5 text-[11px] font-medium text-slate-500 bg-slate-50 border-b border-slate-100">
-            {search.trim() ? `${matches.length} of ${vendors.length} vendors found` : `Vendors: ${vendors.length}`}
+            {search.trim() ? `${matches.length} of ${vendors.length} ${nouns} found` : `${nouns[0].toUpperCase()}${nouns.slice(1)}: ${vendors.length}`}
           </div>
           <div className="max-h-64 overflow-y-auto">
-            {!search.trim() && row("All vendors", "")}
+            {!search.trim() && row(allLabel, "")}
             {matches.map(v => row(v, v))}
             {!matches.length && <div className="px-3 py-3 text-center text-xs text-slate-400">No results found</div>}
           </div>
@@ -331,6 +334,7 @@ export default function PettyCashStaff({ scope }) {
   const [typeFilter, setTypeFilter]   = useState("");
   const [personFilter, setPersonFilter] = useState("");
   const [vendorFilter, setVendorFilter] = useState("");
+  const [itemFilter, setItemFilter]     = useState(""); // Item-wise tab only
   const [dateRange, setDateRange]     = useState("all");
   const [customFrom, setCustomFrom]   = useState("");
   const [customTo, setCustomTo]       = useState("");
@@ -440,6 +444,7 @@ export default function PettyCashStaff({ scope }) {
     const map = {};
     filtered.forEach(e => (e.items || []).forEach(it => {
       if (q && !it.name.toLowerCase().includes(q)) return;
+      if (itemFilter && it.name.trim().toLowerCase() !== itemFilter.toLowerCase()) return;
       const key = `${it.name.trim().toLowerCase()}|${String(it.unit || "").trim().toLowerCase()}`;
       const g = (map[key] ||= { key, name: it.name.trim(), unit: it.unit || "", qty: 0, amount: 0, lines: [] });
       g.qty += Number(it.qty) || 0;
@@ -447,7 +452,7 @@ export default function PettyCashStaff({ scope }) {
       g.lines.push({ e, it });
     }));
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
-  }, [filtered, subTab, search]);
+  }, [filtered, subTab, search, itemFilter]);
 
   // Vendors on the entries in this entity / project, for the filter.
   const scopeVendors = useMemo(() => {
@@ -926,7 +931,7 @@ export default function PettyCashStaff({ scope }) {
             const Icon = t.icon;
             const active = subTab === t.id;
             return (
-              <button key={t.id} type="button" onClick={() => { setSubTab(t.id); setTypeFilter(""); setVendorFilter(""); setPage(1); }}
+              <button key={t.id} type="button" onClick={() => { setSubTab(t.id); setTypeFilter(""); setVendorFilter(""); setItemFilter(""); setPage(1); }}
                 className={`-mb-px flex items-center gap-1.5 pb-3 border-b-2 text-sm font-semibold transition-colors
                   ${active ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"}`}>
                 <Icon size={15} /> {t.label}
@@ -1075,7 +1080,10 @@ export default function PettyCashStaff({ scope }) {
             </FilterSelect>
           )}
           {subTab === "entries" && (
-            <VendorFilter value={vendorFilter} vendors={scopeVendors} onChange={v => { setVendorFilter(v); setPage(1); }} />
+            <ListFilter value={vendorFilter} options={scopeVendors} noun="vendor" icon={Store} onChange={v => { setVendorFilter(v); setPage(1); }} />
+          )}
+          {subTab === "items" && (
+            <ListFilter value={itemFilter} options={itemNames} noun="item" icon={Package} onChange={v => { setItemFilter(v); setPage(1); }} />
           )}
           <FilterSelect value={personFilter} onChange={e => { setPersonFilter(e.target.value); setPage(1); }}>
             <option value="">All people</option>
