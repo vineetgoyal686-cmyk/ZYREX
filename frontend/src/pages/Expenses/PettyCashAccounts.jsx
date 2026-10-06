@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
-import { FileSpreadsheet, Loader2, Paperclip } from "lucide-react";
+import { FileSpreadsheet, Loader2, Paperclip, CalendarRange, ChevronDown } from "lucide-react";
 import api from "../../utils/api";
 import Pagination from "./Pagination";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -9,6 +9,39 @@ import {
 } from "./pettyCashConstants";
 
 const monthStart = () => `${todayStr().slice(0, 8)}01`;
+
+// ── Period presets ────────────────────────────────────────────────────────
+// Each resolves to { from, to } (YYYY-MM-DD, local dates). Ranges that
+// include the current month end today. Financial year = April to March.
+const pad = (n) => String(n).padStart(2, "0");
+const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const firstOfMonth = (y, m) => ymd(new Date(y, m, 1));
+const lastOfMonth = (y, m) => ymd(new Date(y, m + 1, 0));
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const periodOptions = () => {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth(), today = ymd(now);
+  const fyStart = m >= 3 ? y : y - 1; // FY starts 1 April
+  const quick = [
+    { id: "this_month",  label: "This Month",          from: firstOfMonth(y, m), to: today },
+    { id: "last_month",  label: "Last Month",          from: firstOfMonth(y, m - 1), to: lastOfMonth(y, m - 1) },
+    { id: "last_3",      label: "Last 3 Months",       from: firstOfMonth(y, m - 2), to: today },
+    { id: "last_6",      label: "Last 6 Months",       from: firstOfMonth(y, m - 5), to: today },
+    { id: "last_12",     label: "Last 12 Months",      from: firstOfMonth(y, m - 11), to: today },
+    { id: "this_fy",     label: `This Financial Year (${fyStart}-${String(fyStart + 1).slice(2)})`, from: `${fyStart}-04-01`, to: today },
+    { id: "last_fy",     label: `Last Financial Year (${fyStart - 1}-${String(fyStart).slice(2)})`, from: `${fyStart - 1}-04-01`, to: `${fyStart}-03-31` },
+    { id: "this_year",   label: `This Year (${y})`,  from: `${y}-01-01`, to: today },
+    { id: "last_year",   label: `Last Year (${y - 1})`, from: `${y - 1}-01-01`, to: `${y - 1}-12-31` },
+  ];
+  // Single months, newest first, for the last two years (current month up to today).
+  const months = Array.from({ length: 24 }, (_, i) => {
+    const d = new Date(y, m - i, 1);
+    const yy = d.getFullYear(), mm = d.getMonth();
+    return { id: `month_${yy}_${mm}`, label: `${MONTH_NAMES[mm]} ${yy}`, from: firstOfMonth(yy, mm), to: i === 0 ? today : lastOfMonth(yy, mm) };
+  });
+  return { quick, months };
+};
 
 // First (Date) and last (Attachments) columns stay pinned while the middle
 // scrolls sideways; the header row stays pinned while rows scroll.
@@ -27,6 +60,13 @@ export default function PettyCashAccounts({ scope }) {
   const [error, setError]     = useState("");
   const [page, setPage]       = useState(1);
   const [perPage, setPerPage] = useState(20);
+  const periods = useMemo(() => periodOptions(), []);
+  // The preset matching the dates, if any — typing dates by hand shows "Custom".
+  const periodId = [...periods.quick, ...periods.months].find(p => p.from === from && p.to === to)?.id || "custom";
+  const pickPeriod = (id) => {
+    const p = [...periods.quick, ...periods.months].find(x => x.id === id);
+    if (p) { setFrom(p.from); setTo(p.to); }
+  };
 
   useEffect(() => {
     if (!from || !to) return;
@@ -121,6 +161,23 @@ export default function PettyCashAccounts({ scope }) {
   return (
     <div className="p-4 sm:p-6 space-y-5 md:flex-1 md:min-h-0 md:flex md:flex-col md:space-y-0 md:gap-5">
       <div className="shrink-0 flex flex-wrap items-end gap-3 bg-white rounded-xl border border-slate-200 px-5 py-4">
+        <label className="text-sm">
+          <span className="block text-xs font-semibold text-slate-500 mb-1">Period</span>
+          <div className="relative">
+            <CalendarRange size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <select value={periodId} onChange={e => pickPeriod(e.target.value)}
+              className="h-10 w-[250px] appearance-none border border-slate-300 rounded-lg pl-9 pr-8 bg-white text-slate-800 outline-none focus:border-slate-500 cursor-pointer">
+              <optgroup label="Quick ranges">
+                {periods.quick.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </optgroup>
+              <optgroup label="Month">
+                {periods.months.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </optgroup>
+              <option value="custom" disabled={periodId !== "custom"}>Custom dates</option>
+            </select>
+            <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          </div>
+        </label>
         <label className="text-sm">
           <span className="block text-xs font-semibold text-slate-500 mb-1">From</span>
           <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="h-10 border border-slate-300 rounded-lg px-3 outline-none focus:border-slate-500" />
