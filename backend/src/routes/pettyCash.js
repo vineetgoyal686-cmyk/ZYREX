@@ -47,7 +47,8 @@ const mapEntry = async (r, peopleById) => ({
   fromPersonId:  r.from_person_id || null,
   fromPersonName: r.from_person_id ? (peopleById[r.from_person_id]?.name || "") : "",
   particular:    r.particular || "",
-  category:      r.category || "",
+  vendorName:    r.vendor_name || "",
+  category:     r.category || "",
   proofType:     r.proof_type || "",
   paymentMode:   r.payment_mode || "",
   project:       r.project || "",
@@ -189,7 +190,7 @@ const buildRow = (b) => {
   const row = {
     entry_type: entryType, entry_date: b.entryDate, amount,
     person_id: b.personId, from_person_id: null,
-    particular: "", category: "", proof_type: "", payment_mode: "", project: "", location: "",
+    particular: "", vendor_name: "", category: "", proof_type: "", payment_mode: "", project: "", location: "",
     remarks: String(b.remarks || "").trim(), items: [],
   };
 
@@ -204,7 +205,8 @@ const buildRow = (b) => {
     }
     Object.assign(row, {
       items,
-      particular: String(b.particular).trim(), category: b.category, proof_type: b.proofType,
+      particular: String(b.particular).trim(), vendor_name: String(b.vendorName || "").trim(),
+      category: b.category, proof_type: b.proofType,
       payment_mode: b.paymentMode, project: String(b.project || "").trim(), location: String(b.location || "").trim(),
     });
   } else if (entryType === "transfer") {
@@ -575,7 +577,8 @@ router.get("/accounts", requirePerm("petty_cash_accounts", "can_view"), async (r
       id:           r.id,
       entryDate:    r.entry_date,
       particular:   r.particular || "",
-      category:     r.category || "",
+      vendorName:   r.vendor_name || "",
+      category:    r.category || "",
       proofType:    r.proof_type || "",
       paymentMode:  r.payment_mode || "",
       project:      r.project || "",

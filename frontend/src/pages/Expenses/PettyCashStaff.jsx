@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
   ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye, FilePlus2, Package,
-  User, Tag, CreditCard, Briefcase, MapPin, CalendarDays, FileText,
+  User, Tag, CreditCard, Store, Briefcase, MapPin, CalendarDays, FileText,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -24,7 +24,7 @@ const currentUser = () => { try { return JSON.parse(localStorage.getItem("bms_us
 
 const emptyForm = (entryType = "expense", projectId = "") => ({
   entryType, entryDate: todayStr(), amount: "", personId: "", fromPersonId: "",
-  particular: "", category: "", proofType: "", paymentMode: "",
+  particular: "", vendorName: "", category: "", proofType: "", paymentMode: "",
   projectId, location: readLocal(LAST_LOCATION_KEY), remarks: "",
   items: [],
 });
@@ -97,10 +97,10 @@ const TYPE_BADGE = {
 const TEMPLATES = {
   entries: {
     file: "petty_cash_expense_template.xlsx",
-    headers: ["Date", "Amount", "Paid By", "Expense", "Category", "Bill Type", "Payment Mode", "Location", "Remarks"],
+    headers: ["Date", "Amount", "Paid By", "Expense", "Vendor", "Category", "Bill Type", "Payment Mode", "Location", "Remarks"],
     sample: [
-      ["2026-09-14", 729, "Jitendar", "Mithai", "Kitchen & Grocery", "Local Bill", "Cash", "Noida", ""],
-      ["2026-09-14", 1871.94, "Jitendar", "Food charge (Zomato)", "Meals", "Tax Invoice", "Online", "Noida", ""],
+      ["2026-09-14", 729, "Jitendar", "Mithai", "Haldiram", "Kitchen & Grocery", "Local Bill", "Cash", "Noida", ""],
+      ["2026-09-14", 1871.94, "Jitendar", "Food charge (Zomato)", "Zomato", "Meals", "Tax Invoice", "Online", "Noida", ""],
     ],
     options: () => {
       const max = Math.max(CATEGORIES.length, PROOF_TYPES.length, PAYMENT_MODES.length);
@@ -108,7 +108,7 @@ const TEMPLATES = {
         ...Array.from({ length: max }, (_, i) => [CATEGORIES[i] || "", PROOF_TYPES[i]?.label || "", PAYMENT_MODES[i]?.label || ""])];
     },
     notes: [
-      "Every row is an expense. Date, Amount, Paid By, Expense, Category, Bill Type and Payment Mode are required.",
+      "Every row is an expense. Date, Amount, Paid By, Expense, Category, Bill Type and Payment Mode are required. Vendor is optional.",
       "Tax / Non Tax is set automatically from Bill Type: Tax Invoice = Tax; Local Bill and Voucher = Non Tax.",
     ],
   },
@@ -183,6 +183,8 @@ export default function PettyCashStaff({ scope }) {
   const [saving, setSaving]         = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [docsMenuOpen, setDocsMenuOpen] = useState(false);
+  const [zipping, setZipping]       = useState(null); // { done, total } while building a docs zip
   const [personModal, setPersonModal] = useState(null); // field name the new person fills
   const [docsEntry, setDocsEntry]   = useState(null);
   const [viewEntry, setViewEntry]   = useState(null);
@@ -258,7 +260,7 @@ export default function PettyCashStaff({ scope }) {
       if (dateRange !== "all" && customFrom && e.entryDate < customFrom) return false;
       if (dateRange !== "all" && customTo && e.entryDate > customTo) return false;
       if (!q || subTab === "items") return true;
-      return [e.particular, e.personName, e.fromPersonName, e.remarks, e.category, e.location, e.project]
+      return [e.particular, e.vendorName, e.personName, e.fromPersonName, e.remarks, e.category, e.location, e.project]
         .some(v => String(v || "").toLowerCase().includes(q));
     });
   }, [entries, subTab, search, typeFilter, personFilter, dateRange, customFrom, customTo]);
@@ -284,7 +286,7 @@ export default function PettyCashStaff({ scope }) {
   const itemNames = useMemo(() => [...new Set(entries.flatMap(e => (e.items || []).map(it => it.name.trim())))].sort(), [entries]);
 
   const columns = subTab === "entries"
-    ? ["Date", "Expense", "Amount", "Paid By", "Bill Type", "Payment", "Remarks", "Attachments", "Action"]
+    ? ["Date", "Expense", "Vendor", "Amount", "Paid By", "Bill Type", "Payment", "Remarks", "Attachments", "Action"]
     : ["Date", "Type", "From", "To", "Amount", "Remarks", "Attachments", "Action"];
 
   // One pager shared by all three tabs (switching tabs resets to page 1).
@@ -313,7 +315,7 @@ export default function PettyCashStaff({ scope }) {
     setForm({
       entryType: e.entryType, entryDate: String(e.entryDate || "").slice(0, 10), amount: String(e.amount),
       personId: e.personId || "", fromPersonId: e.fromPersonId || "",
-      particular: e.particular, category: e.category, proofType: e.proofType, paymentMode: e.paymentMode,
+      particular: e.particular, vendorName: e.vendorName || "", category: e.category, proofType: e.proofType, paymentMode: e.paymentMode,
       projectId: e.orgProjectId || "", location: e.location, remarks: e.remarks,
       items: (e.items || []).map(it => ({
         name: it.name, qty: String(it.qty), unit: it.unit || "", rate: it.rate ? String(it.rate) : "", amount: String(it.amount),
@@ -381,7 +383,7 @@ export default function PettyCashStaff({ scope }) {
 
   const LOG_FIELDS = {
     entryType: "Type", entryDate: "Date", amount: "Amount", personId: "Person", fromPersonId: "Given By",
-    particular: "Expense", category: "Category", proofType: "Bill Type", paymentMode: "Payment Mode",
+    particular: "Expense", vendorName: "Vendor", category: "Category", proofType: "Bill Type", paymentMode: "Payment Mode",
     projectId: "Project", location: "Location", remarks: "Remarks", items: "Items",
   };
   const displayValue = (key, value) => {
@@ -484,7 +486,7 @@ export default function PettyCashStaff({ scope }) {
     if (!t) return;
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet([t.headers, ...t.sample]);
-    ws["!cols"] = t.headers.map(h => ({ wch: h === "Expense" || h === "Category" || h === "Remarks" ? 26 : Math.max(14, h.length + 4) }));
+    ws["!cols"] = t.headers.map(h => ({ wch: h === "Expense" || h === "Vendor" || h === "Category" || h === "Remarks" ? 26 : Math.max(14, h.length + 4) }));
     XLSX.utils.book_append_sheet(wb, ws, "Entries");
 
     const notes = [[], ["How to fill"], ...[...t.notes, ...COMMON_TEMPLATE_NOTES].map(n => [n])];
@@ -523,6 +525,7 @@ export default function PettyCashStaff({ scope }) {
             personName: r["Paid By"] ?? r["To"] ?? r["Person"],
             fromPersonName: entryType === "received" || from.toLowerCase() === "accounts" ? "" : from,
             particular: r["Expense"],
+            vendorName: r["Vendor"],
             category: CATEGORIES.find(c => c.toLowerCase() === String(r["Category"] || "").trim().toLowerCase()) || String(r["Category"] || "").trim(),
             proofType: byLabel(PROOF_TYPES, r["Bill Type"]),
             paymentMode: byLabel(PAYMENT_MODES, r["Payment Mode"]),
@@ -558,6 +561,7 @@ export default function PettyCashStaff({ scope }) {
       Date: fmtDate(e.entryDate),
       Type: labelOf(ENTRY_TYPES, e.entryType),
       Expense: e.entryType === "expense" ? e.particular : e.entryType === "transfer" ? `Given by ${e.fromPersonName}` : "Received from Accounts",
+      Vendor: e.vendorName,
       Amount: e.amount,
       Person: `${e.personName} (${PERSON_ROLE[e.entryType]})`,
       Project: e.project,
@@ -573,11 +577,61 @@ export default function PettyCashStaff({ scope }) {
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "Person-wise");
     const itemRows = filtered.flatMap(e => (e.items || []).map(it => ({
-      Date: fmtDate(e.entryDate), "Paid By": e.personName, Expense: e.particular, Project: e.project,
+      Date: fmtDate(e.entryDate), "Paid By": e.personName, Expense: e.particular, Vendor: e.vendorName, Project: e.project,
       Item: it.name, Qty: it.qty, Unit: it.unit, Rate: it.rate, Amount: it.amount,
     })));
     if (itemRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(itemRows), "Items");
     XLSX.writeFile(wb, "petty_cash_staff.xlsx");
+  };
+
+  // ── Download Docs (zip of attachments) ──────────────────────────────────
+  // Signed URLs expire, so the ledger is fetched fresh and only the ids of
+  // the chosen rows are taken from the current view.
+  const downloadDocs = async (onlyFiltered) => {
+    setDocsMenuOpen(false);
+    const wanted = onlyFiltered ? new Set(filtered.map(e => e.id)) : null;
+    setZipping({ done: 0, total: 0 });
+    try {
+      const { data } = await api.get("/api/petty-cash/entries", {
+        params: { company_id: scope.company.id, project_id: scope.project?.id || undefined },
+      });
+      const rows = (data.entries || []).filter(e => !wanted || wanted.has(e.id));
+      const safe = (s) => String(s || "").replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, " ").trim().slice(0, 60);
+      const files = rows.flatMap(e => {
+        const label = e.entryType === "expense" ? e.particular : `${labelOf(ENTRY_TYPES, e.entryType)} - ${e.personName}`;
+        const folder = `${String(e.entryDate || "").slice(0, 10)}_${safe(label)}_${String(e.id).slice(0, 6)}`;
+        return DOC_SECTIONS.flatMap(s => (e.documents?.[s.key] || []).filter(Boolean).map((url, i) => {
+          const name = decodeURIComponent(url.split("?")[0].split("/").pop() || `file_${i + 1}`);
+          return { url, path: `${folder}/${s.label}/${safe(name) || `file_${i + 1}`}` };
+        }));
+      });
+      if (!files.length) { setZipping(null); return showToast("No attachments in these entries", "error"); }
+
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      let done = 0, failed = 0;
+      setZipping({ done, total: files.length });
+      for (let i = 0; i < files.length; i += 4) {
+        await Promise.all(files.slice(i, i + 4).map(async f => {
+          try {
+            const res = await fetch(f.url);
+            if (!res.ok) throw new Error(res.status);
+            zip.file(f.path, await res.blob());
+          } catch { failed++; }
+          setZipping({ done: ++done, total: files.length });
+        }));
+      }
+      if (failed === files.length) throw new Error("Could not download any attachment");
+      const blob = await zip.generateAsync({ type: "blob" });
+      const tag = [scope.company.code || scope.company.name, scope.project?.name || "All projects", onlyFiltered ? "filtered" : "all"].map(safe).join("_");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `PettyCash_Docs_${tag}_${todayStr()}.zip`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      showToast(failed ? `Downloaded ${files.length - failed} files, ${failed} failed` : `Downloaded ${files.length} files`, failed ? "error" : "success");
+    } catch (err) { showToast(apiError(err, "Download failed"), "error"); }
+    setZipping(null);
   };
 
   const activePeople = people.filter(p => p.isActive);
@@ -634,6 +688,31 @@ export default function PettyCashStaff({ scope }) {
           })}
         </div>
         <div className="flex items-center gap-2 pb-2.5">
+          {TAB_TYPES[subTab] && (
+            <div className="relative">
+              <button onClick={() => setDocsMenuOpen(o => !o)} disabled={!!zipping}
+                className="h-9 px-3 flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-70">
+                {zipping
+                  ? <><Loader2 size={14} className="animate-spin" /> {zipping.total ? `${zipping.done}/${zipping.total}` : "Preparing…"}</>
+                  : <><Download size={14} /> Download Docs <ChevronDown size={14} /></>}
+              </button>
+              {docsMenuOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setDocsMenuOpen(false)} />
+                  <div className="absolute right-0 mt-1 z-20 w-56 bg-white rounded-xl border border-slate-200 shadow-lg p-1">
+                    <button onClick={() => downloadDocs(false)} className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                      Download all
+                      <span className="block text-[11px] text-slate-400">Every entry in this entity / project</span>
+                    </button>
+                    <button onClick={() => downloadDocs(true)} className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                      Download filtered ({filtered.length})
+                      <span className="block text-[11px] text-slate-400">Only rows matching search, person & date</span>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           {((canBulk && TEMPLATES[subTab]) || canExport) && (
             <div className="relative">
               <button onClick={() => setMoreMenuOpen(o => !o)} className="h-9 px-3 flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50">
@@ -836,6 +915,7 @@ export default function PettyCashStaff({ scope }) {
                           {e.items?.length > 0 && <span className="ml-1.5 px-1.5 py-px rounded bg-slate-100 text-slate-600 font-medium">{e.items.length} item{e.items.length > 1 ? "s" : ""}</span>}
                         </p>
                       </td>
+                      <td className="px-4 py-2.5 text-slate-700 max-w-[180px] truncate" title={e.vendorName}>{e.vendorName || <span className="text-slate-400">—</span>}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold whitespace-nowrap text-rose-700">{fmtAmount(e.amount)}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{e.personName}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{labelOf(PROOF_TYPES, e.proofType)}</td>
@@ -918,6 +998,7 @@ export default function PettyCashStaff({ scope }) {
                 {form.entryType === "expense" && (
                   <>
                     <Field label="Expense" required wide><input value={form.particular} onChange={set("particular")} placeholder="e.g. Food charge (Zomato)" className={inp} /></Field>
+                    <Field label="Vendor Name" wide><input value={form.vendorName} onChange={set("vendorName")} placeholder="Shop / supplier paid (optional)" className={inp} /></Field>
                     <Field label="Paid By" required>{personSelect("personId", "Select person")}</Field>
                     <Field label="Category" required>
                       <Select value={form.category} onChange={set("category")}>
@@ -1291,6 +1372,7 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
 
   const facts = isExpense ? [
     { icon: User,        label: "Paid By",   value: e.personName },
+    { icon: Store,       label: "Vendor",    value: e.vendorName },
     { icon: Tag,         label: "Category",  value: e.category },
     { icon: Receipt,     label: "Bill Type", value: e.proofType && `${labelOf(PROOF_TYPES, e.proofType)}`, sub: e.proofType && taxLabel(e.proofType) },
     { icon: CreditCard,  label: "Payment",   value: labelOf(PAYMENT_MODES, e.paymentMode) },
