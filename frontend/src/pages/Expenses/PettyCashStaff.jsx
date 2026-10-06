@@ -189,9 +189,6 @@ const STAFF_TABS = [
 // Which entry types each list tab shows.
 const TAB_TYPES = { entries: ["expense"], movement: ["received", "transfer"] };
 
-// What the row's person did — shown under the name in the Person column.
-const PERSON_ROLE = { expense: "Paid by", received: "Received by", transfer: "Given to" };
-
 const TYPE_BADGE = {
   expense:  "bg-rose-50 text-rose-700 border-rose-200",
   received: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -660,23 +657,28 @@ export default function PettyCashStaff({ scope }) {
           const entryType = !("Type" in r) ? "expense"
             : { expense: "expense", received: "received", given: "transfer", transfer: "transfer" }[typeWord]
               || byLabel(ENTRY_TYPES, r["Type"]);
-          const from = String(r["From"] ?? r["Given By"] ?? "").trim();
+          const from = String(r["From"] || r["Given By"] || "").trim();
+          // Older exports had one "Person" column like "Lalit (Paid by)".
+          const person = String(r["Paid By"] || r["To"] || r["Person"] || "").replace(/s*((Paid by|Received by|Given to))s*$/i, "").trim();
           return {
             rowNumber,
             entryType,
             entryDate: parseSheetDate(r["Date"]),
             amount: r["Amount"],
-            personName: r["Paid By"] ?? r["To"] ?? r["Person"],
+            personName: person,
             fromPersonName: entryType === "received" || from.toLowerCase() === "accounts" ? "" : from,
             particular: r["Expense"],
             vendorName: r["Vendor"],
             category: CATEGORIES.find(c => c.toLowerCase() === String(r["Category"] || "").trim().toLowerCase()) || String(r["Category"] || "").trim(),
             proofType: byLabel(PROOF_TYPES, r["Bill Type"]),
-            paymentMode: byLabel(PAYMENT_MODES, r["Payment Mode"]),
+            paymentMode: byLabel(PAYMENT_MODES, r["Payment Mode"] || r["Payment"]),
             location: r["Location"], remarks: r["Remarks"],
           };
         });
       if (!rows.length) return showToast("The file has no rows", "error");
+      if (rows.some(r => r.entryType === "expense") && !raw.some(r => "Category" in r)) {
+        return setBulkResult({ ok: false, message: "This file has no Category column, so its expenses can't be imported. Use Download Template, or an Export made after this update (it includes Category)." });
+      }
 
       const localErrors = [];
       rows.forEach(r => {
@@ -700,18 +702,26 @@ export default function PettyCashStaff({ scope }) {
     }
   };
 
-  // ── Export (Staff view, 4-column format) ────────────────────────────────
+  // ── Export ──────────────────────────────────────────────────────────────
+  // The Entries sheet uses the bulk-upload column names, so an export can be
+  // uploaded again (Project is informational — uploads go to the header's
+  // project; item lines and attachments are not carried over).
   const exportList = () => {
+    const isExp = (e) => e.entryType === "expense";
     const rows = filtered.map(e => ({
       Date: fmtDate(e.entryDate),
-      Type: labelOf(ENTRY_TYPES, e.entryType),
-      Expense: e.entryType === "expense" ? e.particular : e.entryType === "transfer" ? `Given by ${e.fromPersonName}` : "Received from Accounts",
-      Vendor: e.vendorName,
+      Type: e.entryType === "transfer" ? "Given" : e.entryType === "received" ? "Received" : "Expense",
       Amount: e.amount,
-      Person: `${e.personName} (${PERSON_ROLE[e.entryType]})`,
-      Project: e.project,
+      "Paid By": isExp(e) ? e.personName : "",
+      From: e.entryType === "received" ? "Accounts" : e.entryType === "transfer" ? e.fromPersonName : "",
+      To: isExp(e) ? "" : e.personName,
+      Expense: e.particular,
+      Vendor: e.vendorName,
+      Category: e.category,
       "Bill Type": labelOf(PROOF_TYPES, e.proofType),
-      Payment: labelOf(PAYMENT_MODES, e.paymentMode),
+      "Payment Mode": labelOf(PAYMENT_MODES, e.paymentMode),
+      Location: e.location,
+      Project: e.project,
       Remarks: e.remarks,
     }));
     const wb = XLSX.utils.book_new();
