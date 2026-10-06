@@ -1018,7 +1018,7 @@ export default function PettyCashStaff({ scope }) {
 
       {/* Person-wise */}
       {subTab === "people" && (
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
+      <div className="relative z-0 bg-white rounded-xl border border-slate-200 overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
         <div className="overflow-auto md:flex-1 md:min-h-0">
           <table className={GRID_TABLE}>
             <thead className="text-slate-600">
@@ -1096,7 +1096,7 @@ export default function PettyCashStaff({ scope }) {
       )}
 
       {subTab === "items" && (
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
+      <div className="relative z-0 bg-white rounded-xl border border-slate-200 overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
         <div className="overflow-auto md:flex-1 md:min-h-0">
           <table className={GRID_TABLE}>
             <thead className="text-slate-600">

@@ -232,7 +232,7 @@ export default function VoucherModal({ entry, company, project, initial, onClose
     voucherNo: "",
     header: voucherHeader(company, project),
     date: entry.entryDate || "",
-    paidTo: "", // the actual payee (shop / vendor), typed by the user
+    paidTo: String(entry.vendorName || "").trim(), // the payee — starts as the entry's vendor, editable
     items: [{ details: entry.particular || "", category: entry.category || "", amount: entry.amount || "" }],
     paymentMode: MODE_FROM_ENTRY[entry.paymentMode] || "",
     refNo: "",
