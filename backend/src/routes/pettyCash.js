@@ -57,6 +57,7 @@ const mapEntry = async (r, peopleById) => ({
   companyId:     r.company_id || null,
   orgProjectId:  r.org_project_id || null,
   items:         Array.isArray(r.items) ? r.items : [],
+  charges:       Array.isArray(r.charges) ? r.charges : [],
   voucherNo:     r.voucher_data?.voucherNo || "",
   documents:     await signDocs(r),
   createdAt:     r.created_at,
@@ -161,6 +162,24 @@ const parseItems = (raw) => {
   });
 };
 
+// Extra charges on an itemised expense (delivery, handling, discount…):
+// [{ name, amount }], amount signed — a discount is negative.
+const parseCharges = (raw) => {
+  let list = raw;
+  if (typeof raw === "string") {
+    try { list = JSON.parse(raw || "[]"); } catch { throw new Error("Invalid charges"); }
+  }
+  if (list == null) return [];
+  if (!Array.isArray(list)) throw new Error("Invalid charges");
+  return list.map((c, i) => {
+    const name = String(c?.name || "").trim();
+    const amount = round2(c?.amount);
+    if (!name) throw new Error(`Charge ${i + 1}: name is required`);
+    if (!amount) throw new Error(`Charge ${i + 1}: amount is required`);
+    return { name, amount };
+  });
+};
+
 // Saved Create-Voucher details, so the voucher can be reopened and edited.
 // Returns undefined when the request doesn't touch it, null to clear it.
 const parseVoucherData = (body, entryType) => {
@@ -191,7 +210,7 @@ const buildRow = (b) => {
     entry_type: entryType, entry_date: b.entryDate, amount,
     person_id: b.personId, from_person_id: null,
     particular: "", vendor_name: "", category: "", proof_type: "", payment_mode: "", project: "", location: "",
-    remarks: String(b.remarks || "").trim(), items: [],
+    remarks: String(b.remarks || "").trim(), items: [], charges: [],
   };
 
   if (entryType === "expense") {
@@ -200,11 +219,14 @@ const buildRow = (b) => {
     if (!PROOF_TYPES.includes(b.proofType)) throw new Error("Bill type is required");
     if (!PAYMENT_MODES.includes(b.paymentMode)) throw new Error("Payment mode is required");
     const items = parseItems(b.items);
-    if (items.length && Math.abs(round2(items.reduce((s, it) => s + it.amount, 0)) - amount) > 0.01) {
-      throw new Error("Items total must equal the amount");
+    // Charges only sit on top of items; without items the amount is typed.
+    const charges = items.length ? parseCharges(b.charges) : [];
+    const total = round2(items.reduce((s, it) => s + it.amount, 0) + charges.reduce((s, c) => s + c.amount, 0));
+    if (items.length && Math.abs(total - amount) > 0.01) {
+      throw new Error(charges.length ? "Items total plus charges must equal the amount" : "Items total must equal the amount");
     }
     Object.assign(row, {
-      items,
+      items, charges,
       particular: String(b.particular).trim(), vendor_name: String(b.vendorName || "").trim(),
       category: b.category, proof_type: b.proofType,
       payment_mode: b.paymentMode, project: String(b.project || "").trim(), location: String(b.location || "").trim(),

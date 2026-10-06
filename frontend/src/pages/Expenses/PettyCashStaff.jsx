@@ -26,7 +26,7 @@ const emptyForm = (entryType = "expense", projectId = "") => ({
   entryType, entryDate: todayStr(), amount: "", personId: "", fromPersonId: "",
   particular: "", vendorName: "", category: "", proofType: "", paymentMode: "",
   projectId, location: readLocal(LAST_LOCATION_KEY), remarks: "",
-  items: [],
+  items: [], charges: [],
 });
 
 // Optional line items behind an expense's total. In the form every field is
@@ -37,9 +37,22 @@ const voucherFileName = (no) => `Voucher_${String(no).replace(/[^a-zA-Z0-9._-]/g
 const isVoucherDoc = (d, no) => !!no && (d.voucherNo === no || (!d.file && String(d.url || "").includes(voucherFileName(no))));
 
 const emptyItem = () => ({ name: "", qty: "", unit: "", rate: "", amount: "" });
+// Extra charges on top of the items (delivery, handling, discount…). In the
+// form a charge is { name, amount (positive string), minus }; saved, the
+// amount is signed (a discount is negative).
+const CHARGE_PRESETS = [
+  "Delivery Charge", "Handling Charge", "Platform Fee", "Small Cart Fee", "Packaging Charge",
+  "Convenience Fee", "Rain / Surge Fee", "Tip", "GST / Tax", "Discount / Coupon",
+];
+const isDeduction = (name) => /discount|coupon|cashback|offer/i.test(name);
+const emptyCharge = () => ({ name: "", amount: "", minus: false });
+const isBlankCharge = (c) => !String(c.name).trim() && !c.amount;
+const signedCharge = (c) => (c.minus ? -1 : 1) * (Number(c.amount) || 0);
+
 const UNITS = ["nos", "pcs", "kg", "gm", "ltr", "mtr", "ft", "bag", "box", "set", "pkt"];
 const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
 const itemsTotal = (items) => round2(items.reduce((s, it) => s + (Number(it.amount) || 0), 0));
+const chargesTotal = (charges) => round2(charges.reduce((s, c) => s + signedCharge(c), 0));
 const isBlankItem = (it) => !String(it.name).trim() && !it.qty && !it.rate && !it.amount;
 
 const inp = "w-full h-11 border border-slate-300 rounded-lg px-3 text-sm outline-none bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-500 transition-colors";
@@ -444,6 +457,11 @@ export default function PettyCashStaff({ scope }) {
   }, [entries]);
 
   // Names used before, offered as suggestions in the item rows.
+  const chargeNames = useMemo(() => {
+    const byKey = new Map(CHARGE_PRESETS.map(n => [n.toLowerCase(), n]));
+    entries.forEach(e => (e.charges || []).forEach(c => { const n = String(c.name || "").trim(); if (n && !byKey.has(n.toLowerCase())) byKey.set(n.toLowerCase(), n); }));
+    return [...byKey.values()];
+  }, [entries]);
   const itemNames = useMemo(() => [...new Set(entries.flatMap(e => (e.items || []).map(it => it.name.trim())))].sort(), [entries]);
 
   const columns = subTab === "entries"
@@ -508,6 +526,7 @@ export default function PettyCashStaff({ scope }) {
       items: (e.items || []).map(it => ({
         name: it.name, qty: String(it.qty), unit: it.unit || "", rate: it.rate ? String(it.rate) : "", amount: String(it.amount), rateAuto: true,
       })),
+      charges: (e.charges || []).map(c => ({ name: c.name, amount: String(Math.abs(c.amount)), minus: c.amount < 0 })),
     });
     setDocs(Object.fromEntries(DOC_SECTIONS.map(s => [s.key, (e.documents?.[s.key] || []).map(url => ({ url, keepPath: url }))])));
     setVoucher(e.voucherNo ? { voucherNo: e.voucherNo, data: null, dirty: false } : null);
@@ -520,11 +539,16 @@ export default function PettyCashStaff({ scope }) {
   };
   const set = (key) => (ev) => setForm(f => ({ ...f, [key]: ev.target.value }));
 
-  // While there are items, the entry amount is always their total.
-  const setItems = (fn) => setForm(f => {
-    const items = fn(f.items);
-    return { ...f, items, amount: items.length ? String(itemsTotal(items)) : f.amount };
-  });
+  // While there are items, the entry amount is always items + charges.
+  const withTotal = (f) => ({ ...f, amount: f.items.length ? String(round2(itemsTotal(f.items) + chargesTotal(f.charges))) : f.amount });
+  const setItems = (fn) => setForm(f => withTotal({ ...f, items: fn(f.items) }));
+  const setCharges = (fn) => setForm(f => withTotal({ ...f, charges: fn(f.charges) }));
+  const updateCharge = (idx, key, value) => setCharges(list => list.map((c, i) => {
+    if (i !== idx) return c;
+    const next = { ...c, [key]: value };
+    if (key === "name" && isDeduction(value)) next.minus = true;
+    return next;
+  }));
   // Whichever of Rate / Amount the user typed last drives the other:
   // typing Rate sets Amount = Qty × Rate; typing Amount (e.g. "200 gm for
   // ₹34") sets Rate = Amount ÷ Qty. A Qty change keeps the typed one fixed.
@@ -580,7 +604,7 @@ export default function PettyCashStaff({ scope }) {
   const LOG_FIELDS = {
     entryType: "Type", entryDate: "Date", amount: "Amount", personId: "Person", fromPersonId: "Given By",
     particular: "Expense", vendorName: "Vendor", category: "Category", proofType: "Bill Type", paymentMode: "Payment Mode",
-    projectId: "Project", location: "Location", remarks: "Remarks", items: "Items",
+    projectId: "Project", location: "Location", remarks: "Remarks", items: "Items", charges: "Charges",
   };
   const displayValue = (key, value) => {
     if (key === "personId" || key === "fromPersonId") return personName(value);
@@ -588,6 +612,7 @@ export default function PettyCashStaff({ scope }) {
     if (key === "proofType") return labelOf(PROOF_TYPES, value);
     if (key === "paymentMode") return labelOf(PAYMENT_MODES, value);
     if (key === "projectId") return projectName(value);
+    if (key === "charges") return (value || []).map(c => `${String(c.name).trim()} = ${Number(c.amount)}`).join(", ");
     if (key === "items") return (value || []).map(it => `${String(it.name).trim()} ${Number(it.qty)}${it.unit ? ` ${it.unit}` : ""} = ${Number(it.amount)}`).join(", ");
     return String(value ?? "").trim();
   };
@@ -613,7 +638,15 @@ export default function PettyCashStaff({ scope }) {
       if (!(Number(items[i].qty) > 0)) return showToast(`Item ${i + 1}: quantity must be greater than 0`, "error");
       if (!(Number(items[i].amount) > 0)) return showToast(`Item ${i + 1}: amount must be greater than 0`, "error");
     }
-    if (items.length && Math.abs(itemsTotal(items) - Number(f.amount)) > 0.01) return showToast("Items total must equal the amount", "error");
+    const charges = items.length ? f.charges.filter(c => !isBlankCharge(c)) : [];
+    for (let i = 0; i < charges.length; i++) {
+      if (!String(charges[i].name).trim()) return showToast(`Charge ${i + 1}: name is required`, "error");
+      if (!(Number(charges[i].amount) > 0)) return showToast(`Charge ${i + 1}: amount must be greater than 0`, "error");
+    }
+    const savedCharges = charges.map(c => ({ name: String(c.name).trim(), amount: round2(signedCharge(c)) }));
+    if (items.length && Math.abs(itemsTotal(items) + chargesTotal(charges) - Number(f.amount)) > 0.01) {
+      return showToast(charges.length ? "Items total plus charges must equal the amount" : "Items total must equal the amount", "error");
+    }
     if (!(Number(f.amount) > 0)) return showToast("Amount must be greater than 0", "error");
     if (f.entryType === "expense") {
       if (!f.particular.trim()) return showToast("Expense is required", "error");
@@ -631,7 +664,8 @@ export default function PettyCashStaff({ scope }) {
     setSaving(true);
     try {
       const fd = new FormData();
-      Object.entries(f).forEach(([k, v]) => k !== "items" && fd.append(k, v ?? ""));
+      Object.entries(f).forEach(([k, v]) => k !== "items" && k !== "charges" && fd.append(k, v ?? ""));
+      fd.append("charges", JSON.stringify(savedCharges));
       fd.append("companyId", scope.company.id);
       fd.append("items", JSON.stringify(items.map(it => ({ ...it, name: String(it.name).trim(), unit: String(it.unit).trim() }))));
       if (voucher?.dirty) fd.append("voucherData", voucher.data ? JSON.stringify(voucher.data) : "");
@@ -649,7 +683,7 @@ export default function PettyCashStaff({ scope }) {
         : await api.post("/api/petty-cash/entries", fd);
 
       if (editOriginal) {
-        const changes = diff({ ...editOriginal, amount: String(editOriginal.amount), projectId: editOriginal.orgProjectId }, { ...f, items });
+        const changes = diff({ ...editOriginal, amount: String(editOriginal.amount), projectId: editOriginal.orgProjectId }, { ...f, items, charges: savedCharges });
         logAudit("petty_cash_entry", editOriginal.id, entryLabel(f), "updated", Object.keys(changes).length ? changes : null);
       } else if (data.entry?.id) {
         logAudit("petty_cash_entry", data.entry.id, entryLabel(f), "created", {
@@ -777,6 +811,7 @@ export default function PettyCashStaff({ scope }) {
       "Bill Type": labelOf(PROOF_TYPES, e.proofType),
       "Payment Mode": labelOf(PAYMENT_MODES, e.paymentMode),
       Location: e.location,
+      Charges: (e.charges || []).map(c => `${c.name} ${c.amount}`).join("; "),
       Project: e.project,
       Remarks: e.remarks,
     }));
@@ -1273,6 +1308,12 @@ export default function PettyCashStaff({ scope }) {
                     <ItemsEditor items={form.items} itemNames={itemNames} onChange={updateItem}
                       onAdd={() => setItems(items => [...items, emptyItem()])}
                       onRemove={(idx) => setItems(items => items.filter((_, i) => i !== idx))} />
+                    {form.items.length > 0 && (
+                      <ChargesEditor charges={form.charges} chargeNames={chargeNames} itemsSum={itemsTotal(form.items)}
+                        onChange={updateCharge}
+                        onAdd={() => setCharges(list => [...list, emptyCharge()])}
+                        onRemove={(idx) => setCharges(list => list.filter((_, i) => i !== idx))} />
+                    )}
                   </FormCard>
                 )}
 
@@ -1686,6 +1727,12 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
                     ))}
                   </tbody>
                   <tfoot>
+                    {(e.charges || []).map((c, i) => (
+                      <tr key={i} className="border-t border-slate-100 text-slate-600">
+                        <td className="px-3 py-1.5" colSpan={3}>{c.name}</td>
+                        <td className={`px-3 py-1.5 text-right tabular-nums ${c.amount < 0 ? "text-emerald-700" : ""}`}>{c.amount < 0 ? "− " : "+ "}{fmtAmount(Math.abs(c.amount))}</td>
+                      </tr>
+                    ))}
                     <tr className="border-t border-slate-200 bg-slate-50 font-bold">
                       <td className="px-3 py-2" colSpan={3}>Total</td>
                       <td className="px-3 py-2 text-right tabular-nums">{fmtAmount(e.amount)}</td>
@@ -1790,7 +1837,50 @@ function ItemsEditor({ items, itemNames, onChange, onAdd, onRemove }) {
         <button type="button" onClick={onAdd} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline">
           <Plus size={13} /> Add Item
         </button>
-        {items.length > 0 && <p className="text-sm text-slate-600">Total <b className="tabular-nums text-slate-900">₹ {fmtAmount(itemsTotal(items))}</b></p>}
+      </div>
+    </div>
+  );
+}
+
+// Delivery / handling / discount lines under the items. +/− picks whether a
+// line adds to or comes off the total; discount-like names pick − by default.
+function ChargesEditor({ charges, chargeNames, itemsSum, onChange, onAdd, onRemove }) {
+  const cell = "w-full h-9 border border-slate-300 rounded-md px-2 text-sm outline-none bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-500";
+  const cols = "grid grid-cols-[minmax(200px,1fr)_76px_120px_24px] gap-2 items-start";
+  const total = chargesTotal(charges);
+  return (
+    <div className="mt-5 pt-4 border-t border-dashed border-slate-200">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[13px] font-semibold text-slate-800">Other Charges <span className="font-normal text-slate-400">· delivery, handling, discount…</span></p>
+        <button type="button" onClick={onAdd} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline">
+          <Plus size={13} /> Add Charge
+        </button>
+      </div>
+      {charges.length > 0 && (
+        <div className="overflow-x-auto">
+          <div className="min-w-[440px] space-y-2">
+            {charges.map((c, i) => (
+              <div key={i} className={cols}>
+                <NameCombo value={c.name} onChange={v => onChange(i, "name", v)} options={chargeNames} noun="charge" placeholder="e.g. Delivery Charge" inputClass={cell} />
+                <div className="flex h-9 rounded-md border border-slate-300 overflow-hidden text-sm font-bold">
+                  <button type="button" onClick={() => onChange(i, "minus", false)} title="Adds to the total"
+                    className={`flex-1 ${!c.minus ? "bg-rose-50 text-rose-700" : "text-slate-400 hover:bg-slate-50"}`}>+</button>
+                  <button type="button" onClick={() => onChange(i, "minus", true)} title="Comes off the total (discount)"
+                    className={`flex-1 border-l border-slate-300 ${c.minus ? "bg-emerald-50 text-emerald-700" : "text-slate-400 hover:bg-slate-50"}`}>−</button>
+                </div>
+                <input type="number" min="0" step="0.01" value={c.amount} onChange={e => onChange(i, "amount", e.target.value)} placeholder="0.00" className={`${cell} text-right`} />
+                <button type="button" onClick={() => onRemove(i)} title="Remove charge" className="p-1 mt-1.5 text-slate-400 hover:text-red-600"><X size={15} /></button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="mt-3 ml-auto w-full max-w-xs space-y-1 text-sm">
+        <div className="flex justify-between text-slate-600"><span>Items total</span><span className="tabular-nums">₹ {fmtAmount(itemsSum)}</span></div>
+        {charges.length > 0 && (
+          <div className="flex justify-between text-slate-600"><span>Charges</span><span className="tabular-nums">{total < 0 ? "− " : ""}₹ {fmtAmount(Math.abs(total))}</span></div>
+        )}
+        <div className="flex justify-between pt-1.5 border-t border-slate-200 font-bold text-slate-900"><span>Amount</span><span className="tabular-nums">₹ {fmtAmount(itemsSum + total)}</span></div>
       </div>
     </div>
   );
