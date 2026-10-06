@@ -17,7 +17,6 @@ const pad = (n) => String(n).padStart(2, "0");
 const ymd = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const firstOfMonth = (y, m) => ymd(new Date(y, m, 1));
 const lastOfMonth = (y, m) => ymd(new Date(y, m + 1, 0));
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const periodOptions = () => {
   const now = new Date();
@@ -34,13 +33,14 @@ const periodOptions = () => {
     { id: "this_year",   label: `This Year (${y})`,  from: `${y}-01-01`, to: today },
     { id: "last_year",   label: `Last Year (${y - 1})`, from: `${y - 1}-01-01`, to: `${y - 1}-12-31` },
   ];
-  // Single months, newest first, for the last two years (current month up to today).
-  const months = Array.from({ length: 24 }, (_, i) => {
-    const d = new Date(y, m - i, 1);
-    const yy = d.getFullYear(), mm = d.getMonth();
-    return { id: `month_${yy}_${mm}`, label: `${MONTH_NAMES[mm]} ${yy}`, from: firstOfMonth(yy, mm), to: i === 0 ? today : lastOfMonth(yy, mm) };
-  });
-  return { quick, months };
+  return quick;
+};
+
+// "YYYY-MM" -> that month's range (the current month ends today).
+const monthRange = (ym) => {
+  const [yy, mm] = ym.split("-").map(Number);
+  const to = lastOfMonth(yy, mm - 1);
+  return { from: firstOfMonth(yy, mm - 1), to: to > todayStr() ? todayStr() : to };
 };
 
 // First (Date) and last (Attachments) columns stay pinned while the middle
@@ -61,12 +61,19 @@ export default function PettyCashAccounts({ scope }) {
   const [page, setPage]       = useState(1);
   const [perPage, setPerPage] = useState(20);
   const periods = useMemo(() => periodOptions(), []);
-  // The preset matching the dates, if any — typing dates by hand shows "Custom".
-  const periodId = [...periods.quick, ...periods.months].find(p => p.from === from && p.to === to)?.id || "custom";
+  const [monthMode, setMonthMode] = useState(false); // "Pick a month" chosen
+  // Shown option: the quick range matching the dates, else a whole month,
+  // else "Custom" (dates typed by hand).
+  const isWholeMonth = from.slice(0, 7) === to.slice(0, 7) && monthRange(from.slice(0, 7)).from === from && monthRange(from.slice(0, 7)).to === to;
+  const periodId = monthMode ? "month" : periods.find(p => p.from === from && p.to === to)?.id || (isWholeMonth ? "month" : "custom");
+  const pickMonth = (ym) => { if (!ym) return; const r = monthRange(ym); setFrom(r.from); setTo(r.to); };
   const pickPeriod = (id) => {
-    const p = [...periods.quick, ...periods.months].find(x => x.id === id);
+    if (id === "month") { setMonthMode(true); pickMonth(from.slice(0, 7)); return; }
+    setMonthMode(false);
+    const p = periods.find(x => x.id === id);
     if (p) { setFrom(p.from); setTo(p.to); }
   };
+  const setDate = (setter) => (e) => { setMonthMode(false); setter(e.target.value); };
 
   useEffect(() => {
     if (!from || !to) return;
@@ -166,25 +173,28 @@ export default function PettyCashAccounts({ scope }) {
           <div className="relative">
             <CalendarRange size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <select value={periodId} onChange={e => pickPeriod(e.target.value)}
-              className="h-10 w-[250px] appearance-none border border-slate-300 rounded-lg pl-9 pr-8 bg-white text-slate-800 outline-none focus:border-slate-500 cursor-pointer">
-              <optgroup label="Quick ranges">
-                {periods.quick.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-              </optgroup>
-              <optgroup label="Month">
-                {periods.months.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-              </optgroup>
+              className="h-10 w-[230px] appearance-none border border-slate-300 rounded-lg pl-9 pr-8 bg-white text-slate-800 outline-none focus:border-slate-500 cursor-pointer">
+              {periods.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+              <option value="month">Pick a month…</option>
               <option value="custom" disabled={periodId !== "custom"}>Custom dates</option>
             </select>
             <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
           </div>
         </label>
+        {periodId === "month" && (
+          <label className="text-sm">
+            <span className="block text-xs font-semibold text-slate-500 mb-1">Month</span>
+            <input type="month" value={from.slice(0, 7)} max={todayStr().slice(0, 7)} onChange={e => { setMonthMode(true); pickMonth(e.target.value); }}
+              className="h-10 border border-slate-300 rounded-lg px-3 outline-none focus:border-slate-500" />
+          </label>
+        )}
         <label className="text-sm">
           <span className="block text-xs font-semibold text-slate-500 mb-1">From</span>
-          <input type="date" value={from} onChange={e => setFrom(e.target.value)} className="h-10 border border-slate-300 rounded-lg px-3 outline-none focus:border-slate-500" />
+          <input type="date" value={from} onChange={setDate(setFrom)} className="h-10 border border-slate-300 rounded-lg px-3 outline-none focus:border-slate-500" />
         </label>
         <label className="text-sm">
           <span className="block text-xs font-semibold text-slate-500 mb-1">To</span>
-          <input type="date" value={to} onChange={e => setTo(e.target.value)} className="h-10 border border-slate-300 rounded-lg px-3 outline-none focus:border-slate-500" />
+          <input type="date" value={to} onChange={setDate(setTo)} className="h-10 border border-slate-300 rounded-lg px-3 outline-none focus:border-slate-500" />
         </label>
         {canExport && (
           <button onClick={downloadExcel} disabled={!data || loading}
