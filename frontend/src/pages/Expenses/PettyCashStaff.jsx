@@ -3,7 +3,7 @@ import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
   ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye, FilePlus2, Package,
-  User, Tag, CreditCard, Store, Briefcase, MapPin, CalendarDays, FileText,
+  User, Tag, CreditCard, Store, Check, Briefcase, MapPin, CalendarDays, FileText,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -71,6 +71,113 @@ const FilterSelect = ({ value, onChange, children }) => (
     <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
   </div>
 );
+
+// Closes a popup when the user clicks anywhere outside `ref`.
+const useClickOutside = (ref, onOutside) => useEffect(() => {
+  const h = (e) => { if (ref.current && !ref.current.contains(e.target)) onOutside(); };
+  document.addEventListener("mousedown", h);
+  return () => document.removeEventListener("mousedown", h);
+}, [ref, onOutside]);
+
+const matchesQuery = (list, q) => {
+  const s = q.trim().toLowerCase();
+  return s ? list.filter(v => v.toLowerCase().includes(s)) : list;
+};
+
+// Vendor field: type a new name or pick one used before. The typed text is
+// both the value and the search; a name not in the list is added on save.
+function VendorInput({ value, onChange, vendors }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useClickOutside(ref, () => setOpen(false));
+  const matches = matchesQuery(vendors, value);
+  const typed = value.trim();
+  const isNew = typed && !vendors.some(v => v.toLowerCase() === typed.toLowerCase());
+  const pick = (v) => { onChange(v); setOpen(false); };
+
+  return (
+    <div ref={ref} className="relative">
+      <div className="relative">
+        <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input value={value} onChange={e => { onChange(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
+          onKeyDown={e => { if (e.key === "Escape" || e.key === "Tab") setOpen(false); }}
+          placeholder="Search or add a vendor (optional)" className={`${inp} pl-9 pr-8`} />
+        {value
+          ? <button type="button" onClick={() => pick("")} title="Clear" className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-700"><X size={14} /></button>
+          : <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />}
+      </div>
+      {open && (
+        <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-30 overflow-hidden">
+          <div className="px-3 py-1.5 text-[11px] font-medium text-slate-500 bg-slate-50 border-b border-slate-100">
+            {typed ? `${matches.length} of ${vendors.length} vendors found` : `Vendors: ${vendors.length}`}
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            {isNew && (
+              <div onMouseDown={e => { e.preventDefault(); pick(typed); }}
+                className="flex items-center gap-2 px-3 py-2 cursor-pointer border-b border-slate-100 text-[13px] text-emerald-700 font-semibold hover:bg-emerald-50">
+                <Plus size={14} /> Add “{typed}” as new vendor
+              </div>
+            )}
+            {matches.map(v => (
+              <div key={v} onMouseDown={e => { e.preventDefault(); pick(v); }}
+                className={`flex items-center justify-between px-3 py-2 cursor-pointer border-b border-slate-100 last:border-0 text-[13px]
+                  ${v.toLowerCase() === typed.toLowerCase() ? "bg-indigo-50 text-indigo-700 font-semibold" : "text-slate-800 hover:bg-slate-50"}`}>
+                <span className="truncate">{v}</span>
+                {v.toLowerCase() === typed.toLowerCase() && <Check size={14} className="shrink-0 ml-2" />}
+              </div>
+            ))}
+            {!matches.length && !isNew && <div className="px-3 py-3 text-center text-xs text-slate-400">No vendors yet — type a name to add one</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Vendor filter above the table: searchable list with a found count.
+function VendorFilter({ value, onChange, vendors }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const ref = useRef(null);
+  useClickOutside(ref, () => setOpen(false));
+  const matches = matchesQuery(vendors, search);
+  const pick = (v) => { onChange(v); setOpen(false); setSearch(""); };
+  const row = (label, v, extra = "") => (
+    <div key={label} onClick={() => pick(v)}
+      className={`flex items-center justify-between px-3 py-2 cursor-pointer border-b border-slate-100 last:border-0 text-[13px] ${extra}
+        ${value === v ? "bg-indigo-50 text-indigo-700 font-semibold" : "text-slate-800 hover:bg-slate-50"}`}>
+      <span className="truncate">{label}</span>
+      {value === v && <Check size={14} className="shrink-0 ml-2" />}
+    </div>
+  );
+
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className={`h-9 w-[170px] flex items-center gap-2 border rounded-lg pl-3 pr-2.5 bg-white text-left text-sm text-slate-700 ${open ? "border-slate-400" : "border-slate-200"}`}>
+        <Store size={14} className="text-slate-400 shrink-0" />
+        <span className="flex-1 min-w-0 truncate">{value || "All vendors"}</span>
+        <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute right-0 mt-1 w-[260px] bg-white border border-slate-200 rounded-lg shadow-xl z-40 overflow-hidden">
+          <div className="p-2 border-b border-slate-100">
+            <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vendor..."
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded outline-none focus:border-slate-400 text-slate-700" />
+          </div>
+          <div className="px-3 py-1.5 text-[11px] font-medium text-slate-500 bg-slate-50 border-b border-slate-100">
+            {search.trim() ? `${matches.length} of ${vendors.length} vendors found` : `Vendors: ${vendors.length}`}
+          </div>
+          <div className="max-h-64 overflow-y-auto">
+            {!search.trim() && row("All vendors", "")}
+            {matches.map(v => row(v, v))}
+            {!matches.length && <div className="px-3 py-3 text-center text-xs text-slate-400">No results found</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const STAFF_TABS = [
   { id: "entries",  label: "Expenses",         icon: Receipt },
@@ -164,11 +271,13 @@ export default function PettyCashStaff({ scope }) {
   const [entries, setEntries]     = useState([]);
   const [people, setPeople]       = useState([]);
   const [locations, setLocations] = useState([]);
+  const [vendors, setVendors]     = useState([]); // every vendor name used before, for the form picker
   const [loading, setLoading]     = useState(true);
 
   const [search, setSearch]           = useState("");
   const [typeFilter, setTypeFilter]   = useState("");
   const [personFilter, setPersonFilter] = useState("");
+  const [vendorFilter, setVendorFilter] = useState("");
   const [dateRange, setDateRange]     = useState("all");
   const [customFrom, setCustomFrom]   = useState("");
   const [customTo, setCustomTo]       = useState("");
@@ -219,6 +328,9 @@ export default function PettyCashStaff({ scope }) {
   const fetchPeople = async () => {
     try { const { data } = await api.get("/api/petty-cash/people"); setPeople(data.people || []); } catch { /* shown via entries */ }
   };
+  const fetchVendors = async () => {
+    try { const { data } = await api.get("/api/petty-cash/vendors"); setVendors(data.vendors || []); } catch { /* optional */ }
+  };
   const fetchLocations = async () => {
     try { const { data } = await api.get("/api/petty-cash/locations"); setLocations(data.locations || []); } catch { /* optional */ }
   };
@@ -227,6 +339,7 @@ export default function PettyCashStaff({ scope }) {
     fetchEntries();
     fetchPeople();
     fetchLocations();
+    fetchVendors();
   }, []);
 
   // ── Balances (always over the whole ledger, not the filtered view) ──────
@@ -257,13 +370,14 @@ export default function PettyCashStaff({ scope }) {
       if (tabTypes && !tabTypes.includes(e.entryType)) return false;
       if (typeFilter && e.entryType !== typeFilter) return false;
       if (personFilter && e.personId !== personFilter && e.fromPersonId !== personFilter) return false;
+      if (vendorFilter && String(e.vendorName || "").trim().toLowerCase() !== vendorFilter.toLowerCase()) return false;
       if (dateRange !== "all" && customFrom && e.entryDate < customFrom) return false;
       if (dateRange !== "all" && customTo && e.entryDate > customTo) return false;
       if (!q || subTab === "items") return true;
       return [e.particular, e.vendorName, e.personName, e.fromPersonName, e.remarks, e.category, e.location, e.project]
         .some(v => String(v || "").toLowerCase().includes(q));
     });
-  }, [entries, subTab, search, typeFilter, personFilter, dateRange, customFrom, customTo]);
+  }, [entries, subTab, search, typeFilter, personFilter, vendorFilter, dateRange, customFrom, customTo]);
 
   // Item-wise: every item line across the filtered expenses, grouped by
   // name + unit (case-insensitive). Search matches the item name here.
@@ -282,12 +396,31 @@ export default function PettyCashStaff({ scope }) {
     return Object.values(map).sort((a, b) => a.name.localeCompare(b.name));
   }, [filtered, subTab, search]);
 
+  // Vendors on the entries in this entity / project, for the filter.
+  const scopeVendors = useMemo(() => {
+    const byKey = new Map();
+    entries.forEach(e => { const v = String(e.vendorName || "").trim(); if (v && !byKey.has(v.toLowerCase())) byKey.set(v.toLowerCase(), v); });
+    return [...byKey.values()].sort((a, b) => a.localeCompare(b));
+  }, [entries]);
+
   // Names used before, offered as suggestions in the item rows.
   const itemNames = useMemo(() => [...new Set(entries.flatMap(e => (e.items || []).map(it => it.name.trim())))].sort(), [entries]);
 
   const columns = subTab === "entries"
-    ? ["Date", "Expense", "Vendor", "Amount", "Paid By", "Bill Type", "Payment", "Remarks", "Attachments", "Action"]
+    ? ["Date", "Vendor", "Expense", "Amount", "Paid By", "Bill Type", "Payment", "Remarks", "Attachments", "Action"]
     : ["Date", "Type", "From", "To", "Amount", "Remarks", "Attachments", "Action"];
+
+  // Date (+ Vendor on Expenses) stay pinned on the left and Attachments +
+  // Action on the right; the columns between them scroll sideways.
+  const EDGE_L = "shadow-[inset_-1px_0_0_#e2e8f0,6px_0_8px_-6px_rgba(15,23,42,0.25)]";
+  const EDGE_R = "shadow-[inset_1px_0_0_#e2e8f0,-6px_0_8px_-6px_rgba(15,23,42,0.25)]";
+  const pinCls = (h) => ({
+    Date:        `sticky left-0 w-[130px] min-w-[130px] ${subTab === "entries" ? "" : EDGE_L}`,
+    Vendor:      `sticky left-[130px] w-[220px] min-w-[220px] max-w-[220px] ${EDGE_L}`,
+    Attachments: `sticky right-[150px] w-[130px] min-w-[130px] ${EDGE_R}`,
+    Action:      "sticky right-0 w-[150px] min-w-[150px]",
+  })[h] || "";
+  const pinTd = (h) => `${pinCls(h)} z-10 bg-white group-hover:bg-slate-50`;
 
   // One pager shared by all three tabs (switching tabs resets to page 1).
   const listTotal = subTab === "people" ? balances.list.length : subTab === "items" ? itemSummary.length : filtered.length;
@@ -466,6 +599,7 @@ export default function PettyCashStaff({ scope }) {
       closeForm();
       fetchEntries();
       fetchLocations();
+      fetchVendors();
     } catch (err) { showToast(apiError(err, "Failed to save"), "error"); }
     setSaving(false);
   };
@@ -548,6 +682,7 @@ export default function PettyCashStaff({ scope }) {
       fetchEntries();
       fetchPeople();
       fetchLocations();
+      fetchVendors();
     } catch (err) {
       setBulkResult({ ok: false, message: apiError(err, "Upload failed"), details: err?.response?.data?.details || [] });
     } finally {
@@ -679,7 +814,7 @@ export default function PettyCashStaff({ scope }) {
             const Icon = t.icon;
             const active = subTab === t.id;
             return (
-              <button key={t.id} type="button" onClick={() => { setSubTab(t.id); setTypeFilter(""); setPage(1); }}
+              <button key={t.id} type="button" onClick={() => { setSubTab(t.id); setTypeFilter(""); setVendorFilter(""); setPage(1); }}
                 className={`-mb-px flex items-center gap-1.5 pb-3 border-b-2 text-sm font-semibold transition-colors
                   ${active ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"}`}>
                 <Icon size={15} /> {t.label}
@@ -827,6 +962,9 @@ export default function PettyCashStaff({ scope }) {
               {ENTRY_TYPES.filter(t => t.value !== "expense").map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </FilterSelect>
           )}
+          {subTab === "entries" && (
+            <VendorFilter value={vendorFilter} vendors={scopeVendors} onChange={v => { setVendorFilter(v); setPage(1); }} />
+          )}
           <FilterSelect value={personFilter} onChange={e => { setPersonFilter(e.target.value); setPage(1); }}>
             <option value="">All people</option>
             {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -892,7 +1030,7 @@ export default function PettyCashStaff({ scope }) {
             <thead className="text-slate-600">
               <tr>
                 {columns.map((h, i) => (
-                  <th key={i} className={`sticky top-0 z-20 bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : "text-left"}`}>{h}</th>
+                  <th key={i} className={`sticky top-0 ${pinCls(h) ? `${pinCls(h)} z-30` : "z-20"} bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -902,10 +1040,11 @@ export default function PettyCashStaff({ scope }) {
               ) : pageRows.length === 0 ? (
                 <tr><td colSpan={columns.length} className="px-4 py-10 text-center text-slate-400">No entries found</td></tr>
               ) : pageRows.map(e => (
-                <tr key={e.id} className="border-t border-slate-200 hover:bg-slate-50/60">
-                  <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{fmtDate(e.entryDate)}</td>
+                <tr key={e.id} className="group border-t border-slate-200 hover:bg-slate-50">
+                  <td className={`${pinTd("Date")} px-4 py-2.5 whitespace-nowrap text-slate-700`}>{fmtDate(e.entryDate)}</td>
                   {subTab === "entries" ? (
                     <>
+                      <td className={`${pinTd("Vendor")} px-4 py-2.5 text-slate-700 whitespace-nowrap truncate`} title={e.vendorName}>{e.vendorName || <span className="text-slate-400">—</span>}</td>
                       <td className="px-4 py-2.5 text-slate-800 max-w-[280px]">
                         <button type="button" onClick={() => setViewEntry(e)} title="View details"
                           className="block max-w-full truncate text-left hover:text-blue-600 hover:underline">{e.particular}</button>
@@ -915,7 +1054,6 @@ export default function PettyCashStaff({ scope }) {
                           {e.items?.length > 0 && <span className="ml-1.5 px-1.5 py-px rounded bg-slate-100 text-slate-600 font-medium">{e.items.length} item{e.items.length > 1 ? "s" : ""}</span>}
                         </p>
                       </td>
-                      <td className="px-4 py-2.5 text-slate-700 min-w-[200px] whitespace-nowrap" title={e.vendorName}>{e.vendorName || <span className="text-slate-400">—</span>}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold whitespace-nowrap text-rose-700">{fmtAmount(e.amount)}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap text-slate-700">{e.personName}</td>
                       <td className="px-4 py-2.5 whitespace-nowrap text-slate-600">{labelOf(PROOF_TYPES, e.proofType)}</td>
@@ -932,7 +1070,7 @@ export default function PettyCashStaff({ scope }) {
                     </>
                   )}
                   <td className="px-4 py-2.5 text-slate-500 max-w-[220px] truncate" title={e.remarks}>{e.remarks || "—"}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">
+                  <td className={`${pinTd("Attachments")} px-4 py-2.5 whitespace-nowrap`}>
                     {docCount(e.documents) > 0 ? (
                       <button onClick={() => setDocsEntry(e)} title="View attachments"
                         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-blue-600 hover:bg-blue-50 font-medium">
@@ -940,7 +1078,7 @@ export default function PettyCashStaff({ scope }) {
                       </button>
                     ) : <span className="text-slate-400">—</span>}
                   </td>
-                  <td className="px-4 py-2.5">
+                  <td className={`${pinTd("Action")} px-4 py-2.5`}>
                     <div className="flex items-center gap-0.5">
                       <button onClick={() => setViewEntry(e)} title="View" className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100"><Eye size={14} /></button>
                       {canViewLog && <button onClick={() => setLogEntry(e)} title="Activity log" className="p-1.5 rounded-lg text-slate-300 hover:text-cyan-600 hover:bg-cyan-50"><Clock size={14} /></button>}
@@ -998,7 +1136,7 @@ export default function PettyCashStaff({ scope }) {
                 {form.entryType === "expense" && (
                   <>
                     <Field label="Expense" required wide><input value={form.particular} onChange={set("particular")} placeholder="e.g. Food charge (Zomato)" className={inp} /></Field>
-                    <Field label="Vendor Name" wide><input value={form.vendorName} onChange={set("vendorName")} placeholder="Shop / supplier paid (optional)" className={inp} /></Field>
+                    <Field label="Vendor Name" wide><VendorInput value={form.vendorName} onChange={v => setForm(f => ({ ...f, vendorName: v }))} vendors={vendors} /></Field>
                     <Field label="Paid By" required>{personSelect("personId", "Select person")}</Field>
                     <Field label="Category" required>
                       <Select value={form.category} onChange={set("category")}>

@@ -298,6 +298,25 @@ router.get("/locations", requirePerm("petty_cash_staff", "can_view"), async (_re
   }
 });
 
+/* GET /api/petty-cash/vendors — every vendor name used on an entry (any
+   entity/project), case-insensitively de-duplicated, for the form picker. */
+router.get("/vendors", requirePerm("petty_cash_staff", "can_view"), async (_req, res) => {
+  try {
+    const { data, error } = await supabase.from("petty_cash_entries")
+      .select("vendor_name").neq("vendor_name", "").is("deleted_at", null);
+    if (error) throw error;
+    const byKey = new Map();
+    (data || []).forEach(r => {
+      const name = String(r.vendor_name || "").trim();
+      if (name && !byKey.has(name.toLowerCase())) byKey.set(name.toLowerCase(), name);
+    });
+    res.json({ vendors: [...byKey.values()].sort((a, b) => a.localeCompare(b)) });
+  } catch (err) {
+    console.error("Petty cash vendors read error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* GET /api/petty-cash/scopes — active entities and their projects, for the
    Entity / Project pickers in the Petty Cash header. */
 router.get("/scopes", requireAnyView, async (_req, res) => {
