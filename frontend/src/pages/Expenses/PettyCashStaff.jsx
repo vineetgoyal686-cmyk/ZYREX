@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
@@ -100,10 +100,18 @@ const matchesQuery = (list, q) => {
 // one used before. The typed text is both the value and the search; a name
 // not in the list is saved as new. The list floats (position: fixed) so a
 // scrolling parent — the item rows, the form body — can't clip it.
-function NameCombo({ value, onChange, options, noun, placeholder, inputClass, withIcon }) {
+// multiline: a one-row textarea that grows, so a long name wraps instead of
+// being cut off (Enter never adds a new line).
+function NameCombo({ value, onChange, options, noun, placeholder, inputClass, withIcon, multiline }) {
   const [rect, setRect] = useState(null); // input position while the list is open
   const ref = useRef(null);
   const inputRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = inputRef.current;
+    if (!multiline || !el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight + 2}px`;
+  }, [value, multiline]);
   const close = () => setRect(null);
   const open = () => { const r = inputRef.current?.getBoundingClientRect(); if (r) setRect(r); };
   useClickOutside(ref, close);
@@ -125,12 +133,18 @@ function NameCombo({ value, onChange, options, noun, placeholder, inputClass, wi
   return (
     <div ref={ref} className="relative">
       {withIcon && <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />}
-      <input ref={inputRef} value={value} onChange={e => { onChange(e.target.value); open(); }} onFocus={open}
-        onKeyDown={e => { if (e.key === "Escape" || e.key === "Tab") close(); }}
-        placeholder={placeholder} className={`${inputClass} ${withIcon ? "pl-9" : ""} pr-7`} />
+      {multiline ? (
+        <textarea ref={inputRef} rows={1} value={value} onChange={e => { onChange(e.target.value.replace(/\n/g, " ")); open(); }} onFocus={open}
+          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); close(); } if (e.key === "Escape" || e.key === "Tab") close(); }}
+          placeholder={placeholder} className={`${inputClass} !h-auto min-h-9 py-[7px] leading-5 resize-none overflow-hidden block pr-7`} />
+      ) : (
+        <input ref={inputRef} value={value} onChange={e => { onChange(e.target.value); open(); }} onFocus={open}
+          onKeyDown={e => { if (e.key === "Escape" || e.key === "Tab") close(); }}
+          placeholder={placeholder} className={`${inputClass} ${withIcon ? "pl-9" : ""} pr-7`} />
+      )}
       {value
-        ? <button type="button" onClick={() => pick("")} title="Clear" className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-700"><X size={13} /></button>
-        : <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />}
+        ? <button type="button" onClick={() => pick("")} title="Clear" className={`absolute right-2 p-0.5 rounded text-slate-400 hover:text-slate-700 ${multiline ? "top-2" : "top-1/2 -translate-y-1/2"}`}><X size={13} /></button>
+        : <ChevronDown size={13} className={`pointer-events-none absolute right-2.5 text-slate-400 ${multiline ? "top-3" : "top-1/2 -translate-y-1/2"}`} />}
       {rect && (
         <div style={{ position: "fixed", left: rect.left, width: Math.max(rect.width, 260), ...(below ? { top: rect.bottom + 4 } : { bottom: window.innerHeight - rect.top + 4 }) }}
           className="bg-white border border-slate-200 rounded-lg shadow-xl z-[70] overflow-hidden">
@@ -492,7 +506,7 @@ export default function PettyCashStaff({ scope }) {
       particular: e.particular, vendorName: e.vendorName || "", category: e.category, proofType: e.proofType, paymentMode: e.paymentMode,
       projectId: e.orgProjectId || "", location: e.location, remarks: e.remarks,
       items: (e.items || []).map(it => ({
-        name: it.name, qty: String(it.qty), unit: it.unit || "", rate: it.rate ? String(it.rate) : "", amount: String(it.amount),
+        name: it.name, qty: String(it.qty), unit: it.unit || "", rate: it.rate ? String(it.rate) : "", amount: String(it.amount), rateAuto: true,
       })),
     });
     setDocs(Object.fromEntries(DOC_SECTIONS.map(s => [s.key, (e.documents?.[s.key] || []).map(url => ({ url, keepPath: url }))])));
@@ -511,12 +525,20 @@ export default function PettyCashStaff({ scope }) {
     const items = fn(f.items);
     return { ...f, items, amount: items.length ? String(itemsTotal(items)) : f.amount };
   });
+  // Whichever of Rate / Amount the user typed last drives the other:
+  // typing Rate sets Amount = Qty × Rate; typing Amount (e.g. "200 gm for
+  // ₹34") sets Rate = Amount ÷ Qty. A Qty change keeps the typed one fixed.
+  // rateAuto marks a derived rate; it is not saved (the backend keeps only
+  // name/qty/unit/rate/amount).
   const updateItem = (idx, key, value) => setItems(items => items.map((it, i) => {
     if (i !== idx) return it;
     const next = { ...it, [key]: value };
-    if ((key === "qty" || key === "rate") && Number(next.qty) > 0 && next.rate !== "") {
-      next.amount = String(round2(Number(next.qty) * Number(next.rate)));
-    }
+    const qty = Number(next.qty);
+    const rateFromAmount = () => { next.rate = qty > 0 && next.amount !== "" ? String(round2(Number(next.amount) / qty)) : ""; next.rateAuto = true; };
+    const amountFromRate = () => { if (qty > 0 && next.rate !== "") next.amount = String(round2(qty * Number(next.rate))); };
+    if (key === "rate") { next.rateAuto = false; amountFromRate(); }
+    else if (key === "amount") rateFromAmount();
+    else if (key === "qty") { if (next.rateAuto || next.rate === "") rateFromAmount(); else amountFromRate(); }
     return next;
   }));
 
@@ -1182,7 +1204,7 @@ export default function PettyCashStaff({ scope }) {
           </div>
 
           <div className="flex-1 min-h-0 overflow-y-auto bg-slate-50/60">
-            <div className="max-w-[1400px] mx-auto p-5 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
+            <div className="max-w-[1400px] mx-auto p-5 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_330px] gap-5 items-start">
               <div className="space-y-5 min-w-0">
                 <FormCard title="Entry details" icon={FileText}>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1739,20 +1761,20 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
 // be typed over (e.g. when the bill rounds off).
 function ItemsEditor({ items, itemNames, onChange, onAdd, onRemove }) {
   const cell = "w-full h-9 border border-slate-300 rounded-md px-2 text-sm outline-none bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-500";
-  const cols = "grid grid-cols-[minmax(220px,1fr)_90px_100px_110px_120px_28px] gap-2 items-center";
+  const cols = "grid grid-cols-[minmax(240px,1fr)_72px_84px_92px_104px_24px] gap-2 items-start";
   return (
     <div>
       {items.length === 0 ? (
         <p className="text-xs text-slate-400 mb-2">Add items to record what was bought — the amount becomes their total.</p>
       ) : (
         <div className="overflow-x-auto">
-          <div className="min-w-[700px] space-y-2 mb-2">
+          <div className="min-w-[620px] space-y-2 mb-2">
             <div className={`${cols} text-[11px] font-semibold text-slate-500 uppercase tracking-wide`}>
               <span>Item</span><span className="text-right">Qty</span><span>Unit</span><span className="text-right">Rate</span><span className="text-right">Amount</span><span />
             </div>
             {items.map((it, i) => (
               <div key={i} className={cols}>
-                <NameCombo value={it.name} onChange={v => onChange(i, "name", v)} options={itemNames} noun="item" placeholder="Search or add an item" inputClass={cell} />
+                <NameCombo multiline value={it.name} onChange={v => onChange(i, "name", v)} options={itemNames} noun="item" placeholder="Search or add an item" inputClass={cell} />
                 <input type="number" min="0" step="any" value={it.qty} onChange={e => onChange(i, "qty", e.target.value)} className={`${cell} text-right`} />
                 <input list="petty-cash-units" value={it.unit} onChange={e => onChange(i, "unit", e.target.value)} placeholder="nos" className={cell} />
                 <input type="number" min="0" step="0.01" value={it.rate} onChange={e => onChange(i, "rate", e.target.value)} className={`${cell} text-right`} />
