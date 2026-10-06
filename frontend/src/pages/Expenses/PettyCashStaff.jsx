@@ -104,6 +104,16 @@ const useClickOutside = (ref, onOutside) => useEffect(() => {
   return () => document.removeEventListener("mousedown", h);
 }, [ref, onOutside]);
 
+// Pixel width of a string in the table's 14px font (for sizing the Vendor column).
+let measureCtx;
+const textWidth = (text) => {
+  try {
+    measureCtx ||= document.createElement("canvas").getContext("2d");
+    measureCtx.font = `14px ${getComputedStyle(document.body).fontFamily}`;
+    return measureCtx.measureText(text).width;
+  } catch { return text.length * 8; }
+};
+
 const matchesQuery = (list, q) => {
   const s = q.trim().toLowerCase();
   return s ? list.filter(v => v.toLowerCase().includes(s)) : list;
@@ -479,8 +489,14 @@ export default function PettyCashStaff({ scope }) {
   // offsets line up; Remarks has no width and takes whatever is left.
   // Sticky cells lose the collapsed borders, so their lines are drawn with
   // inset shadows instead.
+  // Vendor fits the widest name in the current list on one line (padding 32
+  // + a little slack), between 140px and 420px; past that it wraps.
+  const vendorColW = useMemo(() => {
+    const widest = Math.max(0, ...[...new Set(filtered.map(e => e.vendorName).filter(Boolean))].map(textWidth));
+    return Math.min(420, Math.max(140, Math.ceil(widest) + 40));
+  }, [filtered]);
   const COL_W = {
-    Date: 120, Vendor: 200, Expense: 280, Amount: 120, "Paid By": 160, "Bill Type": 130, Payment: 120,
+    Date: 120, Vendor: vendorColW, Expense: 280, Amount: 120, "Paid By": 160, "Bill Type": 130, Payment: 120,
     Type: 130, From: 180, To: 180, Doc: 70,
   };
   // Expenses open from the name, so only Received & Given needs a View button.
@@ -1165,7 +1181,7 @@ export default function PettyCashStaff({ scope }) {
                   <td className={`${pinTd("Date")} px-4 py-2.5 whitespace-nowrap text-slate-700`}>{fmtDate(e.entryDate)}</td>
                   {subTab === "entries" ? (
                     <>
-                      <td className={`${pinTd("Vendor")} px-4 py-2.5 text-slate-700 whitespace-nowrap truncate`} title={e.vendorName}>{e.vendorName || <span className="text-slate-400">—</span>}</td>
+                      <td className={`${pinTd("Vendor")} px-4 py-2.5 text-slate-700 break-words`}>{e.vendorName || <span className="text-slate-400">—</span>}</td>
                       <td className="px-4 py-2.5 text-slate-800 overflow-hidden">
                         <button type="button" onClick={() => setViewEntry(e)} title="View details"
                           className="block max-w-full truncate text-left hover:text-blue-600 hover:underline">{e.particular}</button>
