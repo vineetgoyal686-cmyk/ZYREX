@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { FileSpreadsheet, Loader2, Paperclip, CalendarRange, ChevronDown } from "lucide-react";
+import { FileSpreadsheet, Loader2, Paperclip, CalendarRange, CalendarDays, ChevronDown, Check, Pencil } from "lucide-react";
 import api from "../../utils/api";
 import Pagination from "./Pagination";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -23,15 +23,15 @@ const periodOptions = () => {
   const y = now.getFullYear(), m = now.getMonth(), today = ymd(now);
   const fyStart = m >= 3 ? y : y - 1; // FY starts 1 April
   const quick = [
-    { id: "this_month",  label: "This Month",          from: firstOfMonth(y, m), to: today },
-    { id: "last_month",  label: "Last Month",          from: firstOfMonth(y, m - 1), to: lastOfMonth(y, m - 1) },
-    { id: "last_3",      label: "Last 3 Months",       from: firstOfMonth(y, m - 2), to: today },
-    { id: "last_6",      label: "Last 6 Months",       from: firstOfMonth(y, m - 5), to: today },
-    { id: "last_12",     label: "Last 12 Months",      from: firstOfMonth(y, m - 11), to: today },
-    { id: "this_fy",     label: `This Financial Year (${fyStart}-${String(fyStart + 1).slice(2)})`, from: `${fyStart}-04-01`, to: today },
-    { id: "last_fy",     label: `Last Financial Year (${fyStart - 1}-${String(fyStart).slice(2)})`, from: `${fyStart - 1}-04-01`, to: `${fyStart}-03-31` },
-    { id: "this_year",   label: `This Year (${y})`,  from: `${y}-01-01`, to: today },
-    { id: "last_year",   label: `Last Year (${y - 1})`, from: `${y - 1}-01-01`, to: `${y - 1}-12-31` },
+    { id: "this_month",  group: "Recent", label: "This Month",          from: firstOfMonth(y, m), to: today },
+    { id: "last_month",  group: "Recent", label: "Last Month",          from: firstOfMonth(y, m - 1), to: lastOfMonth(y, m - 1) },
+    { id: "last_3",      group: "Recent", label: "Last 3 Months",       from: firstOfMonth(y, m - 2), to: today },
+    { id: "last_6",      group: "Recent", label: "Last 6 Months",       from: firstOfMonth(y, m - 5), to: today },
+    { id: "last_12",     group: "Recent", label: "Last 12 Months",      from: firstOfMonth(y, m - 11), to: today },
+    { id: "this_fy",     group: "Financial year", label: `This FY ${fyStart}-${String(fyStart + 1).slice(2)}`, from: `${fyStart}-04-01`, to: today },
+    { id: "last_fy",     group: "Financial year", label: `Last FY ${fyStart - 1}-${String(fyStart).slice(2)}`, from: `${fyStart - 1}-04-01`, to: `${fyStart}-03-31` },
+    { id: "this_year",   group: "Calendar year", label: `This Year ${y}`,  from: `${y}-01-01`, to: today },
+    { id: "last_year",   group: "Calendar year", label: `Last Year ${y - 1}`, from: `${y - 1}-01-01`, to: `${y - 1}-12-31` },
   ];
   return quick;
 };
@@ -49,6 +49,60 @@ const HEADERS = ["Date", "Particular Items", "Tax / Non Tax", "Bill Type", "Paym
 const PIN_LEFT  = "sticky left-0 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]";
 const PIN_RIGHT = "sticky right-0 shadow-[-2px_0_4px_-2px_rgba(0,0,0,0.12)]";
 const pinFor = (i) => (i === 0 ? PIN_LEFT : i === HEADERS.length - 1 ? PIN_RIGHT : "");
+
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+// "2026-10-01" -> "1 Oct 26"
+const shortDate = (iso) => `${Number(iso.slice(8, 10))} ${SHORT_MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(2, 4)}`;
+
+// Period picker: grouped presets, each with its date range, plus
+// "Pick a month" and a read-only "Custom dates" row for hand-typed dates.
+function PeriodSelect({ value, periods, from, to, onPick }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  const label = value === "month" ? "Month" : value === "custom" ? "Custom dates" : periods.find(p => p.id === value)?.label;
+  const groups = [...new Set(periods.map(p => p.group))];
+  const pick = (id) => { onPick(id); setOpen(false); };
+  const row = (id, text, sub, Icon) => {
+    const sel = value === id;
+    return (
+      <button key={id} type="button" onClick={() => pick(id)}
+        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-[13px] ${sel ? "bg-indigo-50 text-indigo-700 font-semibold" : "text-slate-700 hover:bg-slate-50"}`}>
+        {Icon && <Icon size={14} className={sel ? "text-indigo-500" : "text-slate-400"} />}
+        <span className="flex-1">{text}</span>
+        {sub && <span className={`text-[11px] tabular-nums ${sel ? "text-indigo-500" : "text-slate-400"}`}>{sub}</span>}
+        {sel && <Check size={14} className="shrink-0" />}
+      </button>
+    );
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className={`h-10 w-[230px] flex items-center gap-2 border rounded-lg pl-3 pr-2.5 bg-white text-left text-sm text-slate-800 transition-colors ${open ? "border-slate-500" : "border-slate-300 hover:border-slate-400"}`}>
+        <CalendarRange size={15} className="text-slate-400 shrink-0" />
+        <span className="flex-1 truncate font-medium">{label}</span>
+        <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 mt-1 w-[300px] bg-white border border-slate-200 rounded-xl shadow-xl z-40 p-1.5">
+          {groups.map(g => (
+            <div key={g} className="pb-1 mb-1 border-b border-slate-100">
+              <p className="px-3 pt-1.5 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">{g}</p>
+              {periods.filter(p => p.group === g).map(p => row(p.id, p.label, `${shortDate(p.from)} – ${shortDate(p.to)}`))}
+            </div>
+          ))}
+          {row("month", "Pick a month…", null, CalendarDays)}
+          {value === "custom" && row("custom", "Custom dates", `${shortDate(from)} – ${shortDate(to)}`, Pencil)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // scope = { company, project (null = all), projects } from the Petty Cash header.
 export default function PettyCashAccounts({ scope }) {
@@ -167,20 +221,11 @@ export default function PettyCashAccounts({ scope }) {
   const s = data?.summary;
   return (
     <div className="p-4 sm:p-6 space-y-5 md:flex-1 md:min-h-0 md:flex md:flex-col md:space-y-0 md:gap-5">
-      <div className="shrink-0 flex flex-wrap items-end gap-3 bg-white rounded-xl border border-slate-200 px-5 py-4">
-        <label className="text-sm">
+      <div className="relative z-20 shrink-0 flex flex-wrap items-end gap-3 bg-white rounded-xl border border-slate-200 px-5 py-4">
+        <div className="text-sm">
           <span className="block text-xs font-semibold text-slate-500 mb-1">Period</span>
-          <div className="relative">
-            <CalendarRange size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <select value={periodId} onChange={e => pickPeriod(e.target.value)}
-              className="h-10 w-[230px] appearance-none border border-slate-300 rounded-lg pl-9 pr-8 bg-white text-slate-800 outline-none focus:border-slate-500 cursor-pointer">
-              {periods.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-              <option value="month">Pick a month…</option>
-              <option value="custom" disabled={periodId !== "custom"}>Custom dates</option>
-            </select>
-            <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          </div>
-        </label>
+          <PeriodSelect value={periodId} periods={periods} from={from} to={to} onPick={id => id !== "custom" && pickPeriod(id)} />
+        </div>
         {periodId === "month" && (
           <label className="text-sm">
             <span className="block text-xs font-semibold text-slate-500 mb-1">Month</span>
@@ -222,7 +267,7 @@ export default function PettyCashAccounts({ scope }) {
         ))}
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
+      <div className="relative z-0 bg-white rounded-xl border border-slate-200 overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
         <div className="overflow-auto md:flex-1 md:min-h-0 thin-scroll">
           <table className={GRID_TABLE}>
             <thead className="text-slate-600">
