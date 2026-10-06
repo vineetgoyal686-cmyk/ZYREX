@@ -84,38 +84,52 @@ const matchesQuery = (list, q) => {
   return s ? list.filter(v => v.toLowerCase().includes(s)) : list;
 };
 
-// Vendor field: type a new name or pick one used before. The typed text is
-// both the value and the search; a name not in the list is added on save.
-function VendorInput({ value, onChange, vendors }) {
-  const [open, setOpen] = useState(false);
+// Name field with a pick list (vendors, item names): type a new name or pick
+// one used before. The typed text is both the value and the search; a name
+// not in the list is saved as new. The list floats (position: fixed) so a
+// scrolling parent — the item rows, the form body — can't clip it.
+function NameCombo({ value, onChange, options, noun, placeholder, inputClass, withIcon }) {
+  const [rect, setRect] = useState(null); // input position while the list is open
   const ref = useRef(null);
-  useClickOutside(ref, () => setOpen(false));
-  const matches = matchesQuery(vendors, value);
+  const inputRef = useRef(null);
+  const close = () => setRect(null);
+  const open = () => { const r = inputRef.current?.getBoundingClientRect(); if (r) setRect(r); };
+  useClickOutside(ref, close);
+  useEffect(() => {
+    if (!rect) return;
+    const follow = () => { const r = inputRef.current?.getBoundingClientRect(); if (r) setRect(r); };
+    window.addEventListener("scroll", follow, true);
+    window.addEventListener("resize", follow);
+    return () => { window.removeEventListener("scroll", follow, true); window.removeEventListener("resize", follow); };
+  }, [!!rect]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const matches = matchesQuery(options, value);
   const typed = value.trim();
-  const isNew = typed && !vendors.some(v => v.toLowerCase() === typed.toLowerCase());
-  const pick = (v) => { onChange(v); setOpen(false); };
+  const isNew = typed && !options.some(v => v.toLowerCase() === typed.toLowerCase());
+  const pick = (v) => { onChange(v); close(); };
+  const below = rect && window.innerHeight - rect.bottom > 260;
+  const nouns = `${noun}s`;
 
   return (
     <div ref={ref} className="relative">
-      <div className="relative">
-        <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input value={value} onChange={e => { onChange(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)}
-          onKeyDown={e => { if (e.key === "Escape" || e.key === "Tab") setOpen(false); }}
-          placeholder="Search or add a vendor (optional)" className={`${inp} pl-9 pr-8`} />
-        {value
-          ? <button type="button" onClick={() => pick("")} title="Clear" className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-700"><X size={14} /></button>
-          : <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />}
-      </div>
-      {open && (
-        <div className="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-30 overflow-hidden">
+      {withIcon && <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />}
+      <input ref={inputRef} value={value} onChange={e => { onChange(e.target.value); open(); }} onFocus={open}
+        onKeyDown={e => { if (e.key === "Escape" || e.key === "Tab") close(); }}
+        placeholder={placeholder} className={`${inputClass} ${withIcon ? "pl-9" : ""} pr-7`} />
+      {value
+        ? <button type="button" onClick={() => pick("")} title="Clear" className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-700"><X size={13} /></button>
+        : <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />}
+      {rect && (
+        <div style={{ position: "fixed", left: rect.left, width: Math.max(rect.width, 260), ...(below ? { top: rect.bottom + 4 } : { bottom: window.innerHeight - rect.top + 4 }) }}
+          className="bg-white border border-slate-200 rounded-lg shadow-xl z-[70] overflow-hidden">
           <div className="px-3 py-1.5 text-[11px] font-medium text-slate-500 bg-slate-50 border-b border-slate-100">
-            {typed ? `${matches.length} of ${vendors.length} vendors found` : `Vendors: ${vendors.length}`}
+            {typed ? `${matches.length} of ${options.length} ${nouns} found` : `${nouns[0].toUpperCase()}${nouns.slice(1)}: ${options.length}`}
           </div>
           <div className="max-h-56 overflow-y-auto">
             {isNew && (
               <div onMouseDown={e => { e.preventDefault(); pick(typed); }}
                 className="flex items-center gap-2 px-3 py-2 cursor-pointer border-b border-slate-100 text-[13px] text-emerald-700 font-semibold hover:bg-emerald-50">
-                <Plus size={14} /> Add “{typed}” as new vendor
+                <Plus size={14} className="shrink-0" /> <span className="truncate">Add “{typed}” as new {noun}</span>
               </div>
             )}
             {matches.map(v => (
@@ -126,7 +140,7 @@ function VendorInput({ value, onChange, vendors }) {
                 {v.toLowerCase() === typed.toLowerCase() && <Check size={14} className="shrink-0 ml-2" />}
               </div>
             ))}
-            {!matches.length && !isNew && <div className="px-3 py-3 text-center text-xs text-slate-400">No vendors yet — type a name to add one</div>}
+            {!matches.length && !isNew && <div className="px-3 py-3 text-center text-xs text-slate-400">No {nouns} yet — type a name to add one</div>}
           </div>
         </div>
       )}
@@ -1129,13 +1143,13 @@ export default function PettyCashStaff({ scope }) {
       {/* Add / edit form */}
       {formOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-2xl w-full h-full flex flex-col overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
               <h2 className="text-base font-bold text-slate-900">{editOriginal ? "Edit Entry" : "Add Entry"}</h2>
               <button onClick={closeForm} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
             </div>
 
-            <div className="px-6 py-5 overflow-y-auto space-y-5">
+            <div className="flex-1 px-6 py-5 overflow-y-auto space-y-5">
               <div className="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
                 {ENTRY_TYPES.map(t => (
                   <button key={t.value} type="button" onClick={() => setForm(f => ({ ...f, entryType: t.value }))}
@@ -1165,7 +1179,8 @@ export default function PettyCashStaff({ scope }) {
                 {form.entryType === "expense" && (
                   <>
                     <Field label="Expense" required wide><input value={form.particular} onChange={set("particular")} placeholder="e.g. Food charge (Zomato)" className={inp} /></Field>
-                    <Field label="Vendor Name" wide><VendorInput value={form.vendorName} onChange={v => setForm(f => ({ ...f, vendorName: v }))} vendors={vendors} /></Field>
+                    <Field label="Vendor Name" wide><NameCombo value={form.vendorName} onChange={v => setForm(f => ({ ...f, vendorName: v }))} options={vendors}
+                      noun="vendor" placeholder="Search or add a vendor (optional)" inputClass={inp} withIcon /></Field>
                     <Field label="Paid By" required>{personSelect("personId", "Select person")}</Field>
                     <Field label="Category" required>
                       <Select value={form.category} onChange={set("category")}>
@@ -1688,20 +1703,20 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
 // be typed over (e.g. when the bill rounds off).
 function ItemsEditor({ items, itemNames, onChange, onAdd, onRemove }) {
   const cell = "w-full h-9 border border-slate-300 rounded-md px-2 text-sm outline-none bg-white text-slate-900 placeholder:text-slate-400 focus:border-slate-500";
-  const cols = "grid grid-cols-[minmax(140px,1fr)_70px_80px_80px_90px_28px] gap-2 items-center";
+  const cols = "grid grid-cols-[minmax(220px,1fr)_90px_100px_110px_120px_28px] gap-2 items-center";
   return (
     <div className="rounded-lg border border-slate-200 p-3">
       {items.length === 0 ? (
         <p className="text-xs text-slate-400 mb-2">Add items to record what was bought — the amount becomes their total.</p>
       ) : (
         <div className="overflow-x-auto">
-          <div className="min-w-[520px] space-y-2 mb-2">
+          <div className="min-w-[700px] space-y-2 mb-2">
             <div className={`${cols} text-[11px] font-semibold text-slate-500 uppercase tracking-wide`}>
               <span>Item</span><span className="text-right">Qty</span><span>Unit</span><span className="text-right">Rate</span><span className="text-right">Amount</span><span />
             </div>
             {items.map((it, i) => (
               <div key={i} className={cols}>
-                <input list="petty-cash-item-names" value={it.name} onChange={e => onChange(i, "name", e.target.value)} placeholder="e.g. Cement" className={cell} />
+                <NameCombo value={it.name} onChange={v => onChange(i, "name", v)} options={itemNames} noun="item" placeholder="Search or add an item" inputClass={cell} />
                 <input type="number" min="0" step="any" value={it.qty} onChange={e => onChange(i, "qty", e.target.value)} className={`${cell} text-right`} />
                 <input list="petty-cash-units" value={it.unit} onChange={e => onChange(i, "unit", e.target.value)} placeholder="nos" className={cell} />
                 <input type="number" min="0" step="0.01" value={it.rate} onChange={e => onChange(i, "rate", e.target.value)} className={`${cell} text-right`} />
@@ -1712,7 +1727,6 @@ function ItemsEditor({ items, itemNames, onChange, onAdd, onRemove }) {
           </div>
         </div>
       )}
-      <datalist id="petty-cash-item-names">{itemNames.map(n => <option key={n} value={n} />)}</datalist>
       <datalist id="petty-cash-units">{UNITS.map(u => <option key={u} value={u} />)}</datalist>
       <div className="flex items-center justify-between">
         <button type="button" onClick={onAdd} className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline">
