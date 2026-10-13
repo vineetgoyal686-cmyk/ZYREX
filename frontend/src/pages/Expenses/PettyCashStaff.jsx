@@ -497,7 +497,7 @@ export default function PettyCashStaff({ scope }) {
   }, [filtered]);
   const COL_W = {
     Date: 120, Vendor: vendorColW, Expense: 280, Amount: 120, "Paid By": 160, "Bill Type": 130, Payment: 120,
-    Type: 130, From: 180, To: 180, Doc: 70,
+    Type: 200, From: 180, To: 180, Doc: 70,
   };
   // Expenses open from the name, so only Received & Given needs a View button.
   const showViewBtn = subTab !== "entries";

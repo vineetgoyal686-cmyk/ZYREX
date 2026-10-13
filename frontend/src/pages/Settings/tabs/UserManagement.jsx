@@ -710,7 +710,7 @@ export default function UserManagement({
                 <p className="text-sm font-medium text-slate-400">{members.length === 0 ? "No team members found." : "No results match your search."}</p>
               </div>
             ) : viewType === "list" ? (
-              <div className="border border-slate-200 bg-white">
+              <div className="isolate border border-slate-200 bg-white">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-separate border-spacing-0 min-w-[900px]">
                   <thead>
