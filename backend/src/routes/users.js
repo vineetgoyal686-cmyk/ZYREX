@@ -28,10 +28,12 @@ router.get("/", requireAuth, async (req, res) => {
   if (!isAuthorized) return res.status(403).json({ error: "Access denied" });
 
   const admin = getAdminClient();
-  const { data, error } = await admin
-    .from("users")
-    .select("id, name, email, contact_no, designation, designation_id, access_profile_ids, department, role, is_active, avatar, created_at, can_manage_roles")
-    .order("created_at", { ascending: false });
+  // can_manage_control_center comes from control_center_access.sql — fall
+  // back without it if that SQL hasn't been run yet
+  const USER_COLS = "id, name, email, contact_no, designation, designation_id, access_profile_ids, department, role, is_active, avatar, created_at, can_manage_roles";
+  let { data, error } = await admin.from("users")
+    .select(`${USER_COLS}, can_manage_control_center`).order("created_at", { ascending: false });
+  if (error) ({ data, error } = await admin.from("users").select(USER_COLS).order("created_at", { ascending: false }));
 
   if (error) return res.status(500).json({ error: error.message });
 
@@ -225,7 +227,7 @@ router.post("/:id/signature", requireAuth, requireAdminOrAbove, async (req, res)
 /* PUT /api/users/:id */
 router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
   const { id } = req.params;
-  const { name, contact_no, designation, designation_id, access_profile_ids, department, role, is_active, profile_permissions, reset_permissions, can_manage_roles } = req.body;
+  const { name, contact_no, designation, designation_id, access_profile_ids, department, role, is_active, profile_permissions, reset_permissions, can_manage_roles, can_manage_control_center } = req.body;
 
   const admin = getAdminClient();
   const { data: targetUser } = await admin.from("users").select("role, profile_permissions, access_profile_ids").eq("id", id).single();
@@ -262,6 +264,7 @@ router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
   if (department          !== undefined) updates.department          = department;
   if (is_active           !== undefined) updates.is_active           = is_active;
   if (can_manage_roles    !== undefined && req.user.role === "global_admin") updates.can_manage_roles = !!can_manage_roles;
+  if (can_manage_control_center !== undefined && req.user.role === "global_admin") updates.can_manage_control_center = !!can_manage_control_center;
 
   if (role !== undefined && role !== targetUser.role) {
     if (req.user.role === "global_admin") {

@@ -5,7 +5,7 @@ import { MODULE_SECTIONS } from "../constants";
 import { refreshControlOwners } from "../../../hooks/useControlOwners";
 
 /*
- * Control Center (Global Admin only). A tab / sub-tab added here gets
+ * Control Center (Global Admin, or whoever Global Admin gave access to). A tab / sub-tab added here gets
  * owners: only they (and Global Admin) can grant, change or remove its
  * permissions, and nobody gets it automatically by role. Tabs not added
  * here work as before. Choosing a tab selects all its sub-tabs; untick a
@@ -84,13 +84,13 @@ export default function ControlCenter({ showToast }) {
       try {
         const [ownersRes, usersRes, modsRes] = await Promise.all([
           api.get("/api/control-center"),
-          api.get("/api/users"),
+          api.get("/api/control-center/users"),
           api.get("/api/users/modules/list"),
         ]);
         const owners = ownersRes.data.owners || {};
         setDraft(owners);
         setSaved(owners);
-        setUsers((usersRes.data.users || []).filter(u => u.is_active !== false && u.role !== "global_admin"));
+        setUsers(usersRes.data.users || []);
         setNames(Object.fromEntries((modsRes.data.modules || []).map(m => [m.module_key, m.module_name])));
       } catch {
         showToast?.("Failed to load Control Center", "error");

@@ -839,10 +839,15 @@ router.get("/init", async (req, res) => {
 
   const admin = getAdminClient();
 
+  // can_manage_control_center comes from control_center_access.sql — fall
+  // back without it so login keeps working if that SQL hasn't been run yet
+  const PROFILE_COLS = "id, name, email, role, designation, department, contact_no, avatar, access_profile_ids, profile_permissions, is_active, can_manage_roles";
+  const loadProfile = async () => {
+    const res = await admin.from("users").select(`${PROFILE_COLS}, can_manage_control_center`).eq("id", userId).single();
+    return res.error ? admin.from("users").select(PROFILE_COLS).eq("id", userId).single() : res;
+  };
   const [profileRes, projectsRes] = await Promise.all([
-    admin.from("users")
-      .select("id, name, email, role, designation, department, contact_no, avatar, access_profile_ids, profile_permissions, is_active")
-      .eq("id", userId).single(),
+    loadProfile(),
     admin.from("projects").select("id, project_name, project_code, city, state, is_active, logo_url").order("created_at", { ascending: true }),
   ]);
 

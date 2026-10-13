@@ -4,9 +4,10 @@ const admin = require("../helpers/supabaseHelper");
 const { requireAuth } = require("../middleware/auth");
 const { bustOwnerCache } = require("../helpers/controlHelper");
 
-const requireGlobalAdmin = (req, res, next) => {
-  if (req.user.role !== "global_admin")
-    return res.status(403).json({ error: "Only Global Admin can manage the Control Center" });
+// Global Admin, or someone Global Admin gave Control Center access to
+const requireControlCenter = (req, res, next) => {
+  if (req.user.role !== "global_admin" && !req.user.can_manage_control_center)
+    return res.status(403).json({ error: "You don't have access to the Control Center" });
   next();
 };
 
@@ -21,10 +22,20 @@ router.get("/", requireAuth, async (req, res) => {
   res.json({ owners });
 });
 
+/* GET /api/control-center/users — people who can be made owners. Its own
+   route so a Control Center manager without User Management access can
+   still pick owners. */
+router.get("/users", requireAuth, requireControlCenter, async (req, res) => {
+  const { data, error } = await admin.from("users")
+    .select("id, name, email").eq("is_active", true).neq("role", "global_admin").order("name");
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ users: data || [] });
+});
+
 /* PUT /api/control-center — body { owners: { module_key: [user_id, ...] } }.
    Replaces the owners of every key sent; an empty list takes that tab out
    of the Control Center (back to normal). Keys not sent are untouched. */
-router.put("/", requireAuth, requireGlobalAdmin, async (req, res) => {
+router.put("/", requireAuth, requireControlCenter, async (req, res) => {
   const owners = req.body?.owners;
   if (!owners || typeof owners !== "object" || Array.isArray(owners))
     return res.status(400).json({ error: "owners must be an object" });

@@ -154,6 +154,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
   const showRequestHandlerTab = isSuperOrGlobal || !!pp.request_handler?.view;
   const showMailManagementTab = isSuperOrGlobal || !!pp.mail_management?.view;
   const showUserAnalyticsTab  = isGlobalAdmin || !!pp.user_analytics?.view;
+  const showControlCenterTab  = isGlobalAdmin || !!currentUser.can_manage_control_center;
   const adminSettings   = isGlobalAdmin || currentUser.role === "super_admin";
 
   const settingsNavGroups = (() => {
@@ -174,7 +175,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
       ...(showUserAnalyticsTab
         ? [{ id: "user_analytics", label: "User Analytics", icon: BarChart3 }]
         : []),
-      ...(isGlobalAdmin
+      ...(showControlCenterTab
         ? [{ id: "control_center", label: "Control Center", icon: ShieldAlert }]
         : []),
     ];
@@ -323,7 +324,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
           )}
 
           {/* Control Center = full-bleed, no padding (sticky header like User Management) */}
-          {section === "control_center" && isGlobalAdmin && (
+          {section === "control_center" && showControlCenterTab && (
             <ControlCenter showToast={showToast} />
           )}
 

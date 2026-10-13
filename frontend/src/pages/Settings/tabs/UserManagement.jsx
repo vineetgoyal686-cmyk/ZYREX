@@ -91,7 +91,7 @@ export default function UserManagement({
 
   /* Edit member */
   const [editingMember,         setEditingMember]         = useState(null);
-  const [editForm,              setEditForm]              = useState({ name: "", contact_no: "", designation: "", department: "", can_manage_roles: false });
+  const [editForm,              setEditForm]              = useState({ name: "", contact_no: "", designation: "", department: "", can_manage_roles: false, can_manage_control_center: false });
   const [editAccessProfileIds,  setEditAccessProfileIds]  = useState([]);
   const [editSaving,            setEditSaving]            = useState(false);
   const [openMenuId,            setOpenMenuId]            = useState(null);
@@ -310,6 +310,8 @@ export default function UserManagement({
         access_profile_ids: editAccessProfileIds,
         department: editForm.department,
         ...(isGlobalAdmin && editingMember.role === "super_admin" ? { can_manage_roles: editForm.can_manage_roles } : {}),
+        ...(isGlobalAdmin && editForm.can_manage_control_center !== !!editingMember.can_manage_control_center
+          ? { can_manage_control_center: editForm.can_manage_control_center } : {}),
       });
       setMembers(prev => prev.map(m => m.id === editingMember.id ? { ...m, ...editForm, name: editForm.name.trim(), access_profile_ids: editAccessProfileIds } : m));
       showToast(`${editForm.name.trim()} updated`);
@@ -799,7 +801,7 @@ export default function UserManagement({
                           <td className={`px-4 py-3 border-b border-l border-slate-200 text-center sticky right-0 z-[20] ${rowBg}`}>
                             <div className="flex items-center justify-center gap-1">
                               {canHierarchy && (
-                                <button onClick={() => { setEditingMember(m); setEditForm({ name: m.name, contact_no: m.contact_no || "", designation: m.designation || "", department: m.department || "", can_manage_roles: !!m.can_manage_roles }); setEditAccessProfileIds(m.access_profile_ids || []); }}
+                                <button onClick={() => { setEditingMember(m); setEditForm({ name: m.name, contact_no: m.contact_no || "", designation: m.designation || "", department: m.department || "", can_manage_roles: !!m.can_manage_roles, can_manage_control_center: !!m.can_manage_control_center }); setEditAccessProfileIds(m.access_profile_ids || []); }}
                                   title="Edit" className={btn}><Pencil size={13} /></button>
                               )}
                               {canShield && (
@@ -864,7 +866,7 @@ export default function UserManagement({
                           const cDel    = ch && m.id !== currentUser.id && (isSuperOrGlobal2 || !!pp.manage_user?.delete);
                           return (
                             <>
-                              {ch && <button onClick={() => { setEditingMember(m); setEditForm({ name: m.name, contact_no: m.contact_no || "", designation: m.designation || "", department: m.department || "", can_manage_roles: !!m.can_manage_roles }); setEditAccessProfileIds(m.access_profile_ids || []); }} title="Edit Info" className="p-2 rounded-sm bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><Pencil size={16} /></button>}
+                              {ch && <button onClick={() => { setEditingMember(m); setEditForm({ name: m.name, contact_no: m.contact_no || "", designation: m.designation || "", department: m.department || "", can_manage_roles: !!m.can_manage_roles, can_manage_control_center: !!m.can_manage_control_center }); setEditAccessProfileIds(m.access_profile_ids || []); }} title="Edit Info" className="p-2 rounded-sm bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><Pencil size={16} /></button>}
                               {ch && <button onClick={() => handleResendInvite(m)} title="Resend Invite" className="p-2 rounded-sm bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all shadow-sm"><SendHorizonal size={16} /></button>}
                               {cShield && <button onClick={() => viewPerms(m)} title="Permissions" className="p-2 rounded-sm bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm"><ShieldCheck size={16} /></button>}
                               {cToggle && <button onClick={() => toggleActive(m)} className={`p-2 rounded-sm transition-all shadow-sm ${m.is_active ? "bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white" : "bg-green-50 text-green-600 hover:bg-green-600 hover:text-white"}`}>{m.is_active ? <XCircle size={16} /> : <CheckCircle2 size={16} />}</button>}
@@ -1224,6 +1226,21 @@ export default function UserManagement({
                         ${editForm.can_manage_roles ? "bg-violet-600" : "bg-slate-300"}`}>
                       <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200
                         ${editForm.can_manage_roles ? "translate-x-5" : "translate-x-0"}`} />
+                    </button>
+                  </div>
+                )}
+                {isGlobalAdmin && editingMember.role !== "global_admin" && (
+                  <div className={`flex items-center justify-between px-3.5 py-3 rounded-sm border transition-all ${editForm.can_manage_control_center ? "border-violet-200 bg-violet-50" : "border-slate-200 bg-slate-50"}`}>
+                    <div>
+                      <p className="text-[13px] font-bold text-slate-700">Control Center Access</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">Allow this user to choose tab owners in Control Center</p>
+                    </div>
+                    <button type="button"
+                      onClick={() => setEditForm(p => ({ ...p, can_manage_control_center: !p.can_manage_control_center }))}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none
+                        ${editForm.can_manage_control_center ? "bg-violet-600" : "bg-slate-300"}`}>
+                      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200
+                        ${editForm.can_manage_control_center ? "translate-x-5" : "translate-x-0"}`} />
                     </button>
                   </div>
                 )}
