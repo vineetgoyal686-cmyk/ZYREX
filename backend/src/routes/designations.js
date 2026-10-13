@@ -3,6 +3,11 @@ const router  = express.Router();
 const admin = require("../helpers/supabaseHelper");
 const getAdminClient = () => admin;
 const { requireAuth } = require("../middleware/auth");
+const { lockedModuleIds } = require("../helpers/controlHelper");
+
+// Drop the Control Center tabs this caller doesn't own from a template's
+// permission list — they can't put them into a profile or push them to users.
+const withoutLocked = (perms, locked) => (perms || []).filter(p => !locked.has(String(p.module_id)));
 
 const requireAdminOrAbove = (req, res, next) => {
   if (!["global_admin", "super_admin", "admin"].includes(req.user.role))
@@ -41,10 +46,11 @@ router.post("/", requireAuth, requireGlobalOrSuper, async (req, res) => {
   if (!name || !name.trim()) return res.status(400).json({ error: "Name is required" });
 
   const admin = getAdminClient();
+  const locked = await lockedModuleIds(req.user);
   const { data, error } = await admin.from("designations").insert({
     name:                name.trim(),
     description:         description || null,
-    app_permissions:     app_permissions     || [],
+    app_permissions:     withoutLocked(app_permissions, locked),
     profile_permissions: profile_permissions || {},
     project_access:      project_access      || [],
     created_by_id:       req.user.id,
@@ -67,6 +73,15 @@ router.put("/:id", requireAuth, requireGlobalOrSuper, async (req, res) => {
   if (is_active           !== undefined) updates.is_active           = is_active;
 
   const admin = getAdminClient();
+  if (app_permissions !== undefined) {
+    // Locked tabs keep whatever the profile already had for them
+    const locked = await lockedModuleIds(req.user);
+    if (locked.size) {
+      const { data: current } = await admin.from("designations").select("app_permissions").eq("id", req.params.id).single();
+      const kept = (current?.app_permissions || []).filter(p => locked.has(String(p.module_id)));
+      updates.app_permissions = [...withoutLocked(app_permissions, locked), ...kept];
+    }
+  }
   const { data, error } = await admin.from("designations").update(updates).eq("id", req.params.id).select().single();
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true, designation: data });
@@ -95,7 +110,7 @@ router.post("/:id/sync", requireAuth, requireGlobalOrSuper, async (req, res) => 
   if (!users || users.length === 0) return res.json({ success: true, synced: 0 });
 
   const userIds = users.map(u => u.id);
-  const tplPerms = tpl.app_permissions || [];
+  const tplPerms = withoutLocked(tpl.app_permissions, await lockedModuleIds(req.user));
 
   // Build permission rows for every (user, module) pair
   const rows = [];
@@ -166,7 +181,7 @@ router.post("/:id/apply/:userId", requireAuth, requireAdminOrAbove, async (req, 
   if (tplErr || !tpl) return res.status(404).json({ error: "Designation not found" });
 
   // Replace the user's permission rows with the template snapshot
-  const rows = (tpl.app_permissions || []).map(p => ({
+  const rows = withoutLocked(tpl.app_permissions, await lockedModuleIds(req.user)).map(p => ({
     user_id:               req.params.userId,
     module_id:             p.module_id,
     can_view:              p.can_view              || false,

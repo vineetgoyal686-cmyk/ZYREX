@@ -1,4 +1,5 @@
 const admin = require("./supabaseHelper");
+const { getOwnerMap, isControlled, isOwner } = require("./controlHelper");
 
 const BYPASS_ROLES = ["global_admin", "super_admin", "admin"];
 
@@ -18,8 +19,11 @@ const checkPermission = async (user, moduleKey, permKey) => {
   // Boardroom is executive-only — only global_admin bypasses (unlike every
   // other module, where super_admin/admin bypass too). Everyone else needs
   // the permission explicitly granted, per-user or via an Access Profile.
-  const isBoardroom = moduleKey.startsWith("boardroom");
-  const bypassAllowed = isBoardroom ? user.role === "global_admin" : BYPASS_ROLES.includes(user.role);
+  // Control Center tabs follow the same rule, and their owners get full access.
+  const owners = await getOwnerMap();
+  if (isOwner(owners, moduleKey, user.id)) return true;
+  const noBypass = moduleKey.startsWith("boardroom") || isControlled(owners, moduleKey);
+  const bypassAllowed = noBypass ? user.role === "global_admin" : BYPASS_ROLES.includes(user.role);
   if (bypassAllowed) return true;
 
   const { data: mod } = await admin.from("modules").select("id").eq("module_key", moduleKey).maybeSingle();

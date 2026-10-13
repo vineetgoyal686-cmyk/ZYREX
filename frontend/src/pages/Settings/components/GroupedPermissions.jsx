@@ -3,8 +3,13 @@ import {
   GLOBAL_DASHBOARD_ORDER_KEYS, GLOBAL_DASHBOARD_ORDER_LABELS,
   getModulePerms, getModulePermKeysFull, isModuleBuilt,
 } from "../constants";
+import { useControlOwners, canGrantModule } from "../../../hooks/useControlOwners";
 
-export default function GroupedPermissions({ modules, onChange, readOnly = false, allProjects = [], selectedProjects = [], onProjectChange }) {
+export default function GroupedPermissions({ modules: allModules, onChange, readOnly = false, allProjects = [], selectedProjects = [], onProjectChange }) {
+  // Control Center tabs show up only for their owners (and Global Admin)
+  const owners = useControlOwners();
+  const me = JSON.parse(localStorage.getItem("bms_user") || "{}");
+  const modules = owners ? allModules.filter(m => canGrantModule(owners, me, m.module_key)) : [];
   const allSectionKeys = MODULE_SECTIONS.flatMap(s => s.groups.flatMap(g => g.keys));
   const ungrouped = modules.filter(m => !allSectionKeys.includes(m.module_key));
 

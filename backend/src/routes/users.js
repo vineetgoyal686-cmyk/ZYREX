@@ -5,6 +5,7 @@ const admin = require("../helpers/supabaseHelper");
 const { sendTemplateEmail } = require("../utils/mailer");
 const getAdminClient = () => admin;
 const { requireAuth, bustUserCache } = require("../middleware/auth");
+const { getOwnerMap, applyOwnership, lockedModuleIds, freezeLockedForProfileChange } = require("../helpers/controlHelper");
 
 const requireAdminOrAbove = (req, res, next) => {
   if (!["global_admin", "super_admin", "admin"].includes(req.user.role))
@@ -123,6 +124,9 @@ router.post("/", requireAuth, requireAdminOrAbove, async (req, res) => {
 
   if (profileError) return res.status(500).json({ error: profileError.message });
 
+  // Access Profiles can't hand out Control Center tabs the creator doesn't own
+  await freezeLockedForProfileChange(req.user, profile.id, [], access_profile_ids || []);
+
   // Invite email ZeptoMail se bhejo
   const inviteLink = authData?.properties?.action_link;
   if (inviteLink) {
@@ -224,9 +228,11 @@ router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
   const { name, contact_no, designation, designation_id, access_profile_ids, department, role, is_active, profile_permissions, reset_permissions, can_manage_roles } = req.body;
 
   const admin = getAdminClient();
-  const { data: targetUser } = await admin.from("users").select("role, profile_permissions").eq("id", id).single();
+  const { data: targetUser } = await admin.from("users").select("role, profile_permissions, access_profile_ids").eq("id", id).single();
 
   if (!targetUser) return res.status(404).json({ error: "User not found" });
+  // Control Center tabs this caller doesn't own — never granted, changed or wiped here
+  const locked = await lockedModuleIds(req.user);
 
   // Permission edits below replace the whole profile_permissions JSON blob,
   // but personal ui data (signature, cover image) and allowed_projects live
@@ -267,7 +273,7 @@ router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
     // Automatic Reset Logic if requested
     if (reset_permissions && updates.role) {
       const { data: modules } = await admin.from("modules").select("id").eq("is_active", true);
-      const rows = (modules || []).map(m => ({
+      const rows = (modules || []).filter(m => !locked.has(String(m.id))).map(m => ({
         user_id:               id,
         module_id:             m.id,
         can_view:              true, // Everyone gets view-only at minimum for admin/super_admin
@@ -287,7 +293,9 @@ router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
       
       const isSA = updates.role === "super_admin";
       if (updates.role === "user") {
-        await admin.from("permissions").delete().eq("user_id", id);
+        let del = admin.from("permissions").delete().eq("user_id", id);
+        if (locked.size) del = del.not("module_id", "in", `(${[...locked.keys()].join(",")})`);
+        await del;
         updates.profile_permissions = withPreservedUi({
           manage_user:    { view: false, add: false, edit: false, delete: false, manage_permissions: false },
           manage_project: { view: false, add: false, edit: false, delete: false },
@@ -311,6 +319,9 @@ router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
       updates.profile_permissions = withPreservedUi(profile_permissions);
     }
   }
+
+  if (updates.access_profile_ids)
+    await freezeLockedForProfileChange(req.user, id, targetUser.access_profile_ids || [], updates.access_profile_ids);
 
   const { data, error } = await admin.from("users").update(updates).eq("id", id).select().single();
   if (error) return res.status(500).json({ error: error.message });
@@ -397,7 +408,9 @@ router.get("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
   });
 
   res.json({
-    permissions: result,
+    permissions: req.params.id === req.user.id
+      ? applyOwnership(result, await getOwnerMap(), req.user.id, PERM_BOOL_KEYS)
+      : result,
     profile_permissions: { ...(user?.profile_permissions || {}), allowed_projects: effectiveAllowedProjects },
     access_profile_ids: user?.access_profile_ids || [],
   });
@@ -412,9 +425,17 @@ router.put("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
     return res.status(400).json({ error: "permissions must be an array" });
 
   const admin = getAdminClient();
+  // Control Center tabs this caller doesn't own are skipped, so whatever the
+  // user has on them stays exactly as it is
+  const locked = await lockedModuleIds(req.user);
+
+  if (access_profile_ids !== undefined) {
+    const { data: before } = await admin.from("users").select("access_profile_ids").eq("id", id).single();
+    await freezeLockedForProfileChange(req.user, id, before?.access_profile_ids || [], access_profile_ids || []);
+  }
 
   if (permissions) {
-    const rows = permissions.map(p => ({
+    const rows = permissions.filter(p => !locked.has(String(p.module_id))).map(p => ({
       user_id:               id,
       module_id:             p.module_id,
       can_view:              p.can_view              || false,

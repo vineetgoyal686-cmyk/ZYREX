@@ -9,6 +9,7 @@ const {
   removeStorageFile,
 } = require("../helpers/storageHelper");
 const { bustUserCache } = require("../middleware/auth");
+const { getOwnerMap, applyOwnership } = require("../helpers/controlHelper");
 
 // Separate client only for signInWithPassword — avoids auth state on shared singleton
 const getAdminClient = () => createClient(
@@ -109,7 +110,7 @@ router.post("/login", async (req, res) => {
     "order_overview_aging","order_intake","order_payment",
   ];
   const profilePerms = (designationsRes.data || []).flatMap(d => d.app_permissions || []);
-  const appPermissions = (modulesRes.data || []).map(mod => {
+  const mergedPermissions = (modulesRes.data || []).map(mod => {
     const explicit = (permsRes.data || []).find(p => p.module_id === mod.id) || {};
     const hasExplicit = !!explicit.user_id;
     const profMatches = profilePerms.filter(p => p.module_id === mod.id);
@@ -120,6 +121,7 @@ router.post("/login", async (req, res) => {
     BOOL_KEYS.forEach(k => { merged[k] = hasExplicit ? !!explicit[k] : profMatches.some(p => !!p[k]); });
     return merged;
   });
+  const appPermissions = applyOwnership(mergedPermissions, await getOwnerMap(), profile.id, BOOL_KEYS);
 
   const ui = signedProfilePermissions.ui || {};
 
@@ -818,8 +820,9 @@ router.get("/my-permissions", async (req, res) => {
     };
   });
 
-  const hasAny = result.some(r => r.can_view);
-  res.json({ permissions: result, has_any_permissions: hasAny });
+  const permissions = applyOwnership(result, await getOwnerMap(), userId, BOOL_KEYS);
+  const hasAny = permissions.some(r => r.can_view);
+  res.json({ permissions, has_any_permissions: hasAny });
 });
 
 /* ─────────────────────────────────────────

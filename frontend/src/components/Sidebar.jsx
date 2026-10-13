@@ -2,6 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../utils/api";
 import { AnimatePresence, motion } from "framer-motion";
 import { TAB_MODULE_KEY } from "../utils/tabModuleKeys";
+
+// Sidebar tabs driven by several modules (visible if any one is granted)
+const TAB_GROUP_KEYS = {
+  approvals:              ["inbox_orders", "inbox_intakes", "inbox_payments"],
+  expenses__petty_cash:   ["petty_cash_staff", "petty_cash_accounts"],
+  proc_setup__item_list:  ["item_supply", "item_sitc"],
+};
 import {
   Box,
   Building2,
@@ -303,6 +310,13 @@ export default React.memo(function Sidebar({
       if (currentUser.role === "global_admin") return true;
       const map = userTabPermissions?.map || {};
       return map["boardroom_dashboard"]?.can_view === true || map["boardroom_finance"]?.can_view === true;
+    }
+    // Control Center tabs: no role bypass (super_admin included) — shown only
+    // when one of the tab's modules is granted. Owners come back with all on.
+    if (currentUser.role !== "global_admin") {
+      const map = userTabPermissions?.map || {};
+      const keys = TAB_GROUP_KEYS[tabId] || (TAB_MODULE_KEY[tabId] ? [TAB_MODULE_KEY[tabId]] : []);
+      if (keys.length && keys.every(k => map[k]?.controlled)) return keys.some(k => map[k]?.can_view === true);
     }
     if (isGlobalAdmin) return true;
     if (!userTabPermissions) return false;

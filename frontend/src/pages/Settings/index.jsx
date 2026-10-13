@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Fragment } from "react";
 import {
   UserCircle, Lock, Users, ShieldCheck, Briefcase,
   FolderOpen, KeyRound, Inbox, Workflow, Mail, X, UserCheck,
-  PanelLeftClose, PanelLeftOpen, BarChart3,
+  PanelLeftClose, PanelLeftOpen, BarChart3, ShieldAlert,
 } from "lucide-react";
 import api from "../../utils/api";
 import ManageProjects from "../../components/ManageProjects";
@@ -18,6 +18,7 @@ import MailManagement from "./tabs/MailManagement";
 import ApprovalFlow from "./tabs/ApprovalFlow";
 import Delegation from "./tabs/Delegation";
 import UserAnalytics from "./tabs/UserAnalytics";
+import ControlCenter from "./tabs/ControlCenter";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -173,6 +174,9 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
       ...(showUserAnalyticsTab
         ? [{ id: "user_analytics", label: "User Analytics", icon: BarChart3 }]
         : []),
+      ...(isGlobalAdmin
+        ? [{ id: "control_center", label: "Control Center", icon: ShieldAlert }]
+        : []),
     ];
     const workflow = [
       ...(showApprovalFlowTab ? [{ id: "approval_flow", label: "Approval Flow", icon: Workflow }] : []),
@@ -318,12 +322,17 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
             <UserAnalytics isAdmin={isGlobalAdmin} showToast={showToast} />
           )}
 
+          {/* Control Center = full-bleed, no padding (sticky header like User Management) */}
+          {section === "control_center" && isGlobalAdmin && (
+            <ControlCenter showToast={showToast} />
+          )}
+
           {/* Security = full-bleed, no padding (sticky header attaches to the Settings sidebar) */}
           {section === "security" && (
             <Security currentUser={currentUser} showToast={showToast} />
           )}
 
-          <div className={`min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4 ${(section === "serialization" || section === "team" || section === "user_analytics" || section === "security") ? "hidden" : ""}`}>
+          <div className={`min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4 ${(section === "serialization" || section === "team" || section === "user_analytics" || section === "security" || section === "control_center") ? "hidden" : ""}`}>
 
             {section === "profile" && (
               <PersonalInfo

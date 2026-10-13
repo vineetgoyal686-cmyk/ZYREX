@@ -34,6 +34,7 @@ const boardroomFinanceRoutes = require("./src/routes/boardroomFinance");
 const financeInvoicesRoutes  = require("./src/routes/financeInvoices");
 const financeOrdersRoutes    = require("./src/routes/financeOrders");
 const pettyCashRoutes        = require("./src/routes/pettyCash");
+const controlCenterRoutes    = require("./src/routes/controlCenter");
 
 const app = express();
 
@@ -78,6 +79,7 @@ app.use("/api/boardroom/finance",  boardroomFinanceRoutes);
 app.use("/api/finance",            financeInvoicesRoutes);
 app.use("/api/finance",            financeOrdersRoutes);
 app.use("/api/petty-cash",         pettyCashRoutes);
+app.use("/api/control-center",     controlCenterRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
