@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag, Activity, Calendar, PackageCheck, MoreVertical, SlidersHorizontal, Info } from "lucide-react";
+import { Plus, X, Upload, Save, FileText, ChevronDown, ChevronUp, ChevronRight, Check, Building2, MapPin, Truck, Landmark, ShieldCheck, FilePlus, Eye, Loader2, Pencil, Trash2, Download, FileDown, Rocket, Undo2, Ban, CheckCircle2, RotateCcw, RefreshCw, XCircle, Search, FileSpreadsheet, Copy, ShoppingCart, IndianRupee, Hammer, ShoppingBag, Box, CalendarDays, User, Tag, Activity, Calendar, PackageCheck, MoreVertical, SlidersHorizontal, Info } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -882,6 +882,69 @@ function makeGroup() {
   return { id: Date.now(), itemId: "", unit: "", subRows: [makeSubRow()] };
 }
 
+const moveInArray = (arr, from, to) => {
+  if (from < 0 || to < 0 || to >= arr.length || from === to) return arr;
+  const next = [...arr];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return next;
+};
+
+// Position number with up/down arrows. Typing a number and pressing Enter
+// (or leaving the box) moves the row there; everything else renumbers.
+const PositionControl = ({ index, count, onMove, prefix = "", pad = 0, vertical = false }) => {
+  const [draft, setDraft] = useState(null);
+  const label = String(index + 1).padStart(pad, "0");
+  const canMove = count > 1;
+  const commit = () => {
+    if (draft === null) return;
+    const n = parseInt(draft, 10);
+    setDraft(null);
+    if (Number.isFinite(n)) onMove(Math.min(Math.max(n, 1), count) - 1);
+  };
+  const arrow = (dir, heightCls) => {
+    const up = dir === "up";
+    const Icon = up ? ChevronUp : ChevronDown;
+    return (
+      <button
+        type="button"
+        onClick={() => onMove(index + (up ? -1 : 1))}
+        disabled={!canMove || (up ? index === 0 : index === count - 1)}
+        className={`w-4 ${heightCls} flex items-center justify-center rounded text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-0 disabled:pointer-events-none`}
+        title={up ? "Move up" : "Move down"}
+      >
+        <Icon size={11} strokeWidth={2.5} />
+      </button>
+    );
+  };
+  const input = (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={draft ?? label}
+      disabled={!canMove}
+      onFocus={e => e.currentTarget.select()}
+      onChange={e => setDraft(e.target.value.replace(/\D/g, ""))}
+      onBlur={commit}
+      onKeyDown={e => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") { setDraft(null); e.currentTarget.blur(); }
+      }}
+      title={canMove ? "Type a number to move here" : undefined}
+      className={`${vertical ? "w-8 text-[11px] font-black text-slate-900" : "w-6 text-[10px] font-bold text-slate-600"} text-center bg-transparent rounded outline-none border border-transparent hover:border-slate-200 focus:border-indigo-400 focus:bg-white disabled:hover:border-transparent`}
+    />
+  );
+  if (vertical) {
+    return <div className="flex flex-col items-center gap-0.5">{arrow("up", "h-4")}{input}{arrow("down", "h-4")}</div>;
+  }
+  return (
+    <span className="shrink-0 mt-[5px] inline-flex items-center text-[10px] font-bold text-slate-600 bg-white border border-slate-300 rounded pl-1.5 pr-0.5 py-0.5">
+      {prefix}{input}
+      <span className="flex flex-col -my-0.5">{arrow("up", "h-2.5")}{arrow("down", "h-2.5")}</span>
+    </span>
+  );
+};
+
 const autoGrowTextarea = (el) => {
   if (!el) return;
   el.style.height = "auto";
@@ -1378,6 +1441,14 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
   const removeGroup = (gid) => {
     if (items.length === 1) return;
     setItems(prev => prev.filter(g => g.id !== gid));
+  };
+
+  const moveGroup = (gid, to) => {
+    setItems(prev => moveInArray(prev, prev.findIndex(g => g.id === gid), to));
+  };
+
+  const moveSubRow = (gid, sid, to) => {
+    setItems(prev => prev.map(g => g.id !== gid ? g : { ...g, subRows: moveInArray(g.subRows, g.subRows.findIndex(s => s.id === sid), to) }));
   };
 
   const addSubRow = (gid) => {
@@ -2450,7 +2521,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                   className="col-sep sticky left-0 z-40 px-1 py-3 text-center align-top bg-white"
                                   style={{ left: 0, width: '60px', minWidth: '60px', maxWidth: '60px' }}
                                 >
-                                  <span className="text-[11px] font-black text-slate-900">{(gIdx + 1).toString().padStart(2, "0")}</span>
+                                  <PositionControl vertical pad={2} index={gIdx} count={items.length} onMove={to => moveGroup(group.id, to)} />
                                 </td>
                                 <td
                                   className="col-sep sticky z-30 px-3 py-2 border-r border-slate-50 bg-white align-top"
@@ -2673,9 +2744,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                 >
                                   <div className="pl-4 border-l-2 border-slate-50 flex items-start gap-2">
                                     {group.subRows.length > 1 ? (
-                                      <span className="shrink-0 mt-[7px] text-[10px] font-bold text-slate-600 bg-white border border-slate-300 rounded px-1.5 py-0.5">
-                                        Point-1
-                                      </span>
+                                      <PositionControl prefix="Point-" index={0} count={group.subRows.length} onMove={to => moveSubRow(group.id, sub.id, to)} />
                                     ) : (
                                       isFirst && <p className="shrink-0 mt-[7px] text-[9px] font-black text-slate-400 uppercase tracking-widest">Technical</p>
                                     )}
@@ -2870,9 +2939,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                               >
                                 <div className="pl-4 border-l-2 border-slate-50 flex items-start gap-2">
                                   {group.subRows.length > 1 ? (
-                                    <span className="shrink-0 mt-[7px] text-[10px] font-bold text-slate-600 bg-white border border-slate-300 rounded px-1.5 py-0.5">
-                                      {`Point-${sIdx + 1}`}
-                                    </span>
+                                    <PositionControl prefix="Point-" index={sIdx} count={group.subRows.length} onMove={to => moveSubRow(group.id, sub.id, to)} />
                                   ) : (
                                     isFirst && <p className="shrink-0 mt-[7px] text-[9px] font-black text-slate-400 uppercase tracking-widest">Technical</p>
                                   )}
@@ -2905,9 +2972,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                     className="col-sep sticky left-0 z-40 px-1 py-3 text-center align-top bg-white"
                                     style={{ left: 0, width: '60px', minWidth: '60px', maxWidth: '60px' }}
                                   >
-                                    <span className="text-[11px] font-black text-slate-900">
-                                      {(gIdx + 1).toString().padStart(2, "0")}
-                                    </span>
+                                    <PositionControl vertical pad={2} index={gIdx} count={items.length} onMove={to => moveGroup(group.id, to)} />
                                   </td>
                                 )}
                                 {/* Item  rowspan (Standard PO) */}
@@ -2941,6 +3006,11 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                   className="col-sep sticky z-20 px-2 py-2 align-top bg-white"
                                   style={{ width: '260px', minWidth: '260px', maxWidth: '260px', left: 380 }}
                                 >
+                                  <div className="flex items-start gap-1.5">
+                                  {group.subRows.length > 1 && (
+                                    <PositionControl index={sIdx} count={group.subRows.length} onMove={to => moveSubRow(group.id, sub.id, to)} />
+                                  )}
+                                  <div className="flex-1 min-w-0">
                                   <InlineSelect
                                     value={sub.specification}
                                     onChange={e => handleSubRowChange(group.id, sub.id, "specification", e.target.value)}
@@ -2954,6 +3024,8 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                                     onEdit={(val) => setCustomInputModal({ open: true, type: "specification", groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val })}
                                     onView={(val) => setSpecViewModal({ open: true, html: val, onEdit: () => { setSpecViewModal({ open: false, html: '', onEdit: null }); setCustomInputModal({ open: true, type: 'specification', groupId: group.id, subId: sub.id, itemId: group.itemId, text: val, originalValue: val }); } })}
                                     addLabel="+ Type Custom Spec" />
+                                  </div>
+                                  </div>
                                 </td>
                               </>
                             )}
