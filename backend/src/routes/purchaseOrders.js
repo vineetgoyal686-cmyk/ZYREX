@@ -139,7 +139,8 @@ const appendStatusHistorySnapshot = async ({ orderId, action, comments = "", act
     supabase.schema("procurement")
       .from("purchase_order_items")
       .select("*, items(*)")
-      .eq("order_id", orderId),
+      .eq("order_id", orderId)
+      .order("line_no", { ascending: true, nullsFirst: false }),
   ]);
   if (orderRes.error) throw orderRes.error;
   if (itemRes.error) throw itemRes.error;
@@ -1213,7 +1214,7 @@ router.post("/", requirePerm("order", "can_add"), upload.fields([
 
     // 3. Insert items
     if (items && items.length > 0) {
-      const itemInserts = items.map(it => ({ ...it, order_id: order.id }));
+      const itemInserts = items.map((it, idx) => ({ ...it, order_id: order.id, line_no: idx + 1 }));
       const { error: itemErr } = await supabase.schema("procurement").from("purchase_order_items").insert(itemInserts);
       if (itemErr) throw itemErr;
     }
@@ -1255,7 +1256,8 @@ router.get("/:id", async (req, res) => {
       supabase.schema("procurement")
         .from("purchase_order_items")
         .select("*, items(*)")
-        .eq("order_id", req.params.id),
+        .eq("order_id", req.params.id)
+        .order("line_no", { ascending: true, nullsFirst: false }),
     ]);
     if (orderRes.error) throw orderRes.error;
     if (itemRes.error) throw itemRes.error;
@@ -1831,7 +1833,7 @@ router.post("/bulk-import", async (req, res) => {
         if (insErr) throw insErr;
 
         if (itemRows.length > 0) {
-          const itemInserts = itemRows.map(it => ({ ...it, order_id: inserted.id }));
+          const itemInserts = itemRows.map((it, idx) => ({ ...it, order_id: inserted.id, line_no: idx + 1 }));
           const { error: itmErr } = await supabase.schema("procurement")
             .from("purchase_order_items").insert(itemInserts);
           if (itmErr) throw itmErr;
@@ -2290,7 +2292,7 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
     if (itemsProvided) {
       await supabase.schema("procurement").from("purchase_order_items").delete().eq("order_id", req.params.id);
       if (items.length > 0) {
-        const itemInserts = items.map(it => ({ ...it, order_id: req.params.id }));
+        const itemInserts = items.map((it, idx) => ({ ...it, order_id: req.params.id, line_no: idx + 1 }));
         const { error: itemErr } = await supabase.schema("procurement").from("purchase_order_items").insert(itemInserts);
         if (itemErr) throw itemErr;
       }
@@ -2331,7 +2333,8 @@ const loadOrderForRender = async (orderId) => {
     supabase.schema("procurement")
       .from("purchase_order_items")
       .select("*, items(*)")
-      .eq("order_id", orderId),
+      .eq("order_id", orderId)
+      .order("line_no", { ascending: true, nullsFirst: false }),
   ]);
   if (orderRes.error) throw orderRes.error;
   if (itemRes.error) throw itemRes.error;

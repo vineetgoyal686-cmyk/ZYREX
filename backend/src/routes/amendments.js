@@ -294,7 +294,8 @@ router.post("/action", requireAuth, async (req, res) => {
     const { data: order } = await admin.schema("procurement")
       .from("purchase_orders").select("*").eq("id", request.original_order_id).single();
     const { data: items } = await admin.schema("procurement")
-      .from("purchase_order_items").select("*").eq("order_id", request.original_order_id);
+      .from("purchase_order_items").select("*").eq("order_id", request.original_order_id)
+      .order("line_no", { ascending: true, nullsFirst: false });
 
     const newNumber = await nextAmendNumber(admin, order.order_number);
 

@@ -248,7 +248,8 @@ router.post("/direct-amend", requireAuth, async (req, res) => {
     }
 
     const { data: items } = await admin.schema("procurement")
-      .from("purchase_order_items").select("*").eq("order_id", order_id);
+      .from("purchase_order_items").select("*").eq("order_id", order_id)
+      .order("line_no", { ascending: true, nullsFirst: false });
 
     const now = new Date().toISOString();
     const newNumber = await nextAmendNumber(admin, order.order_number);
