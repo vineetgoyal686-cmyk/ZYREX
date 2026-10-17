@@ -1158,15 +1158,15 @@ export default function UserManagement({
         {editingMember && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
             <motion.div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setEditingMember(null)} />
-            <motion.div className="relative w-full max-w-md bg-white shadow-2xl overflow-hidden" initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}>
-              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <motion.div className="relative w-full max-w-md max-h-[90vh] flex flex-col bg-white shadow-2xl overflow-hidden" initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }}>
+              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
                 <div>
                   <h3 className="text-[15px] font-black text-slate-800">Edit Member</h3>
                   <p className="text-[12px] text-slate-400">{editingMember.email}</p>
                 </div>
                 <button onClick={() => setEditingMember(null)} className="w-8 h-8 flex items-center justify-center rounded-sm hover:bg-slate-100 text-slate-400 transition"><XCircle size={18} /></button>
               </div>
-              <div className="p-5 space-y-4">
+              <div className="p-5 space-y-4 overflow-y-auto flex-1 min-h-0">
                 <div>
                   <span className={lbl}>Full Name *</span>
                   <input className={inp} value={editForm.name} onChange={e => setEditForm(p => ({ ...p, name: e.target.value }))} placeholder="Full Name" />
@@ -1245,7 +1245,7 @@ export default function UserManagement({
                   </div>
                 )}
               </div>
-              <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3">
+              <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end gap-3 shrink-0">
                 <button onClick={() => setEditingMember(null)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-sm transition-all">Cancel</button>
                 <button onClick={handleEditSave} disabled={editSaving || !editForm.name.trim()}
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-sm shadow-lg shadow-indigo-200 transition-all active:scale-95 flex items-center gap-2 disabled:opacity-60">
