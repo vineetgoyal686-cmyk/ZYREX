@@ -86,7 +86,7 @@ const CODED_MODAL_META = {
 // here is remembered (server-side, scoped to just this tab) so next time it
 // shows up as a one-click option instead of being retyped; nothing is ever
 // written back to the global Sites/Companies/Vendors tables used elsewhere.
-function SmartField({ label, value, onChange, options = [], placeholder, icon: Icon, kind, onAddNew, addLabel }) {
+function SmartField({ label, value, onChange, options = [], placeholder, icon: Icon, kind, onAddNew, addLabel, onEdit }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const ref = useRef(null);
@@ -119,6 +119,7 @@ function SmartField({ label, value, onChange, options = [], placeholder, icon: I
         display: kind && isObj && o.code ? `${name} (${o.code})` : name,
         code: !kind && isObj ? (o.code || "") : "",
         sub: isObj ? (o.sub || "") : "",
+        editable: isObj && o.quickId ? o : null,
       });
     });
     return list;
@@ -175,6 +176,13 @@ function SmartField({ label, value, onChange, options = [], placeholder, icon: I
                   <p className={`text-[13px] truncate ${value === o.value ? "text-indigo-700 font-semibold" : "text-slate-900 font-semibold"}`}>{o.display}</p>
                   {o.sub && <p className="text-[11px] text-slate-500 truncate leading-tight mt-0.5">{o.sub}</p>}
                 </div>
+                {onEdit && o.editable && (
+                  <button type="button" title="Edit"
+                    onClick={(e) => { e.stopPropagation(); setOpen(false); setSearch(""); onEdit(o.editable); }}
+                    className="p-1.5 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 shrink-0 transition-colors">
+                    <Pencil size={14} />
+                  </button>
+                )}
                 {kind && <ChevronRight size={15} className="text-slate-300 shrink-0" />}
               </div>
             ))}
@@ -232,6 +240,8 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
   const [newColName, setNewColName]   = useState("");
   const [showAddSite, setShowAddSite] = useState(false);
   const [showAddCompany, setShowAddCompany] = useState(false);
+  const [editSite, setEditSite] = useState(null);       // seed option with quickId/raw | null
+  const [editCompany, setEditCompany] = useState(null);
   const [showAddVendor, setShowAddVendor] = useState(false);
   const [showAddCoded, setShowAddCoded] = useState(null); // "purpose" | "account_no_to" | "account_no_from" | null
   const [confirmModal, setConfirmModal] = useState(null); // { title, message, onConfirm } | null
@@ -294,6 +304,23 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
       setForm(f => ({ ...f, companyName: company.name.trim() }));
       setShowAddCompany(false);
       showToast(`Company "${company.name.trim()}" added`);
+    } catch (err) { showToast(err.message, "error"); }
+  };
+
+  // Edit a tab-added site/company. The server also renames it on existing
+  // entries, so refresh both and keep the form pointing at the new name.
+  const updateQuick = async (path, item, data, formKey, label, close) => {
+    try {
+      const res = await fetch(`${BASE}/${path}/${item.quickId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || `Failed to update ${label.toLowerCase()}`);
+      const newName = data.name.trim();
+      loadSeed();
+      fetchEntries();
+      setForm(f => (f[formKey] === item.name ? { ...f, [formKey]: newName } : f));
+      close(null);
+      showToast(`${label} "${newName}" updated`);
     } catch (err) { showToast(err.message, "error"); }
   };
 
@@ -630,13 +657,13 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
             </Field>
             <SmartField label={L.site} value={form.siteName} onChange={v => setForm(f => ({ ...f, siteName: v }))}
               options={seed.sites} placeholder="Type or pick a site…" kind="Sites"
-              onAddNew={() => setShowAddSite(true)} addLabel="Add New Site" />
+              onAddNew={() => setShowAddSite(true)} addLabel="Add New Site" onEdit={canEdit ? setEditSite : undefined} />
           </Section>
 
           <Section icon={Building2} title="Parties Involved">
             <SmartField label={L.company} value={form.companyName} onChange={v => setForm(f => ({ ...f, companyName: v }))}
               options={seed.companies} placeholder="Type or pick a company…" kind="Companies"
-              onAddNew={() => setShowAddCompany(true)} addLabel="Add New Company" />
+              onAddNew={() => setShowAddCompany(true)} addLabel="Add New Company" onEdit={canEdit ? setEditCompany : undefined} />
             <SmartField label={L.party} value={form.partyName} onChange={v => setForm(f => ({ ...f, partyName: v }))}
               options={seed.vendors} placeholder={form.entryType === "payment" ? "Type or pick a vendor…" : "Who paid you?"} kind="Vendors"
               onAddNew={() => setShowAddVendor(true)} addLabel="Add New Vendor" />
@@ -718,6 +745,10 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
 
         {showAddSite && <AddSiteModal onClose={() => setShowAddSite(false)} onSave={addQuickSite} />}
         {showAddCompany && <AddCompanyModal onClose={() => setShowAddCompany(false)} onSave={addQuickCompany} />}
+        {editSite && <AddSiteModal initial={editSite.raw} onClose={() => setEditSite(null)}
+          onSave={d => updateQuick("quick-sites", editSite, d, "siteName", "Site", setEditSite)} />}
+        {editCompany && <AddCompanyModal initial={editCompany.raw} onClose={() => setEditCompany(null)}
+          onSave={d => updateQuick("quick-companies", editCompany, d, "companyName", "Company", setEditCompany)} />}
         {showAddVendor && <AddVendorModal onClose={() => setShowAddVendor(false)} onSave={addQuickVendor} />}
         {showAddCoded && (
           <AddCodedValueModal
@@ -1091,11 +1122,11 @@ function MultiFilter({ label, options, selected, onChange }) {
 // Kept deliberately small — just enough to identify a site. Saved to
 // boardroom_finance_quick_sites, isolated to this tab; never touches the
 // real `projects` table used by Procurement/Orders.
-function AddSiteModal({ onClose, onSave }) {
-  const [name, setName]       = useState("");
-  const [code, setCode]       = useState("");
-  const [state, setState]     = useState("");
-  const [address, setAddress] = useState("");
+function AddSiteModal({ onClose, onSave, initial }) {
+  const [name, setName]       = useState(initial?.name || "");
+  const [code, setCode]       = useState(initial?.code || "");
+  const [state, setState]     = useState(initial?.state || "");
+  const [address, setAddress] = useState(initial?.address || "");
   const [saving, setSaving]   = useState(false);
 
   const submit = async () => {
@@ -1109,7 +1140,7 @@ function AddSiteModal({ onClose, onSave }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-base font-bold text-slate-800">Add New Site</h2>
+          <h2 className="text-base font-bold text-slate-800">{initial ? "Edit Site" : "Add New Site"}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
         <div className="px-6 py-5 space-y-4">
@@ -1134,7 +1165,7 @@ function AddSiteModal({ onClose, onSave }) {
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-all">Cancel</button>
           <button onClick={submit} disabled={!name.trim() || saving}
             className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 transition-all disabled:opacity-50">
-            {saving ? "Adding…" : "Add Site"}
+            {initial ? (saving ? "Saving…" : "Save Changes") : (saving ? "Adding…" : "Add Site")}
           </button>
         </div>
       </div>
@@ -1145,11 +1176,11 @@ function AddSiteModal({ onClose, onSave }) {
 // Kept deliberately small — just enough to identify a company. Saved to
 // boardroom_finance_quick_companies, isolated to this tab; never touches the
 // real `companies` table used by Procurement/Orders.
-function AddCompanyModal({ onClose, onSave }) {
-  const [name, setName]       = useState("");
-  const [code, setCode]       = useState("");
-  const [gstin, setGstin]     = useState("");
-  const [address, setAddress] = useState("");
+function AddCompanyModal({ onClose, onSave, initial }) {
+  const [name, setName]       = useState(initial?.name || "");
+  const [code, setCode]       = useState(initial?.code || "");
+  const [gstin, setGstin]     = useState(initial?.gstin || "");
+  const [address, setAddress] = useState(initial?.address || "");
   const [saving, setSaving]   = useState(false);
 
   const submit = async () => {
@@ -1163,7 +1194,7 @@ function AddCompanyModal({ onClose, onSave }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="text-base font-bold text-slate-800">Add New Company</h2>
+          <h2 className="text-base font-bold text-slate-800">{initial ? "Edit Company" : "Add New Company"}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
         </div>
         <div className="px-6 py-5 space-y-4">
@@ -1188,7 +1219,7 @@ function AddCompanyModal({ onClose, onSave }) {
           <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-all">Cancel</button>
           <button onClick={submit} disabled={!name.trim() || saving}
             className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 transition-all disabled:opacity-50">
-            {saving ? "Adding…" : "Add Company"}
+            {initial ? (saving ? "Saving…" : "Save Changes") : (saving ? "Adding…" : "Add Company")}
           </button>
         </div>
       </div>

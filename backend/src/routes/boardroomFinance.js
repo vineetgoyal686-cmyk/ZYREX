@@ -161,6 +161,7 @@ router.get("/seed-options", requirePerm("boardroom_finance", "can_view"), async 
         // the real `projects`/`companies` tables.
         ...(quickSites || []).map(s => ({
           name: s.name, sub: [s.state, s.address].filter(Boolean).join(" · "), code: s.code || "",
+          quickId: s.id, raw: { name: s.name, code: s.code || "", state: s.state || "", address: s.address || "" },
         })),
       ],
       companies: [
@@ -169,6 +170,7 @@ router.get("/seed-options", requirePerm("boardroom_finance", "can_view"), async 
         })),
         ...(quickCompanies || []).map(c => ({
           name: c.name, sub: [c.code, c.gstin, c.address].filter(Boolean).join(" · "),
+          quickId: c.id, raw: { name: c.name, code: c.code || "", gstin: c.gstin || "", address: c.address || "" },
         })),
       ],
       vendors: [
@@ -237,6 +239,38 @@ router.post("/quick-companies", requirePerm("boardroom_finance", "can_add"), asy
     res.status(500).json({ error: err.message });
   }
 });
+
+/* PATCH /api/boardroom/finance/quick-sites/:id and /quick-companies/:id —
+   edit a board-member-added site/company. Entries store the name as plain
+   text, so a rename is carried over to existing entries too. */
+const quickEditRoute = (table, entryCol, fields, label) => async (req, res) => {
+  try {
+    const name = String(req.body.name || "").trim();
+    if (!name) return res.status(400).json({ error: `${label} name is required` });
+
+    const { data: existing, error: findErr } = await supabase.from(table).select("*").eq("id", req.params.id).single();
+    if (findErr || !existing) return res.status(404).json({ error: `${label} not found` });
+
+    const patch = { name };
+    fields.forEach(f => { patch[f] = String(req.body[f] || "").trim(); });
+    const { data, error } = await supabase.from(table).update(patch).eq("id", req.params.id).select("*").single();
+    if (error) throw error;
+
+    if (existing.name !== name) {
+      const { error: renameErr } = await supabase.from("boardroom_finance_entries").update({ [entryCol]: name }).eq(entryCol, existing.name);
+      if (renameErr) throw renameErr;
+    }
+    res.json({ item: data });
+  } catch (err) {
+    console.error(`Boardroom quick-${label.toLowerCase()} update error:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+router.patch("/quick-sites/:id", requirePerm("boardroom_finance", "can_edit"),
+  quickEditRoute("boardroom_finance_quick_sites", "site_name", ["code", "state", "address"], "Site"));
+router.patch("/quick-companies/:id", requirePerm("boardroom_finance", "can_edit"),
+  quickEditRoute("boardroom_finance_quick_companies", "company_name", ["code", "gstin", "address"], "Company"));
 
 /* POST /api/boardroom/finance/quick-vendors — board-member-added vendor,
    kept isolated to this tab (never written to the real `vendors` table). */
