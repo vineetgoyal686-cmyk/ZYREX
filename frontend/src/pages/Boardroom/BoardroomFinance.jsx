@@ -549,7 +549,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
       const row = {
         "S.No": i + 1, "Type": e.entryType === "payment" ? "Payment" : "Receipt", "Date": fmtDate(e.entryDate),
         "Site": e.siteName, "Company": e.companyName, "Party": e.partyName, "Description": e.description,
-        "Purpose": e.purpose, "Amount": e.amount, "Payment Mode": e.paymentMode === "cash" ? "Cash" : "By Account", "To Account No": e.accountNoTo, "From Account No": e.accountNoFrom,
+        "Purpose": e.purpose, "Amount": e.amount, "Payment Mode": e.paymentMode === "cash" ? "Files" : "By Account", "To Account No": e.accountNoTo, "From Account No": e.accountNoFrom,
         "Account Holder": e.accountHolderName, "Remarks": e.remarks,
       };
       activeColumns.forEach(c => { row[c.label] = e[`customField${c.slot}`]; });
@@ -684,7 +684,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
             <Field label="Payment Mode">
               <Select value={form.paymentMode} onChange={e => setForm(f => ({ ...f, paymentMode: e.target.value }))}>
                 <option value="account">By Account</option>
-                <option value="cash">Cash</option>
+                <option value="cash">Files</option>
               </Select>
             </Field>
             {form.paymentMode !== "cash" && (<>
@@ -984,7 +984,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
                 <div className="flex justify-between"><span className="text-slate-400">Site</span><span className="text-slate-700 font-medium">{viewEntry.siteName || "—"}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Company</span><span className="text-slate-700 font-medium">{viewEntry.companyName || "—"}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">{LABELS[viewEntry.entryType].description}</span><span className="text-slate-700 font-medium">{viewEntry.description || "—"}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Payment Mode</span><span className="text-slate-700 font-medium">{viewEntry.paymentMode === "cash" ? "Cash" : "By Account"}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Payment Mode</span><span className="text-slate-700 font-medium">{viewEntry.paymentMode === "cash" ? "Files" : "By Account"}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Purpose</span><span className="text-slate-700 font-medium">{viewEntry.purpose || "—"}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">{LABELS[viewEntry.entryType].to}</span><span className="text-slate-700 font-medium">{viewEntry.accountNoTo || "—"}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">{LABELS[viewEntry.entryType].from}</span><span className="text-slate-700 font-medium">{viewEntry.accountNoFrom || "—"}</span></div>
