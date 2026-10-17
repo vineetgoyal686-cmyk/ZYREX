@@ -484,7 +484,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
         logAudit("boardroom_finance_entry", editId, label, "updated", changes && Object.keys(changes).length ? changes : null);
       } else if (data.entry?.id) {
         logAudit("boardroom_finance_entry", data.entry.id, label, "created", {
-          Type: form.entryType === "payment" ? "Payment" : "Receipt", Amount: form.amount, Site: form.siteName || "—", Company: form.companyName || "—",
+          Type: form.entryType === "payment" ? "Paid" : "Received", Amount: form.amount, Site: form.siteName || "—", Company: form.companyName || "—",
         });
       }
 
@@ -547,7 +547,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
   const exportExcel = () => {
     const data = filtered.map((e, i) => {
       const row = {
-        "S.No": i + 1, "Type": e.entryType === "payment" ? "Payment" : "Receipt", "Date": fmtDate(e.entryDate),
+        "S.No": i + 1, "Type": e.entryType === "payment" ? "Paid" : "Received", "Date": fmtDate(e.entryDate),
         "Site": e.siteName, "Company": e.companyName, "Party": e.partyName, "Description": e.description,
         "Purpose": e.purpose, "Amount": e.amount, "Payment Mode": e.paymentMode === "cash" ? "Files" : "By Account", "To Account No": e.accountNoTo, "From Account No": e.accountNoFrom,
         "Account Holder": e.accountHolderName, "Remarks": e.remarks,
@@ -636,7 +636,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
               <h1 className="text-[15px] font-bold text-slate-800 whitespace-nowrap">{editId ? "Edit Detail" : "Add Detail"}</h1>
             </div>
             <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 w-fit shrink-0">
-              {[{ v: "payment", l: "Payment" }, { v: "receipt", l: "Receipt" }].map(o => (
+              {[{ v: "payment", l: "Paid" }, { v: "receipt", l: "Received" }].map(o => (
                 <button key={o.v} type="button" onClick={() => setForm(f => ({ ...f, entryType: o.v }))}
                   className={`px-5 py-1.5 rounded-md text-sm font-semibold transition-all ${form.entryType === o.v ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
                   {o.l}
@@ -792,8 +792,8 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
               <Select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1); }}
                 className="h-10 pl-3 rounded-md border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-slate-400">
                 <option value="">All Types</option>
-                <option value="payment">Payment</option>
-                <option value="receipt">Receipt</option>
+                <option value="payment">Paid</option>
+                <option value="receipt">Received</option>
               </Select>
               <MultiFilter label="Site" options={filterOptions.sites} selected={siteFilter} onChange={v => { setSiteFilter(v); setPage(1); }} />
               <MultiFilter label="Company" options={filterOptions.companies} selected={companyFilter} onChange={v => { setCompanyFilter(v); setPage(1); }} />
@@ -877,9 +877,9 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
                     <td className="sticky left-0 z-10 w-14 px-3 py-3 text-sm font-medium text-slate-500 border border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50">{(page - 1) * perPage + i + 1}</td>
                     <td className="sticky left-14 z-10 w-36 px-3 py-3 border border-slate-200 whitespace-nowrap bg-white group-hover:bg-slate-50">
                       {e.entryType === "payment" ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600"><ArrowUpCircle size={12} /> Payment</span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-600"><ArrowUpCircle size={12} /> Paid</span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700"><ArrowDownCircle size={12} /> Receipt</span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700"><ArrowDownCircle size={12} /> Received</span>
                       )}
                     </td>
                     <td className="px-3 py-3 text-sm text-slate-600 border border-slate-200 whitespace-nowrap">{fmtDate(e.entryDate)}</td>
@@ -976,7 +976,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden max-h-[85vh] flex flex-col">
               <div className="bg-gradient-to-r from-slate-900 to-slate-800 px-6 py-5 relative shrink-0">
                 <button onClick={() => setViewEntry(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"><X size={18} /></button>
-                <p className="text-[10px] font-semibold text-cyan-300/80 uppercase tracking-widest mb-0.5">{viewEntry.entryType === "payment" ? "Payment" : "Receipt"} · {fmtDate(viewEntry.entryDate)}</p>
+                <p className="text-[10px] font-semibold text-cyan-300/80 uppercase tracking-widest mb-0.5">{viewEntry.entryType === "payment" ? "Paid" : "Received"} · {fmtDate(viewEntry.entryDate)}</p>
                 <h2 className="text-lg font-bold text-white leading-tight">{viewEntry.partyName || "—"}</h2>
                 <p className="text-sm text-slate-300 mt-1">{fmtINR(viewEntry.amount)}</p>
               </div>
