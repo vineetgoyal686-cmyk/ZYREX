@@ -22,6 +22,7 @@ const emptyForm = {
   entryType: "payment",
   entryDate: "", siteName: "", companyName: "", partyName: "",
   description: "", amount: "",
+  paymentMode: "account",
   accountNoTo: "", accountNoFrom: "", accountHolderName: "", purpose: "", remarks: "",
   customField1: "", customField2: "", customField3: "", customField4: "", customField5: "",
 };
@@ -419,6 +420,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
       entryType: e.entryType, entryDate: e.entryDate ? String(e.entryDate).slice(0, 10) : "",
       siteName: e.siteName || "", companyName: e.companyName || "", partyName: e.partyName || "",
       description: e.description || "", amount: e.amount || "",
+      paymentMode: e.paymentMode || "account",
       accountNoTo: e.accountNoTo || "", accountNoFrom: e.accountNoFrom || "", accountHolderName: e.accountHolderName || "",
       purpose: e.purpose || "", remarks: e.remarks || "",
       customField1: e.customField1 || "", customField2: e.customField2 || "", customField3: e.customField3 || "",
@@ -435,7 +437,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
   const FIELD_LOG_LABELS = {
     entryType: "Type", entryDate: "Date", siteName: "Site", companyName: "Company", partyName: "Party",
     description: "Description", amount: "Amount", accountNoTo: "Paid To Account", accountNoFrom: "Paid From Account",
-    accountHolderName: "Account Holder", purpose: "Purpose", remarks: "Remarks",
+    paymentMode: "Payment Mode", accountHolderName: "Account Holder", purpose: "Purpose", remarks: "Remarks",
     customField1: "Custom 1", customField2: "Custom 2", customField3: "Custom 3", customField4: "Custom 4", customField5: "Custom 5",
   };
   const diffEntry = (original, next) => {
@@ -547,7 +549,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
       const row = {
         "S.No": i + 1, "Type": e.entryType === "payment" ? "Payment" : "Receipt", "Date": fmtDate(e.entryDate),
         "Site": e.siteName, "Company": e.companyName, "Party": e.partyName, "Description": e.description,
-        "Purpose": e.purpose, "Amount": e.amount, "To Account No": e.accountNoTo, "From Account No": e.accountNoFrom,
+        "Purpose": e.purpose, "Amount": e.amount, "Payment Mode": e.paymentMode === "cash" ? "Cash" : "By Account", "To Account No": e.accountNoTo, "From Account No": e.accountNoFrom,
         "Account Holder": e.accountHolderName, "Remarks": e.remarks,
       };
       activeColumns.forEach(c => { row[c.label] = e[`customField${c.slot}`]; });
@@ -679,6 +681,13 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
           </Section>
 
           <Section icon={CreditCard} title="Bank Details">
+            <Field label="Payment Mode">
+              <Select value={form.paymentMode} onChange={e => setForm(f => ({ ...f, paymentMode: e.target.value }))}>
+                <option value="account">By Account</option>
+                <option value="cash">Cash</option>
+              </Select>
+            </Field>
+            {form.paymentMode !== "cash" && (<>
             <SmartField label={L.to} value={form.accountNoTo} onChange={v => setForm(f => ({ ...f, accountNoTo: v }))}
               options={codedValues.account_no_to.map(c => ({ name: c.value, code: `ACC-${c.code}` }))} placeholder="Account number…"
               onAddNew={() => setShowAddCoded("account_no_to")} addLabel="Add New Account Number" />
@@ -687,6 +696,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
               onAddNew={() => setShowAddCoded("account_no_from")} addLabel="Add New Account Number" />
             <SmartField label={L.holder} value={form.accountHolderName} onChange={v => setForm(f => ({ ...f, accountHolderName: v }))}
               options={saved.account_holder_name || []} placeholder="Account holder name…" />
+            </>)}
           </Section>
 
           {activeColumns.length > 0 && (
@@ -974,6 +984,7 @@ export default function BoardroomFinance({ onHeaderActionsChange, onViewChange }
                 <div className="flex justify-between"><span className="text-slate-400">Site</span><span className="text-slate-700 font-medium">{viewEntry.siteName || "—"}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Company</span><span className="text-slate-700 font-medium">{viewEntry.companyName || "—"}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">{LABELS[viewEntry.entryType].description}</span><span className="text-slate-700 font-medium">{viewEntry.description || "—"}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Payment Mode</span><span className="text-slate-700 font-medium">{viewEntry.paymentMode === "cash" ? "Cash" : "By Account"}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Purpose</span><span className="text-slate-700 font-medium">{viewEntry.purpose || "—"}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">{LABELS[viewEntry.entryType].to}</span><span className="text-slate-700 font-medium">{viewEntry.accountNoTo || "—"}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">{LABELS[viewEntry.entryType].from}</span><span className="text-slate-700 font-medium">{viewEntry.accountNoFrom || "—"}</span></div>

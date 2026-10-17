@@ -27,6 +27,8 @@ const SAVED_FIELD_KEYS = ["account_holder_name"];
 const CODED_FIELD_KEYS = { purpose: "PUR", account_no_to: "ACC", account_no_from: "ACC" };
 const CUSTOM_FIELD_COLS = { 1: "custom_field_1", 2: "custom_field_2", 3: "custom_field_3", 4: "custom_field_4", 5: "custom_field_5" };
 
+const isCash = (mode) => mode === "cash";
+
 const mapEntry = async (r) => ({
   id:                r.id,
   entryType:         r.entry_type,
@@ -38,6 +40,7 @@ const mapEntry = async (r) => ({
   amount:            Number(r.amount) || 0,
   accountNoTo:       r.account_no_to || "",
   accountNoFrom:     r.account_no_from || "",
+  paymentMode:       r.payment_mode || "account",
   accountHolderName: r.account_holder_name || "",
   purpose:           r.purpose || "",
   remarks:           r.remarks || "",
@@ -406,7 +409,7 @@ router.post("/entries", requirePerm("boardroom_finance", "can_add"), upload.any(
   try {
     const {
       entryType, entryDate, siteName, companyName, partyName, description, amount,
-      accountNoTo, accountNoFrom, accountHolderName, purpose, remarks,
+      accountNoTo, accountNoFrom, accountHolderName, purpose, remarks, paymentMode,
       customField1, customField2, customField3, customField4, customField5,
     } = req.body;
 
@@ -424,9 +427,12 @@ router.post("/entries", requirePerm("boardroom_finance", "can_add"), upload.any(
         party_name:           partyName || "",
         description:          description || "",
         amount:                Number(amount) || 0,
-        account_no_to:         accountNoTo || "",
-        account_no_from:       accountNoFrom || "",
-        account_holder_name:   accountHolderName || "",
+        // Cash entries carry no bank details — clear them so a mode switch
+        // never leaves stale account numbers behind.
+        payment_mode:          isCash(paymentMode) ? "cash" : "account",
+        account_no_to:         isCash(paymentMode) ? "" : accountNoTo || "",
+        account_no_from:       isCash(paymentMode) ? "" : accountNoFrom || "",
+        account_holder_name:   isCash(paymentMode) ? "" : accountHolderName || "",
         purpose:               purpose || "",
         remarks:               remarks || "",
         custom_field_1:        customField1 || null,
@@ -464,7 +470,7 @@ router.put("/entries/:id", requirePerm("boardroom_finance", "can_edit"), upload.
     const { id } = req.params;
     const {
       entryType, entryDate, siteName, companyName, partyName, description, amount,
-      accountNoTo, accountNoFrom, accountHolderName, purpose, remarks,
+      accountNoTo, accountNoFrom, accountHolderName, purpose, remarks, paymentMode,
       customField1, customField2, customField3, customField4, customField5,
     } = req.body;
 
@@ -485,9 +491,12 @@ router.put("/entries/:id", requirePerm("boardroom_finance", "can_edit"), upload.
         party_name:           partyName || "",
         description:          description || "",
         amount:                Number(amount) || 0,
-        account_no_to:         accountNoTo || "",
-        account_no_from:       accountNoFrom || "",
-        account_holder_name:   accountHolderName || "",
+        // Cash entries carry no bank details — clear them so a mode switch
+        // never leaves stale account numbers behind.
+        payment_mode:          isCash(paymentMode) ? "cash" : "account",
+        account_no_to:         isCash(paymentMode) ? "" : accountNoTo || "",
+        account_no_from:       isCash(paymentMode) ? "" : accountNoFrom || "",
+        account_holder_name:   isCash(paymentMode) ? "" : accountHolderName || "",
         purpose:               purpose || "",
         remarks:               remarks || "",
         custom_field_1:        customField1 || null,

@@ -134,3 +134,8 @@ where not exists (select 1 from modules where module_key = 'boardroom_finance');
 -- If an earlier run of this file created the old combined "boardroom"
 -- module, retire it now that access is split per tab.
 update modules set is_active = false where module_key = 'boardroom';
+
+-- Payment mode: "cash" entries carry no bank details; "account" (default,
+-- and what every pre-existing entry is) shows the three bank fields.
+alter table boardroom_finance_entries
+  add column if not exists payment_mode text not null default 'account';
