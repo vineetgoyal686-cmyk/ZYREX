@@ -85,6 +85,38 @@ body {
   100% { transform: rotate(360deg); }
 }
 
+/* ZyAI sidebar logo: on hover only, the hawk flaps its wing once.
+   Nothing moves on its own. */
+.zy-ai-hawk { transform-origin: 50% 60%; }
+.zy-ai-btn:hover .zy-ai-hawk { animation: zy-flap 0.6s ease-in-out; }
+@keyframes zy-flap {
+  0%, 100% { transform: rotate(0deg); }
+  35% { transform: rotate(-12deg) translateY(-1px); }
+  70% { transform: rotate(5deg); }
+}
+/* a still, soft glow on the hawk and a faint halo on the name */
+.zy-ai-glow .zy-ai-hawk { filter: drop-shadow(0 0 5px rgba(96, 165, 250, 0.55)); }
+.zy-ai-glow .zy-ai-word { display: inline-flex; filter: drop-shadow(0 0 5px rgba(96, 165, 250, 0.3)); }
+.zy-ai-glow:hover .zy-ai-hawk { filter: drop-shadow(0 0 7px rgba(96, 165, 250, 0.8)); }
+
+/* two tiny stars take turns: each flashes briefly once every 5 s, 2.5 s apart */
+.zy-ai-star { opacity: 0; transform: scale(0.3); animation: zy-twinkle 5s ease-in-out infinite; }
+.zy-ai-star-2 { animation-delay: 2.5s; }
+@keyframes zy-twinkle {
+  0%, 76%, 100% { opacity: 0; transform: scale(0.3) rotate(0deg); }
+  84% { opacity: 1; transform: scale(1) rotate(45deg); }
+  92% { opacity: 0; transform: scale(0.4) rotate(90deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zy-ai-btn:hover .zy-ai-hawk { animation: none; }
+  .zy-ai-star { animation: none; }
+}
+
+/* side panels slide in from the right */
+.zy-panel-in { animation: zy-panel-in 0.22s ease-out; }
+@keyframes zy-panel-in { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .zy-panel-in { animation: none; } }
+
 /* Ultra-thin premium scrollbar */
 .premium-scroll {
   scrollbar-width: thin;

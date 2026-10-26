@@ -125,6 +125,7 @@ export const PERM_LABELS = {
 
 export const MODULE_PERM_CONFIG = {
   global_dashboard:        ["can_view"],
+  zyhawk_ai:               ["can_view"],
   organisation:            ["can_view"],
   structure:               ["can_view"],
   org_chart:               ["can_view"],
@@ -136,14 +137,13 @@ export const MODULE_PERM_CONFIG = {
   designations:            ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export"],
   employees:               ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export"],
   locations:               ["can_view", "can_add", "can_edit", "can_delete"],
-  org_projects:            ["can_view", "can_add", "can_edit", "can_delete"],
   policy:                  ["can_view", "can_add", "can_edit", "can_delete"],
   audit:                   ["can_view"],
-  boardroom_dashboard:     ["can_view"],
+  treasury_overview:     ["can_view"],
   petty_cash_staff:        ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export", "can_log"],
   petty_cash_accounts:     ["can_view", "can_export"],
   expenses_cheque_record:  ["can_view", "can_add", "can_edit", "can_delete", "can_export"],
-  boardroom_finance:       ["can_view", "can_add", "can_edit", "can_delete", "can_export", "can_manage_columns", "can_log"],
+  treasury_ledger:       ["can_view", "can_add", "can_edit", "can_delete", "can_export", "can_manage_columns", "can_log"],
   inbox_orders:            ["can_view", "can_take_action"],
   inbox_intakes:           ["can_view", "can_take_action"],
   inbox_payments:          ["can_view", "can_take_action"],
@@ -164,7 +164,6 @@ export const MODULE_PERM_CONFIG = {
   master_data_orders_tab:  ["can_view", "can_add", "can_bulk_upload", "can_export",
                             "can_trash_view", "can_trash_log", "can_trash_restore", "can_trash_delete"],
   master_data_clauses:     ["can_view", "can_export"],
-  master_data_finance:     ["can_view", "can_add", "can_edit", "can_delete", "can_export", "can_bulk_upload"],
   view_3d:                 ["can_view"],
   intake:                  ["can_view"],
   order:                   ["can_view", "can_add", "can_edit", "can_delete",
@@ -174,58 +173,124 @@ export const MODULE_PERM_CONFIG = {
                             "can_trash_view", "can_trash_log", "can_trash_restore", "can_trash_delete"],
   staff_attendance:        ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export"],
   payment_request:         ["can_view", "can_add", "can_edit", "can_delete", "can_export"],
-  payments_track:          ["can_view", "can_add", "can_edit", "can_delete", "can_export", "can_bulk_upload"],
+  expense_book:            ["can_view", "can_add", "can_edit", "can_delete", "can_export", "can_bulk_upload"],
   bills_docs:              ["can_view", "can_add", "can_delete", "can_download_document"],
 };
 
 export const DEFAULT_MODULE_PERMS = ["can_view", "can_add", "can_edit", "can_delete", "can_export"];
 
 export const MODULE_BUILT_STATUS = {
-  global_dashboard: true, boardroom_dashboard: true, boardroom_finance: true, inbox: true,
+  global_dashboard: true, zyhawk_ai: true, treasury_overview: true, treasury_ledger: true, inbox: true,
   petty_cash_staff: true, petty_cash_accounts: true, expenses_cheque_record: true, annexure: true,
   departments: true, teams: true, divisions: true, grades: true,
-  designations: true, employees: true, locations: true, policy: true, org_projects: true,
+  designations: true, employees: true, locations: true, policy: true,
   master_data_vendor: true,
-  master_data_orders: true, master_data_intakes: true, master_data_clauses: true, master_data_finance: true,
+  master_data_orders: true, master_data_intakes: true, master_data_clauses: true,
   view_3d: true,
   intake: true, order: true,
   historical_data: true,
   company_list: true, vendor_list: true, uom: true,
   category_list: true, item_list: true,
   term_condition: true, payment_terms: true, government_laws: true,
-  bills_docs: true, payment_request: true, payments_track: true,
+  bills_docs: true, payment_request: true, expense_book: true,
   staff_attendance: true,
 };
 
-export const MODULE_SECTIONS = [
-  {
-    section: "Global Tab",
-    groups: [
-      { label: "Global Dashboard",   keys: ["global_dashboard"] },
-      { label: "Boardroom",         keys: ["boardroom_dashboard", "boardroom_finance"] },
-      { label: "Inbox",             keys: ["inbox_orders","inbox_intakes","inbox_payments"] },
-      { label: "Expenses",          keys: ["petty_cash_staff","petty_cash_accounts","expenses_cheque_record"] },
-    ],
-  },
-  {
-    section: "Management",
-    groups: [
-      { label: "Setup", keys: ["vendor_list","vendor_pool","item_supply","item_sitc","uom","category_list","term_condition","payment_terms","government_laws","annexure"] },
-      { label: "Master Data",       keys: ["master_data_vendor","master_data_orders_tab","master_data_intakes","master_data_clauses","master_data_finance"] },
-      { label: "Historical Data", keys: ["historical_data"], single: true },
-      { label: "Organisation", keys: ["company_list","structure","org_chart","sop","policy","departments","teams","divisions","grades","designations","employees","locations","org_projects"] },
-    ],
-  },
-  {
-    section: "Project Permissions",
-    groups: [
-      { label: "3D View",     keys: ["view_3d"],       single: true },
-      { label: "Procurement", keys: ["order","intake"] },
-      { label: "Operations",   keys: ["staff_attendance"], combined_view: true },
-      { label: "Finance",      keys: ["payments_track","payment_request"] },
-    ],
-  },
+/*
+ * Permission screen layout — same order and names as the sidebar.
+ * A row is one permission module (key) shown under the tab name (label);
+ * `group` rows nest like the sidebar's sub-groups; `perms` limits which of
+ * the module's permissions the row shows.
+ */
+export const PERMISSION_LAYOUT = [
+  { section: "General", rows: [
+    { key: "global_dashboard", label: "Dashboard" },
+    { key: "zyhawk_ai",        label: "ZyAI" },
+    { key: "view_3d",          label: "3D View" },
+    { group: "Inbox", rows: [
+      { key: "inbox_orders",   label: "Orders" },
+      { key: "inbox_intakes",  label: "Intake",   perms: ["can_view"] },
+      { key: "inbox_payments", label: "Payments", perms: ["can_view"] },
+    ] },
+  ] },
+  { section: "Procurement", rows: [
+    // which projects: "Projects ▾" on the row (the old separate
+    // "All projects" permissions are no longer shown)
+    { key: "intake", label: "Intake" },
+    { key: "order",  label: "Orders" },
+    { group: "Registration", rows: [
+      { key: "vendor_list",     label: "Vendors" },
+      { key: "vendor_pool",     label: "Vendor Pool" },
+      { key: "item_supply",     label: "Materials (Supply)" },
+      { key: "item_sitc",       label: "Materials (SITC)" },
+      { key: "category_list",   label: "Category" },
+      { key: "uom",             label: "UOM" },
+      { key: "term_condition",  label: "Terms & Conditions" },
+      { key: "payment_terms",   label: "Payment Terms" },
+      { key: "government_laws", label: "Government Laws" },
+      { key: "annexure",        label: "Annexure" },
+    ] },
+  ] },
+  { section: "Finance", rows: [
+    { group: "Petty Cash", rows: [
+      { key: "petty_cash_staff",    label: "Staff" },
+      { key: "petty_cash_accounts", label: "Accounts" },
+    ] },
+    { key: "expense_book",           label: "Expense Book" },
+    { key: "expenses_cheque_record", label: "Cheque Record" },
+    { group: "Treasury", rows: [
+      { key: "treasury_overview", label: "Overview" },
+      { key: "treasury_ledger",   label: "Ledger, Loans & Masters" },
+    ] },
+  ] },
+  { section: "HRMS", rows: [
+    { key: "employees",        label: "Employees" },
+    { key: "staff_attendance", label: "Attendance" },
+    { group: "Structure", rows: [
+      { key: "structure",    label: "Hierarchy" },
+      { key: "divisions",    label: "Divisions" },
+      { key: "departments",  label: "Departments" },
+      { key: "teams",        label: "Teams" },
+      { key: "grades",       label: "Grades" },
+      { key: "designations", label: "Designations" },
+      { key: "org_chart",    label: "Org Chart" },
+    ] },
+    { group: "Documents", rows: [
+      { key: "policy", label: "Policy" },
+      { key: "sop",    label: "SOP" },
+    ] },
+  ] },
+  { section: "Reports", rows: [
+    { key: "master_data_vendor",  label: "Vendor-wise Spend" },
+    { key: "master_data_clauses", label: "Clause Usage" },
+  ] },
+  { section: "Archive", rows: [
+    { key: "historical_data", label: "Archive" },
+  ] },
+  { section: "Settings", rows: [
+    { group: "Organisation", rows: [
+      { key: "company_list", label: "Companies" },
+      { key: "locations",    label: "Branch" },
+    ] },
+  ] },
 ];
+
+// Tabs that work per project: each picks its own projects next to its
+// permissions ("Projects ▾", saved as the permission's scope —
+// sql/permission_scope.sql). Petty Cash also lists offices.
+export const SCOPE_PICKER_KEYS = ["view_3d", "intake", "order", "staff_attendance", "expense_book", "petty_cash_staff", "petty_cash_accounts"];
+export const OFFICE_SCOPE_KEYS = ["petty_cash_staff", "petty_cash_accounts"];
+
+// module key → name as shown on the permission screen ("Inbox › Orders")
+export const MODULE_TAB_LABELS = Object.fromEntries(PERMISSION_LAYOUT.flatMap(s => s.rows.flatMap(r =>
+  r.group ? r.rows.map(x => [x.key, `${r.group} › ${x.label}`]) : [[r.key, r.label]])));
+
+// Same layout as { section, groups: [{ label, keys }] } — used by Control
+// Center and for "every key on the screen". A plain row is a group of one.
+export const MODULE_SECTIONS = PERMISSION_LAYOUT.map(s => ({
+  section: s.section,
+  groups: s.rows.map(r => (r.group ? { label: r.group, keys: r.rows.map(x => x.key) } : { label: r.label, keys: [r.key] })),
+}));
 
 export const PERM_COLOR = {
   can_view:              "text-slate-600",

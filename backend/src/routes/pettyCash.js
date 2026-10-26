@@ -9,6 +9,13 @@ const multer   = require("multer");
 const supabase = require("../helpers/supabaseHelper");
 const { uploadStorageFile, createSignedStorageUrl, normalizeStoragePath } = require("../helpers/storageHelper");
 const { requirePerm, hasPerm } = require("../helpers/permHelper");
+const { projectScope, allows, userIdFrom } = require("../helpers/projectScope");
+
+// Petty Cash project access per tab (Staff / Accounts): the projects and
+// offices picked next to its permission; none picked = all (Petty Cash never
+// had the old Project Access rule). null = every project / office.
+const pcScope = (req, key) => projectScope(userIdFrom(req), key, null, { legacy: false });
+const pcAllowed = (scope, r) => allows(scope, r.project_id, r.branch_id);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
@@ -55,7 +62,8 @@ const mapEntry = async (r, peopleById) => ({
   location:      r.location || "",
   remarks:       r.remarks || "",
   companyId:     r.company_id || null,
-  orgProjectId:  r.org_project_id || null,
+  // a project or an office (Branch) of the entity — the pickers use one list
+  projectId:     r.project_id || r.branch_id || null,
   items:         Array.isArray(r.items) ? r.items : [],
   charges:       Array.isArray(r.charges) ? r.charges : [],
   voucherNo:     r.voucher_data?.voucherNo || "",
@@ -106,27 +114,41 @@ const rememberLocation = async (name) => {
 };
 
 // Every entry belongs to an Entity (company) and one of its projects
-// (organisation.org_projects). Checks the pair and stamps it on the row;
-// the project's name is also copied into the legacy `project` text column,
-// which lists and exports still read.
+// (public.projects) or offices (organisation.branches). Checks the pair and
+// stamps it on the row; the name is also copied into the legacy `project`
+// text column, which lists and exports still read.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const loadProject = async (companyId, projectId) => {
+const loadProject = async (companyId, projectId, req) => {
   if (!UUID_RE.test(String(companyId || ""))) throw new Error("Entity is required");
-  if (!UUID_RE.test(String(projectId || ""))) throw new Error("Project is required");
-  const { data, error } = await supabase.schema("organisation").from("org_projects")
+  if (!UUID_RE.test(String(projectId || ""))) throw new Error("Project or office is required");
+  const { data: project, error } = await supabase.from("projects")
     .select("id, company_id, project_name").eq("id", projectId).maybeSingle();
   if (error) throw error;
-  if (!data || data.company_id !== companyId) throw new Error("Project doesn't belong to the selected entity");
-  return data;
+  let scope = project && { kind: "project", id: project.id, company_id: project.company_id, name: project.project_name };
+  if (!scope) {
+    const { data: office, error: oErr } = await supabase.schema("organisation").from("branches")
+      .select("id, company_id, label").eq("id", projectId).maybeSingle();
+    if (oErr) throw oErr;
+    scope = office && { kind: "office", id: office.id, company_id: office.company_id, name: office.label };
+  }
+  if (!scope || scope.company_id !== companyId) throw new Error("Project / office doesn't belong to the selected entity");
+  if (req && !allows(await pcScope(req, "petty_cash_staff"), scope.id)) throw new Error("This project / office isn't in your Petty Cash access");
+  return scope;
 };
-const applyScope = (row, project) => Object.assign(row, {
-  company_id: project.company_id, org_project_id: project.id, project: project.project_name,
+const applyScope = (row, scope) => Object.assign(row, {
+  company_id: scope.company_id,
+  project_id: scope.kind === "project" ? scope.id : null,
+  branch_id:  scope.kind === "office" ? scope.id : null,
+  project:    scope.name,
 });
 
 // GET filters: ?company_id= (and optionally ?project_id=).
 const scopeFilter = (query, q) => {
   if (UUID_RE.test(String(q.company_id || ""))) query = query.eq("company_id", q.company_id);
-  if (UUID_RE.test(String(q.project_id || ""))) query = query.eq("org_project_id", q.project_id);
+  if (UUID_RE.test(String(q.project_id || ""))) query = query.or(`project_id.eq.${q.project_id},branch_id.eq.${q.project_id}`);
+  // ?kind=project|office — all projects, or all offices, of the entity
+  else if (q.kind === "project") query = query.not("project_id", "is", null);
+  else if (q.kind === "office") query = query.not("branch_id", "is", null);
   return query;
 };
 
@@ -341,16 +363,33 @@ router.get("/vendors", requirePerm("petty_cash_staff", "can_view"), async (_req,
 
 /* GET /api/petty-cash/scopes — active entities and their projects, for the
    Entity / Project pickers in the Petty Cash header. */
-router.get("/scopes", requireAnyView, async (_req, res) => {
+router.get("/scopes", requireAnyView, async (req, res) => {
   try {
-    const [companiesRes, projectsRes] = await Promise.all([
+    const [companiesRes, projectsRes, officesRes] = await Promise.all([
       supabase.schema("organisation").from("companies")
         .select("id, company_code, company_name, gstin, address, state, pincode, status").order("company_name"),
-      supabase.schema("organisation").from("org_projects")
-        .select("id, company_id, project_code, project_name, address, city, state, status").order("project_name"),
+      supabase.from("projects")
+        .select("id, company_id, project_code, project_name, address, city, state, is_active")
+        .not("company_id", "is", null).order("project_name"),
+      supabase.schema("organisation").from("branches")
+        .select("id, company_id, code, label, address, city, state, status").order("label"),
     ]);
     if (companiesRes.error) throw companiesRes.error;
     if (projectsRes.error) throw projectsRes.error;
+    if (officesRes.error) throw officesRes.error;
+    // projects / offices this user may use in Petty Cash (Staff or Accounts)
+    const uid = userIdFrom(req);
+    const parts = [];
+    let every = false;
+    for (const key of ["petty_cash_staff", "petty_cash_accounts"]) {
+      if (!(await hasPerm(uid, key, "can_view"))) continue;
+      const sc = await pcScope(req, key);
+      if (sc === null) { every = true; break; }
+      parts.push(...sc);
+    }
+    const scope = every ? null : new Set(parts);
+    projectsRes.data = (projectsRes.data || []).filter(p => allows(scope, p.id));
+    officesRes.data = (officesRes.data || []).filter(o => allows(scope, o.id));
     res.json({
       companies: (companiesRes.data || []).filter(c => String(c.status || "active").toLowerCase() === "active").map(c => ({
         id: c.id, code: c.company_code || "", name: c.company_name || "", gstin: c.gstin || "",
@@ -358,8 +397,13 @@ router.get("/scopes", requireAnyView, async (_req, res) => {
       })),
       projects: (projectsRes.data || []).map(p => ({
         id: p.id, companyId: p.company_id, code: p.project_code || "", name: p.project_name || "",
-        address: p.address || "", city: p.city || "", state: p.state || "", status: p.status || "active",
-      })),
+        address: p.address || "", city: p.city || "", state: p.state || "", status: p.is_active === false ? "inactive" : "active",
+        kind: "project",
+      })).concat((officesRes.data || []).filter(o => String(o.status || "active").toLowerCase() === "active").map(o => ({
+        id: o.id, companyId: o.company_id, code: o.code || "", name: o.label || "",
+        address: o.address || "", city: o.city || "", state: o.state || "", status: "active",
+        kind: "office",
+      }))),
     });
   } catch (err) {
     console.error("Petty cash scopes read error:", err.message);
@@ -409,7 +453,8 @@ router.get("/entries", requirePerm("petty_cash_staff", "can_view"), async (req, 
         .order("entry_date", { ascending: false }).order("created_at", { ascending: false }).order("id"),
     ]);
     if (entriesRes.error) throw entriesRes.error;
-    const entries = await Promise.all((entriesRes.data || []).map(r => mapEntry(r, peopleById)));
+    const scope = await pcScope(req, "petty_cash_staff");
+    const entries = await Promise.all((entriesRes.data || []).filter(r => pcAllowed(scope, r)).map(r => mapEntry(r, peopleById)));
     res.json({ entries });
   } catch (err) {
     console.error("Petty cash entries read error:", err.message);
@@ -425,7 +470,7 @@ router.post("/entries", requirePerm("petty_cash_staff", "can_add"), upload.any()
       row = buildRow(req.body);
       const voucherData = parseVoucherData(req.body, row.entry_type);
       if (voucherData !== undefined) row.voucher_data = voucherData;
-      applyScope(row, await loadProject(req.body.companyId, req.body.projectId));
+      applyScope(row, await loadProject(req.body.companyId, req.body.projectId, req));
     } catch (e) { return res.status(400).json({ error: e.message }); }
 
     const { data: created, error: insertError } = await supabase
@@ -461,7 +506,7 @@ router.put("/entries/:id", requirePerm("petty_cash_staff", "can_edit"), upload.a
       row = buildRow(req.body);
       const voucherData = parseVoucherData(req.body, row.entry_type);
       if (voucherData !== undefined) row.voucher_data = voucherData;
-      applyScope(row, await loadProject(req.body.companyId, req.body.projectId));
+      applyScope(row, await loadProject(req.body.companyId, req.body.projectId, req));
     } catch (e) { return res.status(400).json({ error: e.message }); }
 
     const keep = parseDocKeep(req.body.docKeep);
@@ -528,7 +573,7 @@ router.post("/entries/bulk", requirePerm("petty_cash_staff", "can_bulk_upload"),
     if (!rows.length) return res.status(400).json({ error: "No rows to import" });
     if (rows.length > 5000) return res.status(400).json({ error: "Too many rows (max 5000 per upload)" });
     let project;
-    try { project = await loadProject(req.body.companyId, req.body.projectId); }
+    try { project = await loadProject(req.body.companyId, req.body.projectId, req); }
     catch (e) { return res.status(400).json({ error: e.message }); }
 
     const { data: peopleData, error: peopleErr } = await supabase.from("petty_cash_people").select("id, name");
@@ -606,7 +651,8 @@ router.get("/accounts", requirePerm("petty_cash_accounts", "can_view"), async (r
 
     let opening = 0, received = 0, expense = 0;
     const inRange = [];
-    for (const r of data || []) {
+    const scope = await pcScope(req, "petty_cash_accounts");
+    for (const r of (data || []).filter(x => pcAllowed(scope, x))) {
       const amt = Number(r.amount) || 0;
       const sign = r.entry_type === "received" ? 1 : -1;
       if (r.entry_date < from) { opening += sign * amt; continue; }

@@ -12,6 +12,9 @@ const {
 } = require("../helpers/storageHelper");
 
 const upload = multer({ storage: multer.memoryStorage() });
+// Each project belongs to one company (organisation.companies)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const companyOf = (v) => (UUID_RE.test(String(v || "")) ? v : null);
 
 /* ─── Upload project logo to Supabase Storage ─── */
 const uploadLogo = async (files) => {
@@ -42,6 +45,7 @@ router.get("/", async (_req, res) => {
       address:     r.address      || "",
       logoUrl:     r.logo_url ? await createSignedStorageUrl(supabase, "picture", r.logo_url).catch(() => "") : "",
       isActive:    r.is_active !== false,
+      companyId:   r.company_id   || null,
     })));
     const result = { projects };
     cache.set(CACHE_KEY, result, CACHE_TTL);
@@ -66,6 +70,7 @@ router.post("/", upload.fields([{ name: "logo", maxCount: 1 }]), async (req, res
       address:      b.address     || "",
       logo_url:     logoUrl       || "",
       is_active:    true,
+      company_id:   companyOf(b.companyId),
       created_by_id: b.createdById || null,
       created_by_name: b.createdByName || null,
     }).select().single();
@@ -113,6 +118,21 @@ router.patch("/:id/status", async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error("Project status error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ── PATCH link / unlink a project to a company ── */
+router.patch("/:id/company", async (req, res) => {
+  try {
+    const { error } = await supabase.from("projects")
+      .update({ company_id: companyOf(req.body?.companyId) })
+      .eq("id", req.params.id);
+    if (error) throw error;
+    cache.bust(CACHE_KEY);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Project company error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -176,6 +196,7 @@ router.post("/bulk", async (req, res) => {
         address:  r.address  || "",
         logo_url: "",
         is_active: true,
+        company_id: companyOf(r.companyId),
         created_by_id: null,
         created_by_name: "Bulk Upload",
       });

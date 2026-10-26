@@ -606,7 +606,7 @@ export default function HistoricalData() {
 
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className="bg-white border-b border-slate-200 px-6 flex items-center gap-6 shrink-0 h-14">
-        <h1 className="text-base font-bold text-slate-800 shrink-0">Historical Data</h1>
+        <h1 className="text-base font-bold text-slate-800 shrink-0">Archive</h1>
         <div className="flex items-center gap-1 h-full">
           {TABS.map(t => (
             <button key={t.key} type="button" onClick={() => setTab(t.key)}

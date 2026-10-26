@@ -1,9 +1,21 @@
-// Payments Track — Orders: a vendor's order entered once, so Payments Track
+// Expense Book — Orders: a vendor's order entered once, so Expense Book
 // invoices can reference it instead of repeating vendor/order details.
 const express  = require("express");
 const router   = express.Router();
 const supabase = require("../helpers/supabaseHelper");
 const { requirePerm } = require("../helpers/permHelper");
+const { projectScope, allows, userIdFrom } = require("../helpers/projectScope");
+
+// Expense Book's project access (helpers/projectScope.js): a site in the
+// query or JSON body must be allowed; lists are cut to allowed sites below
+router.use(async (req, res, next) => {
+  try {
+    req._scope = await projectScope(userIdFrom(req), "expense_book");
+    const site = req.query.siteId || req.body?.siteId;
+    if (site && !allows(req._scope, site)) return res.status(403).json({ error: "This project isn't in your Expense Book access" });
+    next();
+  } catch (err) { next(err); }
+});
 
 const mapOrder = (r) => ({
   id:            r.id,
@@ -24,7 +36,7 @@ const num = (v) => Math.max(Number(v) || 0, 0);
 const PAYMENT_MODES = ["Cash", "Cheque", "NEFT", "RTGS", "UPI"];
 
 /* GET /api/finance/orders */
-router.get("/orders", async (req, res) => {
+router.get("/orders", requirePerm("expense_book", "can_view"), async (req, res) => {
   try {
     const { siteId, vendorId, search } = req.query;
 
@@ -35,7 +47,7 @@ router.get("/orders", async (req, res) => {
     const { data, error } = await query.order("created_at", { ascending: false });
     if (error) throw error;
 
-    let rows = data || [];
+    let rows = (data || []).filter(r => allows(req._scope, r.site_id));
     if (search) {
       const s = search.trim().toLowerCase();
       rows = rows.filter(r => [r.vendor_name, r.order_no].some(v => String(v || "").toLowerCase().includes(s)));
@@ -49,7 +61,7 @@ router.get("/orders", async (req, res) => {
 });
 
 /* POST /api/finance/orders */
-router.post("/orders", requirePerm("payments_track", "can_add"), async (req, res) => {
+router.post("/orders", requirePerm("expense_book", "can_add"), async (req, res) => {
   try {
     const { siteId, vendorId, vendorName, msmeNumber, companyId, companyName, orderNo, orderDate, orderValue } = req.body;
     if (!vendorId) return res.status(400).json({ error: "Vendor is required" });
@@ -81,7 +93,7 @@ router.post("/orders", requirePerm("payments_track", "can_add"), async (req, res
 });
 
 /* PUT /api/finance/orders/:id */
-router.put("/orders/:id", requirePerm("payments_track", "can_edit"), async (req, res) => {
+router.put("/orders/:id", requirePerm("expense_book", "can_edit"), async (req, res) => {
   try {
     const { siteId, vendorId, vendorName, msmeNumber, companyId, companyName, orderNo, orderDate, orderValue } = req.body;
     if (!vendorId) return res.status(400).json({ error: "Vendor is required" });
@@ -116,7 +128,7 @@ router.put("/orders/:id", requirePerm("payments_track", "can_edit"), async (req,
    lump sum that covers more than one of their bills at once; this splits a
    single payment across whichever of the order's invoices it's meant to
    cover, instead of forcing it onto just one invoice. */
-router.post("/orders/:id/record-payment", requirePerm("payments_track", "can_add"), async (req, res) => {
+router.post("/orders/:id/record-payment", requirePerm("expense_book", "can_add"), async (req, res) => {
   try {
     const { id } = req.params;
     const { paidDate, mode, referenceNo, remarks, allocations, createdByName } = req.body;

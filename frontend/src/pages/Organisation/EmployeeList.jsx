@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   Search, Plus, X, Edit2, Trash2, Loader2, ChevronLeft,
   BadgeCheck, Calendar, UserCheck, MapPin,
-  Briefcase, Building2, ChevronDown, Users, Clock,
+  Briefcase, Building2, ChevronDown, Users, Clock, SlidersHorizontal,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -494,7 +495,59 @@ const EMPTY_FORM = {
 /* ═══════════════════════════════
    MAIN COMPONENT
 ═══════════════════════════════ */
-export default function EmployeeList({ actionsRef, view = "card", onViewChange, onCountChange }) {
+/* ── "Filters" button — Division / Department / Status in one popover ── */
+const STATUS_OPTIONS = [["active", "Active"], ["inactive", "Inactive"], ["on_leave", "On Leave"]];
+
+function EmpFilters({ filters, divs, depts, onChange, onClear }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  const active = Object.values(filters).filter(Boolean).length;
+  const field = (label, key, options) => (
+    <label className="flex flex-col gap-1">
+      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</span>
+      <div className="relative">
+        <select value={filters[key]} onChange={e => onChange(key, e.target.value)}
+          className="w-full pl-2.5 pr-7 py-1.5 text-xs border border-slate-200 rounded-md bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 appearance-none cursor-pointer">
+          <option value="">All</option>
+          {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+      </div>
+    </label>
+  );
+
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={() => setOpen(v => !v)}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-[7px] text-xs font-medium rounded-md border transition-colors
+          ${active ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+        <SlidersHorizontal size={13} /> Filters
+        {active > 0 && <span className="min-w-4 h-4 px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">{active}</span>}
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 w-60 bg-white border border-slate-200 rounded-lg shadow-lg z-30 p-3 flex flex-col gap-2.5">
+          {field("Division", "div", divs.map(d => [d, d]))}
+          {field("Department", "dept", depts.map(d => [d, d]))}
+          {field("Status", "status", STATUS_OPTIONS)}
+          {active > 0 && (
+            <button onClick={onClear} className="self-end text-[11px] font-semibold text-slate-500 hover:text-slate-800">
+              Clear all
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function EmployeeList({ actionsRef, view = "card", onViewChange, onCountChange, toolbarSlot }) {
   const { canEdit, canDelete } = useModulePermissions("employees");
   const orgId = useOrgId();
   const [emps,    setEmps]    = useState([]);
@@ -898,50 +951,76 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         </div>
       )}
 
-      {/* Filters row */}
-      <div className="bg-white rounded-lg border border-slate-200 px-4 py-3 flex items-center gap-3">
-        {/* Search — left, fixed width */}
-        <div className="relative w-52">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search employees…"
-            className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded bg-slate-50 w-full focus:outline-none focus:ring-1 focus:ring-blue-400" />
-        </div>
-
-        {/* Filters — pushed to right */}
-        <div className="flex items-center gap-2 ml-auto">
-          <div className="relative">
-            <select value={filterDiv} onChange={e => { setFilterDiv(e.target.value); setPage(1); }}
-              className="pl-3 pr-7 py-1.5 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 appearance-none cursor-pointer">
-              <option value="">All Divisions</option>
-              {allDivs.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-            <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
-
-          <div className="relative">
-            <select value={filterDept} onChange={e => { setFilterDept(e.target.value); setPage(1); }}
-              className="pl-3 pr-7 py-1.5 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 appearance-none cursor-pointer">
-              <option value="">All Departments</option>
-              {allDepts.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
-            <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
-
-          <div className="relative">
-            <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
-              className="pl-3 pr-7 py-1.5 text-xs border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 appearance-none cursor-pointer">
-              <option value="">All Status</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="on_leave">On Leave</option>
-            </select>
-            <ChevronDown size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          </div>
-        </div>
-      </div>
+      {/* Search + Filters — shown in the page header (toolbarSlot) */}
+      {(() => {
+        const bar = (
+          <>
+            <div className="relative w-40 sm:w-56">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+                placeholder="Search employees…"
+                className="pl-8 pr-3 py-[7px] text-xs border border-slate-200 rounded-md bg-slate-50 w-full focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-white" />
+            </div>
+            <EmpFilters
+              filters={{ div: filterDiv, dept: filterDept, status: filterStatus }}
+              divs={allDivs} depts={allDepts}
+              onChange={(k, v) => {
+                ({ div: setFilterDiv, dept: setFilterDept, status: setFilterStatus })[k](v);
+                setPage(1);
+              }}
+              onClear={() => { setFilterDiv(""); setFilterDept(""); setFilterStatus(""); setPage(1); }} />
+          </>
+        );
+        return toolbarSlot
+          ? createPortal(bar, toolbarSlot)
+          : <div className="bg-white rounded-lg border border-slate-200 px-4 py-3 flex items-center gap-3">{bar}</div>;
+      })()}
 
       <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
+
+      {/* Analytics — click a status card to filter by it */}
+      {!loading && emps.length > 0 && (() => {
+        const now = new Date();
+        const by = (s) => emps.filter(e => (e.status || "active") === s).length;
+        const newThisMonth = emps.filter(e => {
+          const d = e.joiningDate ? new Date(e.joiningDate) : null;
+          return d && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+        }).length;
+        const cards = [
+          { label: "Total",             value: emps.length,    Icon: Users,     accent: "#475569", tint: "#f1f5f9", sub: `${allDepts.length} dept${allDepts.length === 1 ? "" : "s"}` },
+          { label: "Active",            value: by("active"),   Icon: UserCheck, accent: "#059669", tint: "#ecfdf5", status: "active" },
+          { label: "On Leave",          value: by("on_leave"), Icon: Clock,     accent: "#d97706", tint: "#fffbeb", status: "on_leave" },
+          { label: "Inactive",          value: by("inactive"), Icon: X,         accent: "#64748b", tint: "#f1f5f9", status: "inactive" },
+          { label: "Joined This Month", value: newThisMonth,   Icon: Calendar,  accent: "#2563eb", tint: "#eff6ff",
+            sub: now.toLocaleDateString("en-IN", { month: "short" }) },
+        ];
+        // same card style as Treasury › Party Ledger
+        return (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {cards.map(c => {
+              const on = c.status && filterStatus === c.status;
+              const Tag = c.status ? "button" : "div";
+              return (
+                <Tag key={c.label}
+                  {...(c.status ? { onClick: () => { setFilterStatus(on ? "" : c.status); setPage(1); }, title: on ? "Show all" : `Show ${c.label.toLowerCase()} only` } : {})}
+                  className={`relative overflow-hidden text-left bg-white rounded-lg border shadow-sm p-3 flex items-center gap-3 min-w-0 transition-colors
+                    ${on ? "border-blue-400 ring-1 ring-blue-400" : "border-slate-200/80"} ${c.status ? "hover:border-slate-300 cursor-pointer" : ""}`}>
+                  <div className="absolute inset-y-0 left-0 w-[3px]" style={{ background: c.accent }} />
+                  <div className="w-9 h-9 rounded-md flex items-center justify-center shrink-0" style={{ background: c.tint, color: c.accent }}>
+                    <c.Icon size={16} strokeWidth={2.25} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide truncate">{c.label}</p>
+                    <p className="text-lg font-extrabold leading-tight tracking-tight truncate tabular-nums text-slate-800">
+                      {c.value}{c.sub && <span className="ml-1.5 text-[11px] font-semibold text-slate-400">{c.sub}</span>}
+                    </p>
+                  </div>
+                </Tag>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* Content */}
       {loading ? (

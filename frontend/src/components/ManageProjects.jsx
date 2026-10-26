@@ -4,7 +4,7 @@ import {
   FolderOpen, ChevronLeft, ChevronRight, Download,
   FileSpreadsheet, FileText, Upload, MapPin, Hash,
   Building, CheckCircle2, XCircle, ChevronDown,
-  LayoutGrid, List, History,
+  LayoutGrid, List, History, Link2, Unlink,
 } from "lucide-react";
 import LogPanel from "./LogPanel";
 import * as XLSX from "xlsx";
@@ -86,11 +86,20 @@ const GRADIENTS = [
 ];
 const getGradient = (name) => GRADIENTS[(name?.charCodeAt(0) || 0) % GRADIENTS.length];
 
-export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProjectsUpdate }) {
+/*
+ * companyId: shows only that company's projects (Settings › Organisation ›
+ * Company › Projects); new projects are added to it, and projects not yet
+ * linked to any company can be linked from here.
+ */
+export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProjectsUpdate, companyId, companyName }) {
   const canAdd    = isGlobalAdmin || !!permissions.add;
   const canEdit   = isGlobalAdmin || !!permissions.edit;
   const canDelete = isGlobalAdmin || !!permissions.delete;
   const [projects, setProjects]       = useState([]);
+  const [unlinked, setUnlinked]       = useState([]); // company view: projects with no company
+  const [showLink, setShowLink]       = useState(false);
+  const [linkPick, setLinkPick]       = useState([]);
+  const [linking, setLinking]         = useState(false);
   const [loading, setLoading]         = useState(true);
   const [showModal, setShowModal]     = useState(false);
   const [showView, setShowView]       = useState(false);
@@ -145,13 +154,18 @@ export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProj
     return () => document.removeEventListener("keydown", onKey);
   }, [logoLightbox]);
 
+  const showList = (all) => {
+    setProjects(companyId ? all.filter(p => p.companyId === companyId) : all);
+    setUnlinked(companyId ? all.filter(p => !p.companyId) : []);
+  };
+
   const fetchProjects = async () => {
     setLoading(true);
     try {
       const res  = await fetch(`${API}/api/projects`);
       const data = await res.json();
-      setProjects(data.projects || []);
-    } catch { setProjects([]); }
+      showList(data.projects || []);
+    } catch { showList([]); }
     setLoading(false);
   };
 
@@ -159,8 +173,26 @@ export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProj
     const res  = await fetch(`${API}/api/projects`);
     const data = await res.json();
     const all  = data.projects || [];
-    setProjects(all);
+    showList(all);
     onProjectsUpdate?.(all.filter(p => p.isActive));
+  };
+
+  // link (or with null, unlink) projects to this company
+  const setCompany = async (ids, toCompany) => {
+    setLinking(true);
+    try {
+      for (const id of ids) {
+        const res = await fetch(`${API}/api/projects/${id}/company`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ companyId: toCompany }),
+        });
+        if (!res.ok) throw new Error();
+      }
+      showToast(toCompany ? `${ids.length} project${ids.length === 1 ? "" : "s"} linked` : "Project removed from this company");
+      setShowLink(false); setLinkPick([]); setShowModal(false);
+      await notify();
+    } catch { showToast("Couldn't update the project", "error"); }
+    setLinking(false);
   };
 
   const showToast = (msg, type = "success") => {
@@ -186,6 +218,7 @@ export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProj
       const url    = editId ? `${API}/api/projects/${editId}` : `${API}/api/projects`;
       const method = editId ? "PUT" : "POST";
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
+      if (companyId && !editId) fd.append("companyId", companyId);
       fd.append("createdById", u.id || "");
       fd.append("createdByName", u.name || "");
       const res  = await fetch(url, { method, body: fd });
@@ -295,7 +328,7 @@ export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProj
     setBulkSaving(true);
     try {
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
-      const rowsWithAudit = bulkRows.map(r => ({ ...r, createdById: u.id || "", createdByName: u.name || "" }));
+      const rowsWithAudit = bulkRows.map(r => ({ ...r, companyId: companyId || null, createdById: u.id || "", createdByName: u.name || "" }));
       const res  = await fetch(`${API}/api/projects/bulk`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -351,7 +384,7 @@ export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProj
               <FolderOpen size={20} className="text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-black text-slate-800 leading-tight">Manage Projects</h2>
+              <h2 className="text-lg font-black text-slate-800 leading-tight">{companyId ? `Projects of ${companyName || "this company"}` : "Manage Projects"}</h2>
               <p className="text-xs text-slate-400 mt-0.5">
                 {projects.length} total &nbsp;·&nbsp;
                 <span className="text-green-600 font-semibold">{activeCount} active</span>
@@ -513,6 +546,20 @@ export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProj
           </div>
         </div>
       </div>
+
+      {/* Company view: projects that don't belong to any company yet */}
+      {companyId && canEdit && unlinked.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3">
+          <Link2 size={15} className="text-amber-600 shrink-0" />
+          <p className="flex-1 min-w-0 text-[13px] text-amber-800">
+            <b>{unlinked.length}</b> project{unlinked.length === 1 ? " isn't" : "s aren't"} linked to any company yet.
+          </p>
+          <button onClick={() => { setLinkPick([]); setShowLink(true); }}
+            className="px-3 py-1.5 rounded-sm bg-white border border-amber-300 text-amber-800 text-[13px] font-semibold hover:bg-amber-100">
+            Link to this company
+          </button>
+        </div>
+      )}
 
       {/* ── PROJECT LIST ── */}
       {loading ? (
@@ -786,6 +833,12 @@ export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProj
               <LogoUpload form={form} setForm={setForm} />
             </div>
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-md">
+              {companyId && editId && canEdit && (
+                <button onClick={() => setCompany([editId], null)} disabled={linking}
+                  className="mr-auto flex items-center gap-1.5 text-[13px] font-semibold text-slate-500 hover:text-red-600 disabled:opacity-50">
+                  <Unlink size={14} /> Remove from this company
+                </button>
+              )}
               <button onClick={() => setShowModal(false)}
                 className="px-4 py-2.5 rounded-sm border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-white transition-all">
                 Cancel
@@ -793,6 +846,46 @@ export default function ManageProjects({ isGlobalAdmin, permissions = {}, onProj
               <button onClick={handleSave} disabled={saving}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-sm bg-linear-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold hover:shadow-md hover:shadow-blue-200 transition-all disabled:opacity-50">
                 {saving ? "Saving…" : (editId ? "Update Project" : "Add Project")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── LINK EXISTING PROJECTS (company view) ── */}
+      {showLink && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowLink(false)}>
+          <div className="bg-white rounded-md shadow-2xl w-full max-w-md flex flex-col max-h-[80vh]" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-[15px] font-bold text-slate-800">Link projects</h3>
+                <p className="text-xs text-slate-400">Pick the projects that belong to {companyName || "this company"}</p>
+              </div>
+              <button onClick={() => setShowLink(false)} className="p-1.5 rounded-sm hover:bg-slate-100 text-slate-400"><X size={16} /></button>
+            </div>
+            <div className="overflow-y-auto divide-y divide-slate-100">
+              {unlinked.map(p => {
+                const on = linkPick.includes(p.id);
+                return (
+                  <label key={p.id} className={`flex items-center gap-3 px-5 py-2.5 cursor-pointer ${on ? "bg-blue-50" : "hover:bg-slate-50"}`}>
+                    <input type="checkbox" checked={on} className="accent-blue-600"
+                      onChange={() => setLinkPick(v => (on ? v.filter(x => x !== p.id) : [...v, p.id]))} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-slate-800 truncate">{p.projectName}</span>
+                      <span className="block text-xs text-slate-400 truncate">{[p.projectCode, p.city, p.state].filter(Boolean).join(" · ")}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-slate-100 bg-slate-50 rounded-b-md">
+              <button onClick={() => setLinkPick(linkPick.length === unlinked.length ? [] : unlinked.map(p => p.id))}
+                className="text-[13px] font-semibold text-slate-500 hover:text-slate-800">
+                {linkPick.length === unlinked.length ? "Clear" : "Select all"}
+              </button>
+              <button onClick={() => setCompany(linkPick, companyId)} disabled={!linkPick.length || linking}
+                className="px-4 py-2 rounded-sm bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 disabled:opacity-50">
+                {linking ? "Linking…" : `Link ${linkPick.length || ""}`.trim()}
               </button>
             </div>
           </div>

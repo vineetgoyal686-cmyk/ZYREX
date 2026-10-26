@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, ShieldCheck, Plus, X, Search, Save } from "lucide-react";
 import api from "../../../utils/api";
-import { MODULE_SECTIONS } from "../constants";
+import { MODULE_SECTIONS, MODULE_TAB_LABELS } from "../constants";
 import { refreshControlOwners } from "../../../hooks/useControlOwners";
 
 /*
@@ -91,7 +91,8 @@ export default function ControlCenter({ showToast }) {
         setDraft(owners);
         setSaved(owners);
         setUsers(usersRes.data.users || []);
-        setNames(Object.fromEntries((modsRes.data.modules || []).map(m => [m.module_key, m.module_name])));
+        // names as on the permission screen (sidebar names), DB name as fallback
+        setNames({ ...Object.fromEntries((modsRes.data.modules || []).map(m => [m.module_key, m.module_name])), ...MODULE_TAB_LABELS });
       } catch {
         showToast?.("Failed to load Control Center", "error");
       } finally {

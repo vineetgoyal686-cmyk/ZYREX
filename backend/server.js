@@ -29,12 +29,14 @@ const contactRoutes          = require("./src/routes/contact");
 const organisationRoutes     = require("./src/routes/organisation");
 const screenTimeRoutes       = require("./src/routes/screenTime");
 const mailManagementRoutes   = require("./src/routes/mailManagement");
-const financeTrackRoutes     = require("./src/routes/financeTrack");
-const boardroomFinanceRoutes = require("./src/routes/boardroomFinance");
+const treasuryLedgerRoutes = require("./src/routes/treasuryLedger");
+const treasuryMastersRoutes = require("./src/routes/treasuryMasters");
 const financeInvoicesRoutes  = require("./src/routes/financeInvoices");
 const financeOrdersRoutes    = require("./src/routes/financeOrders");
 const pettyCashRoutes        = require("./src/routes/pettyCash");
 const controlCenterRoutes    = require("./src/routes/controlCenter");
+const treasuryRoutes         = require("./src/routes/treasury");
+const aiRoutes               = require("./src/routes/ai");
 
 const app = express();
 
@@ -49,6 +51,11 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "5mb" }));
 
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
+
+// Every /api route needs a real, verified login — except the few used before
+// signing in (see middleware/apiAuth.js)
+const { apiAuth } = require("./src/middleware/apiAuth");
+app.use("/api", apiAuth);
 
 app.use("/api/attendance",  attendanceRoutes);
 app.use("/api/view",        viewRoutes);
@@ -74,12 +81,14 @@ app.use("/api/contact",            contactRoutes);
 app.use("/api/organisation",       organisationRoutes);
 app.use("/api/screen-time",        screenTimeRoutes);
 app.use("/api/mail-management",    mailManagementRoutes);
-app.use("/api/finance",            financeTrackRoutes);
-app.use("/api/boardroom/finance",  boardroomFinanceRoutes);
+app.use("/api/treasury/ledger",  treasuryLedgerRoutes);
+app.use("/api/treasury/masters", treasuryMastersRoutes);
 app.use("/api/finance",            financeInvoicesRoutes);
 app.use("/api/finance",            financeOrdersRoutes);
 app.use("/api/petty-cash",         pettyCashRoutes);
 app.use("/api/control-center",     controlCenterRoutes);
+app.use("/api/treasury",           treasuryRoutes);
+app.use("/api/ai",                 aiRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {

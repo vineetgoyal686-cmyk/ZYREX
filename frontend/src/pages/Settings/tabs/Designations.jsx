@@ -156,9 +156,10 @@ export default function Designations({ showToast, designations, designationsLoad
   };
 
   return (
-    <div className="space-y-6">
+    <div>
       {/* Table card */}
       {!showForm && (
+        <div className="px-3 sm:px-4 lg:px-6 py-4">
         <div className="bg-white rounded-none shadow-sm border border-slate-100 p-6">
           <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-200">
             <h2 className="font-sans text-lg sm:text-xl font-bold text-slate-800 tracking-normal antialiased">
@@ -226,14 +227,15 @@ export default function Designations({ showToast, designations, designationsLoad
             </div>
           )}
         </div>
+        </div>
       )}
 
-      {/* Inline form */}
+      {/* Inline form — full width; the header stays on top while the rest scrolls */}
       {showForm && (
-        <div className="bg-white rounded-none shadow-sm border border-slate-100">
+        <div className="bg-white min-h-full">
 
           {/* Header */}
-          <div className="sticky top-0 z-10 px-6 py-3.5 border-b border-slate-200 flex items-center justify-between gap-4 bg-white">
+          <div className="sticky top-0 z-30 px-6 py-3 border-b border-slate-200 shadow-sm flex items-center justify-between gap-4 bg-white">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="h-8 w-8 bg-indigo-100 rounded-sm flex items-center justify-center text-indigo-600 shrink-0">
                 <ShieldCheck size={16} />
@@ -302,8 +304,6 @@ export default function Designations({ showToast, designations, designationsLoad
                 onChange={updateDesgModule}
                 readOnly={formReadOnly}
                 allProjects={allProjects}
-                selectedProjects={desgProjects}
-                onProjectChange={setDesgProjects}
               />
             </div>
           </div>

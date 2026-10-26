@@ -19,6 +19,7 @@ import ApprovalFlow from "./tabs/ApprovalFlow";
 import Delegation from "./tabs/Delegation";
 import UserAnalytics from "./tabs/UserAnalytics";
 import ControlCenter from "./tabs/ControlCenter";
+import { settingsAccess, effectiveProfilePerms } from "./access";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -31,25 +32,20 @@ function ComingSoon({ label }) {
   );
 }
 
-export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
+/*
+ * `section`: open this section with no inner sidebar (the main sidebar
+ * picks it). `profileTabs` + `onNavigate`: show a tab strip for the
+ * personal sections (Personal Info / Security / Delegation).
+ */
+export default function Settings({ onProfileUpdate, onProjectsUpdate, section: forcedSection, profileTabs, onNavigate }) {
   const currentUser    = JSON.parse(localStorage.getItem("bms_user") || "{}");
   const isGlobalAdmin  = currentUser.role === "global_admin";
   const isAdminOrAbove = ["global_admin", "super_admin", "admin"].includes(currentUser.role);
-  const rawPp          = currentUser.profile_permissions || {};
-  const pp = currentUser.role === "super_admin"
-    ? {
-        manage_user:     { view: true, add: true, edit: true, delete: true, manage_permissions: true },
-        manage_project:  { view: true, add: true, edit: true, delete: true },
-        designation:     { view: true, add: true, edit: true, delete: true },
-        approval_flow:   { view: true, add: true, edit: true, delete: true },
-        serialization:   { view: true, add: true, edit: true, delete: true },
-        request_handler: { view: true, edit: true },
-        delegation:      { view: true, add: true, edit: true, delete: true },
-        mail_management: { view: true, add: true, edit: true, delete: true },
-      }
-    : rawPp;
+  const pp             = effectiveProfilePerms(currentUser);
+  const access         = settingsAccess(currentUser);
 
-  const [section,   setSection]   = useState("profile");
+  const [ownSection, setSection] = useState("profile");
+  const section = forcedSection || ownSection;
   const [toast,     setToast]     = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const [tooltip,   setTooltip]   = useState(null);
@@ -147,15 +143,15 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
 
   /* ── Nav groups ── */
   const isSuperOrGlobal   = isGlobalAdmin || currentUser.role === "super_admin";
-  const showProjectsTab   = isSuperOrGlobal || !!pp.manage_project?.view;
-  const showTeamTab       = isSuperOrGlobal || !!pp.manage_user?.view;
-  const showDelegationTab = isSuperOrGlobal || !!pp.delegation?.view;
-  const showApprovalFlowTab   = isSuperOrGlobal || !!pp.approval_flow?.view;
-  const showRequestHandlerTab = isSuperOrGlobal || !!pp.request_handler?.view;
-  const showMailManagementTab = isSuperOrGlobal || !!pp.mail_management?.view;
-  const showUserAnalyticsTab  = isGlobalAdmin || !!pp.user_analytics?.view;
-  const showControlCenterTab  = isGlobalAdmin || !!currentUser.can_manage_control_center;
-  const adminSettings   = isGlobalAdmin || currentUser.role === "super_admin";
+  const showProjectsTab   = access.projects;
+  const showTeamTab       = access.team;
+  const showDelegationTab = access.delegation;
+  const showApprovalFlowTab   = access.approval_flow;
+  const showRequestHandlerTab = access.request_handler;
+  const showMailManagementTab = access.mail_management;
+  const showUserAnalyticsTab  = access.user_analytics;
+  const showControlCenterTab  = access.control_center;
+  const adminSettings   = access.designations;
 
   const settingsNavGroups = (() => {
     const general = [
@@ -210,8 +206,8 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
           </div>
         )}
 
-        {/* Sidebar */}
-        <div
+        {/* Sidebar — not shown when the main sidebar picks the section */}
+        {!forcedSection && <div
           className="hidden md:block border-r border-slate-200/90 bg-slate-100 self-stretch shrink-0 transition-all duration-300 ease-in-out"
           style={{ width: collapsed ? "3.25rem" : "14rem" }}>
           <aside
@@ -266,7 +262,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
               ))}
             </nav>
           </aside>
-        </div>
+        </div>}
 
         {/* Main content */}
         <div className="min-w-0 flex-1 flex flex-col min-h-0">
@@ -274,7 +270,7 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
           {/* Mobile-only section tabs — the sidebar above is desktop-only (hidden md:block).
               Grouped with dividers (mirrors the desktop sidebar's groups) + edge fade so a long,
               scrollable row doesn't read as one flat repeated strip. */}
-          <div className="md:hidden relative border-b border-slate-200 bg-white shrink-0">
+          {!forcedSection && <div className="md:hidden relative border-b border-slate-200 bg-white shrink-0">
             <div className="flex items-center gap-4 px-4 overflow-x-auto thin-scrollbar-xs">
               {settingsNavGroups.map((group, gi) => (
                 <Fragment key={gi}>
@@ -299,7 +295,20 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
               ))}
             </div>
             <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-white to-transparent" />
-          </div>
+          </div>}
+
+          {/* Personal sections tab strip (Profile page) */}
+          {profileTabs && (
+            <div className="flex items-center gap-5 px-4 sm:px-6 border-b border-slate-200 bg-white shrink-0 overflow-x-auto thin-scrollbar-xs">
+              {profileTabs.map(t => (
+                <button key={t.id} type="button" onClick={() => onNavigate?.(t.id)}
+                  className={`shrink-0 py-3 text-[13px] font-bold whitespace-nowrap border-b-[3px] transition-all
+                    ${t.section === section ? "text-indigo-600 border-indigo-600" : "text-slate-400 border-transparent hover:text-slate-600"}`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          )}
 
           {section === "serialization" && (isGlobalAdmin || currentUser.role === "super_admin" || !!pp.serialization?.view) && (
             <Serialization isGlobalAdmin={isGlobalAdmin || currentUser.role === "super_admin"} showToast={showToast} />
@@ -328,12 +337,22 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
             <ControlCenter showToast={showToast} />
           )}
 
+          {/* Access Profiles = full-bleed (its form has a sticky header like Control Center) */}
+          {section === "designations" && adminSettings && (
+            <Designations
+              showToast={showToast}
+              designations={designations}
+              designationsLoading={designationsLoading}
+              fetchDesignations={fetchDesignations}
+            />
+          )}
+
           {/* Security = full-bleed, no padding (sticky header attaches to the Settings sidebar) */}
           {section === "security" && (
             <Security currentUser={currentUser} showToast={showToast} />
           )}
 
-          <div className={`min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4 ${(section === "serialization" || section === "team" || section === "user_analytics" || section === "security" || section === "control_center") ? "hidden" : ""}`}>
+          <div className={`min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4 ${(section === "serialization" || section === "team" || section === "user_analytics" || section === "security" || section === "control_center" || section === "designations") ? "hidden" : ""}`}>
 
             {section === "profile" && (
               <PersonalInfo
@@ -352,15 +371,6 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate }) {
               <div className="w-full min-w-0">
                 <RoleManagementPanel showToast={showToast} />
               </div>
-            )}
-
-            {section === "designations" && adminSettings && (
-              <Designations
-                showToast={showToast}
-                designations={designations}
-                designationsLoading={designationsLoading}
-                fetchDesignations={fetchDesignations}
-              />
             )}
 
             {section === "projects" && (isGlobalAdmin || !!pp.manage_project?.view) && (

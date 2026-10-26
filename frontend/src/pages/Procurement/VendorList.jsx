@@ -8,6 +8,8 @@ import autoTable from "jspdf-autotable";
 import { logAudit } from "../../utils/auditLog";
 import LogPanel from "../../components/LogPanel";
 import VendorPool from "./VendorPool";
+import PageHeader from "../../components/PageHeader";
+import { headerBtn, headerBtnPrimary } from "../../components/headerStyles";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -495,41 +497,15 @@ export default function VendorList() {
 
       {/* Sticky header — edge-to-edge, flush with sidebar/top */}
       <div className="shrink-0 sticky top-0 z-30 bg-white border-b border-slate-200">
-      <div className="px-3 sm:px-4 lg:px-6 py-3 border-b border-slate-100">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-5 min-w-0">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="hidden md:flex w-8 h-8 rounded-lg bg-indigo-50 items-center justify-center shrink-0">
-                <Users size={16} className="text-indigo-600" />
-              </div>
-              <h1 className="text-base font-bold text-slate-800 truncate">Vendor Directory</h1>
-            </div>
-
-            {/* Tabs (desktop) — inline with title to keep the header compact */}
-            <div className="hidden md:flex items-center gap-1 bg-slate-100 rounded-lg p-1 w-fit shrink-0">
-              {[
-                { key: "vendors", label: "Vendor List" },
-                { key: "pool",    label: "Vendor Pool" },
-              ].map(t => (
-                <button key={t.key} type="button" onClick={() => setMainTab(t.key)}
-                  className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all ${
-                    mainTab === t.key ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                  }`}>
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        <div className="flex items-center gap-2 flex-wrap sm:justify-end shrink-0">
+      <PageHeader icon={Users} tone="indigo" title="Vendors" count={mainTab === "vendors" ? vendors.length : null}
+        tabs={[{ key: "vendors", label: "Vendor List" }, { key: "pool", label: "Vendor Pool" }]}
+        activeTab={mainTab} onTabChange={setMainTab}
+        actions={<>
           {/* More dropdown — Export / Bulk Upload / Trash */}
           {mainTab === "vendors" && (
             <div className="relative" ref={moreRef}>
               <button type="button" onClick={() => setShowMore(s => !s)}
-                className={`inline-flex h-8 md:h-9 select-none items-center gap-1.5 md:gap-2 rounded-md border px-2.5 md:px-3.5 text-[11px] md:text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
-                  showMore
-                    ? "border-indigo-500 bg-indigo-100 text-indigo-950 shadow-inner ring-1 ring-indigo-300/70 focus-visible:ring-indigo-500/45"
-                    : "border-slate-400 bg-gradient-to-b from-slate-100 to-slate-200 text-slate-800 shadow-sm hover:border-slate-500 hover:from-slate-50 hover:to-slate-200 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:ring-slate-400/50"
-                }`}>
+                className={headerBtn}>
                 More <ChevronDown size={12} className={`transition-transform shrink-0 ${showMore ? "rotate-180" : ""}`} />
               </button>
               {showMore && (
@@ -564,7 +540,7 @@ export default function VendorList() {
 
           {mainTab === "vendors" && canAdd && (
             <button type="button" onClick={openAdd}
-              className="inline-flex h-8 md:h-9 select-none items-center gap-1.5 md:gap-2 rounded-md border border-indigo-700 bg-gradient-to-b from-indigo-600 to-indigo-700 px-2.5 md:px-3.5 text-[11px] md:text-xs font-bold text-white shadow-sm transition-all hover:border-indigo-800 hover:from-indigo-500 hover:to-indigo-600 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/55 focus-visible:ring-offset-1">
+              className={headerBtnPrimary}>
               <Plus size={14} className="shrink-0" /> Add
             </button>
           )}
@@ -572,11 +548,7 @@ export default function VendorList() {
           {mainTab === "pool" && (
             <div className="relative" ref={poolMoreRef}>
               <button type="button" onClick={() => setPoolMoreOpen(s => !s)}
-                className={`inline-flex h-8 md:h-9 select-none items-center gap-1.5 md:gap-2 rounded-md border px-2.5 md:px-3.5 text-[11px] md:text-xs font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${
-                  poolMoreOpen
-                    ? "border-indigo-500 bg-indigo-100 text-indigo-950 shadow-inner ring-1 ring-indigo-300/70 focus-visible:ring-indigo-500/45"
-                    : "border-slate-400 bg-gradient-to-b from-slate-100 to-slate-200 text-slate-800 shadow-sm hover:border-slate-500 hover:from-slate-50 hover:to-slate-200 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:ring-slate-400/50"
-                }`}>
+                className={headerBtn}>
                 More <ChevronDown size={12} className={`transition-transform shrink-0 ${poolMoreOpen ? "rotate-180" : ""}`} />
               </button>
               {poolMoreOpen && (
@@ -611,35 +583,12 @@ export default function VendorList() {
 
           {mainTab === "pool" && poolCanAdd && (
             <button type="button" onClick={() => vendorPoolRef.current?.openAdd?.()}
-              className="inline-flex h-8 md:h-9 select-none items-center gap-1.5 md:gap-2 rounded-md border border-indigo-700 bg-gradient-to-b from-indigo-600 to-indigo-700 px-2.5 md:px-3.5 text-[11px] md:text-xs font-bold text-white shadow-sm transition-all hover:border-indigo-800 hover:from-indigo-500 hover:to-indigo-600 hover:shadow-md active:translate-y-px active:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/55 focus-visible:ring-offset-1">
+              className={headerBtnPrimary}>
               <Plus size={14} className="shrink-0" /> Add
             </button>
           )}
-        </div>
-        </div>
-
-        <div className="border-t border-slate-100 mt-3 md:hidden" />
-
-        {/* Tabs (mobile) — underline style, vendor count inline on the right */}
-        <div className="flex md:hidden items-center justify-between gap-2 mt-3">
-          <div className="flex items-center gap-4">
-            {[
-              { key: "vendors", label: "Vendor List" },
-              { key: "pool",    label: "Vendor Pool" },
-            ].map(t => (
-              <button key={t.key} type="button" onClick={() => setMainTab(t.key)}
-                className={`pb-1.5 text-sm font-semibold border-b-2 transition-colors ${
-                  mainTab === t.key ? "border-indigo-600 text-slate-800" : "border-transparent text-slate-400"
-                }`}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-          <span className="text-xs font-semibold text-slate-400 shrink-0">
-            {vendors.length} {vendors.length === 1 ? "vendor" : "vendors"}
-          </span>
-        </div>
-      </div>
+        </>} />
+      <div className="border-b border-slate-100" />
 
       {/* Row 2: Search + Filters — also sticky, part of the same header panel */}
       {mainTab === "vendors" && (<>
@@ -653,12 +602,6 @@ export default function VendorList() {
                   placeholder="Search by name, GSTIN or email…"
                   className="w-full pl-9 pr-4 py-2 rounded-md border border-slate-200 text-sm outline-none focus:border-indigo-400 bg-white text-slate-700" />
               </div>
-              <span
-                className="inline-flex h-9 shrink-0 items-center self-start rounded-md border border-slate-200 bg-white px-2.5 text-xs font-bold tabular-nums text-slate-700 shadow-sm sm:self-center"
-                title="Registered vendors in master"
-              >
-                {vendors.length} {vendors.length === 1 ? "vendor" : "vendors"}
-              </span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <VendorMultiFilter label="Name" options={filterOptions.names} selected={nameFilter} onChange={v => { setNameFilter(v); setPage(1); }} />

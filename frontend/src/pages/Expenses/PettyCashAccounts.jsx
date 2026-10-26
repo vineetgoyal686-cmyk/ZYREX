@@ -136,7 +136,7 @@ export default function PettyCashAccounts({ scope }) {
     setLoading(true);
     setError("");
     setPage(1);
-    api.get("/api/petty-cash/accounts", { params: { from, to, company_id: scope.company.id, project_id: scope.project?.id || undefined } })
+    api.get("/api/petty-cash/accounts", { params: { from, to, company_id: scope.company.id, kind: scope.kind, project_id: scope.project?.id || undefined } })
       .then(({ data }) => { if (alive) setData(data); })
       .catch(err => { if (alive) { setError(apiError(err, "Failed to load")); setData(null); } })
       .finally(() => { if (alive) setLoading(false); });
@@ -168,7 +168,7 @@ export default function PettyCashAccounts({ scope }) {
 
     const aoa = [
       [`Petty Cash — Accounts Statement · ${scope.company.name}`],
-      [`Project: ${scope.project?.name || "All projects"}   |   Period: ${fmtDate(from)} to ${fmtDate(to)}`],
+      [`${scope.kindLabel}: ${scope.project?.name || scope.allLabel}   |   Period: ${fmtDate(from)} to ${fmtDate(to)}`],
       [],
       ["Opening Balance", summary.opening],
       ["Received from Accounts", summary.received],

@@ -368,6 +368,15 @@ router.delete("/:id", requireAuth, requireGlobalAdmin, async (req, res) => {
 });
 
 /* GET /api/users/:id/permissions */
+// Tab project access (sql/permission_scope.sql): own row's, else the
+// Access Profiles' joined ({all} wins); null = not set
+const joinScopes = (scopes) => {
+  const set = scopes.filter(Boolean);
+  if (!set.length) return null;
+  if (set.some(s => s.all)) return { all: true };
+  return { projects: [...new Set(set.flatMap(s => s.projects || []))] };
+};
+
 router.get("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res) => {
   const admin = getAdminClient();
   const { data: modules } = await admin.from("modules").select("*").eq("is_active", true).order("id");
@@ -407,6 +416,7 @@ router.get("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
     const profMatches = profilePerms.filter(p => p.module_id === mod.id);
     const merged = { module_id: mod.id, module_key: mod.module_key, module_name: mod.module_name };
     PERM_BOOL_KEYS.forEach(k => { merged[k] = hasExplicit ? !!perm[k] : profMatches.some(p => !!p[k]); });
+    merged.scope = hasExplicit ? (perm.scope || null) : joinScopes(profMatches.map(p => p.scope));
     return merged;
   });
 
@@ -476,6 +486,7 @@ router.put("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
       order_overview_aging:  p.order_overview_aging  || false,
       order_intake:          p.order_intake          || false,
       order_payment:         p.order_payment         || false,
+      scope:                 p.scope                 || null,
     }));
     if (rows.length > 0) {
       const { error: permError } = await admin.from("permissions").upsert(rows, { onConflict: "user_id,module_id" });

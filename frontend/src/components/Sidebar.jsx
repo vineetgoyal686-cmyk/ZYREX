@@ -1,132 +1,36 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import api from "../utils/api";
+import { ZyHawkIcon, ZyAIWordmark, ZyStar } from "./ZyAILogo";
 import { AnimatePresence, motion } from "framer-motion";
-import { TAB_MODULE_KEY } from "../utils/tabModuleKeys";
-
-// Sidebar tabs driven by several modules (visible if any one is granted)
-const TAB_GROUP_KEYS = {
-  approvals:              ["inbox_orders", "inbox_intakes", "inbox_payments"],
-  expenses__petty_cash:   ["petty_cash_staff", "petty_cash_accounts"],
-  proc_setup__item_list:  ["item_supply", "item_sitc"],
-};
+import { TABS, NAV } from "../utils/navConfig";
+import { isTabVisible as isTabVisibleFor } from "../utils/navAccess";
 import {
+  Archive,
+  Lock,
   Box,
-  Building2,
-  CheckCircle2,
+  Boxes,
   ChevronDown,
-  ChevronsUpDown,
-  ClipboardEdit,
-  Database,
+  ChevronRight,
   FileSpreadsheet,
-  FileText,
-  Hammer,
   Inbox,
-  Image as ImageIcon,
-  IndianRupee,
   LayoutDashboard,
   LogOut,
-  MapPinned,
-  Package,
   PanelLeftClose,
-  PanelLeftOpen,
-  Receipt,
-  ChevronRight,
   Settings2,
-  ShieldCheck,
   ShoppingCart,
   Users,
   Wallet,
-  Workflow,
-  Contact,
 } from "lucide-react";
 
 const cx = (...classes) => classes.filter(Boolean).join(" ");
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
-const globalRows = [
-  { id: "global_dashboard", label: "Global Dashboard", icon: LayoutDashboard, description: "Overall overview of all projects" },
-  { id: "boardroom", label: "Boardroom", icon: ShieldCheck, description: "Executive-only workspace" },
-  { id: "approvals", label: "Inbox", icon: Inbox, description: "Pending approvals (Intake, Orders, Payments etc.)" },
-];
+// Icons for top-level rows and sections
+const ROW_ICONS = { global_dashboard: LayoutDashboard, view_3d: Box, approvals: Inbox, inventory: Boxes, historical_data: Archive };
+const SECTION_ICONS = { procurement: ShoppingCart, finance: Wallet, hrms: Users, reports: FileSpreadsheet, settings: Settings2 };
 
-const expenseRows = [
-  { id: "expenses__petty_cash", label: "Petty Cash", description: "Petty cash entries" },
-  { id: "expenses__cheque_record", label: "Cheque Record", description: "Cheque records" },
-];
-
-const managementRows = [
-  { id: "organisation",   label: "Organisation",   icon: Building2,      description: "Org structure, hierarchy and SOPs" },
-  { id: "historical_data", label: "Historical Data", icon: FileSpreadsheet, description: "Pre-system order records" },
-];
-
-const masterDataRows = [
-  { id: "master_data__vendor", label: "Vendors" },
-  { id: "master_data__orders", label: "Orders" },
-  { id: "master_data__intakes", label: "Intakes" },
-  { id: "master_data__clauses", label: "Clauses" },
-  { id: "master_data__finance", label: "Finance" },
-];
-
-const setupRows = [
-  { id: "proc_setup__vendor_list", label: "Vendor", description: "Manage vendors" },
-  { id: "proc_setup__item_list", label: "Material Catalog", description: "Manage items" },
-  { id: "proc_setup__category_list", label: "Category", description: "Manage categories" },
-  { id: "proc_setup__uom", label: "UOM", description: "Units of measurement" },
-];
-
-const clauseRows = [
-  { id: "proc_setup__term_condition", label: "Terms & Conditions", description: "Define terms and conditions" },
-  { id: "proc_setup__payment_terms", label: "Payment Terms", description: "Manage payment terms" },
-  { id: "proc_setup__government_laws", label: "Government Laws", description: "Government laws and regulations" },
-  { id: "proc_setup__annexure", label: "Annexure", description: "Manage annexures and documents" },
-];
-
-const projectSections = [
-  {
-    key: "project",
-    label: null,
-    icon: LayoutDashboard,
-    rows: [
-      { id: "view_3d", label: "3D View", icon: Box, description: "Project 3D model visualization" },
-    ],
-  },
-  {
-    key: "procurement",
-    label: "Procurement",
-    icon: ShoppingCart,
-    rows: [
-      { id: "procurement__intake", label: "Intake", description: "Create & manage intake" },
-      { id: "procurement__orders", label: "Orders", description: "Create & manage orders" },
-    ],
-  },
-  {
-    key: "operations",
-    label: "Operations",
-    icon: Hammer,
-    rows: [
-      { id: "operations__staff_attendance", label: "Staff Attendance", description: "Staff attendance tracking" },
-    ],
-  },
-  {
-    key: "finance",
-    label: "Finance",
-    icon: Wallet,
-    rows: [
-      { id: "finance__payments_track", label: "Payments Track", description: "Invoices & bills tracking" },
-    ],
-  },
-];
-
-const iconById = {
-  proc_setup__vendor_list: Users,
-  proc_setup__item_list: Package,
-  proc_setup__category_list: Database,
-  proc_setup__uom: FileText,
-  proc_setup__term_condition: ClipboardEdit,
-  proc_setup__payment_terms: IndianRupee,
-  proc_setup__government_laws: ShieldCheck,
-  proc_setup__annexure: ClipboardEdit,
-};
+// Tab ids inside a section's items (rows + sub-group rows)
+const idsOf = (items) => items.flatMap(it => (typeof it === "string" ? [it] : it.items));
 
 const Tip = ({ label, show, children }) => {
   const [xy, setXY] = useState(null);
@@ -155,8 +59,6 @@ const Tip = ({ label, show, children }) => {
 export default React.memo(function Sidebar({
   activeTab = "global_dashboard",
   setActiveTab,
-  selectedProject,
-  setSelectedProject,
   isCollapsed,
   setIsCollapsed,
   onLogout,
@@ -164,7 +66,6 @@ export default React.memo(function Sidebar({
   userName = "Test User",
   userEmail = "office@bms.com",
   currentUser: currentUserProp = null,
-  projects: projectsProp = null,
   userTabPermissions = null,
   onApprovalCountChange = null,
 }) {
@@ -172,34 +73,25 @@ export default React.memo(function Sidebar({
     try { return JSON.parse(localStorage.getItem("bms_user") || "{}"); } catch { return {}; }
   })(), [currentUserProp]);
 
-  const [openSections, setOpenSections] = useState({
-    setup: false,
-    expenses: false,
-    master_data: false,
-    clauses: false,
-    organisation: false,
-    procurement: false,
-    operations: false,
-    finance: false,
-  });
+  // Open sections / sub-groups, keyed by their NAV key. The one holding
+  // the current tab opens by itself.
+  const [openSections, setOpenSections] = useState({});
 
   useEffect(() => {
-    if (isCollapsed) {
-      setOpenSections({
-        setup: false,
-        expenses: false,
-        master_data: false,
-        clauses: false,
-        organisation: false,
-        procurement: false,
-        operations: false,
-        finance: false,
-          });
-    }
+    if (isCollapsed) setOpenSections({});
   }, [isCollapsed]);
 
-  const [projOpen, setProjOpen] = useState(false);
-  const [projSearch, setProjSearch] = useState("");
+  useEffect(() => {
+    const open = {};
+    const current = TABS[activeTab]?.parent || activeTab;
+    NAV.forEach(n => {
+      if (!n.section || !idsOf(n.items).includes(current)) return;
+      open[n.section] = true;
+      n.items.forEach(it => { if (typeof it !== "string" && it.items.includes(current)) open[it.group] = true; });
+    });
+    if (Object.keys(open).length) setOpenSections(prev => ({ ...prev, ...open }));
+  }, [activeTab]);
+
   const [approvalCount, setApprovalCount] = useState(0);
   const [avatarUrl, setAvatarUrl] = useState(currentUser.avatar || null);
 
@@ -209,26 +101,9 @@ export default React.memo(function Sidebar({
 
   const collapsed = isMobile ? false : isCollapsed;
   const isGlobalAdmin = currentUser.role === "global_admin" || currentUser.role === "super_admin";
-  const projects = projectsProp || [];
   const userDisplayName = currentUser.name || userName;
   const userDisplayEmail = currentUser.email || userEmail;
   const initials = userDisplayName.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
-
-  const visibleProjects = useMemo(() => projects.filter((p) => {
-    const name = typeof p === "string" ? p : p.name;
-    return name && name !== "All Project";
-  }), [projects]);
-
-  const filteredProjects = useMemo(() => {
-    const q = projSearch.trim().toLowerCase();
-    if (!q) return visibleProjects;
-    return visibleProjects.filter((p) => {
-      if (typeof p === "string") return p.toLowerCase().includes(q);
-      const code = (p.name || p.projectCode || "").toLowerCase();
-      const full = (p.projectName || "").toLowerCase();
-      return code.includes(q) || full.includes(q);
-    });
-  }, [visibleProjects, projSearch]);
 
   useEffect(() => {
     let alive = true;
@@ -298,67 +173,31 @@ export default React.memo(function Sidebar({
     return () => { alive = false; clearTimeout(sseDebounce); clearInterval(interval); if (es) es.close(); };
   }, []);
 
-  const isTabVisible = (tabId) => {
-    if (tabId === "profile") return true;
-    // Boardroom is executive-only — checked before the generic admin bypass
-    // below, on purpose: only global_admin gets a free pass here (unlike
-    // every other tab, where super_admin/admin bypass too). Anyone else,
-    // super_admin included, needs the permission explicitly granted — an
-    // absent row means "hidden", not fail-open like other tabs. Visible if
-    // either of its two sub-tabs is granted.
-    if (tabId === "boardroom") {
-      if (currentUser.role === "global_admin") return true;
-      const map = userTabPermissions?.map || {};
-      return map["boardroom_dashboard"]?.can_view === true || map["boardroom_finance"]?.can_view === true;
-    }
-    // Control Center tabs: no role bypass (super_admin included) — shown only
-    // when one of the tab's modules is granted. Owners come back with all on.
-    if (currentUser.role !== "global_admin") {
-      const map = userTabPermissions?.map || {};
-      const keys = TAB_GROUP_KEYS[tabId] || (TAB_MODULE_KEY[tabId] ? [TAB_MODULE_KEY[tabId]] : []);
-      if (keys.length && keys.every(k => map[k]?.controlled)) return keys.some(k => map[k]?.can_view === true);
-    }
-    if (isGlobalAdmin) return true;
-    if (!userTabPermissions) return false;
-    // Inbox visibility is driven by its three sub-modules (Orders/Intake/Payment),
-    // not the standalone "inbox" module_key, which the Settings UI never exposes a checkbox for.
-    if (tabId === "approvals") {
-      const map = userTabPermissions.map || {};
-      return ["inbox_orders", "inbox_intakes", "inbox_payments"].some(k => map[k]?.can_view === true);
-    }
-    // Expenses sub-tabs are hidden unless explicitly granted — an absent
-    // row means "hidden", not fail-open like the generic check below.
-    // Petty Cash has two separately-granted tabs (Staff / Accounts).
-    if (tabId === "expenses__petty_cash") {
-      const map = userTabPermissions.map || {};
-      return ["petty_cash_staff", "petty_cash_accounts"].some(k => map[k]?.can_view === true);
-    }
-    if (tabId.startsWith("expenses__")) {
-      return userTabPermissions.map?.[TAB_MODULE_KEY[tabId]]?.can_view === true;
-    }
-    // Item was split into item_supply/item_sitc; the standalone "item_list" key
-    // is no longer exposed in Settings, so it can never be granted to a non-admin.
-    if (tabId === "proc_setup__item_list") {
-      const map = userTabPermissions.map || {};
-      return ["item_supply", "item_sitc"].some(k => map[k]?.can_view === true);
-    }
-    const moduleKey = TAB_MODULE_KEY[tabId];
-    if (!moduleKey) return true;
-    const perm = userTabPermissions.map?.[moduleKey];
-    if (!perm) return true;
-    return perm.can_view === true;
-  };
+  const isTabVisible = (tabId) => isTabVisibleFor(tabId, currentUser, userTabPermissions);
 
   const go = (id) => {
     setActiveTab(id);
   };
 
+  // Ctrl+K (Cmd+K on Mac) opens ZyAI from anywhere
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "k" && isTabVisible("zyhawk_ai")) {
+        e.preventDefault();
+        go("zyhawk_ai");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   const toggleSection = (key) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const RowButton = ({ row, nested = false }) => {
+  // gold: Treasury rows (gold highlight instead of cyan)
+  const RowButton = ({ row, nested = false, gold = false }) => {
     if (!isTabVisible(row.id)) return null;
-    const Icon = row.icon || iconById[row.id];
-    const isActive = activeTab === row.id ||
+    const Icon = row.icon;
+    const isActive = activeTab === row.id || TABS[activeTab]?.parent === row.id ||
                     (row.id === "approvals" && ["approvals", "intake", "orders", "payments", "amendments"].some(t => activeTab === t || activeTab.startsWith(t + "__")));
     return (
       <Tip label={row.label} show={collapsed}>
@@ -373,11 +212,11 @@ export default React.memo(function Sidebar({
                 ? "flex items-center px-3 py-1.5" 
                 : "grid grid-cols-[24px_minmax(0,1fr)_auto] items-center gap-3 px-3 py-2",
             isActive
-              ? "border-cyan-300/18 bg-cyan-400/12 text-white"
-              : "border-transparent text-slate-400 hover:text-white"
+              ? (gold ? "border-amber-300/25 bg-amber-400/15 text-amber-50" : "border-cyan-300/18 bg-cyan-400/12 text-white")
+              : (gold ? "border-transparent text-amber-100/60 hover:text-amber-50" : "border-transparent text-slate-400 hover:text-white")
           )}
         >
-          {isActive && !collapsed && <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full bg-cyan-300" />}
+          {isActive && !collapsed && <span className={cx("absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r-full", gold ? "bg-amber-300" : "bg-cyan-300")} />}
           
           {!nested && (
             <span className={cx("flex items-center justify-center w-6")}>
@@ -426,26 +265,94 @@ export default React.memo(function Sidebar({
     );
   };
 
-  const anyRowVisible = (rows) => rows.some(r => isTabVisible(r.id));
-
-  const NestedRows = ({ rows }) => (
+  const NestedRows = ({ ids }) => (
     <div className={cx("relative space-y-0.5", collapsed ? "" : "mt-1.5 ml-6 pl-3 border-l border-cyan-400/10")}>
-      {rows.map((row) => <RowButton key={row.id} row={row} nested />)}
+      {ids.map(id => <RowButton key={id} row={{ id, label: TABS[id].label }} nested />)}
     </div>
   );
 
-  const Group = ({ title, children, className = "" }) => (
-    <section className={cx("mb-3", className)}>
-      {!collapsed && title && (
-        <p className="mb-1.5 px-1 text-[10.5px] font-bold uppercase tracking-[0.12em] text-cyan-100/70">
-          {title}
-        </p>
-      )}
-      <div className={cx(!collapsed && "space-y-0.5")}>
-        {children}
+  // Treasury: a gold "vault" box, set apart from the rest of Finance
+  const SecureGroup = ({ group, ids }) => {
+    const open = !!openSections[group.group];
+    if (collapsed) {
+      return (
+        <div className="mt-1 rounded-md border border-amber-400/25 bg-amber-400/[0.06]">
+          {ids.map(id => <RowButton key={id} row={{ id, label: TABS[id].label }} nested gold />)}
+        </div>
+      );
+    }
+    return (
+      <div className="mt-2 pt-2 border-t border-dashed border-amber-300/20">
+        <div className="rounded-lg border border-amber-400/25 bg-gradient-to-b from-amber-400/[0.09] to-amber-400/[0.02] shadow-[inset_0_1px_0_rgba(251,191,36,0.12)]">
+          <button type="button" onClick={() => toggleSection(group.group)}
+            className="group flex w-full items-center gap-2 px-2.5 py-2 text-left">
+            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-amber-400/15 ring-1 ring-amber-300/25">
+              <Lock size={12} strokeWidth={2.4} className="text-amber-300" />
+            </span>
+            <span className="flex-1 truncate text-[13.5px] font-semibold text-amber-100">{group.label}</span>
+            <ChevronRight size={13} className={cx("transition-transform duration-200 text-amber-300/60", open ? "rotate-90" : "")} />
+          </button>
+          <AnimatePresence initial={false}>
+            {open && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                <div className="px-1.5 pb-1.5 space-y-0.5">
+                  {ids.map(id => <RowButton key={id} row={{ id, label: TABS[id].label }} nested gold />)}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
-    </section>
-  );
+    );
+  };
+
+  // Collapsible sub-group inside a section (e.g. Procurement › Registration)
+  const SubGroup = ({ group }) => {
+    const ids = group.items.filter(isTabVisible);
+    if (!ids.length) return null;
+    if (group.secure) return <SecureGroup group={group} ids={ids} />;
+    const open = !!openSections[group.group];
+    if (collapsed) return <NestedRows ids={ids} />;
+    return (
+      <div>
+        <button type="button" onClick={() => toggleSection(group.group)}
+          className={cx("group flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left transition-colors",
+            open ? "text-cyan-100" : "text-slate-400 hover:text-white")}>
+          <span className="flex-1 truncate text-[13px] font-semibold">{group.label}</span>
+          <ChevronRight size={13} className={cx("transition-transform duration-200 text-slate-500", open ? "rotate-90" : "")} />
+        </button>
+        <AnimatePresence initial={false}>
+          {open && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+              <div className="ml-3 pl-3 border-l border-cyan-400/10 space-y-0.5">
+                {ids.map(id => <RowButton key={id} row={{ id, label: TABS[id].label }} nested />)}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
+
+  const Section = ({ node }) => {
+    if (!idsOf(node.items).some(isTabVisible)) return null;
+    return (
+      <div className="mb-0.5">
+        <SectionHeader icon={SECTION_ICONS[node.section]} label={node.label} sectionKey={node.section} />
+        <AnimatePresence initial={false}>
+          {openSections[node.section] && (
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+              <div className={cx("relative space-y-0.5", collapsed ? "" : "mt-1 ml-6 pl-1 border-l border-cyan-400/10")}>
+                {node.items.map(it => typeof it === "string"
+                  ? (isTabVisible(it) && <RowButton key={it} row={{ id: it, label: TABS[it].label }} nested />)
+                  : <SubGroup key={it.group} group={it} />)}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
 
   return (
     <aside
@@ -479,163 +386,36 @@ export default React.memo(function Sidebar({
         </div>
 
         <div className="flex-1 overflow-y-auto px-3 py-3" style={{ scrollbarWidth: "none" }}>
-          <Group title="Global">
-            {globalRows.map((row) => <RowButton key={row.id} row={row} />)}
-            {anyRowVisible(expenseRows) && (
-              <>
-                <SectionHeader icon={Receipt} label="Expenses" sectionKey="expenses" />
-                <AnimatePresence initial={false}>
-                  {openSections.expenses && (
-                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                      <NestedRows rows={expenseRows} />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </>
-            )}
-          </Group>
-
-          {(() => {
-            const setupAll       = [...setupRows, ...clauseRows];
-            const setupVisible   = anyRowVisible(setupAll);
-            const masterVisible  = anyRowVisible(masterDataRows);
-            const mgmtVisible    = managementRows.some(r => isTabVisible(r.id));
-            if (!setupVisible && !masterVisible && !mgmtVisible) return null;
-            return (
-              <Group title="Management">
-                {setupVisible && (
-                  <>
-                    <SectionHeader icon={Settings2} label="Setup" sectionKey="setup" />
-                    <AnimatePresence initial={false}>
-                      {openSections.setup && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                          <NestedRows rows={setupAll} />
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </>
-                )}
-
-                {masterVisible && (
-                  <>
-                    <SectionHeader icon={Database} label="Master Data" sectionKey="master_data" />
-                    <AnimatePresence initial={false}>
-                      {openSections.master_data && (
-                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                          <NestedRows rows={masterDataRows} />
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </>
-                )}
-
-                {managementRows.map((row) => <RowButton key={row.id} row={row} />)}
-              </Group>
-            );
-          })()}
-
-          <Group title="Project Selector">
-            {!collapsed ? (
-              <div>
-              <button
-                type="button"
-                onClick={() => { setProjOpen(!projOpen); setProjSearch(""); }}
-                className="flex w-full items-center justify-between rounded-md border border-cyan-400/18 bg-[#03111d] px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:border-cyan-300/35"
-              >
-                <span className="truncate">{selectedProject || "Select project..."}</span>
-                <ChevronDown size={15} className={cx("transition-transform", projOpen ? "rotate-180" : "")} />
-              </button>
-              <AnimatePresence>
-                {projOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    className="mt-1.5 rounded-md border border-cyan-400/18 bg-[#071827] p-1 shadow-xl"
-                  >
-                    <input
-                      type="text"
-                      autoFocus
-                      value={projSearch}
-                      onChange={(e) => setProjSearch(e.target.value)}
-                      placeholder="Search by name or code..."
-                      className="mb-1 w-full rounded-md border border-cyan-400/15 bg-[#03111d] px-2.5 py-1.5 text-xs text-white placeholder:text-slate-500 outline-none focus:border-cyan-300/40"
-                    />
-                    <p className="px-2 pb-1 text-[11px] text-slate-500">{filteredProjects.length} result{filteredProjects.length !== 1 ? "s" : ""} found</p>
-                    <div className="thin-scrollbar max-h-56 overflow-y-auto">
-                      {selectedProject && !projSearch.trim() && (
-                        <button
-                          type="button"
-                          onClick={() => { setSelectedProject(null); setProjOpen(false); setProjSearch(""); }}
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm text-slate-500 hover:bg-rose-500/10 hover:text-rose-400 transition-colors border-b border-cyan-400/10 mb-1"
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
-                          <span>None</span>
-                        </button>
-                      )}
-                      {filteredProjects.map((p) => {
-                        const name = typeof p === "string" ? p : p.name;
-                        return (
-                          <button
-                            type="button"
-                            key={name}
-                            onClick={() => { setSelectedProject(name); setProjOpen(false); setProjSearch(""); }}
-                            className={cx(
-                              "flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors",
-                              selectedProject === name ? "bg-cyan-400/14 text-white" : "text-slate-300 hover:bg-cyan-400/8 hover:text-white"
-                            )}
-                          >
-                            <span className={cx("h-1.5 w-1.5 rounded-full shrink-0", selectedProject === name ? "bg-white" : "bg-cyan-300")} />
-                            <span className="truncate">{name}</span>
-                          </button>
-                        );
-                      })}
-                      {filteredProjects.length === 0 && (
-                        <p className="px-2 py-2 text-xs text-slate-500">{projSearch.trim() ? "No matching projects" : "No active projects"}</p>
-                      )}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsCollapsed(false)}
-                title="Select project"
-                className="flex h-10 w-full items-center justify-center rounded-md border border-cyan-400/15 bg-white/5 text-[10px] font-bold text-cyan-200"
-              >
-                {selectedProject ? selectedProject.slice(0, 3).toUpperCase() : "PRJ"}
-              </button>
-            )}
-          </Group>
-
-          <div className={cx(!collapsed && "space-y-1")}>
-            {projectSections.map((section) => {
-              if (!anyRowVisible(section.rows)) return null;
-              return (
-                <div key={section.key} className="mb-1 last:mb-0">
-                  {section.label ? (
-                    <SectionHeader icon={section.icon} label={section.label} sectionKey={section.key} />
-                  ) : !collapsed && selectedProject ? (
-                    <p className="px-2 pb-1 pt-1 text-[10.5px] font-bold uppercase tracking-[0.12em] text-cyan-100/70">
-                      Project: <span className="text-cyan-300">{selectedProject}</span>
-                    </p>
-                  ) : null}
-                  <AnimatePresence initial={false}>
-                    {(section.label ? openSections[section.key] : true) && (
-                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                        {section.label ? <NestedRows rows={section.rows} /> : <div className="space-y-1">{section.rows.map((row) => <RowButton key={row.id} row={row} />)}</div>}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })}
+          <div className={cx(!collapsed && "space-y-0.5")}>
+            {NAV.map(node => node.row
+              ? <RowButton key={node.row} row={{ id: node.row, label: TABS[node.row].label, icon: ROW_ICONS[node.row] }} />
+              : <Section key={node.section} node={node} />)}
           </div>
         </div>
 
         <div className="shrink-0 border-t border-cyan-400/12 px-3 py-3">
+          {/* ZyAI — just the hawk + "ZyAI" logo, row-sized, no box. The glow stays
+              still; two tiny stars (wing tip, corner of "AI") take turns to twinkle
+              every few seconds; on hover the wing flaps once (index.css). Ctrl+K opens it too. */}
+          {isTabVisible("zyhawk_ai") && (
+            <Tip label="ZyAI (Ctrl K)" show={collapsed}>
+              <button type="button" onClick={() => go("zyhawk_ai")} title={collapsed ? undefined : "ZyAI (Ctrl K)"}
+                className={cx("zy-ai-btn zy-ai-glow mb-2 flex h-9 w-full items-center rounded-md transition-colors",
+                  collapsed ? "justify-center" : "gap-2 px-2.5",
+                  activeTab === "zyhawk_ai" ? "bg-white/[0.07]" : "hover:bg-white/[0.05]")}>
+                <span className="relative inline-flex">
+                  <ZyHawkIcon size={20} className="zy-ai-hawk" />
+                  <ZyStar className="zy-ai-star -right-1.5 -top-1.5" />
+                </span>
+                {!collapsed && (
+                  <span className="zy-ai-word relative">
+                    <ZyAIWordmark size={15} vivid />
+                    <ZyStar className="zy-ai-star zy-ai-star-2 -right-1.5 -top-1" />
+                  </span>
+                )}
+              </button>
+            </Tip>
+          )}
           {!collapsed ? (
             <div className="flex items-center gap-2 rounded-md border border-cyan-400/15 bg-cyan-400/[0.06] p-2">
               <button type="button" onClick={() => setActiveTab("profile")} className="flex min-w-0 flex-1 items-center gap-2 text-left">

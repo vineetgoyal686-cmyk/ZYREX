@@ -6,7 +6,7 @@ import { useOrgId, scopedUrl } from "./orgScope";
 
 const API          = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN        = () => localStorage.getItem("bms_token") || "";
-const BRANCH_TYPES = ["Branch", "Head Quarter", "Regional Office", "Site Office", "Warehouse", "Sales Office"];
+const BRANCH_TYPES = ["Branch", "Office", "Head Quarter", "Regional Office", "Site Office", "Warehouse", "Sales Office"];
 const mapBranch    = (b) => ({ ...b, isMain: b.is_main ?? b.isMain ?? false, status: b.status ? (b.status.charAt(0).toUpperCase() + b.status.slice(1)) : "Active" });
 
 const ini = n => (n || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);

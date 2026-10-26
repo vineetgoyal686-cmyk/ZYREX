@@ -35,7 +35,7 @@ router.get("/template", requireAuth, (req, res) => {
     ["PO/2022/001", "Purchase Order", "BITL", "B-47", "Vendor Pvt Ltd", "Supply of materials", "Completed", 500000, "2022-04-01", "Tally"],
   ]);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Historical Orders");
+  XLSX.utils.book_append_sheet(wb, ws, "Archive Orders");
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
   res.setHeader("Content-Disposition", 'attachment; filename="historical_orders_template.xlsx"');
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -63,7 +63,7 @@ router.get("/export", requireAuth, async (req, res) => {
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Historical Orders");
+    XLSX.utils.book_append_sheet(wb, ws, "Archive Orders");
     const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
     res.setHeader("Content-Disposition", 'attachment; filename="historical_orders_export.xlsx"');
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");

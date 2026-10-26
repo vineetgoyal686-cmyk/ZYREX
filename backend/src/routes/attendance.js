@@ -2,8 +2,18 @@ const express  = require("express");
 const router   = express.Router();
 const multer   = require("multer");
 const supabase  = require("../helpers/supabaseHelper");
+const { projectScope, allows, userIdFrom } = require("../helpers/projectScope");
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+// Attendance tab's project access: every route carries the project (its
+// code, e.g. B47) in the URL — checked once here (helpers/projectScope.js)
+router.param("projectId", async (req, res, next, projectId) => {
+  try {
+    if (allows(await projectScope(userIdFrom(req), "staff_attendance"), projectId)) return next();
+    res.status(403).json({ error: "This project isn't in your Attendance access" });
+  } catch (err) { next(err); }
+});
 
 /* ─── Working hours calculator (HH:MM format) ─── */
 const calcWorkingHours = (inTime, outTime) => {

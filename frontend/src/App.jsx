@@ -4,95 +4,52 @@ import Login from "./pages/Login";
 import ResetPassword from "./pages/ResetPassword";
 import Sidebar from "./components/Sidebar";
 import { TAB_MODULE_KEY } from "./utils/tabModuleKeys";
+import { TABS, PATH_TO_TAB, PROFILE_TABS, legacyRedirect } from "./utils/navConfig";
+import { isTabVisible, projectScopeAccess } from "./utils/navAccess";
+import ProjectScope from "./components/ProjectScope";
 import { useScreenTimeTracker } from "./hooks/useScreenTimeTracker";
 import { getValidToken } from "./utils/authFetch";
 import MobileHeader from "./components/MobileHeader";
 import MobileBottomNav from "./components/MobileBottomNav";
+import { BackContext } from "./components/BackButton";
 
-// ── Route ↔ Tab mapping ──────────────────────────────────────────────────────
+// ── Route ↔ Tab mapping (see utils/navConfig.js) ─────────────────────────────
+// Project pages carry the project as ?project=<code>.
 
-// Global routes (no project)
-const ROUTE_TO_TAB = {
-  "/dashboard":                   "global_dashboard",
-  "/boardroom":                   "boardroom",
-  "/inbox":                       "approvals",
-  "/expenses/petty-cash":         "expenses__petty_cash",
-  "/expenses/cheque-record":      "expenses__cheque_record",
-  "/profile":                     "profile",
-  "/organisation":                "organisation",
-  "/historical-data":             "historical_data",
-  "/create/order":                "create__order",
-  "/create/intake":               "create__intake",
-  "/setup/vendors":               "proc_setup__vendor_list",
-  "/setup/items":                 "proc_setup__item_list",
-  "/setup/categories":            "proc_setup__category_list",
-  "/setup/uom":                   "proc_setup__uom",
-  "/setup/clauses/terms":         "proc_setup__term_condition",
-  "/setup/clauses/payment":       "proc_setup__payment_terms",
-  "/setup/clauses/laws":          "proc_setup__government_laws",
-  "/setup/clauses/annexures":     "proc_setup__annexure",
-  "/master-data":                 "master_data",
-  "/master-data/vendors":         "master_data__vendor",
-  "/master-data/clauses":         "master_data__clauses",
-  "/master-data/orders":          "master_data__orders",
-  "/master-data/intakes":         "master_data__intakes",
-  "/master-data/finance":         "master_data__finance",
-  "/organisation/structure":      "organisation__structure",
-  "/organisation/sop":            "organisation__sop",
-};
-
-const TAB_TO_ROUTE = Object.fromEntries(
-  Object.entries(ROUTE_TO_TAB).map(([path, tab]) => [tab, path])
-);
-
-// Project-specific sub-paths (appended after /p/:project)
-const PROJECT_SUB_TO_TAB = {
-  "/3d":                          "view_3d",
-  "/procurement/intake":          "procurement__intake",
-  "/procurement/orders":          "procurement__orders",
-  "/operations/attendance":       "operations__staff_attendance",
-  "/finance/payments-track":      "finance__payments_track",
-};
-
-const PROJECT_TAB_TO_SUB = Object.fromEntries(
-  Object.entries(PROJECT_SUB_TO_TAB).map(([sub, tab]) => [tab, sub])
-);
-
-function pathToTabAndProject(pathname) {
-  if (pathname.startsWith("/p/")) {
-    const rest = pathname.slice(3); // strip "/p/"
-    const slashIdx = rest.indexOf("/");
-    if (slashIdx === -1) return { tab: "procurement__orders", project: decodeURIComponent(rest) };
-    const project = decodeURIComponent(rest.slice(0, slashIdx));
-    const sub = rest.slice(slashIdx);
-    const tab = PROJECT_SUB_TO_TAB[sub] || "procurement__orders";
-    return { tab, project };
-  }
-  const tab = ROUTE_TO_TAB[pathname] || "global_dashboard";
-  return { tab, project: null };
+function pathToTabAndProject(pathname, search = "") {
+  const tab = PATH_TO_TAB[pathname] || "global_dashboard";
+  const project = TABS[tab]?.project ? new URLSearchParams(search).get("project") : null;
+  return { tab, project: project || null };
 }
 
 function buildPath(tab, project) {
-  const projectSub = PROJECT_TAB_TO_SUB[tab];
-  if (projectSub && project && project !== "All Project") {
-    return `/p/${encodeURIComponent(project)}${projectSub}`;
-  }
-  return TAB_TO_ROUTE[tab] || "/dashboard";
+  const path = TABS[tab]?.path || "/dashboard";
+  return TABS[tab]?.project && project ? `${path}?project=${encodeURIComponent(project)}` : path;
 }
+
+// Settings component section for a tab
+const settingsSectionOf = (tab) => TABS[tab]?.settings || null;
 
 // ── Page imports (lazy — each page loads only when first visited) ─────────────
 
 const Profile        = lazy(() => import("./pages/Profile"));
 const Organisation   = lazy(() => import("./pages/Organisation"));
+const OrgScopedPage  = lazy(() => import("./pages/Organisation").then(m => ({ default: m.OrgScopedPage })));
+const Inventory      = lazy(() => import("./pages/Inventory"));
+const ZyhawkAI       = lazy(() => import("./pages/ZyhawkAI"));
+const RegistrationHub = lazy(() => import("./pages/Procurement/RegistrationHub"));
 const MasterData     = lazy(() => import("./pages/MasterData"));
 const ClauseMasterData = lazy(() => import("./pages/ClauseMasterData"));
 const Approvals      = lazy(() => import("./pages/Approvals"));
 const View3D         = lazy(() => import("./pages/Model"));
 const GlobalDashboard = lazy(() => import("./pages/GlobalDashboard"));
-const Boardroom      = lazy(() => import("./pages/Boardroom/Boardroom"));
+const TreasuryDashboard = lazy(() => import("./pages/Treasury/TreasuryOverview"));
+const PartyLedger    = lazy(() => import("./pages/Treasury/PartyLedger"));
+const Loans          = lazy(() => import("./pages/Treasury/Loans"));
+const TreasuryMasters = lazy(() => import("./pages/Treasury/Masters"));
 const Expenses       = lazy(() => import("./pages/Expenses/Expenses"));
-const FinanceTrack   = lazy(() => import("./pages/Finance/FinanceTrack"));
-const PaymentsTrack  = lazy(() => import("./pages/Finance/PaymentsTrack"));
+const ExpenseBook    = lazy(() => import("./pages/Finance/ExpenseBook"));
+const Salary         = lazy(() => import("./pages/Finance/Salary"));
 const GlobalCreateOrder = lazy(() => import("./pages/Create/CreateOrder"));
 const IntakeList     = lazy(() => import("./pages/Create/IntakeList"));
 const ItemList       = lazy(() => import("./pages/Procurement/ItemList"));
@@ -159,7 +116,7 @@ class ChunkErrorBoundary extends React.Component {
 // ── AppLayout (authenticated shell) ─────────────────────────────────────────
 
 function AppLayout({
-  activeTab, selectedProject, projects,
+  activeTab, selectedProject, projects, allProjects,
   onTabChange, onProjectChange, onLogout,
   userRole, currentUser, userTabPermissions,
   editingOrderId, setEditingOrderId,
@@ -181,62 +138,142 @@ function AppLayout({
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  const orderProps = { editOrderId: editingOrderId, onEditComplete: () => setEditingOrderId(null) };
+
+  // A tab's own projects (permission scope, sql/permission_scope.sql):
+  // null = not set (the old Project Access rule), else the allowed projects
+  // as entries like `projects` ({ name: code, … }) or "all"
+  const TAB_SCOPE_MODULE = {
+    procurement__orders: "order", procurement__intake: "intake", view_3d: "view_3d",
+    operations__staff_attendance: "staff_attendance", finance__expense_book: "expense_book",
+  };
+  const tabScope = () => {
+    if (["global_admin", "super_admin"].includes(currentUser?.role)) return "all";
+    const scope = userTabPermissions?.map?.[TAB_SCOPE_MODULE[activeTab]]?.scope;
+    if (!scope) return null;
+    if (scope.all) return "all";
+    return allProjects.filter(p => scope.projects?.includes(p.id))
+      .map(p => ({ id: p.id, projectName: p.name, projectCode: p.code, name: p.code || p.name, isActive: true }));
+  };
+
+  // Pages that work per project get the Project picker strip on top
+  const projectPage = (render, { padded = false } = {}) => {
+    const access = projectScopeAccess(activeTab, currentUser, userTabPermissions);
+    const scoped = tabScope();
+    const list = scoped === "all"
+      ? allProjects.map(p => ({ id: p.id, projectName: p.name, projectCode: p.code, name: p.code || p.name, isActive: true }))
+      : scoped || projects.filter(p => p.name && p.name !== "All Project");
+    // No project in the URL: "all" if allowed, else the last one used
+    let project = selectedProject;
+    if (!project && !access.all) {
+      const last = localStorage.getItem("last_selected_project");
+      if (last && list.some(p => p.name === last)) project = last;
+    }
+    const body = render(project);
+    return (
+      <ProjectScope project={project} projects={list} access={access} onChange={onProjectChange}>
+        {padded ? <div className="pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4">{body}</div> : body}
+      </ProjectScope>
+    );
+  };
+
+  // null = may see every site; else the codes of the user's own projects.
+  // A tab whose permission carries its own projects (scope) uses those;
+  // otherwise the old rule (all-projects permission, else Project Access).
+  const ownSitesOnly = () => {
+    const scoped = tabScope();
+    if (scoped) return scoped === "all" ? null : scoped.map(p => p.name);
+    const access = projectScopeAccess(activeTab, currentUser, userTabPermissions);
+    return access.all ? null : projects.filter(p => p.name && p.name !== "All Project").map(p => p.name);
+  };
+
   const renderPage = () => {
-    if (activeTab === "global_dashboard")     return <GlobalDashboard />;
-    if (activeTab === "boardroom")            return <Boardroom />;
-    if (activeTab === "expenses__petty_cash")    return <Expenses view="petty_cash" />;
-    if (activeTab === "expenses__cheque_record") return <Expenses view="cheque_record" />;
-    if (activeTab === "profile")              return <Profile onProfileUpdate={onCurrentUserUpdate} onProjectsUpdate={onProjectsRefresh} />;
-    if (activeTab === "organisation" || activeTab === "organisation__structure" || activeTab === "organisation__sop")
-      return <Organisation currentUser={currentUser} />;
-    if (activeTab === "historical_data")      return <HistoricalData />;
-
-    if (["approvals","intake","orders","amendments","payments"].includes(activeTab))
-      return <Approvals />;
-
-    if (activeTab === "create__intake")       return <IntakeList />;
-    if (activeTab === "create__order")        return <GlobalCreateOrder editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
-
-    if (activeTab === "proc_setup__vendor_list")     return <VendorList />;
-    if (activeTab === "proc_setup__item_list")        return <ItemList />;
-    if (activeTab === "proc_setup__category_list")    return <CategoryList />;
-    if (activeTab === "proc_setup__uom")              return <UOMList />;
-    if (activeTab === "proc_setup__term_condition")   return <TermCondition />;
-    if (activeTab === "proc_setup__payment_terms")    return <PaymentTerms />;
-    if (activeTab === "proc_setup__government_laws")  return <GovernmentLaws />;
-    if (activeTab === "proc_setup__annexure")         return <AnnexureMaster />;
-
-    if (activeTab === "master_data" || activeTab === "master_data__vendor")
-      return <MasterData view="vendor" />;
-    if (activeTab === "master_data__clauses")  return <ClauseMasterData />;
-
-    if (activeTab === "master_data__intakes")  return <IntakeList />;
-
-    if (activeTab === "master_data__orders")
-      return <GlobalCreateOrder editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
-
-    if (activeTab === "master_data__finance")
-      return <FinanceTrack />;
-
-    // Project-specific tabs
-    if (!selectedProject || selectedProject === "All Project" || selectedProject === "select-project") {
+    const section = settingsSectionOf(activeTab);
+    if (section) {
+      const isProfile = PROFILE_TABS.includes(activeTab);
+      const profileTabs = isProfile
+        ? PROFILE_TABS.filter(t => isTabVisible(t, currentUser, userTabPermissions))
+            .map(t => ({ id: t, label: TABS[t].label, section: TABS[t].settings }))
+        : null;
       return (
-        <div className="flex min-h-screen items-center justify-center p-4 md:p-10 bg-[#f8fafc]">
-          <div className="bg-white p-8 md:p-20 rounded-2xl md:rounded-[3rem] shadow-sm border border-slate-100 flex items-center justify-center w-full max-w-4xl">
-            <p className="text-slate-400 font-bold uppercase tracking-wider md:tracking-[0.3em] text-center text-sm md:text-base">
-              Please select a project first
-            </p>
-          </div>
-        </div>
+        <Profile section={section} profileTabs={profileTabs} onNavigate={onTabChange}
+          onProfileUpdate={onCurrentUserUpdate} onProjectsUpdate={onProjectsRefresh} />
       );
     }
 
+    // HRMS / Branch tabs used to be reachable only through the Organisation
+    // page's own (permission-filtered) menu; now that each has a URL, check here
+    const orgTab = TABS[activeTab]?.orgTab;
+    if (orgTab) {
+      if (!isTabVisible(activeTab, currentUser, userTabPermissions)) {
+        return (
+          <div className="flex min-h-full items-center justify-center p-10">
+            <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-sm">You don't have access to this area</p>
+          </div>
+        );
+      }
+      return <OrgScopedPage key={activeTab} tab={orgTab} currentUser={currentUser} />;
+    }
+
     switch (activeTab) {
-      case "view_3d":                          return <View3D project={selectedProject} />;
-      case "procurement__orders":             return <GlobalCreateOrder project={selectedProject} editOrderId={editingOrderId} onEditComplete={() => setEditingOrderId(null)} />;
-      case "procurement__intake":             return <IntakeList project={selectedProject} />;
-      case "operations__staff_attendance":     return <Attendance selectedProject={selectedProject} />;
-      case "finance__payments_track":         return <PaymentsTrack project={selectedProject} />;
+      case "global_dashboard":            return <GlobalDashboard />;
+      case "approvals":                   return <Approvals />;
+      case "inventory":                   return <Inventory />;
+      case "zyhawk_ai":                   return <ZyhawkAI />;
+
+      // Procurement
+      // Orders / Intake: site filter inside the page; without the old
+      // all-projects permission, only the user's own projects
+      case "procurement__orders":
+        return <GlobalCreateOrder allowedSites={ownSitesOnly()} {...orderProps} />;
+      case "procurement__intake":
+        return <IntakeList project={selectedProject || undefined} allowAll={!ownSitesOnly()} allowedProjects={ownSitesOnly()} />;
+      case "historical_data":             return <HistoricalData />;
+      case "create__order":               return <GlobalCreateOrder {...orderProps} />;
+      case "create__intake":              return <IntakeList />;
+      case "procurement__registration":
+        return <RegistrationHub canOpen={t => isTabVisible(t, currentUser, userTabPermissions)} onOpen={onTabChange} />;
+      case "proc_setup__vendor_list":     return <VendorList />;
+      case "proc_setup__item_list":       return <ItemList />;
+      case "proc_setup__category_list":   return <CategoryList />;
+      case "proc_setup__uom":             return <UOMList />;
+      case "proc_setup__term_condition":  return <TermCondition />;
+      case "proc_setup__payment_terms":   return <PaymentTerms />;
+      case "proc_setup__government_laws": return <GovernmentLaws />;
+      case "proc_setup__annexure":        return <AnnexureMaster />;
+
+      // Finance
+      // Treasury (executive-only)
+      case "treasury__overview":
+        return isTabVisible(activeTab, currentUser, userTabPermissions) ? <TreasuryDashboard /> : (
+          <div className="flex min-h-full items-center justify-center p-10">
+            <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-sm">You don't have access to this area</p>
+          </div>
+        );
+      case "treasury__ledger":              return <PartyLedger />;
+      case "treasury__loans":             return <Loans />;
+      case "treasury__masters":           return <TreasuryMasters />;
+      case "finance__expense_book":
+        return projectPage(project => <ExpenseBook key={project} project={project} />);
+      case "expenses__petty_cash":        return <Expenses view="petty_cash" />;
+      case "finance__salary":             return <Salary />;
+      case "expenses__cheque_record":     return <Expenses view="cheque_record" />;
+
+      // HRMS (the rest are Organisation tabs, above)
+      case "operations__staff_attendance":
+        return projectPage(project => <Attendance key={project} selectedProject={project} />, { padded: true });
+
+      // Reports
+      case "master_data__vendor":         return <MasterData view="vendor" />;
+      case "master_data__clauses":        return <ClauseMasterData />;
+
+      // Settings › Company
+      // a company's Projects and Branches live inside it
+      case "settings__company":           return <Organisation currentUser={currentUser} allowedTabs={["overview", "projects", "locations"]} onProjectsUpdate={onProjectsRefresh} />;
+
+      case "view_3d":
+        return projectPage(project => <View3D key={project} project={project} />, { padded: true });
+
       default:
         return (
           <div className="flex min-h-screen items-center justify-center text-slate-400 font-bold text-xl uppercase tracking-widest">
@@ -248,17 +285,17 @@ function AppLayout({
 
   const isMobileVal = isMobile;
 
+  // Full-bleed pages (own sticky headers) vs the default padded layout
+  const FULL_BLEED_GREY = ["create__order", "procurement__orders", "procurement__intake", "create__intake", "historical_data", "approvals"];
+  const isSettingsPage  = !!settingsSectionOf(activeTab);
   const mainPaddingClass = (() => {
     if (isMobileVal) return "pt-14 pb-[calc(76px_+_env(safe-area-inset-bottom))] px-0";
-    if (activeTab === "profile") return "pt-0 px-0 pb-4 bg-[#f0f2f5]";
-    if (activeTab === "organisation") return "pt-0 px-0 pb-0";
-    if (["proc_setup__item_list","proc_setup__category_list","proc_setup__uom","proc_setup__vendor_list"].includes(activeTab))
-      return "pt-0 px-0 pb-0";
-    if (["create__order","procurement__orders","master_data__orders",
-         "procurement__intake","master_data__intakes","create__intake",
-         "historical_data","approvals"].includes(activeTab))
-      return "pt-0 px-0 pb-0 bg-[#f0f2f5]";
-    if (["master_data__finance","finance__payments_track","boardroom","expenses__petty_cash","expenses__cheque_record"].includes(activeTab))
+    if (isSettingsPage) return "pt-0 px-0 pb-4 bg-[#f0f2f5]";
+    if (FULL_BLEED_GREY.includes(activeTab)) return "pt-0 px-0 pb-0 bg-[#f0f2f5]";
+    if (TABS[activeTab]?.orgTab || TABS[activeTab]?.project || activeTab.startsWith("finance__") || activeTab.startsWith("treasury__") || activeTab.startsWith("expenses__")
+        || ["settings__company", "inventory", "procurement__registration", "zyhawk_ai",
+            "proc_setup__item_list", "proc_setup__category_list", "proc_setup__uom", "proc_setup__vendor_list",
+            "proc_setup__term_condition", "proc_setup__payment_terms", "proc_setup__government_laws", "proc_setup__annexure"].includes(activeTab))
       return "pt-0 px-0 pb-0";
     return "pt-2 sm:pt-3 lg:pt-4 px-3 sm:px-4 lg:px-6 pb-4";
   })();
@@ -288,8 +325,6 @@ function AppLayout({
           setActiveTab={(tab) => { onTabChange(tab); if (isMobileVal) setMobileOpen(false); }}
           userRole={userRole}
           onLogout={onLogout}
-          selectedProject={selectedProject}
-          setSelectedProject={onProjectChange}
           isCollapsed={isCollapsed}
           setIsCollapsed={setIsCollapsed}
           isMobile={isMobileVal}
@@ -318,12 +353,16 @@ function AppLayout({
       >
         <main
           className={`flex-1 min-h-0 min-w-0 relative overflow-y-auto overflow-x-hidden overscroll-y-contain thin-scrollbar-xs ${
-            activeTab === "profile" ? "flex flex-col" : ""
+            isSettingsPage ? "flex flex-col" : ""
           } ${mainPaddingClass}`}
         >
           <ChunkErrorBoundary>
             <Suspense fallback={<div className="flex h-full items-center justify-center"><div className="w-8 h-8 border-2 border-slate-200 border-t-slate-700 rounded-full animate-spin" /></div>}>
-              {renderPage()}
+              {TABS[activeTab]?.parent ? (
+                <BackContext.Provider value={{ label: TABS[TABS[activeTab].parent].label, onBack: () => onTabChange(TABS[activeTab].parent) }}>
+                  {renderPage()}
+                </BackContext.Provider>
+              ) : renderPage()}
             </Suspense>
           </ChunkErrorBoundary>
         </main>
@@ -370,6 +409,8 @@ function App() {
     try { return JSON.parse(localStorage.getItem("bms_user") || "{}"); } catch { return {}; }
   });
   const [projects, setProjects] = useState([{ name: "All Project" }]);
+  // every active project { id, code, name } — for tabs with their own project access
+  const [allProjects, setAllProjects] = useState([]);
   const [userTabPermissions, setUserTabPermissions] = useState(() => {
     const u = localStorage.getItem("bms_user");
     const user = u ? JSON.parse(u) : null;
@@ -385,8 +426,8 @@ function App() {
     () => localStorage.getItem("bms_sidebar_collapsed") === "true"
   );
 
-  // Derive activeTab and selectedProject from current URL path
-  const { tab: activeTab, project: selectedProject } = pathToTabAndProject(location.pathname);
+  // Derive activeTab and selectedProject from current URL
+  const { tab: activeTab, project: selectedProject } = pathToTabAndProject(location.pathname, location.search);
 
   useScreenTimeTracker(isLoggedIn ? (TAB_MODULE_KEY[activeTab] || activeTab) : null);
 
@@ -419,6 +460,7 @@ function App() {
           .map(p => ({ ...p, name: p.projectCode || p.projectName }));
         setProjects([{ name: "All Project" }, ...active]);
       }
+      if (data.allProjects) setAllProjects(data.allProjects);
     } catch { /* silent */ }
   };
 
@@ -488,7 +530,7 @@ function App() {
     };
   }, [isLoggedIn]);
 
-  // Many components (Sidebar counts, Global Dashboard, SSE setup, etc.) read
+  // Many components (Sidebar counts, Dashboard, SSE setup, etc.) read
   // bms_token straight from localStorage and fetch directly instead of going
   // through authFetch's on-demand refresh — so without this, the access token
   // silently expires while the tab stays open and every one of those calls
@@ -546,29 +588,19 @@ function App() {
     navigate("/", { replace: true });
   };
 
+  // Moving between project pages keeps the picked project
   const handleTabChange = (tab) => {
-    const isProjectTab = !!PROJECT_TAB_TO_SUB[tab];
-    if (isProjectTab && (!selectedProject || selectedProject === "All Project")) {
-      navigate(`/p/select-project${PROJECT_TAB_TO_SUB[tab]}`);
-      return;
-    }
-    const path = buildPath(tab, selectedProject);
-    navigate(path);
+    navigate(buildPath(tab, TABS[tab]?.project ? selectedProject : null));
   };
 
+  // From the Project picker strip; null = All projects
   const handleProjectChange = (project) => {
-    if (project && project !== "All Project") {
-      localStorage.setItem("last_selected_project", project);
-      // If currently on a project-specific tab, keep that tab for new project;
-      // otherwise navigate to project orders.
-      const isProjectTab = !!PROJECT_TAB_TO_SUB[activeTab];
-      const targetTab = isProjectTab ? activeTab : "procurement__orders";
-      navigate(buildPath(targetTab, project));
-    } else {
-      localStorage.removeItem("last_selected_project");
-      navigate("/dashboard");
-    }
+    if (project) localStorage.setItem("last_selected_project", project);
+    navigate(buildPath(activeTab, project));
   };
+
+  // Old URLs (bookmarks, order emails) → new ones
+  const redirectTo = legacyRedirect(location.pathname, location.search, location.hash);
 
   return (
     <Routes>
@@ -596,7 +628,9 @@ function App() {
       <Route
         path="*"
         element={
-          !isLoggedIn ? (
+          redirectTo ? (
+            <Navigate to={redirectTo} replace />
+          ) : !isLoggedIn ? (
             <Login onLogin={handleLogin} />
           ) : serviceLocked ? (
             <div className="min-h-screen w-full flex items-center justify-center p-4" style={{ backgroundColor: "#0f172a" }}>
@@ -626,6 +660,7 @@ function App() {
               activeTab={activeTab}
               selectedProject={selectedProject}
               projects={projects}
+              allProjects={allProjects}
               onTabChange={handleTabChange}
               onProjectChange={handleProjectChange}
               onLogout={handleLogout}

@@ -1,5 +1,5 @@
 // Same calendar date-range filter used on the Orders page (Create/CreateOrder.jsx),
-// pulled out here so Finance Track can reuse it without touching that file.
+// pulled out here so other pages can reuse it without touching that file.
 import { useState, useEffect, useLayoutEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { ChevronRight, ChevronDown, CalendarDays, X } from "lucide-react";

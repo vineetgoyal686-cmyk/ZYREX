@@ -147,6 +147,7 @@ router.post("/:id/sync", requireAuth, requireGlobalOrSuper, async (req, res) => 
         order_overview_aging:  p.order_overview_aging  || false,
         order_intake:          p.order_intake          || false,
         order_payment:         p.order_payment         || false,
+        scope:                 p.scope                 || null,
       });
     });
   });
@@ -212,6 +213,7 @@ router.post("/:id/apply/:userId", requireAuth, requireAdminOrAbove, async (req, 
     order_overview_aging:  p.order_overview_aging  || false,
     order_intake:          p.order_intake          || false,
     order_payment:         p.order_payment         || false,
+    scope:                 p.scope                 || null,
   }));
 
   if (rows.length) {

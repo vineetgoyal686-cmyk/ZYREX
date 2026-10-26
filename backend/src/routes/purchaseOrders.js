@@ -3,6 +3,7 @@ const express  = require("express");
 const router   = express.Router();
 const multer   = require("multer");
 const cache    = require("../helpers/cacheHelper");
+const { projectScope, allows, userIdFrom } = require("../helpers/projectScope");
 const ORDERS_CACHE_KEY = "orders_list";
 const ORDERS_TTL = 60 * 1000; // 60 sec
 const supabase = require("../helpers/supabaseHelper");
@@ -614,10 +615,17 @@ router.get("/pending-count", async (req, res) => {
   }
 });
 
+// Orders tab's project access: only orders of the user's projects
+// (helpers/projectScope.js; null = every project)
+const ordersScope = (req) => projectScope(userIdFrom(req), "order", "master_data_orders_tab");
+const inScope = (scope, order) => allows(scope, order?.site_id);
+const scoped = (payload, scope) => (scope ? { ...payload, orders: payload.orders.filter(o => inScope(scope, o)) } : payload);
+
 router.get("/", async (req, res) => {
   try {
+    const scope = await ordersScope(req);
     const hit = cache.get(ORDERS_CACHE_KEY);
-    if (hit) return res.json(hit);
+    if (hit) return res.json(scoped(hit, scope));
     const { data, error } = await supabase.schema("procurement")
       .from("purchase_orders")
       .select("*, vendors(*)")
@@ -713,7 +721,7 @@ router.get("/", async (req, res) => {
     }
     const payload = { orders: [...sanitized, ...historyOrders] };
     cache.set(ORDERS_CACHE_KEY, payload, ORDERS_TTL);
-    res.json(payload);
+    res.json(scoped(payload, scope));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1125,6 +1133,9 @@ router.post("/", requirePerm("order", "can_add"), upload.fields([
     const files    = req.files || {};
     let { mainData, items, nextSerial } = bodyData;
     mainData = normalizeOrderSnapshotStoragePaths(sanitizeRichTextDeep(mainData || {}));
+    if (mainData.site_id && !inScope(await ordersScope(req), mainData)) {
+      return res.status(403).json({ error: "This project isn't in your Orders access" });
+    }
     items = sanitizeRichTextDeep(items || []);
 
     // 1. Assign draft number first so storage paths are clean (e.g. orders/PO-3/quotations/...)
@@ -1264,6 +1275,7 @@ router.get("/:id", async (req, res) => {
 
     const order = orderRes.data;
     const items = itemRes.data;
+    if (!inScope(await ordersScope(req), order)) return res.status(403).json({ error: "This order's project isn't in your access" });
 
     // Logo/stamp/signature are branding assets, not legal terms frozen at
     // order creation — always show the company's current versions, even on
@@ -1896,6 +1908,9 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
     const files    = req.files || {};
     let { mainData } = bodyData;
     mainData = normalizeOrderSnapshotStoragePaths(sanitizeRichTextDeep(mainData || {}));
+    if (mainData.site_id && !inScope(await ordersScope(req), mainData)) {
+      return res.status(403).json({ error: "This project isn't in your Orders access" });
+    }
     // Distinguish "items omitted from payload" vs "items: []".
     // If caller didn't send items at all (status-only updates etc.), DO NOT
     // touch the items table. Only replace items when caller explicitly sends an array.
@@ -2604,10 +2619,11 @@ router.delete("/:id", requirePerm("order", "can_delete"), async (req, res) => {
     }
     const { data: order, error: orderErr } = await supabase.schema("procurement")
       .from("purchase_orders")
-      .select("status, snapshot, amended_from_id")
+      .select("status, snapshot, amended_from_id, site_id")
       .eq("id", req.params.id)
       .single();
     if (orderErr) throw orderErr;
+    if (!inScope(await ordersScope(req), order)) return res.status(403).json({ error: "This order's project isn't in your access" });
     if (order?.status === "Deleted") {
       return res.status(400).json({ error: "Order is already in Trash." });
     }

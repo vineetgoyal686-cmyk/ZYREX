@@ -2,6 +2,7 @@ const express = require("express");
 const router  = express.Router();
 const multer  = require("multer");
 const supabase = require("../helpers/supabaseHelper");
+const { projectScope, allows, userIdFrom } = require("../helpers/projectScope");
 const {
   normalizeStoragePath,
   uploadStorageFile,
@@ -194,13 +195,19 @@ router.post("/approval-flows", async (req, res) => {
 ════════════════════════════════════════ */
 
 /* GET /api/intakes — all intakes */
-router.get("/", async (_req, res) => {
+// Intake tab's project access (helpers/projectScope.js; null = every project)
+const intakeScope = (req) => projectScope(userIdFrom(req), "intake", "master_data_intakes");
+const intakeAllowed = (scope, row) => allows(scope, row?.site_id, row?.site_code);
+const outOfScope = (res) => res.status(403).json({ error: "This intake's project isn't in your access" });
+
+router.get("/", async (req, res) => {
   try {
+    const scope = await intakeScope(req);
     const { data, error } = await supabase
       .schema("store").from("intakes").select("*, intake_items(*)")
       .order("created_at", { ascending: false });
     if (error) throw error;
-    const intakes = await Promise.all((data || []).map(withSignedAttachmentUrls));
+    const intakes = await Promise.all((data || []).filter(r => intakeAllowed(scope, r)).map(withSignedAttachmentUrls));
     res.json({ intakes });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -214,6 +221,7 @@ router.get("/:id", async (req, res) => {
       .schema("store").from("intakes").select("*, intake_items(*)")
       .eq("id", req.params.id).single();
     if (error) throw error;
+    if (!intakeAllowed(await intakeScope(req), data)) return outOfScope(res);
     res.json({ intake: await withSignedAttachmentUrls(data) });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -227,6 +235,7 @@ const intakeUpload = upload.any();
 router.post("/", intakeUpload, async (req, res) => {
   try {
     const intake  = JSON.parse(req.body.intakeData || "{}");
+    if ((intake.site_id || intake.site_code) && !intakeAllowed(await intakeScope(req), intake)) return outOfScope(res);
     const items   = intake.items || [];
     const status  = intake.status || "draft"; // draft | submitted
     const files   = req.files || [];
@@ -376,6 +385,8 @@ router.patch("/:id/start-working", async (req, res) => {
 /* DELETE /api/intakes/:id */
 router.delete("/:id", async (req, res) => {
   try {
+    const { data: row } = await supabase.schema("store").from("intakes").select("site_id, site_code").eq("id", req.params.id).maybeSingle();
+    if (row && !intakeAllowed(await intakeScope(req), row)) return outOfScope(res);
     const { error } = await supabase.schema("store").from("intakes").delete().eq("id", req.params.id);
     if (error) throw error;
     res.json({ success: true });

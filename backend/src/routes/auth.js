@@ -811,6 +811,11 @@ router.get("/my-permissions", async (req, res) => {
     BOOL_KEYS.forEach(k => {
       merged[k] = hasExplicit ? !!explicit[k] : profMatches.some(p => !!p[k]);
     });
+    // tab project access: own row's, else the profiles' joined; null = not set
+    const scopes = (hasExplicit ? [explicit.scope] : profMatches.map(p => p.scope)).filter(Boolean);
+    merged.scope = !scopes.length ? null
+      : scopes.some(s => s.all) ? { all: true }
+      : { projects: [...new Set(scopes.flatMap(s => s.projects || []))] };
     return {
       module_id:   mod.id,
       module_key:  mod.module_key,
@@ -874,6 +879,10 @@ router.get("/init", async (req, res) => {
     logoUrl:     "",
   }));
 
+  // Every active project (id + code) — tabs with their own project access
+  // (permission scope) pick from these, not from the Project Access list below
+  const allProjects = projects.filter(p => p.isActive).map(p => ({ id: p.id, code: p.projectCode, name: p.projectName }));
+
   // Project Access restriction: union of the user's own allowed_projects and
   // any linked access profile's project_access. An empty effective list means
   // no restriction has ever been configured, so every project stays visible
@@ -901,6 +910,7 @@ router.get("/init", async (req, res) => {
       profile_permissions: signedProfilePermissions,
     },
     projects,
+    allProjects,
   });
 });
 

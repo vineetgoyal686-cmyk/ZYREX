@@ -10,6 +10,8 @@ import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
+import PageHeader from "../../../components/PageHeader";
+import { headerBtn, headerBtnPrimary } from "../../../components/headerStyles";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const PER_PAGE = 9;
@@ -333,7 +335,7 @@ const getCurrentUser = () => {
 
 export default function ClausesMaster({ type, initialViewId, initialAction, isActionOnly, onCloseModal }) {
   const cfg = TYPE_CONFIG[type] || TYPE_CONFIG.TC;
-  const { label, desc, prefix, Icon: CfgIcon, iconBg, iconColor, badgeCls, numBg, numColor, borderAccent, headerBg, accentRing } = cfg;
+  const { label, prefix, Icon: CfgIcon, iconBg, iconColor, badgeCls, numBg, numColor, borderAccent, headerBg, accentRing } = cfg;
   const actionLabel = type === "TC" ? "T&C" : type === "PAY" ? "Payment Term" : type === "GOV" ? "Government Law" : "Annexure";
   const titlePlaceholder = type === "TC"
     ? "e.g. Standard Terms"
@@ -670,7 +672,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
 
   /* ══════════ RENDER ══════════ */
   return (
-    <div className="p-6 w-full">
+    <div className="w-full">
       <style>{`
         /* list styles live in index.css */
         
@@ -916,23 +918,15 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
       )}
 
       {!isActionOnly && (
-        <div className="p-3 sm:p-4 lg:p-6 w-full pb-32">
-          {/* ── HEADER ── */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
-            <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl ${iconBg} flex items-center justify-center`}>
-            <CfgIcon size={20} className={iconColor} />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-800">{label}</h1>
-            <p className="text-sm text-slate-400">{desc}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap sm:justify-end">
+        <div className="w-full pb-32">
+          {/* ── HEADER (sticky, same as Vendors) ── */}
+          <div className="sticky top-0 z-20 bg-white border-b border-slate-200">
+            <PageHeader icon={CfgIcon} iconClass={`${iconBg} ${iconColor} ring-slate-100`} title={label} count={filtered.length}
+              actions={<>
           {canExport && (
           <div className="relative" ref={exportRef}>
             <button onClick={() => { setShowExport(s => !s); setShowBulk(false); }}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
+              className={headerBtn}>
               <Download size={14} /> Export <ChevronDown size={12} />
             </button>
             {showExport && (
@@ -949,19 +943,113 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
           )}
           {canBulk && (
           <button onClick={() => { setShowBulk(s => !s); setShowExport(false); }}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
+            className={headerBtn}>
             <Upload size={14} /> Bulk Upload
           </button>
           )}
           {canAdd && (
           <button onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 transition-all">
+            className={headerBtnPrimary}>
             <Plus size={15} /> Add {actionLabel}
           </button>
           )}
+              </>} />
+            <div className="border-b border-slate-100" />
+      {/* ── SEARCH + FILTER ── */}
+      <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3" onClick={() => { setCatDropOpen(false); setTitleDropOpen(false); }}>
+        {/* Search — pill style */}
+        <div className="relative">
+          <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search by code or title…"
+            className="pl-9 pr-4 h-9 w-80 max-w-full rounded-lg border border-slate-200 text-sm outline-none focus:border-indigo-400 bg-white text-slate-700 placeholder-slate-400 transition-all" />
         </div>
+
+        {/* Right side — filters + count */}
+        <div className="flex items-center gap-3">
+
+          {/* Category multi-select */}
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <button onClick={() => { setCatDropOpen(o => !o); setTitleDropOpen(false); }}
+              className={`h-9 pl-3.5 pr-8 rounded-lg border text-[13px] font-semibold flex items-center w-40 transition-all relative ${filterCats.length ? 'border-indigo-300 text-indigo-700 bg-indigo-50' : 'border-slate-200 text-slate-600 bg-white hover:border-slate-300'}`}>
+              {filterCats.length ? `Category (${filterCats.length})` : 'Category'}
+              <ChevronDown size={11} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            </button>
+            {catDropOpen && (
+              <div className="absolute top-full mt-2 right-0 z-50 bg-white border border-slate-200 shadow-xl rounded-xl w-52 overflow-hidden">
+                <div className="p-2 border-b border-slate-100">
+                  <input autoFocus value={catSearch} onChange={e => setCatSearch(e.target.value)}
+                    placeholder="Search…" className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 outline-none focus:border-slate-400 bg-slate-50" />
+                </div>
+                <div className="max-h-48 overflow-y-auto">
+                  {uniqueCats.filter(c => c.toLowerCase().includes(catSearch.toLowerCase())).map(c => (
+                    <label key={c} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                      <input type="checkbox" checked={filterCats.includes(c)}
+                        onChange={() => { setFilterCats(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]); setPage(1); }} />
+                      <span className="text-xs text-slate-700">{c}</span>
+                    </label>
+                  ))}
+                  {uniqueCats.filter(c => c.toLowerCase().includes(catSearch.toLowerCase())).length === 0 && (
+                    <p className="px-3 py-3 text-xs text-slate-400">No categories</p>
+                  )}
+                </div>
+                {filterCats.length > 0 && (
+                  <div className="p-2 border-t border-slate-100">
+                    <button onClick={() => { setFilterCats([]); setPage(1); }} className="text-xs text-red-500 hover:text-red-700 font-medium">Clear</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Title multi-select */}
+          <div className="relative" onClick={e => e.stopPropagation()}>
+            <button onClick={() => { setTitleDropOpen(o => !o); setCatDropOpen(false); }}
+              className={`h-9 pl-3.5 pr-8 rounded-lg border text-[13px] font-semibold flex items-center w-40 transition-all relative ${filterTitles.length ? 'border-indigo-300 text-indigo-700 bg-indigo-50' : 'border-slate-200 text-slate-600 bg-white hover:border-slate-300'}`}>
+              {filterTitles.length ? `Title (${filterTitles.length})` : 'Title'}
+              <ChevronDown size={11} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            </button>
+            {titleDropOpen && (
+              <div className="absolute top-full mt-2 right-0 z-50 bg-white border border-slate-200 shadow-xl rounded-xl w-64 overflow-hidden">
+                <div className="p-2 border-b border-slate-100">
+                  <input autoFocus value={titleSearch} onChange={e => setTitleSearch(e.target.value)}
+                    placeholder="Search…" className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 outline-none focus:border-slate-400 bg-slate-50" />
+                </div>
+                <div className="max-h-48 overflow-y-auto">
+                  {uniqueTitles.filter(t => t.toLowerCase().includes(titleSearch.toLowerCase())).map(t => (
+                    <label key={t} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer">
+                      <input type="checkbox" checked={filterTitles.includes(t)}
+                        onChange={() => { setFilterTitles(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]); setPage(1); }} />
+                      <span className="text-xs text-slate-700 truncate">{t}</span>
+                    </label>
+                  ))}
+                  {uniqueTitles.filter(t => t.toLowerCase().includes(titleSearch.toLowerCase())).length === 0 && (
+                    <p className="px-3 py-3 text-xs text-slate-400">No titles</p>
+                  )}
+                </div>
+                {filterTitles.length > 0 && (
+                  <div className="p-2 border-t border-slate-100">
+                    <button onClick={() => { setFilterTitles([]); setPage(1); }} className="text-xs text-red-500 hover:text-red-700 font-medium">Clear</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Clear all */}
+          {(filterCats.length > 0 || filterTitles.length > 0) && (
+            <button onClick={() => { setFilterCats([]); setFilterTitles([]); setPage(1); }}
+              className="h-9 px-3 rounded-lg border border-red-200 text-[13px] text-red-500 hover:bg-red-50 transition-all bg-white flex items-center gap-1.5 font-semibold">
+              <X size={11} /> Clear
+            </button>
+          )}
+
+        </div>{/* end right group */}
       </div>
 
+          </div>
+
+          <div className="px-4 sm:px-6 pt-5">
       {/* ── BULK PANEL ── */}
       {showBulk && (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 mb-5">
@@ -1005,106 +1093,6 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
           )}
         </div>
       )}
-
-      {/* ── SEARCH + FILTER ── */}
-      <div className="flex items-center justify-between mb-5" onClick={() => { setCatDropOpen(false); setTitleDropOpen(false); }}>
-        {/* Search — pill style */}
-        <div className="relative">
-          <Search size={13} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search by code or title…"
-            className="pl-9 pr-4 h-11 w-80 rounded-lg border border-slate-200 shadow-sm text-sm outline-none focus:border-slate-400 focus:shadow-md bg-white text-slate-600 placeholder-slate-400 transition-all" />
-        </div>
-
-        {/* Right side — filters + count */}
-        <div className="flex items-center gap-3">
-
-          {/* Category multi-select */}
-          <div className="relative" onClick={e => e.stopPropagation()}>
-            <button onClick={() => { setCatDropOpen(o => !o); setTitleDropOpen(false); }}
-              className={`h-11 pl-4 pr-8 rounded-2xl border text-sm font-medium flex items-center w-44 shadow-sm transition-all relative ${filterCats.length ? 'border-indigo-300 text-indigo-700 bg-indigo-50' : 'border-slate-200 text-slate-600 bg-white hover:border-slate-300'}`}>
-              {filterCats.length ? `Category (${filterCats.length})` : 'Category'}
-              <ChevronDown size={11} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            </button>
-            {catDropOpen && (
-              <div className="absolute top-full mt-2 right-0 z-50 bg-white border border-slate-200 shadow-xl rounded-xl w-52 overflow-hidden">
-                <div className="p-2 border-b border-slate-100">
-                  <input autoFocus value={catSearch} onChange={e => setCatSearch(e.target.value)}
-                    placeholder="Search…" className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 outline-none focus:border-slate-400 bg-slate-50" />
-                </div>
-                <div className="max-h-48 overflow-y-auto">
-                  {uniqueCats.filter(c => c.toLowerCase().includes(catSearch.toLowerCase())).map(c => (
-                    <label key={c} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox" checked={filterCats.includes(c)}
-                        onChange={() => { setFilterCats(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]); setPage(1); }} />
-                      <span className="text-xs text-slate-700">{c}</span>
-                    </label>
-                  ))}
-                  {uniqueCats.filter(c => c.toLowerCase().includes(catSearch.toLowerCase())).length === 0 && (
-                    <p className="px-3 py-3 text-xs text-slate-400">No categories</p>
-                  )}
-                </div>
-                {filterCats.length > 0 && (
-                  <div className="p-2 border-t border-slate-100">
-                    <button onClick={() => { setFilterCats([]); setPage(1); }} className="text-xs text-red-500 hover:text-red-700 font-medium">Clear</button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Title multi-select */}
-          <div className="relative" onClick={e => e.stopPropagation()}>
-            <button onClick={() => { setTitleDropOpen(o => !o); setCatDropOpen(false); }}
-              className={`h-11 pl-4 pr-8 rounded-2xl border text-sm font-medium flex items-center w-44 shadow-sm transition-all relative ${filterTitles.length ? 'border-indigo-300 text-indigo-700 bg-indigo-50' : 'border-slate-200 text-slate-600 bg-white hover:border-slate-300'}`}>
-              {filterTitles.length ? `Title (${filterTitles.length})` : 'Title'}
-              <ChevronDown size={11} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            </button>
-            {titleDropOpen && (
-              <div className="absolute top-full mt-2 right-0 z-50 bg-white border border-slate-200 shadow-xl rounded-xl w-64 overflow-hidden">
-                <div className="p-2 border-b border-slate-100">
-                  <input autoFocus value={titleSearch} onChange={e => setTitleSearch(e.target.value)}
-                    placeholder="Search…" className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-200 outline-none focus:border-slate-400 bg-slate-50" />
-                </div>
-                <div className="max-h-48 overflow-y-auto">
-                  {uniqueTitles.filter(t => t.toLowerCase().includes(titleSearch.toLowerCase())).map(t => (
-                    <label key={t} className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50 cursor-pointer">
-                      <input type="checkbox" checked={filterTitles.includes(t)}
-                        onChange={() => { setFilterTitles(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]); setPage(1); }} />
-                      <span className="text-xs text-slate-700 truncate">{t}</span>
-                    </label>
-                  ))}
-                  {uniqueTitles.filter(t => t.toLowerCase().includes(titleSearch.toLowerCase())).length === 0 && (
-                    <p className="px-3 py-3 text-xs text-slate-400">No titles</p>
-                  )}
-                </div>
-                {filterTitles.length > 0 && (
-                  <div className="p-2 border-t border-slate-100">
-                    <button onClick={() => { setFilterTitles([]); setPage(1); }} className="text-xs text-red-500 hover:text-red-700 font-medium">Clear</button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Clear all */}
-          {(filterCats.length > 0 || filterTitles.length > 0) && (
-            <button onClick={() => { setFilterCats([]); setFilterTitles([]); setPage(1); }}
-              className="h-11 px-4 rounded-2xl border border-red-200 text-sm text-red-500 hover:bg-red-50 transition-all bg-white shadow-sm flex items-center gap-1.5 font-medium">
-              <X size={11} /> Clear
-            </button>
-          )}
-
-          {/* Count box */}
-          <div className="h-11 flex items-center gap-2 px-4 rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <span className={`text-xs font-bold ${badgeCls}`}>{prefix}</span>
-            <div className="w-px h-4 bg-slate-200" />
-            <span className="text-xs font-semibold text-slate-700">{filtered.length}</span>
-            <span className="text-xs text-slate-400">clause{filtered.length !== 1 ? "s" : ""}</span>
-          </div>
-
-        </div>{/* end right group */}
-      </div>
 
       {/* ── CARDS GRID ── */}
       {loading ? (
@@ -1207,6 +1195,7 @@ export default function ClausesMaster({ type, initialViewId, initialAction, isAc
           )}
         </>
       )}
+          </div>
       </div>
       )}
 

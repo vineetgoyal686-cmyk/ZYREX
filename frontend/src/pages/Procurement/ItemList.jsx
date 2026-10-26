@@ -8,6 +8,8 @@ import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 import { logAudit } from "../../utils/auditLog";
 import LogPanel from "../../components/LogPanel";
+import PageHeader from "../../components/PageHeader";
+import { headerBtn, headerBtnPrimary } from "../../components/headerStyles";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const PER_PAGE_OPTIONS = [10, 20, 30, 40, 50];
@@ -545,32 +547,14 @@ export default function ItemList() {
       {/* Sticky top block: single unified header panel — main has zero padding on this route, so this sits flush at the true top/left/right edges with no offset math needed */}
       <div className="sticky top-0 z-20 bg-white border-b border-slate-200">
 
-          {/* Row 1: Title + Tabs (left) / Add + More (right) — single slim row */}
-          <div className="flex items-center justify-between gap-4 px-2 sm:px-3 lg:px-4 py-2.5 border-b border-slate-200">
-            <div className="flex items-center gap-5 min-w-0">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-                  <Boxes size={16} className="text-blue-600" />
-                </div>
-                <h1 className="text-base font-bold text-slate-800 whitespace-nowrap">Material Catalog</h1>
-              </div>
-
-              {/* Supply / SITC switch — same row as title, header height stays fixed */}
-              <div className="flex gap-1 bg-slate-100 p-0.5 rounded-lg w-fit shrink-0">
-                {TABS.map(tab => (
-                  <button key={tab} onClick={() => { setActiveTab(tab); setPage(1); setFilterCategory([]); setFilterItem([]); }}
-                    className={`px-4 py-1.5 rounded-md text-sm font-semibold transition-all
-                      ${activeTab === tab ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-                    {tab}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
+          <PageHeader icon={Boxes} tone="emerald" title="Material Catalog" count={tabItems.length}
+            tabs={TABS.map(t => ({ key: t, label: t }))} activeTab={activeTab}
+            onTabChange={tab => { setActiveTab(tab); setPage(1); setFilterCategory([]); setFilterItem([]); }}
+            actions={<>
               {(canExport || canBulkUpload) && (
                 <div className="relative" ref={moreRef}>
                   <button onClick={() => setShowMore(v => !v)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white text-slate-600 text-sm font-medium hover:bg-slate-50 transition-all">
+                    className={headerBtn}>
                     More <ChevronDown size={12} className={`transition-transform ${showMore ? "rotate-180" : ""}`} />
                   </button>
                   {showMore && (
@@ -608,15 +592,15 @@ export default function ItemList() {
               )}
               {canAdd && (
                 <button onClick={openAdd}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-medium hover:bg-slate-700 transition-all">
+                  className={headerBtnPrimary}>
                   <Plus size={15} /> Add Item
                 </button>
               )}
-            </div>
-          </div>
+            </>} />
+          <div className="border-b border-slate-100" />
 
           {/* Row 2: Search (left) + Filters (right) */}
-          <div className="px-2 sm:px-3 lg:px-4 py-3">
+          <div className="px-4 sm:px-6 py-3">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-2">
               <div className="flex items-center gap-3 w-full sm:w-auto">
                 <div className="relative w-full sm:w-96 shrink-0">
@@ -625,9 +609,6 @@ export default function ItemList() {
                     placeholder="Search…"
                     className="w-full pl-9 pr-4 h-10 rounded-lg border border-slate-200 text-sm outline-none focus:border-slate-400 bg-white text-slate-700" />
                 </div>
-                <span className="shrink-0 h-10 flex items-center px-3 rounded-lg bg-slate-50 border border-slate-100 text-xs font-semibold text-slate-500 whitespace-nowrap">
-                  Total {tabItems.length} item{tabItems.length !== 1 ? "s" : ""}
-                </span>
               </div>
 
               <div className="flex flex-col sm:flex-row items-center gap-2 shrink-0">

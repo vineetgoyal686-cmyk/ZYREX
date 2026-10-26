@@ -4,6 +4,7 @@ import {
   MapPin, PanelLeftClose, PanelLeftOpen,
   Download, Upload, ChevronDown, FileSpreadsheet, FileText,
   Layers, Network, UserSquare2, FolderTree, ArrowLeft, Table2, BarChart2, ClipboardList, FileSignature, FolderKanban,
+  MoreHorizontal,
 } from "lucide-react";
 import OrgOverview   from "./OrgOverview";
 import Departments   from "./Departments";
@@ -19,9 +20,11 @@ import OrgList       from "./OrgList";
 import SOPTab        from "../Settings/tabs/SOP";
 import Policy        from "./Policy";
 import HRLetter      from "./HRLetter";
-import Projects      from "./Projects";
+import ManageProjects from "../../components/ManageProjects";
+import { effectiveProfilePerms } from "../Settings/access";
 import { OrgScopeContext, scopedUrl } from "./orgScope";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
+import ScopeDropdown from "../../components/ScopeDropdown";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -31,7 +34,9 @@ const NAV_SECTIONS = [
     label: "Organisation",
     items: [
       { id: "overview",   label: "Overview",   icon: LayoutGrid,    hasAdd: false, hasExport: false },
-      { id: "projects",   label: "Projects",   icon: FolderKanban,  hasAdd: true,  hasExport: false, btnLabel: "Add Project" },
+      // Projects = the main project list, filtered to this company (its own header has Add)
+      { id: "projects",   label: "Projects",   icon: FolderKanban,  hasAdd: false, hasExport: false },
+      { id: "locations",  label: "Branch",     icon: MapPin,        hasAdd: true,  hasExport: false, btnLabel: "Add Branch" },
       { id: "structure",  label: "Structure",  icon: FolderTree,    hasAdd: false, hasExport: false },
       { id: "org_chart",  label: "Org Chart",  icon: GitBranch,     hasAdd: false, hasExport: false },
       { id: "sop",        label: "SOP",        icon: ClipboardList, hasAdd: false, hasExport: false },
@@ -55,22 +60,22 @@ const NAV_SECTIONS = [
       { id: "hr_letters", label: "Offer & Appointment", icon: FileSignature, hasAdd: false, hasExport: false },
     ],
   },
-  {
-    label: "Settings",
-    items: [
-      { id: "locations", label: "Branch",    icon: MapPin, hasAdd: true, hasExport: false, btnLabel: "Add Branch"   },
-    ],
-  },
 ];
 
 const ALL_TABS = NAV_SECTIONS.flatMap(s => s.items);
 
-/* ─── Org Detail View (after selecting an org) ─────────── */
-function OrgDetail({ org, onBack, currentUser }) {
-  const [activeTab,  setActiveTab]  = useState("overview");
+/* ─── Org Detail View (after selecting an org) ───────────
+   fixedTab: show only that tab, without the inner sidebar (HRMS pages in
+   the main sidebar). allowedTabs: limit the inner sidebar (Settings ›
+   Company). headerExtra: shown before the title (company picker). */
+function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtra, onProjectsUpdate }) {
+  const [activeTab,  setActiveTabRaw]  = useState(fixedTab || allowedTabs?.[0] || "overview");
+  const setActiveTab = (t) => {
+    if (fixedTab || (allowedTabs && !allowedTabs.includes(t))) return;
+    setActiveTabRaw(t);
+  };
   const [collapsed,  setCollapsed]  = useState(false);
   const [showExport, setShowExport] = useState(false);
-  const [showUpload, setShowUpload] = useState(false);
   const [tooltip,    setTooltip]    = useState(null);
   const [divCount,    setDivCount]    = useState(0);
   const [subCount,    setSubCount]    = useState(0);
@@ -79,7 +84,8 @@ function OrgDetail({ org, onBack, currentUser }) {
   const [branchCount, setBranchCount] = useState(0);
   const [projectCount, setProjectCount] = useState(0);
   const [empView,  setEmpView]  = useState("card");
-  const [empCount, setEmpCount] = useState(null);
+  // the Employees tab puts its search + filters into the header through this
+  const [toolbarSlot, setToolbarSlot] = useState(null);
 
   const [toast, setToast] = useState(null);
   const showToast = (msg, type = "success") => {
@@ -88,7 +94,6 @@ function OrgDetail({ org, onBack, currentUser }) {
   };
 
   const exportDropRef = useRef(null);
-  const uploadDropRef = useRef(null);
   const actionsRef    = useRef({});
 
   const meta = ALL_TABS.find(t => t.id === activeTab);
@@ -104,7 +109,10 @@ function OrgDetail({ org, onBack, currentUser }) {
   const permStructure    = useModulePermissions("structure");
   const permOrgChart     = useModulePermissions("org_chart");
   const permSop          = useModulePermissions("sop");
-  const permProjects     = useModulePermissions("org_projects");
+  // Projects follow Project Management access (profile permission manage_project)
+  const isGlobalAdmin    = currentUser?.role === "global_admin";
+  const pmPerms          = effectiveProfilePerms(currentUser).manage_project || {};
+  const permProjects     = { canView: isGlobalAdmin || !!pmPerms.view };
 
   const TAB_PERMS = {
     departments: permDepartments, sub_departments: permTeams, divisions: permDivisions,
@@ -121,13 +129,12 @@ function OrgDetail({ org, onBack, currentUser }) {
     fetch(u("/api/organisation/grades"), { headers: h }).then(r => r.json()).then(j => setLvlCount((j.grades || []).length)).catch(() => {});
     fetch(u("/api/teams"), { headers: h }).then(r => r.json()).then(j => setSubCount((j.teams || []).length)).catch(() => {});
     fetch(u("/api/organisation/branches"), { headers: h }).then(r => r.json()).then(j => setBranchCount((j.branches || []).length)).catch(() => {});
-    fetch(u("/api/organisation/projects"), { headers: h }).then(r => r.json()).then(j => setProjectCount((j.projects || []).length)).catch(() => {});
+    fetch(`${API}/api/projects`, { headers: h }).then(r => r.json()).then(j => setProjectCount((j.projects || []).filter(p => p.companyId === org.id).length)).catch(() => {});
   }, [activeTab, org.id]);
 
   useEffect(() => {
     const h = (e) => {
       if (exportDropRef.current && !exportDropRef.current.contains(e.target)) setShowExport(false);
-      if (uploadDropRef.current && !uploadDropRef.current.contains(e.target)) setShowUpload(false);
     };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
@@ -153,9 +160,10 @@ function OrgDetail({ org, onBack, currentUser }) {
       case "sub_departments": return <SubDepts    actionsRef={actionsRef} onChange={d => setSubCount(d.length)} />;
       case "grades":          return <Grades      actionsRef={actionsRef} onChange={d => setLvlCount(d.length)} />;
       case "designations":    return <Designations actionsRef={actionsRef} />;
-      case "employees":       return <EmployeeList actionsRef={actionsRef} view={empView} onViewChange={setEmpView} onCountChange={setEmpCount} />;
+      case "employees":       return <EmployeeList actionsRef={actionsRef} view={empView} onViewChange={setEmpView} toolbarSlot={toolbarSlot} />;
       case "locations":       return <Locations   actionsRef={actionsRef} />;
-      case "projects":        return <Projects    actionsRef={actionsRef} onChange={d => setProjectCount(d.length)} />;
+      case "projects":        return <ManageProjects companyId={org.id} companyName={org.companyName || org.company_name}
+                                isGlobalAdmin={isGlobalAdmin} permissions={pmPerms} onProjectsUpdate={onProjectsUpdate} />;
       case "policy":          return <Policy actionsRef={actionsRef} companyId={org?.id} orgName={org?.companyName || org?.company_name} />;
       case "hr_letters":      return <HRLetter org={org} showToast={showToast} />;
       default:                return null;
@@ -185,8 +193,8 @@ function OrgDetail({ org, onBack, currentUser }) {
         </div>
       )}
 
-      {/* Sidebar — always rendered, width transitions smoothly */}
-      <div
+      {/* Sidebar — width transitions smoothly; not shown for a single fixed tab */}
+      {!fixedTab && <div
         className="hidden md:block border-r border-slate-200/90 bg-slate-100 self-stretch shrink-0 transition-all duration-300 ease-in-out"
         style={{ width: collapsed ? "3.25rem" : "14rem" }}>
         <aside className="sticky top-0 h-screen max-h-screen overflow-y-auto thin-scrollbar-xs flex flex-col"
@@ -220,7 +228,7 @@ function OrgDetail({ org, onBack, currentUser }) {
           {/* Nav */}
           <nav className="flex flex-col gap-0 w-full flex-1">
             {NAV_SECTIONS.map(section => {
-              const visibleItems = section.items.filter(t => !TAB_PERMS[t.id] || TAB_PERMS[t.id].canView);
+              const visibleItems = section.items.filter(t => (!TAB_PERMS[t.id] || TAB_PERMS[t.id].canView) && (!allowedTabs || allowedTabs.includes(t.id)));
               if (visibleItems.length === 0) return null;
               return (
               <div key={section.label} className="py-2 border-b border-slate-200/70 last:border-0">
@@ -252,89 +260,87 @@ function OrgDetail({ org, onBack, currentUser }) {
             })}
           </nav>
         </aside>
-      </div>
+      </div>}
 
       {/* Main content */}
       <div className="min-w-0 flex-1 flex flex-col">
-        {/* Per-tab header */}
-        <div className="flex items-center justify-between px-5 sm:px-6 py-3.5 bg-white border-b border-slate-200 sticky top-0 z-10 gap-3">
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-[15px] font-bold text-slate-800">{meta?.label}</h1>
-            {badges[activeTab] != null && (
-              <span className="text-[12px] text-slate-500 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded font-medium">
-                {badges[activeTab]} {(() => { const l = meta?.label?.toLowerCase() || ""; return badges[activeTab] !== 1 && !l.endsWith("s") ? l + "s" : l; })()}
-              </span>
-            )}
-            {activeTab === "employees" && empCount != null && (
-              <span className="text-[12px] text-slate-500 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded font-medium">
-                {empCount} {empCount === 1 ? "employee" : "employees"}
-              </span>
-            )}
+        {/* Per-tab header — one row: title · count, the tab's own search/filters,
+            then view toggle, a "⋯" menu (export / bulk upload) and Add */}
+        {(() => {
+          // Employees shows its numbers in the cards below instead
+          const count = activeTab === "employees" ? null : badges[activeTab];
+          const canExport = meta?.hasExport && (TAB_PERMS[activeTab]?.canExport ?? true);
+          const canBulk   = meta?.hasExport && (TAB_PERMS[activeTab]?.canBulk ?? true);
+          const menuItem = "w-full flex items-center gap-2.5 px-3.5 py-2 text-[13px] text-slate-700 hover:bg-slate-50";
+          return (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 sm:px-6 py-3 bg-white border-b border-slate-200 sticky top-0 z-30">
+          {/* page name first, then the company it is showing */}
+          <div className="flex items-center gap-3 min-w-0">
+            <h1 className="text-[15px] font-bold text-slate-800 whitespace-nowrap">
+              {meta?.label}
+              {count != null && <span className="ml-1.5 font-semibold text-slate-400">· {count}</span>}
+            </h1>
+            {headerExtra && <span className="h-5 w-px bg-slate-200 shrink-0" />}
+            {headerExtra}
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Table / Card toggle — employees only */}
+          {/* filled by the tab (Employees: search + Filters) */}
+          <div ref={setToolbarSlot} className="flex items-center gap-2 empty:hidden" />
+
+          <div className="flex items-center gap-2 ml-auto">
             {activeTab === "employees" && (
-              <div className="flex items-center border border-slate-200 rounded overflow-hidden">
-                <button onClick={() => setEmpView("table")}
-                  className={`px-3 py-2 text-xs flex items-center gap-1.5 transition-colors ${empView === "table" ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
-                  <Table2 size={13} /> Table
+              <div className="flex items-center border border-slate-200 rounded-md overflow-hidden">
+                <button onClick={() => setEmpView("table")} title="Table view"
+                  className={`p-2 transition-colors ${empView === "table" ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+                  <Table2 size={14} />
                 </button>
-                <button onClick={() => setEmpView("card")}
-                  className={`px-3 py-2 text-xs flex items-center gap-1.5 transition-colors ${empView === "card" ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
-                  <LayoutGrid size={13} /> Card
+                <button onClick={() => setEmpView("card")} title="Card view"
+                  className={`p-2 transition-colors ${empView === "card" ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
+                  <LayoutGrid size={14} />
                 </button>
               </div>
             )}
-            {meta?.hasExport && (TAB_PERMS[activeTab]?.canExport ?? true) && (
+            {(canExport || canBulk) && (
               <div className="relative" ref={exportDropRef}>
-                <button onClick={() => { setShowExport(v => !v); setShowUpload(false); }}
-                  className="inline-flex items-center gap-1.5 text-sm font-medium border border-slate-200 text-slate-600 px-3 py-2 rounded hover:bg-slate-50 transition-colors">
-                  <Download size={14} /> Export <ChevronDown size={12} />
+                <button onClick={() => setShowExport(v => !v)} title="More"
+                  className={`p-2 rounded-md border transition-colors ${showExport ? "border-slate-300 bg-slate-100 text-slate-700" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+                  <MoreHorizontal size={14} />
                 </button>
                 {showExport && (
-                  <div className="absolute right-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded shadow-lg z-30">
-                    <button onClick={() => { actionsRef.current?.exportExcel?.(); setShowExport(false); }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
-                      <FileSpreadsheet size={14} className="text-emerald-500" /> Export Excel
-                    </button>
-                    <button onClick={() => { actionsRef.current?.exportPDF?.(); setShowExport(false); }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
-                      <FileText size={14} className="text-red-400" /> Export PDF
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-            {meta?.hasExport && (TAB_PERMS[activeTab]?.canBulk ?? true) && (
-              <div className="relative" ref={uploadDropRef}>
-                <button onClick={() => { setShowUpload(v => !v); setShowExport(false); }}
-                  className="inline-flex items-center gap-1.5 text-sm font-medium border border-slate-200 text-slate-600 px-3 py-2 rounded hover:bg-slate-50 transition-colors">
-                  <Upload size={14} /> Bulk Upload <ChevronDown size={12} />
-                </button>
-                {showUpload && (
-                  <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded shadow-lg z-30">
-                    <button onClick={() => { actionsRef.current?.downloadTemplate?.(); setShowUpload(false); }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
-                      <Download size={14} className="text-slate-400" /> Download Template
-                    </button>
-                    <div className="border-t border-slate-100" />
-                    <button onClick={() => { actionsRef.current?.openUpload?.(); setShowUpload(false); }}
-                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50">
-                      <Upload size={14} className="text-blue-500" /> Upload Excel File
-                    </button>
+                  <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-lg shadow-lg z-30 py-1">
+                    {canExport && <>
+                      <p className="px-3.5 pt-1.5 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Export</p>
+                      <button onClick={() => { actionsRef.current?.exportExcel?.(); setShowExport(false); }} className={menuItem}>
+                        <FileSpreadsheet size={14} className="text-emerald-500" /> Excel
+                      </button>
+                      <button onClick={() => { actionsRef.current?.exportPDF?.(); setShowExport(false); }} className={menuItem}>
+                        <FileText size={14} className="text-red-400" /> PDF
+                      </button>
+                    </>}
+                    {canExport && canBulk && <div className="my-1 border-t border-slate-100" />}
+                    {canBulk && <>
+                      <p className="px-3.5 pt-1.5 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bulk Upload</p>
+                      <button onClick={() => { actionsRef.current?.downloadTemplate?.(); setShowExport(false); }} className={menuItem}>
+                        <Download size={14} className="text-slate-400" /> Download Template
+                      </button>
+                      <button onClick={() => { actionsRef.current?.openUpload?.(); setShowExport(false); }} className={menuItem}>
+                        <Upload size={14} className="text-blue-500" /> Upload Excel File
+                      </button>
+                    </>}
                   </div>
                 )}
               </div>
             )}
             {meta?.hasAdd && (TAB_PERMS[activeTab]?.canAdd ?? true) && (
-              <button onClick={() => actionsRef.current?.openAdd?.()}
-                className="inline-flex items-center gap-1.5 text-sm font-semibold bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors">
-                <Plus size={14} /> {meta.btnLabel}
+              <button onClick={() => actionsRef.current?.openAdd?.()} title={meta.btnLabel}
+                className="inline-flex items-center gap-1.5 text-[13px] font-semibold bg-blue-600 text-white px-3 py-2 rounded-md hover:bg-blue-700 transition-colors">
+                <Plus size={14} /> <span className="hidden sm:inline">{meta.btnLabel}</span>
               </button>
             )}
           </div>
         </div>
+          );
+        })()}
 
         <div className="min-w-0 px-4 sm:px-5 lg:px-6 py-5 flex flex-col gap-4">
           {renderContent()}
@@ -345,8 +351,56 @@ function OrgDetail({ org, onBack, currentUser }) {
   );
 }
 
+/* ─── One HRMS / Branch tab for a picked company ─────────────
+   Used by the main sidebar. All this data is per company, so a company
+   picker sits in the header; the choice is remembered per browser. */
+const ORG_COMPANY_KEY = "bms_org_company";
+
+export function OrgScopedPage({ tab, currentUser }) {
+  const [companies, setCompanies] = useState(null);
+  const [error, setError] = useState("");
+  const [companyId, setCompanyId] = useState(() => {
+    try { return localStorage.getItem(ORG_COMPANY_KEY) || ""; } catch { return ""; }
+  });
+
+  useEffect(() => {
+    fetch(`${API}/api/procurement/companies`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
+      .then(r => r.json())
+      .then(j => setCompanies(j.companies || []))
+      .catch(() => setError("Could not load companies"));
+  }, []);
+
+  const list = companies || [];
+  const org = list.find(c => c.id === companyId) || list[0] || null;
+
+  const pick = (id) => {
+    setCompanyId(id);
+    try { localStorage.setItem(ORG_COMPANY_KEY, id); } catch { /* ignore */ }
+  };
+
+  if (error) return <p className="p-6 text-sm text-red-600">{error}</p>;
+  if (!companies) {
+    return <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-slate-200 border-t-slate-700 rounded-full animate-spin" /></div>;
+  }
+  if (!org) return <p className="p-6 text-sm text-slate-500">No company found. Add one under Settings › Company first.</p>;
+
+  const picker = (
+    <ScopeDropdown icon={Building2} value={org.id} placeholder="Select company" countLabel="Total Companies"
+      onChange={pick} align="left" subtle
+      options={list.map(c => ({ id: c.id, title: c.companyName || c.company_name, code: c.companyCode || "", detail: c.state || "" }))} />
+  );
+
+  return (
+    <div className="w-full min-w-0 min-h-full flex flex-col bg-[#f0f2f5]">
+      <div className="flex w-full min-w-0 flex-1">
+        <OrgDetail key={`${org.id}|${tab}`} org={org} currentUser={currentUser} fixedTab={tab} headerExtra={picker} />
+      </div>
+    </div>
+  );
+}
+
 /* ─── Main Organisation Page ────────────────────────────── */
-export default function Organisation({ currentUser }) {
+export default function Organisation({ currentUser, allowedTabs, onProjectsUpdate }) {
   const [selectedOrg,  setSelectedOrg]  = useState(null);
   const [showAddOrg,   setShowAddOrg]   = useState(false);
   const [showMore,     setShowMore]     = useState(null);
@@ -365,7 +419,7 @@ export default function Organisation({ currentUser }) {
     <div className="w-full min-w-0 min-h-full flex flex-col bg-[#f0f2f5]">
       {selectedOrg ? (
         <div className="flex w-full min-w-0 flex-1">
-          <OrgDetail org={selectedOrg} onBack={() => setSelectedOrg(null)} currentUser={currentUser} />
+          <OrgDetail org={selectedOrg} onBack={() => setSelectedOrg(null)} currentUser={currentUser} allowedTabs={allowedTabs} onProjectsUpdate={onProjectsUpdate} />
         </div>
       ) : (
         <>

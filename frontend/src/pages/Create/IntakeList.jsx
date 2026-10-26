@@ -7,13 +7,14 @@ import {
   ChevronLeft, ChevronRight, Loader2, CheckCircle2,
   Clock, Eye, Hash, ChevronDown, ArrowLeft, PackagePlus,
   ThumbsUp, ThumbsDown, UserCheck, Play, Image as ImageIcon, Paperclip,
-  Search, Layers, LayoutGrid, Check, FileSpreadsheet, UserPlus, FolderPlus,
+  Search, Layers, LayoutGrid, Check, FileSpreadsheet, UserPlus, FolderPlus, MapPin,
 } from "lucide-react";
 import { FullViewSiteModal, FullViewCompanyModal, FullCompanyModal } from "./FullMasterModals";
 import ProjectFormModal from "../../components/ProjectFormModal";
 import ProjectSelect from "../../components/ProjectSelect";
 import CompanySelect from "../../components/CompanySelect";
 import ViewIntake from "./ViewIntake";
+import ScopeDropdown from "../../components/ScopeDropdown";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const PER_PAGE = 15;
@@ -362,7 +363,12 @@ const emptyItem = () => ({
   rows: [emptyDescRow()],
 });
 
-export default function IntakeList({ project }) {
+/*
+ * project: site to filter by when the page opens (optional).
+ * allowAll: may pick "All sites" (false = must pick one).
+ * allowedProjects: site codes this user may pick (null = any).
+ */
+export default function IntakeList({ project, allowAll = true, allowedProjects = null }) {
   const currentUser  = JSON.parse(localStorage.getItem("bms_user") || "{}");
   const isAdmin      = ["global_admin", "admin"].includes(currentUser.role);
   const isGlobal     = currentUser.role === "global_admin";
@@ -386,6 +392,8 @@ export default function IntakeList({ project }) {
   const [groupBy,       setGroupBy]       = useState("intake");
   const [groupByOpen,   setGroupByOpen]   = useState(false);
   const [actionsOpen,   setActionsOpen]   = useState(false);
+  // Site filter (code or name); "" = all sites
+  const [siteFilter,    setSiteFilter]    = useState(() => project || (allowAll ? "" : (allowedProjects?.[0] || "")));
   const groupByRef                        = useRef(null);
   const actionsRef                        = useRef(null);
 
@@ -457,17 +465,17 @@ export default function IntakeList({ project }) {
       .then(r => r.json()).then(d => setPreview(d.preview || null)).catch(() => setPreview(null));
   }, [form.site_id]);
 
-  /* Auto-select project when entering create form with a project context */
+  /* Pre-fill the create form's project from the Site filter */
   useEffect(() => {
     if (view !== "create" || !sites.length || form.site_id) return;
-    const normProj = String(project || "").trim().toLowerCase();
+    const normProj = String(siteFilter || "").trim().toLowerCase();
     if (!normProj || normProj === "all project") return;
     const match = sites.find(s =>
       [s.projectCode, s.project_code, s.projectName, s.project_name]
         .some(v => String(v || "").trim().toLowerCase() === normProj)
     );
     if (match) setForm(f => ({ ...f, site_id: match.id, site_name: match.projectName || "" }));
-  }, [sites, view, project]);
+  }, [sites, view, siteFilter]);
 
   const fetchIntakes = async () => {
     setLoading(true);
@@ -487,14 +495,22 @@ export default function IntakeList({ project }) {
   /* ── List helpers ── */
   const fmt = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
 
-  const normProject = String(project || "").trim().toLowerCase();
+  const normProject = String(siteFilter || "").trim().toLowerCase();
   const isAllProject = !normProject || normProject === "all project";
   const projectMatches = (...values) => (
     isAllProject || values.some(v => String(v || "").trim().toLowerCase() === normProject)
   );
-  const availableSites = isAllProject
-    ? sites
-    : sites.filter(s => projectMatches(s.projectCode, s.project_code, s.projectName, s.project_name));
+  // Sites this user may pick, in the filter and in the create form
+  const allowedSet = allowedProjects ? new Set(allowedProjects.map(v => String(v).trim().toLowerCase())) : null;
+  const availableSites = allowedSet
+    ? sites.filter(s => [s.projectCode, s.project_code, s.projectName, s.project_name].some(v => allowedSet.has(String(v || "").trim().toLowerCase())))
+    : sites;
+  const siteOptions = availableSites.map(s => ({
+    id: s.projectCode || s.project_code || s.projectName || s.project_name,
+    title: s.projectName || s.project_name || "",
+    code: s.projectCode || s.project_code || "",
+    detail: [s.city, s.state].filter(Boolean).join(", "),
+  }));
 
   const refreshSites = async () => {
     try {
@@ -1724,6 +1740,10 @@ export default function IntakeList({ project }) {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <ScopeDropdown icon={MapPin} value={siteFilter} placeholder="Select site" countLabel="Total Sites"
+              allLabel={allowAll ? "All sites" : undefined}
+              onChange={v => { setSiteFilter(v); setPage(1); }}
+              options={siteOptions} />
             <div ref={groupByRef} className="relative">
               <button
                 type="button"

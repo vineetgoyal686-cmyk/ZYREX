@@ -528,7 +528,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
         {/* Top row: title + module tabs */}
         <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", padding: isMobile ? "12px 14px" : "14px 20px", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <h1 style={{ color: "#0f172a", fontSize: isMobile ? 16 : 18, fontWeight: 800, margin: 0, letterSpacing: "-0.02em" }}>Global Dashboard</h1>
+            <h1 style={{ color: "#0f172a", fontSize: isMobile ? 16 : 18, fontWeight: 800, margin: 0, letterSpacing: "-0.02em" }}>Dashboard</h1>
             <button onClick={handleManualRefresh} disabled={refreshing} title="Refresh live data"
               style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 26, height: 26, borderRadius: 7, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#64748b", cursor: refreshing ? "default" : "pointer", fontSize: 13, opacity: refreshing ? 0.5 : 1 }}>
               <span style={{ display: "inline-block", animation: refreshing ? "gd-spin 0.8s linear infinite" : "none" }}>⟳</span>

@@ -1,4 +1,4 @@
-// Payments Track — Invoices: each invoice belongs to a finance_orders row
+// Expense Book — Invoices: each invoice belongs to a finance_orders row
 // (vendor/order info entered once, reused across every invoice raised
 // against it), with its own repeatable payments and its own attachments.
 const express  = require("express");
@@ -7,6 +7,18 @@ const multer   = require("multer");
 const supabase = require("../helpers/supabaseHelper");
 const { uploadStorageFile, createSignedStorageUrl } = require("../helpers/storageHelper");
 const { requirePerm } = require("../helpers/permHelper");
+const { projectScope, allows, userIdFrom } = require("../helpers/projectScope");
+
+// Expense Book's project access (helpers/projectScope.js): a site in the
+// query or JSON body must be allowed; lists are cut to allowed sites below
+router.use(async (req, res, next) => {
+  try {
+    req._scope = await projectScope(userIdFrom(req), "expense_book");
+    const site = req.query.siteId || req.body?.siteId;
+    if (site && !allows(req._scope, site)) return res.status(403).json({ error: "This project isn't in your Expense Book access" });
+    next();
+  } catch (err) { next(err); }
+});
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -110,7 +122,7 @@ const parseJsonField = (raw) => {
 };
 
 /* GET /api/finance/invoices */
-router.get("/invoices", async (req, res) => {
+router.get("/invoices", requirePerm("expense_book", "can_view"), async (req, res) => {
   try {
     const { siteId, orderId, billStatus, expenseCategory, search, dateFrom, dateTo } = req.query;
 
@@ -125,7 +137,7 @@ router.get("/invoices", async (req, res) => {
     const { data, error } = await query.order("invoice_date", { ascending: false }).order("created_at", { ascending: false });
     if (error) throw error;
 
-    let rows = data || [];
+    let rows = (data || []).filter(r => allows(req._scope, r.site_id));
 
     const orderIds = [...new Set(rows.map(r => r.order_id).filter(Boolean))];
     let ordersById = {};
@@ -163,7 +175,7 @@ router.get("/invoices", async (req, res) => {
 });
 
 /* POST /api/finance/invoices */
-router.post("/invoices", requirePerm("payments_track", "can_add"), upload.any(), async (req, res) => {
+router.post("/invoices", requirePerm("expense_book", "can_add"), upload.any(), async (req, res) => {
   try {
     const {
       orderId, siteId, invoiceNo, invoiceDate, invoiceAmount,
@@ -176,6 +188,7 @@ router.post("/invoices", requirePerm("payments_track", "can_add"), upload.any(),
 
     const { data: order } = await supabase.from("finance_orders").select("*").eq("id", orderId).single();
     if (!order) return res.status(400).json({ error: "Selected order was not found" });
+    if (!allows(req._scope, siteId || order.site_id)) return res.status(403).json({ error: "This project isn't in your Expense Book access" });
 
     const { data: created, error: insertError } = await supabase
       .from("finance_invoices")
@@ -209,7 +222,7 @@ router.post("/invoices", requirePerm("payments_track", "can_add"), upload.any(),
 });
 
 /* PUT /api/finance/invoices/:id */
-router.put("/invoices/:id", requirePerm("payments_track", "can_edit"), upload.any(), async (req, res) => {
+router.put("/invoices/:id", requirePerm("expense_book", "can_edit"), upload.any(), async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -256,7 +269,7 @@ router.put("/invoices/:id", requirePerm("payments_track", "can_edit"), upload.an
 });
 
 /* DELETE /api/finance/invoices/:id — soft delete */
-router.delete("/invoices/:id", requirePerm("payments_track", "can_delete"), async (req, res) => {
+router.delete("/invoices/:id", requirePerm("expense_book", "can_delete"), async (req, res) => {
   try {
     const { error } = await supabase
       .from("finance_invoices")
@@ -290,7 +303,7 @@ const excelDateToISO = (v) => {
 /* POST /api/finance/invoices/bulk — one row per invoice; vendor/order info is
    matched to an existing finance_orders row (by vendor + order no) or a new
    one is created, so repeat rows for the same order don't duplicate it. */
-router.post("/invoices/bulk", requirePerm("payments_track", "can_bulk_upload"), async (req, res) => {
+router.post("/invoices/bulk", requirePerm("expense_book", "can_bulk_upload"), async (req, res) => {
   try {
     const { rows, siteId, createdByName } = req.body;
     if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: "No rows to upload" });

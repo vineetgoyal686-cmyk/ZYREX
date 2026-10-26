@@ -20,10 +20,10 @@ const fmtTime = (iso) => iso
 // Friendly display names for module_key values (screens/tabs in the app).
 // Falls back to auto-formatting ("my_module" -> "My Module") for anything not listed here.
 const MODULE_LABELS = {
-  global_dashboard: "Global Dashboard",
+  global_dashboard: "Dashboard",
   profile: "Profile",
   organisation: "Organisation",
-  historical_data: "Historical Data",
+  historical_data: "Archive",
   audit: "Audit",
   dashboard: "Project Dashboard",
   view_3d: "3D View",
@@ -37,7 +37,6 @@ const MODULE_LABELS = {
   master_data_orders_tab: "Master Data — Orders",
   master_data_intakes: "Master Data — Intakes",
   master_data_clauses: "Master Data — Clauses",
-  master_data_finance: "Master Data — Finance",
   vendor_list: "Vendor List",
   item_list: "Item List",
   category_list: "Category List",

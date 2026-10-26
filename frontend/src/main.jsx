@@ -1,3 +1,5 @@
+// first: every API request carries the login token
+import './utils/attachToken'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'

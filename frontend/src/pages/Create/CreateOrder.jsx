@@ -4323,7 +4323,9 @@ const getOrderGrandTotal = (o) => {
 };
 
 // ============== ORDER LIST COMPONENT ==============
-function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOverviewClick }) {
+// allowedSites: site codes this user may see (null = all) — for users
+// without the all-projects permission; the Sites filter covers the rest.
+function OrderList({ project, allowedSites = null, onCreateClick, onViewClick, onEditClick, onDocsOverviewClick }) {
   const [currentUser, setCurrentUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem("bms_user") || "{}"); }
     catch { return {}; }
@@ -5350,7 +5352,8 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
   };
 
   const getSiteCodeForOrder = (o) => getOrderSiteCode(o);
-  const projectScoped = (o) => !project || siteCodeMatch(getSiteCodeForOrder(o), project);
+  const siteAllowed = (o) => !allowedSites || allowedSites.some(s => siteCodeMatch(getSiteCodeForOrder(o), s));
+  const projectScoped = (o) => (!project || siteCodeMatch(getSiteCodeForOrder(o), project)) && siteAllowed(o);
 
   const matchesTabStatus = (o, tabName) => {
     if (tabName === "All") return !o._history && !["Reverted", "Recalled"].includes(o.status);
@@ -5423,7 +5426,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
         if (to && created > to) matchDate = false;
       }
 
-      const matchProject = !project || siteCodeMatch(getSiteCode(o), project);
+      const matchProject = (!project || siteCodeMatch(getSiteCode(o), project)) && siteAllowed(o);
       return matchProject && matchSearch && matchTab && matchSite && matchCompany && matchType && matchMadeBy && matchVendor && matchStatus && matchDate;
     }).length;
   };
@@ -5538,7 +5541,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
         if (to && created > to) matchDate = false;
       }
 
-      const matchProject = !project || siteCodeMatch(getSiteCode(o), project);
+      const matchProject = (!project || siteCodeMatch(getSiteCode(o), project)) && siteAllowed(o);
       return matchProject && matchSearch && matchTab && matchSite && matchCompany && matchType && matchMadeBy && matchVendor && matchStatus && matchDate;
     });
 
@@ -5694,7 +5697,7 @@ function OrderList({ project, onCreateClick, onViewClick, onEditClick, onDocsOve
             </div>
             <div className="min-w-0">
               <h1 className="text-base sm:text-xl font-bold text-slate-800 tracking-tight leading-tight sm:leading-none whitespace-nowrap truncate">
-                {project ? `${project} Order Data` : "Order Master Data"}
+                {project ? `${project} Orders` : "Orders"}
               </h1>
             </div>
           </div>
@@ -6760,7 +6763,7 @@ function DocumentStatusOverview({ onBack, onOpenOrder }) {
 }
 
 // ============== MAIN CONTROLLER ==============
-export default function CreateOrderWrapper({ project, editOrderId, onEditComplete }) {
+export default function CreateOrderWrapper({ project, allowedSites = null, editOrderId, onEditComplete }) {
   const [view, setView] = useState("list");
   const [viewId, setViewId] = useState(null);
   const [viewSeed, setViewSeed] = useState(null);
@@ -6814,6 +6817,7 @@ export default function CreateOrderWrapper({ project, editOrderId, onEditComplet
   return (
     <OrderList
       project={project}
+      allowedSites={allowedSites}
       onCreateClick={() => { if (onEditComplete) onEditComplete(); setLocalEditId(null); setViewSeed(null); setView("create"); }}
       onDocsOverviewClick={() => setView("docsOverview")}
       onViewClick={(order) => {

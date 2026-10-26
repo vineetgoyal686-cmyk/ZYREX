@@ -3,9 +3,12 @@
 // Sidebar and App) lives in its own module instead.
 export const TAB_MODULE_KEY = {
   global_dashboard: "global_dashboard",
-  // "boardroom" isn't listed here on purpose — it maps to two module keys
-  // (boardroom_dashboard / boardroom_finance), so Sidebar.jsx special-cases
-  // its visibility directly instead of going through this single-key map.
+  zyhawk_ai: "zyhawk_ai",
+  // Treasury (executive-only — visibility is checked in navAccess.js)
+  treasury__overview: "treasury_overview",
+  treasury__ledger: "treasury_ledger",
+  treasury__loans: "treasury_ledger",
+  treasury__masters: "treasury_ledger",
   approvals: "inbox",
   expenses__cheque_record: "expenses_cheque_record",
   approvals__orders: "order",
@@ -15,7 +18,6 @@ export const TAB_MODULE_KEY = {
   master_data__orders:   "master_data_orders_tab",
   master_data__intakes:  "master_data_intakes",
   master_data__clauses:  "master_data_clauses",
-  master_data__finance:  "master_data_finance",
   proc_setup__vendor_list: "vendor_list",
   proc_setup__item_list: "item_list",
   proc_setup__category_list: "category_list",
@@ -29,5 +31,5 @@ export const TAB_MODULE_KEY = {
   procurement__intake: "intake",
   procurement__orders: "order",
   operations__staff_attendance: "staff_attendance",
-  finance__payments_track: "payments_track",
+  finance__expense_book: "expense_book",
 };

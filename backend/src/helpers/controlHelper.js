@@ -7,7 +7,7 @@ const admin = require("./supabaseHelper");
  *  - only its owners and Global Admin can grant / change / remove its
  *    permissions (per-user, in Access Profiles, or via profile apply/sync);
  *  - no role bypass applies to it — super_admin/admin need it granted like
- *    anyone else (same rule Boardroom already had);
+ *    anyone else (same rule Treasury already had);
  *  - its owners get full access to it automatically.
  * Modules without owners behave exactly as before.
  */

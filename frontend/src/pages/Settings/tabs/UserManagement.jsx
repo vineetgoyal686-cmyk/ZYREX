@@ -603,7 +603,7 @@ export default function UserManagement({
                   </div>
                 )}
 
-                {/* ── Section 3: Module Permissions (Project Access inside) ── */}
+                {/* ── Section 3: Module Permissions (each project tab picks its projects) ── */}
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-4">
                     <div className="flex items-center gap-2">
@@ -626,8 +626,6 @@ export default function UserManagement({
                     modules={permissions}
                     onChange={updatePerm}
                     allProjects={allProjects}
-                    selectedProjects={editingAllowedProjects}
-                    onProjectChange={setEditingAllowedProjects}
                   />
                 </div>
               </div>
@@ -1064,7 +1062,7 @@ export default function UserManagement({
                     </div>
                     {modulesLoading
                       ? <div className="flex justify-center p-8"><Loader2 className="animate-spin text-emerald-500" /></div>
-                      : <GroupedPermissions modules={newUserModules} onChange={updateNewUserModule} allProjects={allProjects} selectedProjects={newUserAllowedProjects} onProjectChange={setNewUserAllowedProjects} />}
+                      : <GroupedPermissions modules={newUserModules} onChange={updateNewUserModule} allProjects={allProjects} />}
                   </div>
                 </form>
               </div>

@@ -4,12 +4,12 @@ export function useModulePermissions(moduleKey) {
   const read = () => {
     const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
     const isGlobalAdmin    = u.role === "global_admin";
-    // Boardroom is executive-only — only global_admin bypasses (matches
+    // Treasury (module keys treasury_*) is executive-only — only global_admin bypasses (matches
     // Sidebar.jsx and permHelper.js). super_admin/admin need every one of
     // these granted explicitly, same as anyone else, on every other module.
-    // Control Center tabs (p.controlled) follow the same rule as Boardroom.
+    // Control Center tabs (p.controlled) follow the same rule as Treasury.
     const p = (u.app_permissions || []).find(ap => ap.module_key === moduleKey) || {};
-    const noBypass         = moduleKey.startsWith("boardroom") || !!p.controlled;
+    const noBypass         = moduleKey.startsWith("treasury") || !!p.controlled;
     const isSuperOrGlobal  = noBypass ? isGlobalAdmin : (isGlobalAdmin || u.role === "super_admin");
     return { isGlobalAdmin, isSuperOrGlobal, p };
   };

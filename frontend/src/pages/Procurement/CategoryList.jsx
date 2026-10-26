@@ -6,6 +6,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { logAudit } from "../../utils/auditLog";
 import LogPanel from "../../components/LogPanel";
+import BackButton from "../../components/BackButton";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const PER_PAGE = 10;
@@ -246,6 +247,7 @@ export default function CategoryList() {
         {/* Row 1: Title + Add/More */}
         <div className="flex items-center justify-between gap-4 px-3 sm:px-4 lg:px-6 py-2.5 border-b border-slate-100">
           <div className="flex items-center gap-2.5 min-w-0">
+            <BackButton />
             <div className="w-8 h-8 rounded-lg bg-teal-50 flex items-center justify-center shrink-0">
               <Tag size={16} className="text-teal-600" />
             </div>

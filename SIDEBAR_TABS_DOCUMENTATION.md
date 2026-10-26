@@ -16,8 +16,8 @@ Sidebar ka main kaam app ke different modules/pages ko navigate karna hai.
 
 Sidebar mainly 3 parts me divided hai:
 
-1. Global tabs (Global Dashboard, Inbox)
-2. Management tabs (Organisation, Audit, Historical Data)
+1. Global tabs (Dashboard, Inbox)
+2. Management tabs (Organisation, Audit, Archive)
 3. Project tabs (project select karne ke baad unlock hote hain)
 
 ## Global Tabs
@@ -26,7 +26,7 @@ Global tabs bina project select kiye open ho sakte hain.
 
 | Tab | Tab ID | Purpose |
 | --- | --- | --- |
-| Global Dashboard | `global_dashboard` | Sab projects ka overall overview. |
+| Dashboard | `global_dashboard` | Sab projects ka overall overview. |
 | Inbox | `approvals` | Pending approvals (Intake, Orders, Payments, Amendments etc.) |
 | Profile | `profile` | User profile page. |
 
@@ -34,9 +34,9 @@ Global tabs bina project select kiye open ho sakte hain.
 
 | Tab | Tab ID | Purpose |
 | --- | --- | --- |
-| Organisation | `organisation` (+ `organisation__structure`, `organisation__sop`) | Org structure, hierarchy aur SOPs. |
+| Settings › Organisation | `settings__company` | Companies (organisations). Har company ke andar Overview, Projects (us company ke projects — main project list) aur Branch. |
 | Audit | `audit` | Placeholder — `Coming Soon` render hota hai, page banaya nahi gaya abhi tak. |
-| Historical Data | `historical_data` | Pre-system order records. |
+| Archive | `historical_data` | Pre-system records (orders, intake, payment). |
 
 ## Create / Setup / Master Data (Global)
 
@@ -57,7 +57,6 @@ Global tabs bina project select kiye open ho sakte hain.
 | Master Data > Orders | `master_data__orders` | Orders master data. |
 | Master Data > Intakes | `master_data__intakes` | Intakes master data (IntakeList reuse). |
 | Master Data > Clauses | `master_data__clauses` | Clauses master data. |
-| Master Data > Finance | `master_data__finance` | Finance master data. |
 
 ## Project Selector
 
@@ -79,7 +78,7 @@ Project tabs selected project ke context me kaam karte hain. Agar project select
 | Operations | Work Activity | `operations__work_activity` | **Coming Soon** |
 | Operations | Staff Attendance | `operations__staff_attendance` | Live |
 | Operations | Manpower | `operations__manpower` | **Coming Soon** |
-| Finance | Payments Track | `finance__payments_track` | Live |
+| Finance | Expense Book | `finance__expense_book` | Live |
 | Finance | Site Expenses | `finance__site_expenses` | Live |
 | Finance | Petty Cash | `finance__petty_cash` | **Coming Soon** |
 | Finance | Reimbursement | `finance__reimbursement` | **Coming Soon** |

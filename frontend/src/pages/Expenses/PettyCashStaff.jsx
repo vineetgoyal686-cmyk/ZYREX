@@ -300,7 +300,7 @@ const TEMPLATES = {
   },
 };
 const COMMON_TEMPLATE_NOTES = [
-  "Every row is saved under the Entity and Project selected at the top of Petty Cash — pick a project before uploading.",
+  "Every row is saved under the Entity and Project / Office selected at the top of Petty Cash — pick one before uploading.",
   "Date: YYYY-MM-DD, DD-MM-YYYY or 14-Sep-26. New person names are created automatically.",
 ];
 
@@ -386,7 +386,7 @@ export default function PettyCashStaff({ scope }) {
   const fetchEntries = async () => {
     try {
       const { data } = await api.get("/api/petty-cash/entries", {
-        params: { company_id: scope.company.id, project_id: scope.project?.id || undefined },
+        params: { company_id: scope.company.id, kind: scope.kind, project_id: scope.project?.id || undefined },
       });
       setEntries(data.entries || []);
     } catch (err) { showToast(apiError(err, "Failed to load entries"), "error"); }
@@ -543,7 +543,7 @@ export default function PettyCashStaff({ scope }) {
       entryType: e.entryType, entryDate: String(e.entryDate || "").slice(0, 10), amount: String(e.amount),
       personId: e.personId || "", fromPersonId: e.fromPersonId || "",
       particular: e.particular, vendorName: e.vendorName || "", category: e.category, proofType: e.proofType, paymentMode: e.paymentMode,
-      projectId: e.orgProjectId || "", location: e.location, remarks: e.remarks,
+      projectId: e.projectId || "", location: e.location, remarks: e.remarks,
       items: (e.items || []).map(it => ({
         name: it.name, qty: String(it.qty), unit: it.unit || "", rate: it.rate ? String(it.rate) : "", amount: String(it.amount), rateAuto: true,
       })),
@@ -625,7 +625,7 @@ export default function PettyCashStaff({ scope }) {
   const LOG_FIELDS = {
     entryType: "Type", entryDate: "Date", amount: "Amount", personId: "Person", fromPersonId: "Given By",
     particular: "Expense", vendorName: "Vendor", category: "Category", proofType: "Bill Type", paymentMode: "Payment Mode",
-    projectId: "Project", location: "Location", remarks: "Remarks", items: "Items", charges: "Charges",
+    projectId: "Project / Office", location: "Location", remarks: "Remarks", items: "Items", charges: "Charges",
   };
   const displayValue = (key, value) => {
     if (key === "personId" || key === "fromPersonId") return personName(value);
@@ -704,7 +704,7 @@ export default function PettyCashStaff({ scope }) {
         : await api.post("/api/petty-cash/entries", fd);
 
       if (editOriginal) {
-        const changes = diff({ ...editOriginal, amount: String(editOriginal.amount), projectId: editOriginal.orgProjectId }, { ...f, items, charges: savedCharges });
+        const changes = diff({ ...editOriginal, amount: String(editOriginal.amount), projectId: editOriginal.projectId }, { ...f, items, charges: savedCharges });
         logAudit("petty_cash_entry", editOriginal.id, entryLabel(f), "updated", Object.keys(changes).length ? changes : null);
       } else if (data.entry?.id) {
         logAudit("petty_cash_entry", data.entry.id, entryLabel(f), "created", {
@@ -860,7 +860,7 @@ export default function PettyCashStaff({ scope }) {
     setZipping({ done: 0, total: 0 });
     try {
       const { data } = await api.get("/api/petty-cash/entries", {
-        params: { company_id: scope.company.id, project_id: scope.project?.id || undefined },
+        params: { company_id: scope.company.id, kind: scope.kind, project_id: scope.project?.id || undefined },
       });
       const rows = (data.entries || []).filter(e => !wanted || wanted.has(e.id));
       const safe = (s) => String(s || "").replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, " ").trim().slice(0, 60);
@@ -890,7 +890,7 @@ export default function PettyCashStaff({ scope }) {
       }
       if (failed === files.length) throw new Error("Could not download any attachment");
       const blob = await zip.generateAsync({ type: "blob" });
-      const tag = [scope.company.code || scope.company.name, scope.project?.name || "All projects", onlyFiltered ? "filtered" : "all"].map(safe).join("_");
+      const tag = [scope.company.code || scope.company.name, scope.project?.name || scope.allLabel, onlyFiltered ? "filtered" : "all"].map(safe).join("_");
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = `PettyCash_Docs_${tag}_${todayStr()}.zip`;
@@ -1287,12 +1287,14 @@ export default function PettyCashStaff({ scope }) {
               <div className="space-y-5 min-w-0">
                 <FormCard title="Entry details" icon={FileText}>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <Field label="Project" required>
+                    <Field label={scope.kindLabel} required>
                       <Select value={form.projectId} onChange={set("projectId")}>
-                        <option value="">Select project ({scope.company.code || scope.company.name})</option>
+                        <option value="">Select {scope.kind} ({scope.company.code || scope.company.name})</option>
                         {scope.projects.map(p => <option key={p.id} value={p.id}>{p.code ? `${p.name} (${p.code})` : p.name}</option>)}
                       </Select>
-                      {scope.projects.length === 0 && <p className="mt-1 text-xs text-amber-700">This entity has no projects yet — add one under Organisation → Projects.</p>}
+                      {scope.projects.length === 0 && <p className="mt-1 text-xs text-amber-700">
+                        This entity has no {scope.kind === "office" ? "offices" : "projects"} yet — add one under Settings › Organisation › {scope.kind === "office" ? "Branch" : "Projects"}.
+                      </p>}
                     </Field>
                     <Field label="Date" required><input type="date" value={form.entryDate} onChange={set("entryDate")} className={inp} /></Field>
                     <Field label="Amount" required>
@@ -1701,7 +1703,7 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
     { icon: Tag,         label: "Category",  value: e.category },
     { icon: Receipt,     label: "Bill Type", value: e.proofType && `${labelOf(PROOF_TYPES, e.proofType)}`, sub: e.proofType && taxLabel(e.proofType) },
     { icon: CreditCard,  label: "Payment",   value: labelOf(PAYMENT_MODES, e.paymentMode) },
-    { icon: Briefcase,   label: "Project",   value: e.project },
+    { icon: Briefcase,   label: "Project / Office", value: e.project },
     { icon: MapPin,      label: "Location",  value: e.location },
   ] : e.entryType === "received" ? [
     { icon: ArrowLeftRight, label: "From",        value: "Accounts" },
