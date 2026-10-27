@@ -545,64 +545,6 @@ export default function UserManagement({
                   </div>
                 </div>
 
-                {/* ── Section 2: Management Permissions (super_admin / global_admin only) ── */}
-                {["global_admin", "super_admin"].includes(currentUser.role) && (
-                  <div className="rounded-sm border-2 border-indigo-200 bg-indigo-50/20">
-                    {/* Section header */}
-                    <div className="flex items-center gap-2 px-4 py-3 border-b border-indigo-100 bg-indigo-50/50">
-                      <div className="w-1.5 h-5 rounded-full bg-indigo-500" />
-                      <span className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-600">
-                        Management Permissions
-                      </span>
-                      <div className="flex-1" />
-                      <span className={`text-[10px] font-black px-2.5 py-1 rounded-sm ${(ROLE_BADGE[permUser.role] || ROLE_BADGE.user).color}`}>
-                        {(ROLE_BADGE[permUser.role] || ROLE_BADGE.user).label}
-                      </span>
-                    </div>
-
-                    {/* Grid */}
-                    <div className="p-4">
-                      {permissions.length === 0 ? (
-                        <p className="py-4 text-center text-sm text-slate-400">No modules found</p>
-                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                          {PROFILE_SECTIONS.map(sec => {
-                            const allChecked = sec.keys.every(({ k }) => editingProfilePerms[sec.key]?.[k]);
-                            const anyChecked = sec.keys.some(({ k }) => editingProfilePerms[sec.key]?.[k]);
-                            return (
-                              <div key={sec.key} className={`rounded-sm border p-3.5 bg-white transition-all hover:border-indigo-300 ${anyChecked ? "border-indigo-200" : "border-slate-200"}`}>
-                                <div className="flex items-start justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
-                                  <div className="min-w-0 flex-1">
-                                    <p className="text-[13px] font-bold text-slate-800">{sec.label}</p>
-                                    <p className="text-[9px] font-medium text-slate-400 uppercase tracking-widest mt-0.5">{sec.key}</p>
-                                  </div>
-                                  <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0 px-2 py-1 rounded-sm hover:bg-slate-100/70 transition">
-                                    <input type="checkbox" checked={allChecked}
-                                      ref={el => { if (el) el.indeterminate = anyChecked && !allChecked; }}
-                                      onChange={e => setEditingProfilePerms(prev => ({ ...prev, [sec.key]: Object.fromEntries(sec.keys.map(({ k }) => [k, e.target.checked])) }))}
-                                      className="w-3.5 h-3.5 rounded accent-indigo-600 cursor-pointer" />
-                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">All</span>
-                                  </label>
-                                </div>
-                                <div className="flex flex-wrap gap-x-4 gap-y-2">
-                                  {sec.keys.map(({ k, label }) => (
-                                    <label key={k} className="flex items-center gap-1.5 cursor-pointer select-none group/item">
-                                      <input type="checkbox" checked={editingProfilePerms[sec.key]?.[k] || false}
-                                        onChange={e => setEditingProfilePerms(prev => ({ ...prev, [sec.key]: { ...prev[sec.key], [k]: e.target.checked } }))}
-                                        className="w-3.5 h-3.5 rounded accent-indigo-600 shrink-0" />
-                                      <span className="text-[11px] font-medium text-slate-600 group-hover/item:text-slate-900 transition-colors">{label}</span>
-                                    </label>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
                 {/* ── Section 3: Module Permissions (each project tab picks its projects) ── */}
                 <div>
                   <div className="flex items-center justify-between gap-2 mb-4">
@@ -622,10 +564,14 @@ export default function UserManagement({
                       <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Select All</span>
                     </label>
                   </div>
+                  {/* Settings pages' own permissions (profile_permissions) show in
+                      its Settings section — only super / global admin may set them */}
                   <GroupedPermissions
                     modules={permissions}
                     onChange={updatePerm}
                     allProjects={allProjects}
+                    profilePerms={["global_admin", "super_admin"].includes(currentUser.role) ? editingProfilePerms : null}
+                    onProfileChange={(sec, k, v) => setEditingProfilePerms(prev => ({ ...prev, [sec]: { ...prev[sec], [k]: v } }))}
                   />
                 </div>
               </div>
@@ -1014,43 +960,6 @@ export default function UserManagement({
                     </div>
                   </div>
 
-                  {/* Profile Perms */}
-                  <div>
-                    <div className="flex items-center gap-2 mb-5 border-l-4 border-purple-500 pl-4 py-1">
-                      <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Management Access</p>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {PROFILE_SECTIONS.map(sec => {
-                        const allChecked = sec.keys.every(({ k }) => newUserProfilePerms[sec.key]?.[k]);
-                        const anyChecked = sec.keys.some(({ k }) => newUserProfilePerms[sec.key]?.[k]);
-                        return (
-                          <div key={sec.key} className={`rounded-sm border p-3.5 transition-all ${anyChecked ? "border-violet-200 bg-violet-50/40" : "border-slate-200 bg-white hover:border-slate-300"}`}>
-                            <div className="flex items-start justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
-                              <p className="text-[13px] font-bold text-slate-800">{sec.label}</p>
-                              <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0 px-2 py-1 rounded-sm hover:bg-slate-100/70 transition">
-                                <input type="checkbox" checked={allChecked}
-                                  ref={el => { if (el) el.indeterminate = anyChecked && !allChecked; }}
-                                  onChange={e => setNewUserProfilePerms(prev => ({ ...prev, [sec.key]: Object.fromEntries(sec.keys.map(({ k }) => [k, e.target.checked])) }))}
-                                  className="w-3.5 h-3.5 rounded accent-violet-600 cursor-pointer" />
-                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">All</span>
-                              </label>
-                            </div>
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-2">
-                              {sec.keys.map(({ k, label }) => (
-                                <label key={k} className="flex items-center gap-1.5 cursor-pointer select-none group/item">
-                                  <input type="checkbox" checked={newUserProfilePerms[sec.key]?.[k] || false}
-                                    onChange={e => setNewUserProfilePerms(prev => ({ ...prev, [sec.key]: { ...prev[sec.key], [k]: e.target.checked } }))}
-                                    className="w-3.5 h-3.5 rounded accent-violet-600 cursor-pointer shrink-0" />
-                                  <span className="text-[11px] font-medium text-slate-600 group-hover/item:text-slate-900 transition-colors">{label}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
                   {/* Tab Perms */}
                   <div className="pb-4">
                     <div className="flex items-center justify-between mb-4 border-l-4 border-emerald-500 pl-3">
@@ -1062,7 +971,9 @@ export default function UserManagement({
                     </div>
                     {modulesLoading
                       ? <div className="flex justify-center p-8"><Loader2 className="animate-spin text-emerald-500" /></div>
-                      : <GroupedPermissions modules={newUserModules} onChange={updateNewUserModule} allProjects={allProjects} />}
+                      : <GroupedPermissions modules={newUserModules} onChange={updateNewUserModule} allProjects={allProjects}
+                          profilePerms={newUserProfilePerms}
+                          onProfileChange={(sec, k, v) => setNewUserProfilePerms(prev => ({ ...prev, [sec]: { ...prev[sec], [k]: v } }))} />}
                   </div>
                 </form>
               </div>

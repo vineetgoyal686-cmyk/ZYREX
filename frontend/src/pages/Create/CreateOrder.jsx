@@ -982,6 +982,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
   // Master Data
   const [sites, setSites] = useState([]);
+  const [siteKindPick, setSiteKind] = useState("project"); // "project" | "office"
   const [companies, setCompanies] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [contacts, setContacts] = useState([]);
@@ -1055,8 +1056,12 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
   // Sync siteDetails/companyDetails when IDs change (covers edit-load and manual selection)
   useEffect(() => {
-    if (header.siteId && sites.length) setSiteDetails(sites.find(s => s.id === header.siteId) || null);
+    if (header.siteId && sites.length) {
+      setSiteDetails(sites.find(s => s.id === header.siteId) || null);
+    }
   }, [header.siteId, sites]);
+  // a picked (or loaded) order site decides; before that, the toggle
+  const siteKind = (header.siteId && sites.find(s => s.id === header.siteId)?.kind) || siteKindPick;
 
   useEffect(() => {
     if (header.companyId && companies.length) setCompanyDetails(companies.find(c => c.id === header.companyId) || null);
@@ -1281,7 +1286,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         setItemsList(items); setClauses(clauses); setCategories(categories); setUomList(uoms);
         return;
       }
-      const [sRes, cRes, vRes, coRes, iRes, clRes, catRes, uomRes] = await Promise.all([
+      const [sRes, cRes, vRes, coRes, iRes, clRes, catRes, uomRes, oRes] = await Promise.all([
         fetch(`${API}/api/projects`),
         fetch(`${API}/api/procurement/companies`),
         fetch(`${API}/api/procurement/vendors`),
@@ -1290,12 +1295,22 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
         fetch(`${API}/api/procurement/clauses`),
         fetch(`${API}/api/procurement/categories`),
         fetch(`${API}/api/procurement/uom`),
+        fetch(`${API}/api/organisation/branches`),
       ]);
-      const [s, c, v, co, i, cl, cat, uom] = await Promise.all([
+      const [s, c, v, co, i, cl, cat, uom, o] = await Promise.all([
         sRes.json(), cRes.json(), vRes.json(), coRes.json(),
-        iRes.json(), clRes.json(), catRes.json(), uomRes.json(),
+        iRes.json(), clRes.json(), catRes.json(), uomRes.json(), oRes.json().catch(() => ({})),
       ]);
-      const sites = s.projects || [], companies = c.companies || [], vendors = v.vendors || [],
+      // An order is for a project or an office (Branch). Offices join the same
+      // list in the project shape, marked kind "office" (kept in the snapshot)
+      const offices = (o.branches || [])
+        .filter(b => String(b.status || "active").toLowerCase() === "active")
+        .map(b => ({
+          id: b.id, kind: "office", projectName: b.label || "", projectCode: b.code || "",
+          address: b.address || "", city: b.city || "", state: b.state || "", pincode: b.pincode || "",
+          companyId: b.company_id || null, isActive: true,
+        }));
+      const sites = [...(s.projects || []).map(p => ({ ...p, kind: "project" })), ...offices], companies = c.companies || [], vendors = v.vendors || [],
             contacts = (co.contacts || []).slice().sort((a, b) =>
               (a.contactCode || "").localeCompare(b.contactCode || "", undefined, { numeric: true })),
             items = i.items || [], clauses = cl.clauses || [],
@@ -2165,18 +2180,31 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
                 placeholder={header.orderType === "Supply" ? "PO-# (on save)" : "WO-# (on save)"}
                 readOnly mono
               />
-              <ProjectSelect
-                label="Select Project"
-                required
-                variant="order"
-                value={header.siteId}
-                onChange={handleSiteChange}
-                options={sites}
-                placeholder="Select project…"
-                disabled={!!project || lockRecallIdentityFields}
-                onAdd={() => setActionModal({ type: "addSite" })}
-                onView={(s) => setActionModal({ type: "viewSite", data: s })}
-              />
+              {/* Project or Office first, then that list (offices of the chosen company) */}
+              <div className="relative">
+                <div className="absolute right-0 top-0 z-[1] flex items-center rounded-md bg-slate-100 p-0.5">
+                  {[["project", "Project"], ["office", "Office"]].map(([k, l]) => (
+                    <button key={k} type="button" disabled={!!project || lockRecallIdentityFields}
+                      onClick={() => { if (k !== siteKind) { setSiteKind(k); setHeader(h => ({ ...h, siteId: "" })); setSiteDetails(null); } }}
+                      className={`px-2 py-0.5 rounded text-[11px] font-semibold disabled:cursor-not-allowed ${siteKind === k ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+                <ProjectSelect
+                  label={siteKind === "office" ? "Select Office" : "Select Project"}
+                  required
+                  variant="order"
+                  value={header.siteId}
+                  onChange={handleSiteChange}
+                  options={sites.filter(s => (s.kind || "project") === siteKind
+                    && (siteKind !== "office" || !header.companyId || s.companyId === header.companyId || s.id === header.siteId))}
+                  placeholder={siteKind === "office" ? "Select office…" : "Select project…"}
+                  disabled={!!project || lockRecallIdentityFields}
+                  onAdd={siteKind === "office" ? undefined : () => setActionModal({ type: "addSite" })}
+                  onView={(s) => setActionModal({ type: "viewSite", data: s })}
+                />
+              </div>
               <Select label="Select Company" value={header.companyId} onChange={handleCompanyChange} options={companies} valueKey="id" labelKey="companyName" subLabelKey="companyCode" required
                 disabled={lockRecallIdentityFields}
                 onAdd={() => setActionModal({ type: "addCompany" })} addLabel="Add New Company" onView={(c) => setActionModal({ type: "viewCompany", data: c })} />

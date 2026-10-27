@@ -304,6 +304,8 @@ export default function Designations({ showToast, designations, designationsLoad
                 onChange={updateDesgModule}
                 readOnly={formReadOnly}
                 allProjects={allProjects}
+                profilePerms={desgProfilePerms}
+                onProfileChange={(sec, k, v) => setDesgProfilePerms(prev => ({ ...prev, [sec]: { ...prev[sec], [k]: v } }))}
               />
             </div>
           </div>

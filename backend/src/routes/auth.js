@@ -882,6 +882,10 @@ router.get("/init", async (req, res) => {
   // Every active project (id + code) — tabs with their own project access
   // (permission scope) pick from these, not from the Project Access list below
   const allProjects = projects.filter(p => p.isActive).map(p => ({ id: p.id, code: p.projectCode, name: p.projectName }));
+  // …and offices (Branch) — Orders can be for an office too
+  const { data: officeRows } = await admin.schema("organisation").from("branches").select("id, code, label, status");
+  const allOffices = (officeRows || []).filter(b => String(b.status || "active").toLowerCase() === "active")
+    .map(b => ({ id: b.id, code: b.code || "", name: b.label || "" }));
 
   // Project Access restriction: union of the user's own allowed_projects and
   // any linked access profile's project_access. An empty effective list means
@@ -911,6 +915,7 @@ router.get("/init", async (req, res) => {
     },
     projects,
     allProjects,
+    allOffices,
   });
 });
 

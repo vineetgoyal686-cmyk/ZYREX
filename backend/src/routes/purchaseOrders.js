@@ -450,8 +450,7 @@ router.get("/next-number", async (req, res) => {
     const fy        = getFinancialYear();
 
     // 1. Get Site Code
-    const { data: site } = await supabase.from("projects").select("project_code").eq("id", siteId).single();
-    const sCode = site?.project_code || "SITE";
+    const sCode = (await siteCodeFor(siteId)) || "SITE";
 
     // 2. Get serialization settings for this site + FY + kind
     let { data: settings } = await supabase.schema("procurement")
@@ -619,6 +618,15 @@ router.get("/pending-count", async (req, res) => {
 // (helpers/projectScope.js; null = every project)
 const ordersScope = (req) => projectScope(userIdFrom(req), "order", "master_data_orders_tab");
 const inScope = (scope, order) => allows(scope, order?.site_id);
+// An order is for a project or, since offices exist, an office (Branch) —
+// site_id holds either id. The order number uses its code.
+const siteCodeFor = async (siteId) => {
+  if (!siteId) return null;
+  const { data: project } = await supabase.from("projects").select("project_code").eq("id", siteId).maybeSingle();
+  if (project) return project.project_code || null;
+  const { data: office } = await supabase.schema("organisation").from("branches").select("code").eq("id", siteId).maybeSingle();
+  return office?.code || null;
+};
 const scoped = (payload, scope) => (scope ? { ...payload, orders: payload.orders.filter(o => inScope(scope, o)) } : payload);
 
 router.get("/", async (req, res) => {
@@ -2165,9 +2173,7 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
         .select("order_number, order_type, site_id, snapshot")
         .eq("id", req.params.id)
         .single();
-      const { data: currProject } = curr?.site_id
-        ? await supabase.from("projects").select("project_code").eq("id", curr.site_id).single()
-        : { data: null };
+      const currProject = { project_code: await siteCodeFor(curr?.site_id) };
 
       // Only generate a new number if the current one is a draft ID (PO-N / WO-N / PENDING-).
       // If it's already a final number (like .../1A from an amendment), keep it.
@@ -3502,9 +3508,7 @@ router.post("/:id/issue-action", async (req, res) => {
             const nextSerial = (serialObj.current_number || 0) + 1;
             const typeCode  = order.order_type === "Supply" ? "PO" : "WO";
             const compCode  = String(order.snapshot?.company?.companyCode || order.snapshot?.company?.company_code || "CO").trim();
-            const { data: issueProject } = order.site_id
-              ? await supabase.from("projects").select("project_code").eq("id", order.site_id).single()
-              : { data: null };
+            const issueProject = { project_code: await siteCodeFor(order.site_id) };
             const siteCode  = String(issueProject?.project_code || order.snapshot?.site?.siteCode || "SITE").trim();
             updatePayload.order_number = `${compCode}/${siteCode}/${typeCode}/${fy}/${nextSerial}`;
             await supabase.schema("procurement").from("serialization_settings")

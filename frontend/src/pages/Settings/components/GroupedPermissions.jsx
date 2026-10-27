@@ -3,7 +3,7 @@ import { ChevronDown, ChevronRight, SlidersHorizontal } from "lucide-react";
 import api from "../../../utils/api";
 import {
   PERMISSION_LAYOUT, SCOPE_PICKER_KEYS, OFFICE_SCOPE_KEYS, PERM_LABELS,
-  GLOBAL_DASHBOARD_ORDER_KEYS, getModulePerms,
+  GLOBAL_DASHBOARD_ORDER_KEYS, getModulePerms, PROFILE_SECTIONS,
 } from "../constants";
 import { useControlOwners, canGrantModule } from "../../../hooks/useControlOwners";
 import ProjectScopePicker from "./ProjectScopePicker";
@@ -13,8 +13,13 @@ import ProjectScopePicker from "./ProjectScopePicker";
  * sidebar: one card per sidebar section, one row per tab. Each tab gets one
  * level — None / View / Edit / Full — which sets its permissions;
  * "Custom" opens the single checkboxes for the rare in-between case.
- * Project tabs pick their projects on the row ("Projects ▾"); Petty Cash
- * can also pick offices.
+ * Project tabs pick their projects on the row ("Projects ▾"); Orders and
+ * Petty Cash can also pick offices.
+ *
+ * Settings pages (Projects, User Management, Numbering…) keep their
+ * permissions in profile_permissions, not as modules: pass profilePerms +
+ * onProfileChange(sectionKey, key, value) and they show as cards too
+ * (key = view / add / edit / delete / manage_permissions).
  */
 
 // Dashboard's own sub-permissions; its can_view follows them (the sidebar
@@ -55,9 +60,22 @@ const SHORT = {
 // a row's `perms` (layout) narrows what it has
 const ROW_PERMS = Object.fromEntries(PERMISSION_LAYOUT.flatMap(s => s.rows.flatMap(r => (r.group ? r.rows : [r])))
   .filter(r => r.perms).map(r => [r.key, r.perms]));
-const permKeysOf = (mod) => (mod.module_key === "global_dashboard"
-  ? GLOBAL_DASHBOARD_ORDER_KEYS
+const permKeysOf = (mod) => (mod.profileKey ? mod.keys
+  : mod.module_key === "global_dashboard" ? GLOBAL_DASHBOARD_ORDER_KEYS
   : ROW_PERMS[mod.module_key] || getModulePerms(mod.module_key));
+
+// a Settings page's profile_permissions section, in the shape of a module
+// row (its keys as can_view / can_add / … so the levels work the same)
+const PROFILE_LABELS = Object.fromEntries(PROFILE_SECTIONS.flatMap(sec => sec.keys.map(({ k, label }) => [`can_${k}`, label])));
+const profileItem = (sectionKey, perms) => {
+  const sec = PROFILE_SECTIONS.find(x => x.key === sectionKey);
+  if (!sec) return null;
+  const keys = sec.keys.map(({ k }) => `can_${k}`);
+  return {
+    module_id: `profile:${sectionKey}`, module_key: `profile:${sectionKey}`, profileKey: sectionKey, keys,
+    ...Object.fromEntries(sec.keys.map(({ k }) => [`can_${k}`, !!perms?.[sectionKey]?.[k]])),
+  };
+};
 
 // the keys each level turns on for this tab; levels that would do the same
 // as a lower one are left out (a View-only tab shows None / View)
@@ -77,12 +95,17 @@ const levelNow = (mod) => {
   return levelsOf(mod).find(l => l.set.slice().sort().join() === on)?.id || "custom";
 };
 
-export default function GroupedPermissions({ modules: allModules, onChange, readOnly = false, allProjects = [] }) {
+export default function GroupedPermissions({ modules: allModules, onChange, readOnly = false, allProjects = [], profilePerms = null, onProfileChange }) {
   // Control Center tabs show up only for their owners (and Global Admin)
   const owners = useControlOwners();
   const me = JSON.parse(localStorage.getItem("bms_user") || "{}");
   const modules = owners ? allModules.filter(m => canGrantModule(owners, me, m.module_key)) : [];
   const byKey = Object.fromEntries(modules.map(m => [m.module_key, m]));
+  // a layout row's item: its module, or a Settings page's profile section
+  const itemOf = (row) => (row.profile ? (profilePerms && profileItem(row.profile, profilePerms)) : byKey[row.key]);
+  const write = (mod, key, val) => (mod.profileKey
+    ? onProfileChange?.(mod.profileKey, key.replace(/^can_/, ""), val)
+    : onChange(mod.module_id, key, val));
   const [custom, setCustom] = useState({});     // module_key → single checkboxes open
   const [closed, setClosed] = useState({});     // section → collapsed
 
@@ -97,18 +120,18 @@ export default function GroupedPermissions({ modules: allModules, onChange, read
 
   // Dashboard keeps can_view in step with its parts
   const syncDashboard = (mod, next) => {
-    if (mod.module_key === "global_dashboard") onChange(mod.module_id, "can_view", DASHBOARD_PARTS.some(p => next[p.key]));
+    if (mod.module_key === "global_dashboard") write(mod, "can_view", DASHBOARD_PARTS.some(p => next[p.key]));
   };
   const setOne = (mod, key, val) => {
     if (readOnly) return;
-    onChange(mod.module_id, key, val);
+    write(mod, key, val);
     syncDashboard(mod, { ...mod, [key]: val });
   };
   const setLevel = (mod, levelId) => {
     if (readOnly) return;
     const level = levelsOf(mod).find(l => l.id === levelId) || levelsOf(mod)[levelsOf(mod).length - 1];
     const next = {};
-    permKeysOf(mod).forEach(k => { next[k] = level.set.includes(k); onChange(mod.module_id, k, next[k]); });
+    permKeysOf(mod).forEach(k => { next[k] = level.set.includes(k); write(mod, k, next[k]); });
     syncDashboard(mod, next);
   };
 
@@ -132,7 +155,7 @@ export default function GroupedPermissions({ modules: allModules, onChange, read
     <label className={`flex items-center gap-1.5 min-w-0 select-none ${readOnly ? "cursor-default" : "cursor-pointer"}`}>
       <input type="checkbox" checked={!!mod[k]} disabled={readOnly} onChange={e => setOne(mod, k, e.target.checked)}
         className="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer disabled:cursor-not-allowed" />
-      <span className="truncate text-[12px] text-slate-600">{label || PERM_LABELS[k] || k}</span>
+      <span className="truncate text-[12px] text-slate-600">{label || PERM_LABELS[k] || PROFILE_LABELS[k] || k}</span>
     </label>
   );
 
@@ -205,10 +228,10 @@ export default function GroupedPermissions({ modules: allModules, onChange, read
     <div className="space-y-3">
       {PERMISSION_LAYOUT.map(({ section, rows }) => {
         // only rows whose module exists (and may be granted by this user)
-        const shown = rows.map(r => (r.group ? { ...r, rows: r.rows.filter(x => byKey[x.key]) } : r))
-          .filter(r => (r.group ? r.rows.length > 0 : byKey[r.key]));
+        const shown = rows.map(r => (r.group ? { ...r, rows: r.rows.filter(x => itemOf(x)) } : r))
+          .filter(r => (r.group ? r.rows.length > 0 : itemOf(r)));
         if (!shown.length) return null;
-        const sectionMods = shown.flatMap(r => (r.group ? r.rows.map(x => byKey[x.key]) : [byKey[r.key]]));
+        const sectionMods = shown.flatMap(r => (r.group ? r.rows.map(x => itemOf(x)) : [itemOf(r)]));
         const onCount = sectionMods.filter(m => levelNow(m) !== "none").length;
         const isClosed = !!closed[section];
         return (
@@ -242,7 +265,7 @@ export default function GroupedPermissions({ modules: allModules, onChange, read
                 }, []).map((blk, i) => (
                   <div key={blk.group || `b${i}`}>
                     {blk.group && <p className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400">{blk.group}</p>}
-                    {grid(blk.group || i, blk.rows.map(x => tabCard(x, byKey[x.key])))}
+                    {grid(blk.group || i, blk.rows.map(x => tabCard(x, itemOf(x))))}
                   </div>
                 ))}
               </div>

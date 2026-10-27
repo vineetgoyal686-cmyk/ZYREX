@@ -116,7 +116,7 @@ class ChunkErrorBoundary extends React.Component {
 // ── AppLayout (authenticated shell) ─────────────────────────────────────────
 
 function AppLayout({
-  activeTab, selectedProject, projects, allProjects,
+  activeTab, selectedProject, projects, allProjects, allOffices,
   onTabChange, onProjectChange, onLogout,
   userRole, currentUser, userTabPermissions,
   editingOrderId, setEditingOrderId,
@@ -182,7 +182,12 @@ function AppLayout({
   // otherwise the old rule (all-projects permission, else Project Access).
   const ownSitesOnly = () => {
     const scoped = tabScope();
-    if (scoped) return scoped === "all" ? null : scoped.map(p => p.name);
+    if (scoped === "all") return null;
+    if (scoped) {
+      // Orders: offices picked in its access count too
+      const ids = userTabPermissions?.map?.[TAB_SCOPE_MODULE[activeTab]]?.scope?.projects || [];
+      return [...scoped.map(p => p.name), ...allOffices.filter(o => ids.includes(o.id)).map(o => o.code || o.name)];
+    }
     const access = projectScopeAccess(activeTab, currentUser, userTabPermissions);
     return access.all ? null : projects.filter(p => p.name && p.name !== "All Project").map(p => p.name);
   };
@@ -411,6 +416,7 @@ function App() {
   const [projects, setProjects] = useState([{ name: "All Project" }]);
   // every active project { id, code, name } — for tabs with their own project access
   const [allProjects, setAllProjects] = useState([]);
+  const [allOffices, setAllOffices] = useState([]); // { id, code, name } — Orders can be for an office
   const [userTabPermissions, setUserTabPermissions] = useState(() => {
     const u = localStorage.getItem("bms_user");
     const user = u ? JSON.parse(u) : null;
@@ -461,6 +467,7 @@ function App() {
         setProjects([{ name: "All Project" }, ...active]);
       }
       if (data.allProjects) setAllProjects(data.allProjects);
+      if (data.allOffices) setAllOffices(data.allOffices);
     } catch { /* silent */ }
   };
 
@@ -661,6 +668,7 @@ function App() {
               selectedProject={selectedProject}
               projects={projects}
               allProjects={allProjects}
+              allOffices={allOffices}
               onTabChange={handleTabChange}
               onProjectChange={handleProjectChange}
               onLogout={handleLogout}
