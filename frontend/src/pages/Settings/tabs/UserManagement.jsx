@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import {
   Users, UserPlus, ShieldCheck, Loader2, Save, Trash2,
-  Mail, Phone, Building2, Briefcase, CheckCircle2, XCircle,
-  Pencil, LayoutDashboard, ShieldAlert, SendHorizonal, Camera,
+  Phone, CheckCircle2, XCircle,
+  Pencil, ShieldAlert, SendHorizonal, Camera,
   Copy, Check, Search, MoreHorizontal, ChevronDown,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -44,7 +44,6 @@ export default function UserManagement({
   /* Team */
   const [members,     setMembers]     = useState([]);
   const [teamLoading, setTeamLoading] = useState(false);
-  const [viewType,    setViewType]    = useState("list");
   const [editingRoleId, setEditingRoleId] = useState(null);
   const [confirmRoleChange, setConfirmRoleChange] = useState(null);
   const [confirmRemoveUser, setConfirmRemoveUser] = useState(null);
@@ -437,6 +436,12 @@ export default function UserManagement({
   const menuCanDel    = menuMember && canManage(currentUser.role, menuMember.role, menuMember.id) && menuMember.id !== currentUser.id && (isGlobalAdmin || currentUser.role === "super_admin" || !!pp.manage_user?.delete);
   const menuCanInvite = menuMember && canManage(currentUser.role, menuMember.role, menuMember.id);
 
+  const q = searchQuery.toLowerCase();
+  const filtered = members.filter(m => !q || m.name?.toLowerCase().includes(q) || m.email?.toLowerCase().includes(q));
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   return (
     <>
       <input ref={newUserSigRef} type="file" accept="image/*" className="hidden" onChange={handleNewUserSigChange} />
@@ -470,7 +475,7 @@ export default function UserManagement({
         document.body
       )}
 
-      <div className="space-y-4">
+      <div className="flex-1 flex flex-col">
         {permUser ? (
           /* ── Permissions panel ── */
           <div className="bg-white rounded-none shadow-sm border border-slate-100">
@@ -579,22 +584,12 @@ export default function UserManagement({
           </div>
         ) : (
           /* ── Team list ── */
-          <div className="flex flex-col h-full">
+          <div className="flex-1 flex flex-col">
 
-            {/* Sticky header — full width, no side gaps */}
-            <div className="sticky top-0 z-20 bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between gap-4">
-              <h2 className="text-[19px] font-black text-slate-800 tracking-tight">User Management</h2>
-              {(isGlobalAdmin || !!pp.manage_user?.add) && (
-                <button onClick={() => setShowAddUser(true)}
-                  className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-sm text-sm font-semibold transition-colors shrink-0">
-                  <UserPlus size={15} /> Add New User
-                </button>
-              )}
-            </div>
-
-            {/* Search bar + view toggle */}
-            <div className="px-5 py-2.5 bg-white border-b border-slate-200 flex items-center justify-between gap-3">
-              <div className="relative w-72">
+            {/* Sticky header — title, search, add */}
+            <div className="sticky top-0 z-40 bg-white border-b border-slate-200 px-6 py-3 flex items-center gap-4">
+              <h2 className="text-[19px] font-black text-slate-800 tracking-tight shrink-0">User Management</h2>
+              <div className="relative w-72 ml-auto">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 <input
                   type="text"
@@ -604,49 +599,17 @@ export default function UserManagement({
                   className="w-full pl-8 pr-3 py-2 text-[13px] border border-slate-200 rounded bg-slate-50 text-slate-700 placeholder-slate-400 outline-none focus:border-blue-400 focus:bg-white transition-colors"
                 />
               </div>
-              <div className="flex items-center gap-3 shrink-0">
-                {!teamLoading && <span className="text-[12px] text-slate-400">{members.length} Users</span>}
-                <div className="flex items-center gap-0.5 bg-slate-100 p-1 rounded-sm border border-slate-200">
-                <button onClick={() => setViewType("list")} title="List View"
-                  className={`p-1.5 rounded-sm transition-all ${viewType === "list" ? "bg-white shadow-sm text-blue-600" : "text-slate-400 hover:text-slate-600"}`}>
-                  <Briefcase size={13} />
+              {(isGlobalAdmin || !!pp.manage_user?.add) && (
+                <button onClick={() => setShowAddUser(true)}
+                  className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-sm text-sm font-semibold transition-colors shrink-0">
+                  <UserPlus size={15} /> Add New User
                 </button>
-                <button onClick={() => setViewType("tile")} title="Tile View"
-                  className={`p-1.5 rounded-sm transition-all ${viewType === "tile" ? "bg-white shadow-sm text-blue-600" : "text-slate-400 hover:text-slate-600"}`}>
-                  <LayoutDashboard size={13} />
-                </button>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Table area */}
             <div className="flex-1 bg-[#f0f2f5] p-5">
-            {(() => {
-              const filtered = members.filter(m => {
-                const q = searchQuery.toLowerCase();
-                return !q || m.name?.toLowerCase().includes(q) || m.email?.toLowerCase().includes(q);
-              });
-              const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-              const safePage = Math.min(page, totalPages);
-              const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-              const Pagination = () => totalPages <= 1 ? null : (
-                <div className="flex items-center justify-between px-4 py-3 bg-white border-t border-slate-200">
-                  <span className="text-[12px] text-slate-400">
-                    Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
-                      className="px-2.5 py-1 text-[12px] border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">‹ Prev</button>
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
-                      <button key={n} onClick={() => setPage(n)}
-                        className={`w-7 h-7 text-[12px] rounded border transition-colors ${n === safePage ? "bg-blue-500 border-blue-500 text-white" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>{n}</button>
-                    ))}
-                    <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
-                      className="px-2.5 py-1 text-[12px] border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Next ›</button>
-                  </div>
-                </div>
-              );
-              return teamLoading ? (
+            {teamLoading ? (
               <div className="flex justify-center py-16"><Loader2 size={32} className="animate-spin text-blue-500" /></div>
             ) : filtered.length === 0 ? (
               <div className="text-center py-16">
@@ -655,7 +618,7 @@ export default function UserManagement({
                 </div>
                 <p className="text-sm font-medium text-slate-400">{members.length === 0 ? "No team members found." : "No results match your search."}</p>
               </div>
-            ) : viewType === "list" ? (
+            ) : (
               <div className="isolate border border-slate-200 bg-white">
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-separate border-spacing-0 min-w-[900px]">
@@ -772,62 +735,28 @@ export default function UserManagement({
                   </tbody>
                 </table>
               </div>
-              {Pagination()}
               </div>
-            ) : (
-              <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {paginated.map((m) => {
-                  const mb = ROLE_BADGE[m.role] || ROLE_BADGE.user;
-                  const initials = m.name?.split(" ").map(n => n[0]).join("").toUpperCase() || "?";
-                  return (
-                    <div key={m.id} className="bg-white rounded-none border border-slate-100 shadow-sm hover:shadow-md hover:border-blue-100 transition-all group p-5 relative">
-                      <div className="flex flex-col items-center text-center">
-                        <div className="relative mb-3">
-                          <div className={`w-16 h-16 rounded-sm flex items-center justify-center text-white font-black text-xl overflow-hidden shadow-sm ring-4 ${m.is_active ? "ring-green-50" : "ring-red-50"}`}
-                            style={{ background: "linear-gradient(135deg, #3b82f6, #8b5cf6)" }}>
-                            {m.avatar ? <img src={m.avatar} alt="" className="w-full h-full object-cover" /> : initials}
-                          </div>
-                          <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white ${m.is_active ? "bg-green-500" : "bg-red-500"}`} />
-                        </div>
-                        <h3 className="font-bold text-slate-800 text-[15px] truncate max-w-full">{m.name}</h3>
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{m.designation || "No Title"}</p>
-                        <div className="mt-3 flex flex-col gap-1.5 w-full">
-                          <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500"><Mail size={12} className="opacity-60" /><span className="truncate">{m.email}</span></div>
-                          <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500"><Building2 size={12} className="opacity-60" /><span>{m.department || "General"}</span></div>
-                        </div>
-                        <div className="mt-4 flex flex-wrap justify-center gap-2">
-                          <div className={`inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-sm ${mb.color}`}>{mb.label.toUpperCase()}</div>
-                          {m.is_active === false && <div className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-sm bg-red-50 text-red-600 border border-red-100 uppercase">Inactive</div>}
-                        </div>
-                      </div>
-                      <div className="absolute top-3 right-3 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-all scale-95 group-hover:scale-100">
-                        {(() => {
-                          const isSuperOrGlobal2 = isGlobalAdmin || currentUser.role === "super_admin";
-                          const ch = canManage(currentUser.role, m.role, m.id);
-                          const cShield = ch && (isSuperOrGlobal2 || !!pp.manage_user?.manage_permissions);
-                          const cToggle = ch && m.id !== currentUser.id && (isSuperOrGlobal2 || !!pp.manage_user?.edit);
-                          const cDel    = ch && m.id !== currentUser.id && (isSuperOrGlobal2 || !!pp.manage_user?.delete);
-                          return (
-                            <>
-                              {ch && <button onClick={() => { setEditingMember(m); setEditForm({ name: m.name, contact_no: m.contact_no || "", designation: m.designation || "", department: m.department || "", can_manage_roles: !!m.can_manage_roles, can_manage_control_center: !!m.can_manage_control_center }); setEditAccessProfileIds(m.access_profile_ids || []); }} title="Edit Info" className="p-2 rounded-sm bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white transition-all shadow-sm"><Pencil size={16} /></button>}
-                              {ch && <button onClick={() => handleResendInvite(m)} title="Resend Invite" className="p-2 rounded-sm bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-all shadow-sm"><SendHorizonal size={16} /></button>}
-                              {cShield && <button onClick={() => viewPerms(m)} title="Permissions" className="p-2 rounded-sm bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm"><ShieldCheck size={16} /></button>}
-                              {cToggle && <button onClick={() => toggleActive(m)} className={`p-2 rounded-sm transition-all shadow-sm ${m.is_active ? "bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white" : "bg-green-50 text-green-600 hover:bg-green-600 hover:text-white"}`}>{m.is_active ? <XCircle size={16} /> : <CheckCircle2 size={16} />}</button>}
-                              {cDel    && <button onClick={() => removeUser(m)} className="p-2 rounded-sm bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm"><Trash2 size={16} /></button>}
-                            </>
-                          );
-                        })()}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {Pagination()}
-              </>
-            );
-            })()}
-            </div>{/* end flex-1 bg area */}
+            )}
+            </div>
+
+            {/* Footer — stays at the bottom, rows scroll above it */}
+            <div className="sticky bottom-0 z-40 flex items-center justify-between gap-3 px-6 py-2.5 bg-white border-t border-slate-200">
+              <span className="text-[12px] text-slate-400">
+                {filtered.length === 0 ? "0 users" : `Showing ${(safePage - 1) * PAGE_SIZE + 1}–${Math.min(safePage * PAGE_SIZE, filtered.length)} of ${filtered.length} users`}
+              </span>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
+                    className="px-2.5 py-1 text-[12px] border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">‹ Prev</button>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => (
+                    <button key={n} onClick={() => setPage(n)}
+                      className={`w-7 h-7 text-[12px] rounded border transition-colors ${n === safePage ? "bg-blue-500 border-blue-500 text-white" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>{n}</button>
+                  ))}
+                  <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage === totalPages}
+                    className="px-2.5 py-1 text-[12px] border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Next ›</button>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
