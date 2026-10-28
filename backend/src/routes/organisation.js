@@ -42,6 +42,7 @@ const mapEmployee = (r) => ({
   department:     r.department      || "",
   reportingTo:    r.reporting_to    || "",
   status:         r.status          || "active",
+  staffType:      r.staff_type      || "",
   workLocation:   r.work_location   || "",
   role:           r.role            || "",
   team:           r.team            || "",
@@ -74,7 +75,7 @@ router.get("/employees", async (req, res) => {
 /* POST /api/organisation/employees */
 router.post("/employees", requirePerm("employees", "can_add"), async (req, res) => {
   try {
-    const { personName, contactNumber, designation, company, division, email, department, reportingTo, status,
+    const { personName, contactNumber, designation, company, division, email, department, reportingTo, status, staffType,
             workLocation, role, team, bio, tags, employeeId,
             dateOfBirth, gender, maritalStatus, nationality,
             alternatePhone, address, joiningDate,
@@ -101,7 +102,7 @@ router.post("/employees", requirePerm("employees", "can_add"), async (req, res) 
       contact_code: code, person_name: personName || "",
       contact_number: contactNumber || "", designation: designation || "",
       company: company || "", division: division || "", email: email || "", department: department || "",
-      reporting_to: reportingTo || "", status: status || "active",
+      reporting_to: reportingTo || "", status: status || "active", staff_type: staffType || null,
       work_location: workLocation || "", role: role || "", team: team || "",
       bio: bio || "", tags: tags || "", employee_id: employeeId.trim(),
       date_of_birth: dateOfBirth || null, gender: gender || "",
@@ -125,10 +126,85 @@ router.post("/employees", requirePerm("employees", "can_add"), async (req, res) 
   }
 });
 
+/* POST /api/organisation/employees/move — shift employees to another company.
+   Same rows (same id), so orders, attendance and history stay with them.
+   Skips anyone whose Employee ID is already taken in the target company.
+   Returns the division / department / designation / grade / team names the
+   target company does not have yet, so they can be added there. */
+router.post("/employees/move", requirePerm("employees", "can_edit"), async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body.ids) ? req.body.ids.filter(Boolean) : [];
+    const company_id = companyIdFrom(req.body);
+    if (!ids.length || !company_id) return res.status(400).json({ error: "Employees and company are required" });
+
+    const org = supabase.schema("organisation");
+    const { data: company } = await org.from("companies").select("id, company_name").eq("id", company_id).maybeSingle();
+    if (!company) return res.status(404).json({ error: "Company not found" });
+
+    const { data: emps, error: eErr } = await org.from("employees").select("*").in("id", ids);
+    if (eErr) throw eErr;
+    const { data: taken } = await org.from("employees").select("employee_id").eq("company_id", company_id);
+    const takenIds = new Set((taken || []).map(t => (t.employee_id || "").trim().toLowerCase()).filter(Boolean));
+
+    const toMove = [], skipped = [];
+    for (const e of emps || []) {
+      if (e.company_id === company_id) continue;
+      const eid = (e.employee_id || "").trim().toLowerCase();
+      if (eid && takenIds.has(eid)) { skipped.push({ name: e.person_name, reason: `Employee ID ${e.employee_id} already exists there` }); continue; }
+      if (eid) takenIds.add(eid);
+      toMove.push(e);
+    }
+
+    if (toMove.length) {
+      const moveIds = toMove.map(e => e.id);
+      const { error } = await org.from("employees").update({ company_id, company: company.company_name || "" }).in("id", moveIds);
+      if (error) throw error;
+
+      // teams belong to the old company — take the moved people out of them
+      const { data: teams } = await org.from("teams").select("id, leader_id, member_ids");
+      for (const t of teams || []) {
+        const members = Array.isArray(t.member_ids) ? t.member_ids : [];
+        const left = members.filter(m => !moveIds.includes(m));
+        const leaderGone = moveIds.includes(t.leader_id);
+        if (left.length !== members.length || leaderGone) {
+          await org.from("teams").update({ member_ids: left, ...(leaderGone ? { leader_id: null } : {}) }).eq("id", t.id);
+        }
+      }
+    }
+
+    // names the target company's lists don't have yet
+    const [divs, depts, desigs, grades, teamsThere] = await Promise.all([
+      org.from("divisions").select("name").eq("company_id", company_id),
+      org.from("departments").select("name").eq("company_id", company_id),
+      org.from("designations").select("title").eq("company_id", company_id),
+      org.from("grades").select("grade").eq("company_id", company_id),
+      org.from("teams").select("name").eq("company_id", company_id),
+    ]);
+    const has = (rows, col) => new Set((rows.data || []).map(r => (r[col] || "").trim().toLowerCase()));
+    const lists = [
+      ["Division", "division", has(divs, "name")],
+      ["Department", "department", has(depts, "name")],
+      ["Designation", "designation", has(desigs, "title")],
+      ["Grade", "grade", has(grades, "grade")],
+      ["Team", "team", has(teamsThere, "name")],
+    ];
+    const missing = {};
+    for (const [label, col, set] of lists) {
+      const names = [...new Set(toMove.map(e => (e[col] || "").trim()).filter(n => n && !set.has(n.toLowerCase())))];
+      if (names.length) missing[label] = names;
+    }
+
+    res.json({ success: true, moved: toMove.map(e => e.id), company: company.company_name, skipped, missing });
+  } catch (err) {
+    console.error("Employee move error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* PUT /api/organisation/employees/:id */
 router.put("/employees/:id", requirePerm("employees", "can_edit"), async (req, res) => {
   try {
-    const { personName, contactNumber, designation, company, division, email, department, reportingTo, status,
+    const { personName, contactNumber, designation, company, division, email, department, reportingTo, status, staffType,
             workLocation, role, team, bio, tags, employeeId,
             dateOfBirth, gender, maritalStatus, nationality,
             alternatePhone, address, joiningDate } = req.body;
@@ -136,6 +212,7 @@ router.put("/employees/:id", requirePerm("employees", "can_edit"), async (req, r
       person_name: personName || "", contact_number: contactNumber || "",
       designation: designation || "", company: company || "", division: division || "", email: email || "",
       department: department || "", reporting_to: reportingTo || "", status: status || "active",
+      staff_type: staffType || null,
       work_location: workLocation || "", role: role || "", team: team || "",
       bio: bio || "", tags: tags || "", employee_id: employeeId || "",
       date_of_birth: dateOfBirth || null, gender: gender || "",

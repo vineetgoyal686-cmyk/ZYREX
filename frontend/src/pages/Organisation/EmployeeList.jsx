@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   Search, Plus, X, Edit2, Trash2, Loader2, ChevronLeft,
   BadgeCheck, Calendar, UserCheck, MapPin,
-  Briefcase, Building2, ChevronDown, Users, Clock, SlidersHorizontal,
+  Briefcase, Building2, ChevronDown, Users, Clock, SlidersHorizontal, ArrowRightLeft,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
@@ -34,6 +34,7 @@ const EMPLOYEE_LOG_FIELDS = [
   { key: "alternatePhone", label: "Alternate Phone" },
   { key: "email",         label: "Email" },
   { key: "status",        label: "Status" },
+  { key: "staffType",     label: "Staff Type" },
   { key: "gender",        label: "Gender" },
   { key: "maritalStatus", label: "Marital Status" },
   { key: "nationality",   label: "Nationality" },
@@ -48,6 +49,22 @@ const STATUS = {
   inactive: { label: "Inactive", cls: "bg-red-50 text-red-500 border border-red-200",             dot: "bg-red-400",    bar: "bg-red-400"     },
   on_leave: { label: "On Leave", cls: "bg-amber-50 text-amber-700 border border-amber-200",        dot: "bg-amber-400",  bar: "bg-amber-400"   },
 };
+
+/* ── Staff Type ── */
+const STAFF_TYPES = ["Permanent", "Probation", "Temporary", "Support", "Resigned"];
+const STAFF_TYPE_CLS = {
+  Permanent: "bg-blue-50 text-blue-700 border-blue-200",
+  Probation: "bg-amber-50 text-amber-700 border-amber-200",
+  Temporary: "bg-orange-50 text-orange-700 border-orange-200",
+  Support:   "bg-slate-100 text-slate-600 border-slate-200",
+  Resigned:  "bg-red-50 text-red-500 border-red-200",
+};
+// "permanent", "Resigned " etc. from a sheet → the exact option, or "" if it isn't one
+const toStaffType = (v) => STAFF_TYPES.find(t => t.toLowerCase() === String(v || "").trim().toLowerCase()) || "";
+function StaffTypeBadge({ type }) {
+  if (!type) return <span className="text-slate-300">—</span>;
+  return <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold border ${STAFF_TYPE_CLS[type] || STAFF_TYPE_CLS.Support}`}>{type}</span>;
+}
 
 /* ── Avatar palette ── */
 const PALETTE = [
@@ -100,7 +117,7 @@ function InfoBox({ label, value, span2 }) {
 ═══════════════════════════════ */
 const DETAIL_TABS = ["Overview", "Documents", "Notes", "Permissions"];
 
-function EmployeeDetail({ emp, imgUrl, onBack, onEdit, onDelete }) {
+function EmployeeDetail({ emp, imgUrl, onBack, onEdit, onMove, onDelete }) {
   const [tab, setTab] = useState("Overview");
   const s   = STATUS[emp.status || "active"];
   const div = emp.division || "";
@@ -119,6 +136,12 @@ function EmployeeDetail({ emp, imgUrl, onBack, onEdit, onDelete }) {
             <button onClick={onEdit}
               className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 font-medium transition-colors">
               <Edit2 size={13} /> Edit
+            </button>
+          )}
+          {onMove && (
+            <button onClick={onMove}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 font-medium transition-colors">
+              <ArrowRightLeft size={13} /> Move
             </button>
           )}
           {onDelete && (
@@ -141,6 +164,7 @@ function EmployeeDetail({ emp, imgUrl, onBack, onEdit, onDelete }) {
             <div className="flex items-center gap-3 flex-wrap mb-0.5">
               <h2 className="text-xl font-bold text-slate-800">{emp.personName}</h2>
               <StatusBadge status={emp.status} />
+              {emp.staffType && <StaffTypeBadge type={emp.staffType} />}
             </div>
             <p className="text-sm text-slate-500 font-medium">{emp.designation || "—"}</p>
             <div className="flex items-center gap-3 mt-1.5 flex-wrap">
@@ -326,6 +350,13 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, a
                 </select>
               </div>
               <div>
+                <label className={LBL}>Staff Type</label>
+                <select value={form.staffType} onChange={set("staffType")} className={SEL}>
+                  <option value="">— Select —</option>
+                  {STAFF_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div>
                 <label className={LBL}>Joining Date</label>
                 <input type="date" value={form.joiningDate} onChange={set("joiningDate")} className={INP} />
               </div>
@@ -484,7 +515,7 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, a
    EMPTY FORM
 ═══════════════════════════════ */
 const EMPTY_FORM = {
-  personName: "", employeeId: "", status: "active",
+  personName: "", employeeId: "", status: "active", staffType: "",
   division: "", department: "", designation: "", grade: "", team: "", role: "",
   reportingTo: "", workLocation: "", joiningDate: "", dateOfBirth: "",
   gender: "", maritalStatus: "", nationality: "",
@@ -536,6 +567,7 @@ function EmpFilters({ filters, divs, depts, onChange, onClear }) {
           {field("Division", "div", divs.map(d => [d, d]))}
           {field("Department", "dept", depts.map(d => [d, d]))}
           {field("Status", "status", STATUS_OPTIONS)}
+          {field("Staff Type", "type", STAFF_TYPES.map(t => [t, t]))}
           {active > 0 && (
             <button onClick={onClear} className="self-end text-[11px] font-semibold text-slate-500 hover:text-slate-800">
               Clear all
@@ -543,6 +575,99 @@ function EmpFilters({ filters, divs, depts, onChange, onClear }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════
+   MOVE TO ANOTHER COMPANY
+   Same employee (same id) — orders, attendance and history go along.
+═══════════════════════════════ */
+function MoveModal({ emps, fromId, onClose, onMoved }) {
+  const [companies, setCompanies] = useState([]);
+  const [to, setTo]           = useState("");
+  const [busy, setBusy]       = useState(false);
+  const [result, setResult]   = useState(null);
+  const [err, setErr]         = useState("");
+
+  useEffect(() => {
+    fetch(`${API}/api/procurement/companies`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
+      .then(r => r.json()).then(j => setCompanies((j.companies || []).filter(c => c.id !== fromId))).catch(() => {});
+  }, [fromId]);
+
+  const move = async () => {
+    setBusy(true); setErr("");
+    try {
+      const res  = await authFetch(`${API}/api/organisation/employees/move`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: emps.map(e => e.id), company_id: to }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Move failed");
+      setResult(data);
+      onMoved(data);
+    } catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  };
+
+  const missing = Object.entries(result?.missing || {});
+  return (
+    <div className="fixed inset-0 z-[300] bg-black/40 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+            <ArrowRightLeft size={16} className="text-blue-600" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-800">Move to another company</p>
+            <p className="text-xs text-slate-500 mt-0.5 truncate">
+              {emps.length === 1 ? emps[0].personName : `${emps.length} employees`}
+            </p>
+          </div>
+        </div>
+
+        {!result ? (
+          <>
+            <select value={to} onChange={e => setTo(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
+              <option value="">Choose company…</option>
+              {companies.map(c => <option key={c.id} value={c.id}>{c.companyName}{c.companyCode ? ` (${c.companyCode})` : ""}</option>)}
+            </select>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Orders, attendance and history stay with the employee. They leave their teams in this company.
+            </p>
+            {err && <p className="text-xs text-red-600">{err}</p>}
+            <div className="flex gap-2 justify-end">
+              <button onClick={onClose} className="px-4 py-1.5 text-sm rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>
+              <button onClick={move} disabled={!to || busy}
+                className="px-4 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors font-medium flex items-center gap-1.5">
+                {busy && <Loader2 size={13} className="animate-spin" />} Move
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-slate-700">
+              {result.moved.length} moved to <span className="font-semibold">{result.company}</span>.
+            </p>
+            {result.skipped?.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <p className="font-semibold mb-1">Not moved</p>
+                {result.skipped.map((x, i) => <p key={i}>{x.name} — {x.reason}</p>)}
+              </div>
+            )}
+            {missing.length > 0 && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                <p className="font-semibold text-slate-700 mb-1">Not in {result.company}&apos;s lists yet — add them there:</p>
+                {missing.map(([label, names]) => <p key={label}><span className="text-slate-400">{label}:</span> {names.join(", ")}</p>)}
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button onClick={onClose} className="px-4 py-1.5 text-sm rounded-lg bg-slate-800 text-white hover:bg-slate-900 transition-colors font-medium">Done</button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -557,6 +682,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const [filterDiv,    setFilterDiv]    = useState("");
   const [filterDept,   setFilterDept]   = useState("");
   const [filterStatus, setFilterStatus] = useState("");
+  const [filterType,   setFilterType]   = useState("");
   const [modal,      setModal]     = useState(false);
   const [form,       setForm]      = useState(EMPTY_FORM);
   const [editId,     setEditId]    = useState(null);
@@ -569,6 +695,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const [toast,      setToast]     = useState(null);
   const [importing,  setImporting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [picked,     setPicked]    = useState([]);
+  const [moveEmps,   setMoveEmps]  = useState(null);
   const importRef = useRef(null);
 
   const [divisions, setDivisions] = useState([]);
@@ -641,6 +769,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     setForm({
       personName: emp.personName || "", employeeId: emp.employeeId || "",
       status: emp.status || "active",
+      staffType: emp.staffType || "",
       division: emp.division || "",
       department: emp.department || "", designation: emp.designation || "",
       grade: emp.grade || "", team: emp.team || "", role: emp.role || "",
@@ -724,6 +853,27 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     } catch { showToast("Failed to delete", "error"); }
   };
 
+  /* moved out of this company: drop them from the list, log the change */
+  const handleMoved = ({ moved, company }) => {
+    const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
+    emps.filter(e => moved.includes(e.id)).forEach(e => {
+      fetch(`${API}/api/audit-logs`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          entityType: "contact", entityId: e.id, entityName: e.personName, action: "Updated",
+          userId: u.id || "", userName: u.name || "", userEmail: u.email || "",
+          changes: [{ field: "Company", from: e.company || "", to: company }],
+        }),
+      }).catch(() => {});
+    });
+    setEmps(prev => prev.filter(e => !moved.includes(e.id)));
+    setPicked(prev => prev.filter(id => !moved.includes(id)));
+    if (selected && moved.includes(selected.id)) setSelected(null);
+  };
+  const moveModal = moveEmps && (
+    <MoveModal emps={moveEmps} fromId={orgId} onClose={() => setMoveEmps(null)} onMoved={handleMoved} />
+  );
+
   /* ── Filter ── */
   const allDivs  = [...new Set(emps.map(e => e.division || "").filter(Boolean))].sort();
   const allDepts = [...new Set(emps.map(e => e.department).filter(Boolean))].sort();
@@ -735,7 +885,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       (!search || [e.personName, e.employeeId, e.designation, e.department, div].some(v => v?.toLowerCase().includes(q))) &&
       (!filterDiv    || div === filterDiv) &&
       (!filterDept   || e.department === filterDept) &&
-      (!filterStatus || e.status === filterStatus)
+      (!filterStatus || e.status === filterStatus) &&
+      (!filterType   || e.staffType === filterType)
     );
   });
 
@@ -750,12 +901,12 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       "#": i + 1, "Emp ID": e.employeeId, "Name": e.personName,
       "Division": e.division || "",
       "Department": e.department || "", "Designation": e.designation || "",
-      "Grade": e.grade || "", "Status": STATUS[e.status]?.label || "Active",
+      "Grade": e.grade || "", "Status": STATUS[e.status]?.label || "Active", "Staff Type": e.staffType || "",
       "Phone": e.contactNumber || "", "Email": e.email || "",
       "Reporting Manager": e.reportingTo || "", "Work Location": e.workLocation || "",
     }));
     const ws = XLSX.utils.json_to_sheet(data);
-    ws["!cols"] = [4, 14, 24, 18, 18, 24, 8, 12, 16, 28, 22, 18].map(wch => ({ wch }));
+    ws["!cols"] = [4, 14, 24, 18, 18, 24, 8, 12, 12, 16, 28, 22, 18].map(wch => ({ wch }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Employees");
     XLSX.writeFile(wb, "employees.xlsx");
@@ -772,11 +923,11 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.4); doc.line(14, 26, pageW - 14, 26);
     autoTable(doc, {
       startY: 30,
-      head: [["#", "Emp ID", "Name", "Division", "Department", "Designation", "Grade", "Status"]],
+      head: [["#", "Emp ID", "Name", "Division", "Department", "Designation", "Grade", "Status", "Staff Type"]],
       body: filtered.map((e, i) => [
         i + 1, e.employeeId, e.personName, e.division || "—",
         e.department || "—", e.designation || "—", e.grade || "—",
-        STATUS[e.status]?.label || "Active",
+        STATUS[e.status]?.label || "Active", e.staffType || "—",
       ]),
       styles: { fontSize: 8, cellPadding: 3, lineColor: [203, 213, 225], lineWidth: 0.3, textColor: [51, 65, 85] },
       headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255], fontStyle: "bold" },
@@ -792,12 +943,12 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   /* ── Download Template ── */
   const downloadTemplate = () => {
     const gradeHint = loadActiveGrades().map(g => g.grade).join(", ") || "Add grades in the Grades tab (A, B, C...)";
-    const headers = ["Person Name", "Employee ID", "Company", "Division", "Department", "Designation", "Grade", "Team", "Role", "Reporting Manager", "Work Location", "Joining Date", "Status", "Phone", "Email", "Gender", "Marital Status", "Nationality", "Address"];
+    const headers = ["Person Name", "Employee ID", "Company", "Division", "Department", "Designation", "Grade", "Team", "Role", "Reporting Manager", "Work Location", "Joining Date", "Status", "Staff Type", "Phone", "Email", "Gender", "Marital Status", "Nationality", "Address"];
     const ws = XLSX.utils.aoa_to_sheet([
       headers,
-      ["Rahul Sharma", "BITL-001", "Bootes Impex Tech Pvt Ltd", "Engineering", "Civil", "Site Engineer", "C", "Site Team A", "Civil Engineer", "Ravi Kumar", "Gurgaon", "2024-01-01", "Active", "9876543210", "rahul@company.com", "Male", "Single", "Indian", "New Delhi"],
+      ["Rahul Sharma", "BITL-001", "Bootes Impex Tech Pvt Ltd", "Engineering", "Civil", "Site Engineer", "C", "Site Team A", "Civil Engineer", "Ravi Kumar", "Gurgaon", "2024-01-01", "Active", "Permanent", "9876543210", "rahul@company.com", "Male", "Single", "Indian", "New Delhi"],
       [],
-      [`Valid grades: ${gradeHint}  (A=entry ascending)`, "Valid status: Active / Inactive / On Leave"],
+      [`Valid grades: ${gradeHint}  (A=entry ascending)`, "Valid status: Active / Inactive / On Leave", `Valid staff type: ${STAFF_TYPES.join(" / ")}`],
     ]);
     ws["!cols"] = headers.map(h => ({ wch: Math.max(14, h.length + 2) }));
     const wb = XLSX.utils.book_new();
@@ -829,6 +980,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
           workLocation:  String(r["Work Location"]      || "").trim(),
           joiningDate:   String(r["Joining Date"]       || "").trim(),
           status:        String(r["Status"]             || "active").toLowerCase().includes("inactive") ? "inactive" : String(r["Status"] || "").toLowerCase().includes("leave") ? "on_leave" : "active",
+          staffType:     toStaffType(r["Staff Type"]),
           contactNumber: String(r["Phone"]              || "").trim(),
           email:         String(r["Email"]              || "").trim(),
           gender:        String(r["Gender"]             || "").trim(),
@@ -865,12 +1017,14 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
           imgUrl={selectedImgUrl}
           onBack={() => setSelected(null)}
           onEdit={canEdit ? () => openEdit(selected) : undefined}
+          onMove={canEdit ? () => setMoveEmps([selected]) : undefined}
           onDelete={canDelete ? () => handleDelete(selected.id) : undefined}
         />
         {modal && (
           <EmpModal form={form} setForm={setForm} editId={editId} saving={saving}
             onClose={() => setModal(false)} onSave={handleSave} divisions={divisions} allEmps={emps} />
         )}
+        {moveModal}
         {toast && (
           <div className={`fixed top-5 right-5 z-[200] px-4 py-3 rounded-lg text-sm font-medium shadow-lg border
             ${toast.type === "error" ? "bg-red-50 text-red-700 border-red-200" : "bg-emerald-50 text-emerald-700 border-emerald-200"}`}>
@@ -962,13 +1116,13 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                 className="pl-8 pr-3 py-[7px] text-xs border border-slate-200 rounded-md bg-slate-50 w-full focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-white" />
             </div>
             <EmpFilters
-              filters={{ div: filterDiv, dept: filterDept, status: filterStatus }}
+              filters={{ div: filterDiv, dept: filterDept, status: filterStatus, type: filterType }}
               divs={allDivs} depts={allDepts}
               onChange={(k, v) => {
-                ({ div: setFilterDiv, dept: setFilterDept, status: setFilterStatus })[k](v);
+                ({ div: setFilterDiv, dept: setFilterDept, status: setFilterStatus, type: setFilterType })[k](v);
                 setPage(1);
               }}
-              onClear={() => { setFilterDiv(""); setFilterDept(""); setFilterStatus(""); setPage(1); }} />
+              onClear={() => { setFilterDiv(""); setFilterDept(""); setFilterStatus(""); setFilterType(""); setPage(1); }} />
           </>
         );
         return toolbarSlot
@@ -1030,7 +1184,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 gap-3 text-slate-300">
           <Users size={32} />
-          <p className="text-sm">{search || filterDiv || filterDept || filterStatus ? "No employees match your filters" : "No employees yet — add one above"}</p>
+          <p className="text-sm">{search || filterDiv || filterDept || filterStatus || filterType ? "No employees match your filters" : "No employees yet — add one above"}</p>
         </div>
       ) : view === "card" ? (
 
@@ -1062,18 +1216,39 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
 
         /* ── TABLE VIEW ── */
         <div className="bg-white rounded-lg border border-slate-200 flex flex-col" style={{ height: "calc(100svh - 185px)" }}>
+          {picked.length > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2 border-b border-slate-200 bg-blue-50/60 text-[12px]">
+              <span className="font-semibold text-slate-700">{picked.length} selected</span>
+              <button onClick={() => setMoveEmps(emps.filter(e => picked.includes(e.id)))}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors">
+                <ArrowRightLeft size={12} /> Move to company
+              </button>
+              <button onClick={() => setPicked([])} className="text-slate-500 hover:text-slate-800 font-semibold">Clear</button>
+            </div>
+          )}
           <div className="overflow-auto flex-1">
             <table className="w-full text-left border-separate border-spacing-0 min-w-[1000px]">
               <thead className="sticky top-0 z-[20]">
                 <tr className="text-[11px] uppercase tracking-wider text-slate-500">
-                  <th style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[22]">Contact ID</th>
-                  <th style={{ minWidth: 180, left: 110 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[22]">Name</th>
+                  {canEdit && (
+                    <th style={{ width: 40, minWidth: 40, left: 0 }} className="px-3 py-3 bg-slate-50 border-b border-r border-slate-200 sticky z-[22]">
+                      <input type="checkbox" className="w-3.5 h-3.5 accent-blue-600 cursor-pointer" title="Select this page"
+                        checked={paginated.length > 0 && paginated.every(e => picked.includes(e.id))}
+                        onChange={ev => {
+                          const ids = paginated.map(e => e.id);
+                          setPicked(prev => ev.target.checked ? [...new Set([...prev, ...ids])] : prev.filter(id => !ids.includes(id)));
+                        }} />
+                    </th>
+                  )}
+                  <th style={{ width: 110, minWidth: 110, left: canEdit ? 40 : 0 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[22]">Contact ID</th>
+                  <th style={{ minWidth: 180, left: canEdit ? 150 : 110 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[22]">Name</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Emp ID</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Division</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Department</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Designation</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Grade</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Status</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Staff Type</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-l border-slate-200 whitespace-nowrap text-center sticky right-0 z-[22]">Action</th>
                 </tr>
               </thead>
@@ -1083,8 +1258,16 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                   const td = "px-4 py-3 border-b border-r border-slate-200 text-[13px] text-slate-600 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors";
                   return (
                     <tr key={emp.id} className="group cursor-pointer" onClick={() => setSelected(emp)}>
-                      <td style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 border-b border-r border-slate-200 text-xs font-medium text-slate-500 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[5]">{emp.contactCode || "—"}</td>
-                      <td style={{ minWidth: 180, left: 110 }} className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[5]">
+                      {canEdit && (
+                        <td style={{ width: 40, minWidth: 40, left: 0 }} onClick={e => e.stopPropagation()}
+                          className="px-3 py-3 border-b border-r border-slate-200 bg-white group-hover:bg-slate-50 transition-colors sticky z-[5]">
+                          <input type="checkbox" className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
+                            checked={picked.includes(emp.id)}
+                            onChange={() => setPicked(prev => prev.includes(emp.id) ? prev.filter(id => id !== emp.id) : [...prev, emp.id])} />
+                        </td>
+                      )}
+                      <td style={{ width: 110, minWidth: 110, left: canEdit ? 40 : 0 }} className="px-4 py-3 border-b border-r border-slate-200 text-xs font-medium text-slate-500 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[5]">{emp.contactCode || "—"}</td>
+                      <td style={{ minWidth: 180, left: canEdit ? 150 : 110 }} className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[5]">
                         <span className="font-semibold text-slate-800 text-[13px]">{emp.personName}</span>
                       </td>
                       <td className={`${td} text-xs font-medium`}>{emp.employeeId || "—"}</td>
@@ -1093,9 +1276,11 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                       <td className={td}>{emp.designation || "—"}</td>
                       <td className={`${td} text-center`}><GradeBadge grade={emp.grade} /></td>
                       <td className={`${td} text-center`}><StatusBadge status={emp.status} /></td>
+                      <td className={`${td} text-center`}><StaffTypeBadge type={emp.staffType} /></td>
                       <td className="px-4 py-3 border-b border-l border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky right-0 z-[5]" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           {canEdit && <button onClick={() => openEdit(emp)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Edit"><Edit2 size={13} /></button>}
+                          {canEdit && <button onClick={() => setMoveEmps([emp])} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Move to another company"><ArrowRightLeft size={13} /></button>}
                           <button onClick={() => setLogEmp(emp)} className="p-1.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors" title="Edit history"><Clock size={13} /></button>
                           {canDelete && <button onClick={() => handleDelete(emp.id)} className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors" title="Delete"><Trash2 size={13} /></button>}
                         </div>
@@ -1162,6 +1347,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
           onClose={() => setModal(false)} onSave={handleSave} divisions={divisions} allEmps={emps} />
       )}
       {logEmp && <ContactLogModal contact={logEmp} onClose={() => setLogEmp(null)} />}
+      {moveModal}
     </>
   );
 }
