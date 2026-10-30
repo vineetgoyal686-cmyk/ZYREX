@@ -5,6 +5,7 @@ import API from "../../api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import StatCards from "./StatCards";
 import CategoryTabs, { inCategory } from "./CategoryTabs";
+import Pager, { pageOf } from "./Pager";
 import { STATUSES, statusOf, isLeave, otMin, paidValue, fmtDur, isoToday, CATEGORY_DOT } from "./utils";
 
 /*
@@ -32,6 +33,8 @@ export default function MonthlySheet({ place, onOpenDay }) {
   const [error, setError] = useState("");
   const [group, setGroup] = useState("all");
   const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [per, setPer] = useState(50);
 
   const n = daysIn(month);
   const days = useMemo(() => Array.from({ length: n }, (_, i) => {
@@ -81,6 +84,9 @@ export default function MonthlySheet({ place, onOpenDay }) {
     return sheet.filter(r => inCategory(r.category, group)
       && (!s || `${r.name} ${r.designation} ${r.code}`.toLowerCase().includes(s)));
   }, [sheet, group, q]);
+
+  useEffect(() => { setPage(1); }, [group, q, month, per]);
+  const paged = pageOf(shown, page, per);
 
   const sum = useMemo(() => shown.reduce((s, r) => ({
     P: s.P + r.t.P + r.t.HD * 0.5, A: s.A + r.t.A, L: s.L + r.t.L + r.t.OFF, paid: s.paid + r.t.paid, ot: s.ot + r.t.ot,
@@ -166,9 +172,9 @@ export default function MonthlySheet({ place, onOpenDay }) {
                 </tr>
               </thead>
               <tbody>
-                {shown.map((r, i) => (
+                {paged.map((r, i) => (
                   <tr key={r.id} className="group">
-                    <td className={`${td} ${stick} left-0 text-center text-[11px] text-slate-400 tabular-nums group-hover:bg-slate-50`}>{i + 1}</td>
+                    <td className={`${td} ${stick} left-0 text-center text-[11px] text-slate-400 tabular-nums group-hover:bg-slate-50`}>{(page - 1) * per + i + 1}</td>
                     <td className={`${td} ${stick} left-10 px-2.5 py-1.5 group-hover:bg-slate-50`}>
                       <p className="flex items-center gap-1.5 font-semibold text-slate-800 leading-tight text-[13px]">
                         <span className={`w-2 h-2 rounded-full shrink-0 ${CATEGORY_DOT[r.category] || "bg-slate-300"}`} title={r.category} />{r.name}
@@ -205,12 +211,13 @@ export default function MonthlySheet({ place, onOpenDay }) {
             </table>
           )}
         </div>
-        <div className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2 border-t border-slate-100 text-[10px] text-slate-500">
+        <div className="shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-1.5 border-t border-slate-100 text-[10px] text-slate-500">
           {STATUSES.map(s => (
             <span key={s.v} className="inline-flex items-center gap-1"><span className={`px-1 rounded border font-bold ${s.soft}`}>{s.k}</span>{s.v}</span>
           ))}
           <span className="ml-auto text-slate-400">Paid = Present, On Duty, Leave, Week Off, Holiday, Comp Off + ½ for Half Day</span>
         </div>
+        <Pager total={shown.length} page={page} per={per} onPage={setPage} onPer={setPer} />
       </div>
     </div>
   );

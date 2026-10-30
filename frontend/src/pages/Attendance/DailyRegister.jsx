@@ -9,6 +9,7 @@ import { useModulePermissions } from "../../hooks/useModulePermissions";
 import StatCards from "./StatCards";
 import BulkUpload from "./BulkUpload";
 import CategoryTabs, { inCategory } from "./CategoryTabs";
+import Pager, { pageOf } from "./Pager";
 import {
   STATUSES, statusOf, isPresent, isLeave, workedMin, otMin, lateMin, fmtDur, fmtTime,
   isoToday, shiftDate, fmtDate, CATEGORY_DOT, currentUserName,
@@ -45,6 +46,8 @@ export default function DailyRegister({ place, date, onDateChange }) {
   const [form, setForm] = useState(null);   // { person?, record? } — the Add / Edit form
   const [logOf, setLogOf] = useState(null); // person whose history is open
   const [bulk, setBulk] = useState(false);
+  const [page, setPage] = useState(1);
+  const [per, setPer] = useState(50);
   const today = isoToday();
 
   const flash = (msg, type = "success") => {
@@ -102,6 +105,9 @@ export default function DailyRegister({ place, date, onDateChange }) {
       flash(err?.response?.data?.detail || err?.response?.data?.error || "Save failed", "error");
     } finally { setBusy(false); }
   };
+
+  useEffect(() => { setPage(1); }, [group, search, card, date, per]);
+  const paged = pageOf(shown, page, per);
 
   // the rows on screen, as they are shown
   const exportDay = () => {
@@ -225,7 +231,8 @@ export default function DailyRegister({ place, date, onDateChange }) {
                 </tr>
               </thead>
               <tbody>
-                {shown.map((p, i) => {
+                {paged.map((p, idx) => {
+                  const i = (page - 1) * per + idx;
                   const r = p.record;
                   const s = statusOf(r?.status);
                   const late = lateOf(p);
@@ -290,6 +297,7 @@ export default function DailyRegister({ place, date, onDateChange }) {
             </table>
           )}
         </div>
+        <Pager total={shown.length} page={page} per={per} onPage={setPage} onPer={setPer} />
       </div>
 
       {form && (

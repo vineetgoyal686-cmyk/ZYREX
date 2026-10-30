@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Search, Download, Trash2, Loader2, CalendarDays, ChevronDown, ListChecks, UserCheck, UserX, CalendarOff, Clock, Timer } from "lucide-react";
 import StatCards from "./StatCards";
 import CategoryTabs, { inCategory } from "./CategoryTabs";
+import Pager, { pageOf } from "./Pager";
 import * as XLSX from "xlsx";
 import API from "../../api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -9,7 +10,6 @@ import { STATUSES, statusOf, isPresent, isLeave, otMin, lateMin, fmtDur, fmtTime
 
 /* Every mark at a place over a date range — search, filter, export,
    delete; "Open" jumps to that day in the register to change it. */
-const PER_PAGE = 50;
 
 export default function Records({ place, onOpenDay }) {
   const { canDelete, canExport } = useModulePermissions("staff_attendance");
@@ -22,6 +22,7 @@ export default function Records({ place, onOpenDay }) {
   const [status, setStatus] = useState("");
   const [group, setGroup] = useState("all");
   const [page, setPage] = useState(1);
+  const [per, setPer] = useState(50);
 
   const load = () => {
     setRows(null); setError("");
@@ -30,7 +31,7 @@ export default function Records({ place, onOpenDay }) {
       .catch(err => { setRows([]); setError(err?.response?.data?.error || "Could not load records"); });
   };
   useEffect(() => { load(); }, [place.code, from, to]);
-  useEffect(() => { setPage(1); }, [q, status, group, from, to]);
+  useEffect(() => { setPage(1); }, [q, status, group, from, to, per]);
 
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -52,8 +53,7 @@ export default function Records({ place, onOpenDay }) {
     ot: list.reduce((t, r) => t + otMin(r.category, r.shift, r.inTime, r.outTime), 0),
   }), [list]);
 
-  const pages = Math.max(1, Math.ceil(list.length / PER_PAGE));
-  const paged = list.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const paged = pageOf(list, page, per);
 
   const remove = async (r) => {
     if (!window.confirm(`Delete ${r.name}'s mark for ${fmtDate(r.date)}?`)) return;
@@ -183,16 +183,7 @@ export default function Records({ place, onOpenDay }) {
         )}
       </div>
 
-      {pages > 1 && (
-        <div className="shrink-0 flex items-center justify-between px-4 py-2.5 border-t border-slate-100 text-[11px] text-slate-400">
-          <span>{(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, list.length)} of {list.length}</span>
-          <div className="flex items-center gap-1">
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-2.5 py-1 text-xs border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30">Prev</button>
-            <span className="px-2 text-slate-500">Page {page} / {pages}</span>
-            <button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page === pages} className="px-2.5 py-1 text-xs border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30">Next</button>
-          </div>
-        </div>
-      )}
+      <Pager total={list.length} page={page} per={per} onPage={setPage} onPer={setPer} />
       </div>
     </div>
   );
