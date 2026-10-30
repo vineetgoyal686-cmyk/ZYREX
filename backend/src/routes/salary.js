@@ -168,6 +168,55 @@ router.post("/records", requirePerm("salary", "can_add"), async (req, res) => {
   }
 });
 
+/* ═══ POST /api/salary/bulk — many salary records from an Excel sheet
+   body { company_id, rows: [{ employeeId, effectiveFrom, …fields }], byName }
+   Rows are checked like the form; a person who already has a salary from
+   that date, or isn't on payroll, is skipped. ═══ */
+router.post("/bulk", requirePerm("salary", "can_add"), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const companyId = companyIdFrom(b);
+    if (!companyId) return res.status(400).json({ error: "Pick a company" });
+    const rows = Array.isArray(b.rows) ? b.rows.slice(0, 2000) : [];
+    if (!rows.length) return res.status(400).json({ error: "Nothing to save" });
+    const [{ data: people, error: pe }, { data: existing, error: xe }] = await Promise.all([
+      org("employees").select("id, person_name, category, employed_through").eq("company_id", companyId),
+      org("salary_structures").select("employee_id, effective_from").eq("company_id", companyId),
+    ]);
+    if (pe) throw pe;
+    if (xe) throw xe;
+    const byId = new Map((people || []).map(e => [e.id, e]));
+    const taken = new Set((existing || []).map(r => `${r.employee_id}_${r.effective_from}`));
+    const by = text(b.byName) || null;
+    const uid = userIdFrom(req) || null;
+    const insert = [];
+    const skipped = [];
+    for (const [i, r] of rows.entries()) {
+      const e = byId.get(r.employeeId);
+      const label = `Row ${r.line || i + 2}${e ? ` · ${e.person_name}` : ""}`;
+      if (!e) { skipped.push({ label, reason: "Employee not found in this company" }); continue; }
+      if (notOnPayroll(e)) { skipped.push({ label, reason: notOnPayroll(e) }); continue; }
+      const eff = isoDate(r.effectiveFrom);
+      if (!eff) { skipped.push({ label, reason: "Effective from date missing" }); continue; }
+      const f = fieldsFrom(r);
+      const bad = check(f);
+      if (bad) { skipped.push({ label, reason: bad }); continue; }
+      const key = `${e.id}_${eff}`;
+      if (taken.has(key)) { skipped.push({ label, reason: `Already has a salary from ${eff}` }); continue; }
+      taken.add(key);
+      insert.push({ ...f, company_id: companyId, employee_id: e.id, effective_from: eff, created_by_id: uid, created_by_name: by, updated_by_name: by });
+    }
+    for (let i = 0; i < insert.length; i += 200) {
+      const { error } = await org("salary_structures").insert(insert.slice(i, i + 200));
+      if (error) throw error;
+    }
+    res.json({ success: true, saved: insert.length, skipped });
+  } catch (err) {
+    console.error("Salary bulk error:", err.message);
+    res.status(500).json({ error: "Upload failed", detail: err.message });
+  }
+});
+
 /* ═══ PUT /api/salary/records/:id — correct a record ═══ */
 router.put("/records/:id", requirePerm("salary", "can_edit"), async (req, res) => {
   try {

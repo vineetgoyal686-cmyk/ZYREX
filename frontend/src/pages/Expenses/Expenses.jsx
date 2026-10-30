@@ -110,23 +110,7 @@ function PettyCash() {
   );
 }
 
-function ChequeRecord() {
-  const { canView } = useModulePermissions("expenses_cheque_record");
-  if (!canView) return <NoAccess />;
-  return (
-    <div className="min-h-screen bg-[#f8fafc]">
-      <div className="flex items-center justify-between px-5 sm:px-6 py-3.5 bg-white border-b border-slate-200">
-        <h1 className="text-lg font-extrabold text-slate-900">Cheque Record</h1>
-      </div>
-      <div className="p-5 sm:p-6">
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-10 text-center">
-          <p className="text-slate-400 text-sm">No entries yet.</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function Expenses({ view }) {
-  return view === "petty_cash" ? <PettyCash /> : <ChequeRecord />;
+// Cheque Register lives in pages/Finance/ChequeRegister
+export default function Expenses() {
+  return <PettyCash />;
 }

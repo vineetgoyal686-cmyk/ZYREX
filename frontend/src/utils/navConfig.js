@@ -39,7 +39,7 @@ export const TABS = {
   finance__expense_book:         { path: "/finance/expense-book",               label: "Expense Book",       project: "required" },
   finance__salary:               { path: "/finance/salary",                     label: "Salary" },
   expenses__petty_cash:          { path: "/finance/petty-cash",                 label: "Petty Cash" },
-  expenses__cheque_record:       { path: "/finance/cheque-record",              label: "Cheque Record" },
+  expenses__cheque_record:       { path: "/finance/cheque-register",            label: "Cheque Register" },
 
   hr__employees:                 { path: "/hrms/employees",                     label: "Employees",          orgTab: "employees" },
   operations__staff_attendance:  { path: "/hrms/attendance",                    label: "Attendance" },
@@ -128,7 +128,8 @@ export const LEGACY_PATHS = {
   "/boardroom":                "/finance/treasury/overview",
   "/finance/treasury/dashboard": "/finance/treasury/overview",
   "/expenses/petty-cash":      "/finance/petty-cash",
-  "/expenses/cheque-record":   "/finance/cheque-record",
+  "/expenses/cheque-record":   "/finance/cheque-register",
+  "/finance/cheque-record":    "/finance/cheque-register",
   "/organisation":             "/settings/company",
   // Projects and Branch moved inside Settings › Company
   "/settings/projects":        "/settings/company",

@@ -239,7 +239,7 @@ export const PERMISSION_LAYOUT = [
     ] },
     { key: "expense_book",           label: "Expense Book" },
     { key: "salary",                 label: "Salary" },
-    { key: "expenses_cheque_record", label: "Cheque Record" },
+    { key: "expenses_cheque_record", label: "Cheque Register" },
     { group: "Treasury", rows: [
       { key: "treasury_overview", label: "Overview" },
       { key: "treasury_ledger",   label: "Ledger, Loans & Masters" },

@@ -51,6 +51,7 @@ const TreasuryMasters = lazy(() => import("./pages/Treasury/Masters"));
 const Expenses       = lazy(() => import("./pages/Expenses/Expenses"));
 const ExpenseBook    = lazy(() => import("./pages/Finance/ExpenseBook"));
 const Salary         = lazy(() => import("./pages/Finance/Salary/Salary"));
+const ChequeRegister = lazy(() => import("./pages/Finance/ChequeRegister/ChequeRegister"));
 const GlobalCreateOrder = lazy(() => import("./pages/Create/CreateOrder"));
 const IntakeList     = lazy(() => import("./pages/Create/IntakeList"));
 const ItemList       = lazy(() => import("./pages/Procurement/ItemList"));
@@ -260,7 +261,7 @@ function AppLayout({
         return projectPage(project => <ExpenseBook key={project} project={project} />);
       case "expenses__petty_cash":        return <Expenses view="petty_cash" />;
       case "finance__salary":             return <Salary />;
-      case "expenses__cheque_record":     return <Expenses view="cheque_record" />;
+      case "expenses__cheque_record":     return <ChequeRegister />;
 
       // HRMS (the rest are Organisation tabs, above)
       case "operations__staff_attendance":

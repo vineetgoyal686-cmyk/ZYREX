@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Building2, Wallet, Calculator, Search, Loader2, Users, UserCheck, UserX, IndianRupee, Landmark, ShieldCheck,
-  Edit2, Plus, History, TrendingUp, Download, Lock,
+  Edit2, Plus, History, TrendingUp, Download, Upload, Lock,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import API from "../../../api";
@@ -15,6 +15,7 @@ import { MoreMenu } from "../../Attendance/DailyRegister";
 import { CATEGORY_DOT } from "../../Attendance/utils";
 import SalaryForm from "./SalaryForm";
 import HistoryModal from "./HistoryModal";
+import SalaryBulk from "./SalaryBulk";
 import { calc, inr, fmtDay } from "./calc";
 import BrandLoader from "../../../components/BrandLoader";
 
@@ -43,6 +44,7 @@ export default function Salary() {
   const [per, setPer] = useState(50);
   const [form, setForm] = useState(null);       // { person, mode: new|revise|edit, record? }
   const [historyOf, setHistoryOf] = useState(null);
+  const [bulk, setBulk] = useState(false);
 
   useEffect(() => {
     API.get("/api/salary/companies")
@@ -165,6 +167,7 @@ export default function Salary() {
             </div>
             <div className="ml-auto">
               <MoreMenu items={[
+                canAdd && { label: "Bulk Upload", hint: "Many salaries from Excel", Icon: Upload, onClick: () => setBulk(true), disabled: !data },
                 canExport && { label: "Export", hint: "Salary records as Excel", Icon: Download, onClick: exportExcel, disabled: !shown.some(r => r.current) },
               ].filter(Boolean)} />
             </div>
@@ -276,6 +279,7 @@ export default function Salary() {
         <SalaryForm person={form.person} mode={form.mode} record={form.record} today={data?.today}
           onClose={() => setForm(null)} onSaved={() => { setForm(null); load(); }} />
       )}
+      {bulk && <SalaryBulk company={company} records={records} today={data?.today || new Date().toISOString().slice(0, 10)} onClose={() => setBulk(false)} onDone={load} />}
       {historyOf && (
         <HistoryModal person={historyOf} onClose={() => setHistoryOf(null)}
           onEdit={(rec) => { setHistoryOf(null); setForm({ person: historyOf, mode: "edit", record: rec }); }}

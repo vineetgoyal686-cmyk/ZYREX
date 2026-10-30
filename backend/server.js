@@ -7,6 +7,7 @@ const express = require("express");
 
 const attendanceRoutes    = require("./src/routes/attendance");
 const salaryRoutes        = require("./src/routes/salary");
+const chequeRoutes        = require("./src/routes/cheques");
 const viewRoutes          = require("./src/routes/view");
 const procurementRoutes   = require("./src/routes/procurement");
 const authRoutes          = require("./src/routes/auth");
@@ -60,6 +61,7 @@ app.use("/api", apiAuth);
 
 app.use("/api/attendance",  attendanceRoutes);
 app.use("/api/salary",      salaryRoutes);
+app.use("/api/cheques",     chequeRoutes);
 app.use("/api/view",        viewRoutes);
 app.use("/api/procurement", procurementRoutes);
 app.use("/api/auth",        authRoutes);
