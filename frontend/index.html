@@ -17,9 +17,9 @@
       #app-loader.hidden { opacity: 0; pointer-events: none; }
       /* the logo's "Z" breathing inside a spinning ring — same as components/BrandLoader.jsx (index.css) */
       #app-loader .zy-mark { position: relative; display: grid; place-items: center; width: 99px; height: 99px; }
-      #app-loader .zy-track { position: absolute; inset: 0; border-radius: 50%; box-shadow: inset 0 0 0 3px #e2e8f0; }
+      #app-loader .zy-track { position: absolute; inset: 0; border-radius: 50%; border: 3px solid #e2e8f0; }
       #app-loader .zy-glow { position: absolute; inset: 18%; border-radius: 50%; background: radial-gradient(circle, rgba(34,211,238,.28), transparent 70%); animation: zy-glow 1.8s ease-in-out infinite; will-change: transform, opacity; }
-      #app-loader .zy-ring { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(from 0deg, rgba(14,165,233,0) 0deg, rgba(14,165,233,0) 120deg, #67e8f9 250deg, #0284c7 355deg, rgba(2,132,199,0) 360deg); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px)); animation: zy-spin 1.1s linear infinite; will-change: transform; }
+      #app-loader .zy-ring { position: absolute; inset: 0; border-radius: 50%; border: 3px solid transparent; border-top-color: #0ea5e9; border-right-color: #67e8f9; animation: zy-spin 1s linear infinite; will-change: transform; }
       #app-loader .zy-z { position: relative; display: inline-block; line-height: 1; font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; font-weight: 900; font-size: 52px; background: linear-gradient(135deg, #0369a1 0%, #0ea5e9 35%, #67e8f9 55%, #0284c7 80%); -webkit-background-clip: text; background-clip: text; color: transparent; animation: zy-breathe 1.8s ease-in-out infinite; will-change: transform, opacity; }
       @keyframes zy-spin { to { transform: rotate(360deg); } }
       @keyframes zy-breathe { 0%, 100% { transform: scale(.9); opacity: .7; } 50% { transform: scale(1.04); opacity: 1; } }
@@ -33,7 +33,11 @@
         <span class="zy-track"></span><span class="zy-glow"></span><span class="zy-ring"></span><span class="zy-z" aria-hidden="true">Z</span>
       </div>
     </div>
-    <script>window.__zyStart = performance.now();</script>
+    <script>
+      // pin the first screen's animations to the page clock, like components/BrandLoader.jsx,
+      // so the React loader that takes over carries on from here
+      try { document.querySelector('#app-loader .zy-mark').getAnimations({ subtree: true }).forEach(function (x) { x.startTime = 0; }); } catch (e) {}
+    </script>
     <div id="root"></div>
     <script>
       document.addEventListener('DOMContentLoaded', function() {
