@@ -4,6 +4,8 @@ import StatCards from "./StatCards";
 import CategoryTabs, { inCategory } from "./CategoryTabs";
 import Pager, { pageOf } from "./Pager";
 import { AttendanceForm, LogModal } from "./DailyRegister";
+import ViewModal from "./ViewModal";
+import ActionBtn, { RowMenu } from "./ActionBtn";
 import * as XLSX from "xlsx";
 import API from "../../api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -26,6 +28,7 @@ export default function Records({ place }) {
   const [per, setPer] = useState(50);
   const [editing, setEditing] = useState(null); // record being edited
   const [logOf, setLogOf] = useState(null);     // record whose history is open
+  const [viewOf, setViewOf] = useState(null);   // record open in View
 
   const load = () => {
     setRows(null); setError("");
@@ -137,7 +140,7 @@ export default function Records({ place }) {
             <thead className="sticky top-0 z-10">
               <tr className="text-[11px] uppercase tracking-wider text-slate-500">
                 <th className={th}>Date</th><th className={th}>Name</th><th className={th}>Status</th><th className={th}>Shift</th>
-                <th className={th}>In</th><th className={th}>Out</th><th className={th}>Hours</th><th className={th}>Remarks</th>
+                <th className={th}>In</th><th className={th}>Out</th><th className={th}>Hours</th>
                 <th className={th}>Marked by</th><th className={`${th} text-center`}>Action</th>
               </tr>
             </thead>
@@ -154,7 +157,8 @@ export default function Records({ place }) {
                     </td>
                     <td className={`${td} min-w-[200px]`}>
                       <p className="flex items-center gap-1.5 font-semibold text-slate-800 leading-tight">
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${CATEGORY_DOT[r.category] || "bg-slate-300"}`} title={r.category} />{r.name}
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${CATEGORY_DOT[r.category] || "bg-slate-300"}`} title={r.category} />
+                        <button type="button" onClick={() => setViewOf(r)} title="View details" className="hover:text-blue-600 hover:underline underline-offset-2 cursor-pointer text-left">{r.name}</button>
                       </p>
                       <p className="text-[11px] text-slate-400 mt-0.5 pl-3.5">{r.designation || r.category || "—"}</p>
                     </td>
@@ -169,23 +173,20 @@ export default function Records({ place }) {
                       {fmtDur(r.minutes)}
                       {ot > 0 && <span className="ml-1.5 text-[10px] font-bold text-indigo-700 bg-indigo-50 rounded px-1 py-0.5">OT {fmtDur(ot)}</span>}
                     </td>
-                    <td className={`${td} max-w-[220px] truncate`} title={r.remarks}>{r.remarks || "—"}</td>
                     <td className={`${td} text-xs text-slate-400`}>{r.markedBy || "—"}</td>
                     <td className={`${td} text-center`}>
-                      <div className="flex items-center justify-center gap-1">
-                        {canEdit && r.employeeId && (
-                          <button onClick={() => setEditing(r)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="Edit"><Edit2 size={14} /></button>
-                        )}
-                        {r.employeeId && (
-                          <button onClick={() => setLogOf(r)} className="p-1.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50" title="Edit history"><History size={14} /></button>
-                        )}
-                        {canDelete && <button onClick={() => remove(r)} className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50" title="Delete"><Trash2 size={14} /></button>}
+                      <div className="flex items-center justify-center gap-1.5">
+                        {canEdit && <ActionBtn icon={Edit2} tone="blue" title={r.employeeId ? "Edit" : "Old row, not linked to an employee"} onClick={() => setEditing(r)} disabled={!r.employeeId} />}
+                        <RowMenu items={[
+                          { label: "Log", icon: History, onClick: () => setLogOf(r), disabled: !r.employeeId },
+                          canDelete && { label: "Delete", icon: Trash2, danger: true, onClick: () => remove(r) },
+                        ].filter(Boolean)} />
                       </div>
                     </td>
                   </tr>
                 );
               })}
-              {!list.length && <tr><td colSpan={10} className="py-10 text-center text-sm text-slate-400">No attendance in this range</td></tr>}
+              {!list.length && <tr><td colSpan={9} className="py-10 text-center text-sm text-slate-400">No attendance in this range</td></tr>}
             </tbody>
           </table>
         )}
@@ -200,6 +201,7 @@ export default function Records({ place }) {
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }} />
       )}
+      {viewOf && <ViewModal person={viewOf} date={viewOf.date} record={viewOf} place={place} onClose={() => setViewOf(null)} />}
       {logOf && <LogModal person={{ employeeId: logOf.employeeId, name: logOf.name }} date={logOf.date} onClose={() => setLogOf(null)} />}
     </div>
   );

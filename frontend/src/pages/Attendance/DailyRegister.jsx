@@ -10,6 +10,8 @@ import StatCards from "./StatCards";
 import BulkUpload from "./BulkUpload";
 import CategoryTabs, { inCategory } from "./CategoryTabs";
 import Pager, { pageOf } from "./Pager";
+import ViewModal from "./ViewModal";
+import ActionBtn from "./ActionBtn";
 import {
   STATUSES, statusOf, isPresent, isLeave, workedMin, otMin, lateMin, fmtDur, fmtTime,
   isoToday, shiftDate, fmtDate, CATEGORY_DOT, currentUserName,
@@ -46,6 +48,7 @@ export default function DailyRegister({ place, date, onDateChange }) {
   const [form, setForm] = useState(null);   // { person?, record? } — the Add / Edit form
   const [logOf, setLogOf] = useState(null); // person whose history is open
   const [bulk, setBulk] = useState(false);
+  const [viewOf, setViewOf] = useState(null); // person whose day is open in View
   const [page, setPage] = useState(1);
   const [per, setPer] = useState(50);
   const today = isoToday();
@@ -226,7 +229,6 @@ export default function DailyRegister({ place, date, onDateChange }) {
                   <th className={`${th} text-center`}>Out</th>
                   <th className={`${th} text-center`}>Hours</th>
                   <th className={`${th} text-center`}>OT</th>
-                  <th className={th}>Remarks</th>
                   <th className={`${th} text-center border-r-0`}>Action</th>
                 </tr>
               </thead>
@@ -243,7 +245,7 @@ export default function DailyRegister({ place, date, onDateChange }) {
                       <td className={`${td} text-center text-xs text-slate-400 tabular-nums`}>{i + 1}</td>
                       <td className={`${td} min-w-[200px]`}>
                         <p className="font-semibold text-slate-800 leading-tight">
-                          {p.name}
+                          <button type="button" onClick={() => setViewOf(p)} title="View details" className="font-semibold text-slate-800 hover:text-blue-600 hover:underline underline-offset-2 cursor-pointer text-left">{p.name}</button>
                           {p.visiting && <span className="ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200">Visiting</span>}
                         </p>
                         <p className="text-[11px] text-slate-400 mt-0.5">{p.designation || "—"}</p>
@@ -274,24 +276,18 @@ export default function DailyRegister({ place, date, onDateChange }) {
                       <td className={`${td} text-center tabular-nums`}>{r?.outTime ? fmtTime(r.outTime) : "—"}</td>
                       <td className={`${td} text-center tabular-nums`}>{r ? fmtDur(workedMin(r.inTime, r.outTime)) : "—"}</td>
                       <td className={`${td} text-center tabular-nums ${ot ? "text-indigo-700 font-semibold" : ""}`}>{ot ? fmtDur(ot) : "—"}</td>
-                      <td className={`${td} max-w-[200px] truncate`} title={r?.remarks}>{r?.remarks || "—"}</td>
                       <td className={`${td} text-center border-r-0`}>
-                        <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => setForm({ person: p, record: r })} disabled={!editable}
-                            className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
-                            title={p.elsewhere ? `Marked at ${p.elsewhere.place}` : r ? "Edit" : "Mark attendance"}>
-                            <Edit2 size={14} />
-                          </button>
-                          <button onClick={() => setLogOf(p)} className="p-1.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50" title="Edit history">
-                            <History size={14} />
-                          </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <ActionBtn icon={Edit2} tone="blue" onClick={() => setForm({ person: p, record: r })} disabled={!editable}
+                            title={p.elsewhere ? `Marked at ${p.elsewhere.place}` : r ? "Edit" : "Mark attendance"} />
+                          <ActionBtn icon={History} tone="violet" title="Edit history" onClick={() => setLogOf(p)} />
                         </div>
                       </td>
                     </tr>
                   );
                 })}
                 {!shown.length && (
-                  <tr><td colSpan={11} className="py-10 text-center text-sm text-slate-400 border-b border-slate-200">No one matches</td></tr>
+                  <tr><td colSpan={10} className="py-10 text-center text-sm text-slate-400 border-b border-slate-200">No one matches</td></tr>
                 )}
               </tbody>
             </table>
@@ -310,6 +306,7 @@ export default function DailyRegister({ place, date, onDateChange }) {
           }} />
       )}
       {logOf && <LogModal person={logOf} date={date} onClose={() => setLogOf(null)} />}
+      {viewOf && <ViewModal person={viewOf} date={date} record={viewOf.record} elsewhere={viewOf.elsewhere} place={place} onClose={() => setViewOf(null)} />}
       {bulk && <BulkUpload place={place} date={date} onClose={() => setBulk(false)} onDone={load} />}
 
       {toast && (
