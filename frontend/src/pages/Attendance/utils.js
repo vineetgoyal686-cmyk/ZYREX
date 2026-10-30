@@ -64,8 +64,9 @@ export const shiftDate = (iso, days) => {
   d.setDate(d.getDate() + days);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+// "Fri 30 Oct 2026" — no commas
 export const fmtDate = (iso, opts = { weekday: "short", day: "numeric", month: "short", year: "numeric" }) =>
-  iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-IN", opts) : "—";
+  iso ? new Date(`${iso}T00:00:00`).toLocaleDateString("en-IN", opts).replace(/,/g, "") : "—";
 
 export const CATEGORY_DOT = {
   "Office Staff": "bg-blue-500", "Site Staff": "bg-teal-500", "Guard": "bg-slate-500",
