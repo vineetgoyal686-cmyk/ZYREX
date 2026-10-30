@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import API from "../../api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import StatCards from "./StatCards";
+import CategoryTabs, { inCategory } from "./CategoryTabs";
 import { STATUSES, statusOf, isLeave, otMin, paidValue, fmtDur, isoToday, CATEGORY_DOT } from "./utils";
 
 /*
@@ -12,7 +13,6 @@ import { STATUSES, statusOf, isLeave, otMin, paidValue, fmtDur, isoToday, CATEGO
  * the place plus anyone marked here in the month. Clicking a day opens it
  * in the Daily Register.
  */
-const GROUPS = [["all", "All"], ["staff", "Staff"], ["guard", "Guards"]];
 const pad = (n) => String(n).padStart(2, "0");
 const monthOf = (iso) => iso.slice(0, 7);
 const addMonths = (ym, n) => {
@@ -78,7 +78,7 @@ export default function MonthlySheet({ place, onOpenDay }) {
 
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return sheet.filter(r => (group === "all" || (group === "guard" ? r.category === "Guard" : r.category !== "Guard"))
+    return sheet.filter(r => inCategory(r.category, group)
       && (!s || `${r.name} ${r.designation} ${r.code}`.toLowerCase().includes(s)));
   }, [sheet, group, q]);
 
@@ -117,12 +117,7 @@ export default function MonthlySheet({ place, onOpenDay }) {
           <button onClick={() => setMonth(m => addMonths(m, 1))} disabled={month >= monthOf(today)}
             className="h-9 w-9 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed" title="Next month"><ChevronRight size={15} /></button>
         </div>
-        <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5">
-          {GROUPS.map(([id, l]) => (
-            <button key={id} onClick={() => setGroup(id)}
-              className={`px-3 h-8 rounded-md text-xs font-semibold transition-all ${group === id ? "bg-slate-800 text-white" : "text-slate-500 hover:text-slate-700"}`}>{l}</button>
-          ))}
-        </div>
+        <CategoryTabs list={sheet} value={group} onChange={setGroup} />
         <div className="relative w-48 sm:w-60">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name…"

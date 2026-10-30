@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Search, Download, Trash2, Loader2, CalendarDays, ChevronDown, ListChecks, UserCheck, UserX, CalendarOff, Clock, Timer } from "lucide-react";
 import StatCards from "./StatCards";
+import CategoryTabs, { inCategory } from "./CategoryTabs";
 import * as XLSX from "xlsx";
 import API from "../../api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -34,10 +35,13 @@ export default function Records({ place, onOpenDay }) {
   const list = useMemo(() => {
     const s = q.trim().toLowerCase();
     return (rows || []).filter(r =>
-      (group === "all" || (group === "guard" ? r.category === "Guard" : r.category !== "Guard")) &&
+      inCategory(r.category, group) &&
       (!status || (status === "Late" ? lateMin(r.category, r.shift, r.status, r.inTime) > 0 : r.status === status)) &&
       (!s || `${r.name} ${r.designation} ${r.remarks} ${r.contactCode}`.toLowerCase().includes(s)));
   }, [rows, q, status, group]);
+
+  // one entry per person, so the tab counts are people, not marks
+  const peopleOf = useMemo(() => [...new Map((rows || []).map(r => [r.employeeId || r.name, r])).values()], [rows]);
 
   const sum = useMemo(() => ({
     days: new Set(list.map(r => r.date)).size,
@@ -88,12 +92,7 @@ export default function Records({ place, onOpenDay }) {
           <input type="date" value={to} min={from} max={today} onChange={e => e.target.value && setTo(e.target.value)}
             className="h-9 px-2.5 border border-slate-200 rounded-lg bg-white text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400" />
         </div>
-        <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5">
-          {[["all", "All"], ["staff", "Staff"], ["guard", "Guards"]].map(([id, l]) => (
-            <button key={id} onClick={() => setGroup(id)}
-              className={`px-3 h-8 rounded-md text-xs font-semibold transition-all ${group === id ? "bg-slate-800 text-white" : "text-slate-500 hover:text-slate-700"}`}>{l}</button>
-          ))}
-        </div>
+        <CategoryTabs list={peopleOf} value={group} onChange={setGroup} />
         <div className="relative">
           <select value={status} onChange={e => setStatus(e.target.value)} className={sel}>
             <option value="">All status</option>

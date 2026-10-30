@@ -1,13 +1,14 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronLeft, ChevronRight, Search, Plus, CheckCheck, Loader2, X, Moon, Sun, AlertTriangle,
-  Users, UserCheck, UserX, CalendarOff, Clock, CircleDashed, ClipboardList, Edit2, History, Download, Upload,
+  Users, UserCheck, UserX, CalendarOff, Clock, CircleDashed, ClipboardList, Edit2, History, Download, Upload, MoreHorizontal,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import API from "../../api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import StatCards from "./StatCards";
 import BulkUpload from "./BulkUpload";
+import CategoryTabs, { inCategory } from "./CategoryTabs";
 import {
   STATUSES, statusOf, isPresent, isLeave, workedMin, otMin, lateMin, fmtDur, fmtTime,
   isoToday, shiftDate, fmtDate, CATEGORY_DOT, currentUserName,
@@ -20,12 +21,6 @@ import {
  * Saves go through POST /api/attendance/mark/:place, which also writes the
  * edit history shown by Log.
  */
-const GROUPS = [
-  { id: "all",   label: "All" },
-  { id: "staff", label: "Staff" },
-  { id: "guard", label: "Guards" },
-];
-const inGroup = (p, g) => g === "all" || (g === "guard" ? p.category === "Guard" : p.category !== "Guard");
 // which summary card a row counts under
 const bucketOf = (p) => {
   const st = p.record?.status;
@@ -70,7 +65,7 @@ export default function DailyRegister({ place, date, onDateChange }) {
   };
   useEffect(() => { load(); }, [place.code, date]);
 
-  const groupList = people.filter(p => inGroup(p, group));
+  const groupList = people.filter(p => inCategory(p.category, group));
   const stats = useMemo(() => {
     const s = { total: 0, present: 0, absent: 0, leave: 0, late: 0, unmarked: 0 };
     groupList.forEach(p => {
@@ -136,7 +131,6 @@ export default function DailyRegister({ place, date, onDateChange }) {
     { id: "late",     label: "Late",        value: stats.late,     Icon: Clock,        accent: "#d97706", tint: "#fffbeb" },
     { id: "unmarked", label: "Not Marked",  value: stats.unmarked, Icon: CircleDashed, accent: "#64748b", tint: "#f1f5f9" },
   ];
-  const counts = { all: people.length, staff: people.filter(p => p.category !== "Guard").length, guard: people.filter(p => p.category === "Guard").length };
 
   const th = "px-3 py-2.5 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap";
   const td = "px-3 py-2.5 border-b border-r border-slate-200 text-[13px] text-slate-600 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors";
@@ -160,43 +154,22 @@ export default function DailyRegister({ place, date, onDateChange }) {
             <button onClick={() => onDateChange(today)} className="ml-1 px-3 h-9 rounded-lg text-xs font-semibold text-blue-600 hover:bg-blue-50">Today</button>
           )}
         </div>
-        <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5">
-          {GROUPS.map(g => (
-            <button key={g.id} onClick={() => setGroup(g.id)}
-              className={`flex items-center gap-1.5 px-3 h-8 rounded-md text-xs font-semibold transition-all
-                ${group === g.id ? "bg-slate-800 text-white" : "text-slate-500 hover:text-slate-700"}`}>
-              {g.label} <span className={`text-[10px] tabular-nums ${group === g.id ? "text-white/70" : "text-slate-400"}`}>{counts[g.id]}</span>
-            </button>
-          ))}
-        </div>
+        <CategoryTabs list={people} value={group} onChange={setGroup} />
         <div className="relative w-48 sm:w-60">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search name, mobile…"
             className="h-9 pl-9 pr-3 text-sm border border-slate-200 rounded-lg bg-white w-full focus:outline-none focus:ring-1 focus:ring-blue-400" />
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {canExport && (
-            <button onClick={exportDay} disabled={!shown.length} title="Download this day's register as Excel"
-              className="inline-flex items-center gap-1.5 h-9 px-3.5 text-sm font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40">
-              <Download size={15} /> Export
-            </button>
-          )}
-          {(canAdd || canEdit) && (
-            <button onClick={() => setBulk(true)} title="Upload attendance from Excel / CSV"
-              className="inline-flex items-center gap-1.5 h-9 px-3.5 text-sm font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50">
-              <Upload size={15} /> Bulk Upload
-            </button>
-          )}
-          {canAdd && people.length > 0 && (
-            <button onClick={markAllPresent} disabled={busy}
-              className="inline-flex items-center gap-1.5 h-9 px-3.5 text-sm font-semibold rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
-              {busy ? <Loader2 size={15} className="animate-spin" /> : <CheckCheck size={15} />} Mark all present
-            </button>
-          )}
+          <MoreMenu items={[
+            canAdd && people.length > 0 && { label: busy ? "Marking…" : "Mark all present", hint: "Everyone not marked yet", Icon: CheckCheck, onClick: markAllPresent, disabled: busy },
+            (canAdd || canEdit) && { label: "Bulk Upload", hint: "From Excel / CSV", Icon: Upload, onClick: () => setBulk(true) },
+            canExport && { label: "Export", hint: "This day as Excel", Icon: Download, onClick: exportDay, disabled: !shown.length },
+          ].filter(Boolean)} />
           {canAdd && (
-            <button onClick={() => setForm({})}
-              className="inline-flex items-center gap-1.5 h-9 px-4 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm">
-              <Plus size={15} /> Add Attendance
+            <button onClick={() => setForm({})} title="Mark attendance"
+              className="inline-flex items-center gap-1.5 h-9 px-3.5 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm">
+              <Plus size={15} /> Mark
             </button>
           )}
         </div>
@@ -509,6 +482,41 @@ function AttendanceForm({ place, date, today, person: fixed, record, onClose, on
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── "⋯" menu for the less used actions ── */
+function MoreMenu({ items }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+  if (!items.length) return null;
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen(o => !o)} title="More actions"
+        className={`h-9 w-9 flex items-center justify-center rounded-lg border bg-white text-slate-600 hover:bg-slate-50 ${open ? "border-blue-400 ring-1 ring-blue-400" : "border-slate-200"}`}>
+        <MoreHorizontal size={16} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1.5 z-30 w-56 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+          {items.map(it => (
+            <button key={it.label} disabled={it.disabled} onClick={() => { setOpen(false); it.onClick(); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-slate-50 disabled:opacity-40 disabled:hover:bg-white">
+              <it.Icon size={15} className="text-slate-500 shrink-0" />
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold text-slate-700">{it.label}</span>
+                <span className="block text-[11px] text-slate-400">{it.hint}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
