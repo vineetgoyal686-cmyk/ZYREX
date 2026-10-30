@@ -10,6 +10,9 @@ const MAX_ROWS = 25;
 const num = (v) => Number(v) || 0;
 const lc = (v) => String(v || "").toLowerCase();
 const day = (v) => (v ? String(v).slice(0, 10) : null);
+// order_type is "Supply" for a purchase order; anything else (SITC...) is a work order
+const orderKind = (t) => (t === "Supply" ? "PO" : "WO");
+const orderValue = (o) => num(o.totals?.grandTotal) || num(o.totals?.subtotal);
 const inRange = (d, from, to) => (!from || (d && d >= from)) && (!to || (d && d <= to));
 // Codes are saved inconsistently ("B-47", "B47", "b 47"), so text matches
 // also compare with spaces / dashes / slashes stripped.
@@ -50,11 +53,12 @@ const DECLARATIONS = [
   },
   {
     name: "search_orders",
-    description: "Search purchase / work orders. Use for questions about orders, POs, WOs, order values, pending or issued orders, a vendor's orders, or a site's orders. Returns matching orders plus a count and total value.",
+    description: "Search purchase / work orders. Use for questions about orders, POs, WOs, order values, pending or issued orders, a vendor's orders, or a site's orders. Returns matching orders plus exact counts and values — overall, by type (PO / WO) and by status. Always report these counts; never count the order rows yourself.",
     parameters: {
       type: "object",
       properties: {
         query:     { type: "string", description: "Free text matched against order number, subject, vendor and site" },
+        type:      { type: "string", enum: ["PO", "WO"], description: "PO = purchase / supply order, WO = work order; leave empty for both" },
         status:    { type: "string", description: "Exact order status, e.g. Draft, Review, Pending Approval, Pending Issue, Issued, Amended, Recalled, Cancelled" },
         vendor:    { type: "string", description: "Part of the vendor name" },
         site:      { type: "string", description: "Part of the site / project code or name" },
@@ -127,17 +131,18 @@ async function searchOrders(user, a) {
     return {
       order_number: o.order_number || "(draft)",
       date: day(o.date_of_creation || o.created_at),
-      status: o.status, type: o.order_type || "",
+      status: o.status, type: orderKind(o.order_type),
       vendor: o.vendors?.vendor_name || o.snapshot?.vendor?.vendorName || o.snapshot?.vendor?.vendor_name || "",
       site: site.siteCode || site.site_code || site.projectCode || site.siteName || site.projectName || "",
       site_name: site.siteName || site.projectName || "",
       subject: o.subject || "",
-      value: num(o.totals?.grandTotal) || num(o.totals?.subtotal),
+      value: orderValue(o),
       _site_id: o.site_id,
       _site_keys: [site.siteCode, site.site_code, site.projectCode, site.siteName, site.projectName],
     };
   }).filter(o =>
     (!allowed || allowed.has(o._site_id)) &&
+    (!a.type || o.type === String(a.type).toUpperCase()) &&
     (!a.status || lc(o.status) === lc(a.status)) &&
     (!a.vendor || matches(a.vendor, o.vendor)) &&
     (!a.site || matches(a.site, ...o._site_keys)) &&
@@ -146,11 +151,17 @@ async function searchOrders(user, a) {
   );
   // Newest order date first, so "latest" really is the first row
   rows.sort((x, y) => String(y.date).localeCompare(String(x.date)));
-  const byStatus = {};
-  rows.forEach(o => { byStatus[o.status] = (byStatus[o.status] || 0) + 1; });
+  const byStatus = {}, byType = { PO: { count: 0, value: 0 }, WO: { count: 0, value: 0 } };
+  rows.forEach(o => {
+    byStatus[o.status] = (byStatus[o.status] || 0) + 1;
+    byType[o.type].count++; byType[o.type].value += o.value;
+  });
   return {
     total_matching: rows.length,
     total_value: rows.reduce((s, o) => s + o.value, 0),
+    // The site codes actually matched, so the reply can say "B-47 is saved as B47"
+    ...(a.site ? { matched_sites: [...new Set(rows.map(o => o.site).filter(Boolean))] } : {}),
+    by_type: byType,
     count_by_status: byStatus,
     orders: rows.slice(0, MAX_ROWS).map(({ _site_id, _site_keys, ...o }) => o),
     note: rows.length > MAX_ROWS ? `Showing the latest ${MAX_ROWS} of ${rows.length}.` : undefined,
@@ -343,7 +354,7 @@ async function findAnything(user, a) {
     supabase.from("projects").select("*").then(r => r.data || []),
     supabase.schema("organisation").from("companies").select("*").then(r => r.data || []),
     seeVendors ? supabase.schema("procurement").from("vendors").select("id, vendor_code, vendor_name, mobile, email").is("deleted_at", null).then(r => r.data || []) : [],
-    seeOrders ? supabase.schema("procurement").from("purchase_orders").select("order_number, subject, status, totals, site_id, date_of_creation, created_at, snapshot, vendors(vendor_name)").neq("status", "Deleted").then(r => r.data || []) : [],
+    seeOrders ? supabase.schema("procurement").from("purchase_orders").select("order_number, order_type, subject, status, totals, site_id, date_of_creation, created_at, snapshot, vendors(vendor_name)").neq("status", "Deleted").then(r => r.data || []) : [],
     seeIntakes ? supabase.schema("store").from("intakes").select("intake_number, name, status, site_id, site_code, site_name, created_at").then(r => r.data || []) : [],
   ]);
 
@@ -359,7 +370,12 @@ async function findAnything(user, a) {
         type: "site / project", code: p.project_code || "", name: p.project_name || "",
         company: companies.find(c => c.id === p.company_id)?.company_name || "",
         city: p.city || "", state: p.state || "", active: p.is_active !== false,
-        ...(seeOrders ? { orders: os.length, issued_order_value: os.filter(o => ["Issued", "Amended"].includes(o.status)).reduce((s, o) => s + (num(o.totals?.grandTotal) || num(o.totals?.subtotal)), 0) } : {}),
+        ...(seeOrders ? {
+          orders: os.length,
+          purchase_orders: os.filter(o => orderKind(o.order_type) === "PO").length,
+          work_orders: os.filter(o => orderKind(o.order_type) === "WO").length,
+          issued_order_value: os.filter(o => ["Issued", "Amended"].includes(o.status)).reduce((s, o) => s + orderValue(o), 0),
+        } : {}),
         ...(seeIntakes ? { intakes: visibleIntakes.filter(i => i.site_id === p.id).length } : {}),
       };
     });
@@ -371,7 +387,7 @@ async function findAnything(user, a) {
     vendors: vendors.filter(v => has(v.vendor_name, v.vendor_code)).slice(0, 5)
       .map(v => ({ code: v.vendor_code || "", name: v.vendor_name || "", mobile: v.mobile || "" })),
     orders: visibleOrders.filter(o => has(o.order_number, o.subject)).slice(0, 5)
-      .map(o => ({ order_number: o.order_number || "(draft)", subject: o.subject || "", status: o.status, vendor: o.vendors?.vendor_name || "", date: day(o.date_of_creation || o.created_at) })),
+      .map(o => ({ order_number: o.order_number || "(draft)", type: orderKind(o.order_type), subject: o.subject || "", status: o.status, vendor: o.vendors?.vendor_name || "", date: day(o.date_of_creation || o.created_at) })),
     intakes: visibleIntakes.filter(i => has(i.intake_number, i.name)).slice(0, 5)
       .map(i => ({ intake_number: i.intake_number || "(draft)", name: i.name || "", status: i.status, site: i.site_code || i.site_name || "" })),
     not_searched: [!seeOrders && "orders", !seeIntakes && "intakes", !seeVendors && "vendors"].filter(Boolean),
