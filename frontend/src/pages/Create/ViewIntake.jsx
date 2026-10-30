@@ -5,10 +5,11 @@ import {
   ThumbsUp, ThumbsDown, AlertCircle, Hash,
 } from "lucide-react";
 import BrandLoader from "../../components/BrandLoader";
+import QuotationsTab from "./Quotations/QuotationsTab";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
-const TABS = ["Intake Detail", "Approval", "Log", "PDF View"];
+const TABS = ["Intake Detail", "Approval", "Quotations", "Log", "PDF View"];
 
 const STATUS_BADGE = {
   draft:      { label: "Draft",       cls: "bg-yellow-50 text-yellow-700 border border-yellow-200"   },
@@ -34,9 +35,9 @@ const LOG_ACTION_STYLE = {
   updated:   { icon: <Clock size={14} />,          cls: "text-slate-600 bg-slate-100 border-slate-200" },
 };
 
-export default function ViewIntake({ intake: initialIntake, onBack, currentUser = {}, onSubmitDraft }) {
+export default function ViewIntake({ intake: initialIntake, onBack, currentUser = {}, onSubmitDraft, initialTab }) {
   const [intake, setIntake]         = useState(initialIntake);
-  const [activeTab, setActiveTab]   = useState("Intake Detail");
+  const [activeTab, setActiveTab]   = useState(TABS.includes(initialTab) ? initialTab : "Intake Detail");
   const [logs, setLogs]             = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [approvalFlow, setApprovalFlow] = useState(null);
@@ -410,6 +411,7 @@ export default function ViewIntake({ intake: initialIntake, onBack, currentUser 
       <div className="flex-1 p-5 overflow-auto">
         {activeTab === "Intake Detail" && <IntakeDetailTab />}
         {activeTab === "Approval"      && <ApprovalTab />}
+        {activeTab === "Quotations"    && <QuotationsTab intake={intake} currentUser={currentUser} />}
         {activeTab === "Log"           && <LogTab />}
         {activeTab === "PDF View"      && <PdfViewTab />}
       </div>

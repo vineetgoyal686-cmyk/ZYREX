@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import React, { useEffect, useMemo, useState } from "react";
 import {
   FileText, Check, X, AlertCircle, RefreshCw,
@@ -145,7 +146,9 @@ export default function Approvals() {
       setCanManageAmend(caps);
       setActionRequests(ars);
       setCanManageActionRequests(!!arCapData.canManage);
-      setPendingApprovals(pas);
+      // orders here; Intake › comparisons go to the Intake tab
+      setPendingApprovals(pas.filter(r => r.module === "order"));
+      setComparisonApprovals(pas.filter(r => r.module === "comparison"));
       setIsIssueHandler(issueHandlerFlag);
       setIssueHandlerUsers(issueUsers);
       
@@ -351,6 +354,13 @@ export default function Approvals() {
   };
 
   const [pendingApprovals, setPendingApprovals] = useState([]);
+  const [comparisonApprovals, setComparisonApprovals] = useState([]);
+  const navigate = useNavigate();
+  // open the intake on its Quotations tab (IntakeList reads this once)
+  const openComparison = (doc) => {
+    sessionStorage.setItem("open_intake", JSON.stringify({ id: doc.intake_id, tab: "Quotations" }));
+    navigate("/procurement/intake");
+  };
   const [approvalActionModal, setApprovalActionModal] = useState({ open: false, requestId: null, action: null });
   const [approvalActionComment, setApprovalActionComment] = useState("");
   const [amendView, setAmendView] = useState("tile"); // 'table' or 'tile'
@@ -388,7 +398,7 @@ export default function Approvals() {
   ), [intakes]);
 
   const tabs = [
-    { key: "intake", label: "Intake", icon: FileText, count: pendingIntakes.length, allowed: isGlobalAdmin || permIntake.canView },
+    { key: "intake", label: "Intake", icon: FileText, count: pendingIntakes.length + comparisonApprovals.filter(r => r.can_act).length, allowed: isGlobalAdmin || permIntake.canView },
     { key: "orders", label: "Orders", icon: ClipboardList, count: pendingOrders.length + amendments.length + actionRequests.length + pendingApprovals.length, allowed: isGlobalAdmin || permOrders.canView },
     { key: "payments", label: "Payments", icon: IndianRupee, count: 0, allowed: isGlobalAdmin || permPayment.canView },
   ].filter(t => t.allowed);
@@ -962,6 +972,35 @@ export default function Approvals() {
           )}
         </div>
       ) : activeTab === "intake" ? (
+        <>
+        {comparisonApprovals.length > 0 && (
+          <div className="mb-4">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">Comparisons waiting for approval</p>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {comparisonApprovals.map(req => {
+                const doc = req.document || {};
+                const levels = req.flow_snapshot?.levels || [];
+                return (
+                  <div key={req.id} className="bg-white rounded-lg border border-slate-200 shadow-sm p-4 flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-bold text-slate-800">{doc.intake_number || "Intake"} · CS</p>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                        {levels.length > 1 ? `Level ${req.current_level}/${levels.length}` : "Pending"}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 truncate">{[doc.intake_name, doc.site_name].filter(Boolean).join(" · ") || "—"}</p>
+                    <p className="text-lg font-extrabold text-slate-800 tabular-nums">₹{(doc.total || 0).toLocaleString("en-IN")}</p>
+                    <p className="text-[11px] text-slate-400">Sent by {doc.submitted_by || "—"}</p>
+                    <button onClick={() => doc.intake_id && openComparison(doc)}
+                      className={`mt-1 h-8 rounded-lg text-xs font-semibold ${req.can_act ? "bg-blue-600 text-white hover:bg-blue-700" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                      {req.can_act ? "Review & Approve" : "View"}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <ApprovalTable
           emptyText="No pending intake approval requests."
           onAction={handleIntakeAction}
@@ -978,6 +1017,7 @@ export default function Approvals() {
             status: i.status,
           }))}
         />
+        </>
       ) : (
         <div className={`${cardCls} p-8 text-center`}>
           <Clock size={24} className="mx-auto mb-2 text-slate-300" />

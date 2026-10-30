@@ -51,7 +51,7 @@ const ACTION_ITEMS = [
   { key: "pdf",      label: "Download PDF",  icon: FileText,        disabled: false },
   { key: "excel",    label: "Download Excel", icon: FileSpreadsheet, disabled: false },
   { key: "assignee", label: "Add Assignee",  icon: UserPlus,        disabled: true  },
-  { key: "rfx",      label: "Create RFx",    icon: FolderPlus,      disabled: true  },
+  { key: "rfx",      label: "Create RFx",    icon: FolderPlus,      disabled: false },
 ];
 
 const STATUS_BADGE = {
@@ -484,6 +484,13 @@ export default function IntakeList({ project, allowAll = true, allowedProjects =
       const res  = await fetch(`${API}/api/intakes`);
       const data = await res.json();
       setIntakes(data.intakes || []);
+      // the Inbox asked to open one intake on a given tab (Approvals.jsx › openComparison)
+      const want = (() => { try { return JSON.parse(sessionStorage.getItem("open_intake") || "null"); } catch { return null; } })();
+      if (want) {
+        sessionStorage.removeItem("open_intake");
+        const hit = (data.intakes || []).find(i => i.id === want.id);
+        if (hit) { setDetail({ ...hit, __tab: want.tab }); setView("detail"); }
+      }
     } catch { setIntakes([]); }
     setLoading(false);
   };
@@ -585,7 +592,14 @@ export default function IntakeList({ project, allowAll = true, allowedProjects =
     setActionsOpen(false);
     if (key === "pdf") showToast("Download PDF — coming soon");
     else if (key === "excel") showToast("Download Excel — coming soon");
+    else if (key === "rfx") { setRfxPick(""); setRfxOpen(true); }
   };
+  // RFx = quotations for an approved intake (Quotations tab of the intake)
+  const [rfxOpen, setRfxOpen] = useState(false);
+  const [rfxPick, setRfxPick] = useState("");
+  const rfxIntakes = intakes.filter(i => ["approved", "in_review", "working"].includes(i.status))
+    .filter(i => !rfxPick.trim() || `${i.intake_number} ${i.name} ${i.site_name}`.toLowerCase().includes(rfxPick.trim().toLowerCase()));
+  const openRfx = (i) => { setRfxOpen(false); setDetail({ ...i, __tab: "Quotations" }); setView("detail"); };
   const totalPages = Math.ceil(filtered.length / PER_PAGE) || 1;
   const paginated  = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
@@ -1861,6 +1875,13 @@ export default function IntakeList({ project, allowAll = true, allowedProjects =
                             className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all" title="View">
                             <Eye size={13} />
                           </button>
+                          {/* RFQ: vendor quotations + comparison (Quotations tab) */}
+                          {["approved", "in_review", "working"].includes(intake.status) && (
+                            <button onClick={() => openRfx(intake)}
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-indigo-600 border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 transition-all" title="Quotations & comparison">
+                              <FolderPlus size={12} /> RFQ
+                            </button>
+                          )}
                           {/* Submit draft */}
                           {intake.status === "draft" && (
                             <button onClick={() => handleSubmitDraft(intake.id)} disabled={!!submitting}
@@ -1987,11 +2008,44 @@ export default function IntakeList({ project, allowAll = true, allowedProjects =
         </div>
       )}
 
+      {/* Create RFx: pick an approved intake → its Quotations tab */}
+      {rfxOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={e => e.target === e.currentTarget && setRfxOpen(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden border border-slate-200">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
+              <div>
+                <p className="text-[15px] font-bold text-slate-800">Create RFx</p>
+                <p className="text-[11px] text-slate-400">Pick an approved intake to collect vendor quotations</p>
+              </div>
+              <button onClick={() => setRfxOpen(false)} className="text-slate-400 hover:text-slate-700"><X size={16} /></button>
+            </div>
+            <div className="p-3 border-b border-slate-100">
+              <input autoFocus value={rfxPick} onChange={e => setRfxPick(e.target.value)} placeholder="Search intake no, name, site…"
+                className="w-full h-9 px-3 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {rfxIntakes.map(i => (
+                <button key={i.id} onClick={() => openRfx(i)} className="w-full flex items-center gap-3 px-5 py-3 text-left border-b border-slate-50 hover:bg-indigo-50/50">
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-slate-800 truncate">{i.name || "Intake"} <span className="font-mono text-[11px] text-indigo-600">{i.intake_number}</span></span>
+                    <span className="block text-[11px] text-slate-400 truncate">{i.site_name} · {i.intake_items?.length || 0} item{(i.intake_items?.length || 0) === 1 ? "" : "s"}</span>
+                  </span>
+                  <span className="text-[11px] font-semibold text-indigo-600 shrink-0">Quotations →</span>
+                </button>
+              ))}
+              {!rfxIntakes.length && <p className="px-5 py-8 text-center text-sm text-slate-400">No approved intake{rfxPick ? " matches" : " yet"}. An intake needs approval before quotations.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Detail side drawer */}
       {view === "detail" && detail && (
         <div className="absolute inset-0 z-40 bg-slate-100">
           <ViewIntake
+            key={detail.id}
             intake={detail}
+            initialTab={detail.__tab}
             currentUser={currentUser}
             onBack={() => { setDetail(null); setView("list"); }}
             onSubmitDraft={handleSubmitDraft}

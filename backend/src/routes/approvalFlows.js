@@ -7,6 +7,8 @@ const { requireAuth } = require("../middleware/auth");
 const cache = require("../helpers/cacheHelper");
 const ORDERS_CACHE_KEY = "orders_list";
 const { notifyOrderAction, getHandlerUsers, getUserRecipient, resolveOrderForEmail } = require("../utils/orderNotifications");
+// Intake › Comparison (routes/quotations.js) — approval is required for it, never skipped
+const { prepareForApproval, markComparison } = require("./quotations");
 
 async function getLevelUserEmails(admin, level) {
   const ids = [...new Set((level?.designations || []).flatMap(d => (d.users || []).map(u => u.id)))];
@@ -39,18 +41,27 @@ async function addOrderActivityLog(admin, orderId, action, userName, comments = 
   }
 }
 
+// "is equal to" conditions on the same field are OR-ed (Site = B47 or
+// Site = BHA — a document has one site); everything else, e.g. a price range
+// (> 1 lakh and < 5 lakh), stays one check each, combined by "all" / "any".
+// A value of "__all__" (All sites / categories / entities) always matches.
 function checkConditions(flow, document) {
   const conditions = flow.conditions || [];
   if (!conditions.length) return true;
-  const results = conditions.map(c => {
-    const val = getDocField(document, c.field);
-    return evalCondition(val, c.operator, c.value);
+  const byField = new Map();
+  conditions.forEach((c, i) => {
+    const key = c.operator === "is_equal_to" ? `eq:${c.field}` : `#${i}`;
+    const ok = c.value === "__all__" || evalCondition(getDocField(document, c.field), c.operator, c.value);
+    byField.set(key, (byField.get(key) || false) || ok);
   });
+  const results = [...byField.values()];
   return flow.conditions_match === "any" ? results.some(Boolean) : results.every(Boolean);
 }
 
 function getDocField(doc, field) {
   if (!doc) return null;
+  // Comparison document (built by prepareForApproval)
+  if (doc.__comparison) return ({ price: doc.total, site: doc.site_id, priority: doc.priority })[field] ?? null;
   // Intake document (has intake_items)
   if (doc.intake_items !== undefined) {
     const maxRaisedQty = Math.max(0, ...(doc.intake_items || []).map(i => parseFloat(i.raised_qty) || 0));
@@ -141,9 +152,21 @@ router.get("/pending-for-me", requireAuth, async (req, res) => {
     }]));
   }
 
+  // comparisons: intake number, project, total
+  const cmpIds = mine.filter(r => r.module === "comparison").map(r => r.document_id);
+  let cmpMap = {};
+  if (cmpIds.length) {
+    const { data: cmps } = await admin.schema("store").from("intake_comparisons")
+      .select("id, intake_id, total, submitted_by_name, intakes(id, intake_number, name, site_name)").in("id", cmpIds);
+    cmpMap = Object.fromEntries((cmps || []).map(c => [c.id, {
+      id: c.id, intake_id: c.intake_id, total: Number(c.total) || 0, submitted_by: c.submitted_by_name || "",
+      intake_number: c.intakes?.intake_number || "", intake_name: c.intakes?.name || "", site_name: c.intakes?.site_name || "",
+    }]));
+  }
+
   const result = mine.map(r => ({
     ...r,
-    document: r.module === "order" ? (orderMap[r.document_id] || null) : null,
+    document: r.module === "order" ? (orderMap[r.document_id] || null) : r.module === "comparison" ? (cmpMap[r.document_id] || null) : null,
   }));
 
   res.json({ requests: result });
@@ -266,6 +289,8 @@ router.post("/submit", requireAuth, async (req, res) => {
     const { data: flows } = await admin.from("approval_flows")
       .select("*").eq("module", module).eq("status", "active").order("priority");
 
+    if (!flows?.length && module === "comparison")
+      return res.status(400).json({ error: "No approval flow is set up for Comparison — add one in Settings › Approval Flow" });
     if (!flows?.length) {
       console.log(`[ApprovalFlow] skip — no active flows for module="${module}"`);
       return res.json({ skip: true, skip_reason: "no_flow", message: "No active approval flow configured" });
@@ -282,9 +307,17 @@ router.post("/submit", requireAuth, async (req, res) => {
         .select("*, intake_items(*)").eq("id", document_id).single();
       document = data;
     }
+    let prep = null;
+    if (module === "comparison") {
+      prep = await prepareForApproval(document_id);
+      if (prep.error) return res.status(400).json({ error: prep.error });
+      document = { ...prep.document, __comparison: true };
+    }
 
     // Find first matching flow
     const matchedFlow = flows.find(f => checkConditions(f, document));
+    if (!matchedFlow && module === "comparison")
+      return res.status(400).json({ error: "No Comparison approval flow matches this one — check the flow conditions in Settings › Approval Flow" });
     if (!matchedFlow) {
       console.log(`[ApprovalFlow] skip — ${flows.length} flow(s) found but none matched conditions. doc_id=${document_id}`);
       flows.forEach(f => {
@@ -354,6 +387,13 @@ router.post("/submit", requireAuth, async (req, res) => {
     } else if (module === "intake") {
       // intake stays "submitted" — that IS the pending approval state
       broadcast({ type: "intake_updated", document_id, status: "submitted" });
+    } else if (module === "comparison") {
+      await markComparison(document_id, {
+        status: "pending", total: prep.calc.chosenTotal, submitted_by_id: userId, submitted_by_name: userName,
+        submitted_at: new Date().toISOString(), decided_by_name: null, decided_at: null,
+        snapshot: { quotations: prep.quotations, items: prep.intake.intake_items, calc: prep.calc },
+      }, { action: "Sent for approval", by: userName });
+      broadcast({ type: "intake_updated", document_id: prep.intake.id, status: prep.intake.status });
     }
 
     res.json({ success: true, request });
@@ -483,6 +523,16 @@ router.post("/action", requireAuth, async (req, res) => {
       if (intakeStatus === "rejected") { patch.reject_reason = comments || ""; }
       await admin.schema("store").from("intakes").update(patch).eq("id", request.document_id);
       broadcast({ type: "intake_updated", document_id: request.document_id, status: intakeStatus });
+    } else if (request.module === "comparison") {
+      const done = newStatus !== "pending";
+      const status = newStatus === "approved" ? "approved" : newStatus === "rejected" ? "rejected" : newStatus === "reverted" ? "draft" : "pending";
+      await markComparison(request.document_id, {
+        status, ...(done ? { decided_by_name: userName, decided_at: new Date().toISOString() } : {}),
+      }, {
+        action: action === "approved" ? (done ? "Approved" : `Approved at level ${request.current_level}`) : action === "rejected" ? "Rejected" : "Sent back for changes",
+        by: userName, note: comments || "",
+      });
+      broadcast({ type: "intake_updated", document_id: request.document_id, status });
     }
 
     res.json({ success: true, newStatus, docStatus });
@@ -535,6 +585,9 @@ router.post("/withdraw/:document_id", requireAuth, async (req, res) => {
     } else if (request.module === "intake") {
       await admin.schema("store").from("intakes")
         .update({ status: "draft", updated_at: new Date().toISOString() }).eq("id", document_id);
+      broadcast({ type: "intake_updated", document_id, status: "draft" });
+    } else if (request.module === "comparison") {
+      await markComparison(document_id, { status: "draft" }, { action: "Withdrawn", by: userName });
       broadcast({ type: "intake_updated", document_id, status: "draft" });
     }
 

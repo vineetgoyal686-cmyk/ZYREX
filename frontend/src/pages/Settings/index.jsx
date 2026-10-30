@@ -347,12 +347,17 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate, section: f
             />
           )}
 
+          {/* Approval Flow = full-bleed, header + tabs stick, the flows scroll */}
+          {section === "approval_flow" && (
+            <ApprovalFlow showToast={showToast} />
+          )}
+
           {/* Security = full-bleed, no padding (sticky header attaches to the Settings sidebar) */}
           {section === "security" && (
             <Security currentUser={currentUser} showToast={showToast} />
           )}
 
-          <div className={`min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4 ${(section === "serialization" || section === "team" || section === "user_analytics" || section === "security" || section === "control_center" || section === "designations") ? "hidden" : ""}`}>
+          <div className={`min-w-0 px-3 sm:px-4 lg:px-6 py-4 flex flex-col gap-4 ${(section === "serialization" || section === "team" || section === "user_analytics" || section === "security" || section === "control_center" || section === "designations" || section === "approval_flow") ? "hidden" : ""}`}>
 
             {section === "profile" && (
               <PersonalInfo
@@ -379,10 +384,6 @@ export default function Settings({ onProfileUpdate, onProjectsUpdate, section: f
                 permissions={pp.manage_project}
                 onProjectsUpdate={onProjectsUpdate}
               />
-            )}
-
-            {section === "approval_flow" && (
-              <ApprovalFlow showToast={showToast} />
             )}
 
             {section === "request_handler" && (

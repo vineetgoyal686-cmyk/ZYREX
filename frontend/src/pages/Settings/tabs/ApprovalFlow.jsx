@@ -11,6 +11,8 @@ import BrandLoader from "../../../components/BrandLoader";
 const MODULES = [
   { key: "order",  label: "Order"  },
   { key: "intake", label: "Intake" },
+  // Intake › Quotations comparison (CS) — approval is required, never skipped
+  { key: "comparison", label: "Comparison (CS)" },
 ];
 
 const CONDITION_FIELDS_BY_MODULE = {
@@ -26,6 +28,11 @@ const CONDITION_FIELDS_BY_MODULE = {
     { value: "category",    label: "Category"              },
     { value: "site",        label: "Site"                  },
     { value: "raised_qty",  label: "Raised Qty (any item)" },
+  ],
+  comparison: [
+    { value: "price",    label: "Total Amount" },
+    { value: "site",     label: "Site"         },
+    { value: "priority", label: "Priority"     },
   ],
 };
 
@@ -366,7 +373,10 @@ function ConditionValueInput({ field, value, valueLabel, onChange }) {
     return (item.projectName || "").toLowerCase().includes(q) || (item.projectCode || "").toLowerCase().includes(q);
   });
 
+  // "__all__" = any site / category / entity (backend: evalCondition)
+  const ALL_LABEL = field === "category" ? "All categories" : field === "billing_entity" ? "All entities" : "All sites";
   const getLabel = (id) => {
+    if (id === "__all__") return ALL_LABEL;
     const item = items.find(i => String(i.id) === String(id));
     if (!item) return "";
     if (field === "category")       return `${item.categoryName} (${item.categoryCode})`;
@@ -405,6 +415,12 @@ function ConditionValueInput({ field, value, valueLabel, onChange }) {
               </div>
             )}
             <div className="max-h-52 overflow-y-auto">
+              {!search.trim() && (
+                <button type="button" onClick={() => { onChange("__all__", ALL_LABEL); setOpen(false); }}
+                  className={`w-full text-left px-3 py-2 text-[12px] font-semibold border-b border-slate-100 hover:bg-indigo-50 ${value === "__all__" ? "bg-indigo-50 text-indigo-700" : "text-slate-700"}`}>
+                  ★ {ALL_LABEL}
+                </button>
+              )}
               {loading ? (
                 <p className="text-center text-[11px] text-slate-400 py-4">Loading...</p>
               ) : filtered.length === 0 ? (
@@ -537,7 +553,7 @@ function FlowForm({ flow, module, allUsers, designations, onSave, onBack, saving
               </Select>
             </div>
           </div>
-          {module !== "intake" && (
+          {module === "order" && (
             <div>
               <Label>Self Approve Below Amount (₹)</Label>
               <div className="relative">
@@ -810,6 +826,7 @@ export default function ApprovalFlow({ showToast }) {
   const [activeTab, setActiveTab]       = useState("overview"); // overview | module key
   const [activeModule, setActiveModule] = useState("order");
   const [flows, setFlows]               = useState([]);
+  const [cmpFlows, setCmpFlows]         = useState([]); // Intake tab: comparison (CS) flows
   const [allFlows, setAllFlows]         = useState([]);
   const [loading, setLoading]           = useState(true);
   const [saving, setSaving]             = useState(false);
@@ -826,6 +843,11 @@ export default function ApprovalFlow({ showToast }) {
       if (tab === "overview") {
         const { data } = await api.get("/api/approval-flows");
         setAllFlows(data.flows || []);
+      } else if (tab === "intake") {
+        // the Intake tab shows both of an intake's approvals: the intake (PR) and its comparison (CS)
+        const [a, b] = await Promise.all([api.get("/api/approval-flows?module=intake"), api.get("/api/approval-flows?module=comparison")]);
+        setFlows(a.data.flows || []);
+        setCmpFlows(b.data.flows || []);
       } else {
         const { data } = await api.get(`/api/approval-flows?module=${module}`);
         setFlows(data.flows || []);
@@ -866,25 +888,60 @@ export default function ApprovalFlow({ showToast }) {
     } catch (err) { showToast?.(err.response?.data?.error || "Failed to delete", "error"); }
   };
 
+  // one module's flows as rows (Order tab, and each Intake section)
+  const renderFlows = (list, module) => (
+          list.length === 0 ? (
+            <div className="border-2 border-dashed border-slate-200 rounded-sm p-12 text-center">
+              <Workflow size={28} className="text-slate-300 mx-auto mb-2" />
+              <p className="text-sm font-semibold text-slate-400">No approval flows configured</p>
+              <p className="text-xs text-slate-300 mt-1">Click "Add Flow" to create the first workflow</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {list.map((flow, idx) => (
+                <div key={flow.id}
+                  className="flex items-center gap-3 border border-slate-200 rounded-sm px-4 py-3 bg-white hover:bg-slate-50/50 transition">
+                  <GripVertical size={14} className="text-slate-300 shrink-0" />
+                  <span className="text-[12px] font-bold text-slate-400 w-5 shrink-0">{idx + 1}</span>
+                  <span className="text-[13px] font-semibold text-slate-800 flex-1">{flow.name}</span>
+                  <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full
+                    ${flow.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                    {flow.status === "active" ? "Active" : "Inactive"}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button type="button" onClick={() => { setActiveModule(module); setSelected(flow); setView("detail"); }}
+                      className="w-8 h-8 flex items-center justify-center rounded-sm text-slate-500 hover:bg-slate-100 transition"><Eye size={15} /></button>
+                    {canEdit && <button type="button" onClick={() => { setActiveModule(module); setSelected(flow); setView("edit"); }}
+                      className="w-8 h-8 flex items-center justify-center rounded-sm text-slate-500 hover:bg-slate-100 transition"><Pencil size={14} /></button>}
+                    {canDelete && <button type="button" onClick={() => handleDelete(flow.id)}
+                      className="w-8 h-8 flex items-center justify-center rounded-sm text-rose-400 hover:bg-rose-50 transition"><Trash2 size={14} /></button>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+  );
+
   /* ── Render ── */
   if (view === "edit") return (
-    <div className="bg-white rounded-none shadow-sm border border-slate-100">
+    <div className="min-h-full bg-white">
       <FlowForm flow={selected} module={activeModule} allUsers={allUsers} designations={designations}
         onSave={handleSave} onBack={() => { setView("list"); setSelected(null); }} saving={saving} />
     </div>
   );
 
   if (view === "detail") return (
-    <div className="bg-white rounded-none shadow-sm border border-slate-100">
+    <div className="min-h-full bg-white">
       <FlowDetail flow={selected}
         onBack={() => { setView("list"); setSelected(null); }}
         onEdit={() => setView("edit")} />
     </div>
   );
 
-  /* List view */
+  /* List view — header + tabs stick to the top, the flows below scroll */
   return (
-    <div className="bg-white rounded-none shadow-sm border border-slate-100">
+    <div className="min-h-full flex flex-col bg-white">
+      <div className="sticky top-0 z-20 bg-white shadow-sm">
 
       {/* Header */}
       <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-3">
@@ -897,7 +954,7 @@ export default function ApprovalFlow({ showToast }) {
             <p className="text-[11px] text-slate-400 mt-0.5">Configure multi-level approval workflows per module</p>
           </div>
         </div>
-        {activeTab !== "overview" && canAdd && (
+        {activeTab !== "overview" && activeTab !== "intake" && canAdd && (
           <button type="button"
             onClick={() => { setSelected(null); setView("edit"); }}
             className="inline-flex items-center gap-2 h-8 px-4 rounded-sm bg-indigo-600 text-white text-[12px] font-bold hover:bg-indigo-700 transition">
@@ -913,7 +970,7 @@ export default function ApprovalFlow({ showToast }) {
             ${activeTab === "overview" ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"}`}>
           Overview
         </button>
-        {MODULES.map(m => (
+        {MODULES.filter(m => m.key !== "comparison").map(m => (
           <button key={m.key} type="button" onClick={() => { setActiveTab(m.key); setActiveModule(m.key); setFlows([]); }}
             className={`px-5 py-3 text-[13px] font-semibold border-b-2 -mb-px transition-colors
               ${activeTab === m.key ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"}`}>
@@ -922,8 +979,11 @@ export default function ApprovalFlow({ showToast }) {
         ))}
       </div>
 
+      </div>
+
       {/* Flow list */}
-      <div className="p-6">
+      <div className="flex-1 p-6">
+
         {loading ? (
           <div className="flex items-center justify-center py-12 text-slate-400 text-sm gap-2">
             <BrandLoader />
@@ -992,39 +1052,83 @@ export default function ApprovalFlow({ showToast }) {
             </div>
           )
         ) : (
-          /* ── Module tab: original simple list ── */
-          flows.length === 0 ? (
-            <div className="border-2 border-dashed border-slate-200 rounded-sm p-12 text-center">
-              <Workflow size={28} className="text-slate-300 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-slate-400">No approval flows configured</p>
-              <p className="text-xs text-slate-300 mt-1">Click "Add Flow" to create the first workflow</p>
+          /* ── Module tab: its flows; Intake shows the intake (PR) and comparison (CS) approvals ── */
+          activeTab === "intake" ? (
+            <div className="space-y-8">
+              <FlowSection n={1} title="Intake Approval (PR)" hint="Is this material needed? — after an intake is submitted."
+                canAdd={canAdd} onAdd={() => { setActiveModule("intake"); setSelected(null); setView("edit"); }}>
+                {renderFlows(flows, "intake")}
+              </FlowSection>
+              <FlowSection n={2} title="Comparison Approval (CS)" hint="Is this vendor and price right? — after quotations are compared. Always required."
+                canAdd={canAdd} onAdd={() => { setActiveModule("comparison"); setSelected(null); setView("edit"); }}>
+                <MinQuotations canEdit={isAdmin} />
+                {renderFlows(cmpFlows, "comparison")}
+              </FlowSection>
             </div>
-          ) : (
-            <div className="space-y-2">
-              {flows.map((flow, idx) => (
-                <div key={flow.id}
-                  className="flex items-center gap-3 border border-slate-200 rounded-sm px-4 py-3 bg-white hover:bg-slate-50/50 transition">
-                  <GripVertical size={14} className="text-slate-300 shrink-0" />
-                  <span className="text-[12px] font-bold text-slate-400 w-5 shrink-0">{idx + 1}</span>
-                  <span className="text-[13px] font-semibold text-slate-800 flex-1">{flow.name}</span>
-                  <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full
-                    ${flow.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                    {flow.status === "active" ? "Active" : "Inactive"}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button type="button" onClick={() => { setSelected(flow); setView("detail"); }}
-                      className="w-8 h-8 flex items-center justify-center rounded-sm text-slate-500 hover:bg-slate-100 transition"><Eye size={15} /></button>
-                    {canEdit && <button type="button" onClick={() => { setSelected(flow); setView("edit"); }}
-                      className="w-8 h-8 flex items-center justify-center rounded-sm text-slate-500 hover:bg-slate-100 transition"><Pencil size={14} /></button>}
-                    {canDelete && <button type="button" onClick={() => handleDelete(flow.id)}
-                      className="w-8 h-8 flex items-center justify-center rounded-sm text-rose-400 hover:bg-rose-50 transition"><Trash2 size={14} /></button>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )
+          ) : renderFlows(flows, activeModule)
         )}
       </div>
     </div>
+  );
+}
+
+/* Comparison rule: how many quotations an intake needs before its
+   comparison can go for approval (app_settings "min_quotations"). */
+function MinQuotations({ canEdit }) {
+  const [value, setValue] = useState(null);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+  useEffect(() => {
+    api.get("/api/quotations/settings").then(({ data }) => { setValue(data.minQuotations); setDraft(String(data.minQuotations)); }).catch(() => setValue(2));
+  }, []);
+  const save = async () => {
+    setSaving(true); setMsg("");
+    try {
+      const { data } = await api.put("/api/quotations/settings", { minQuotations: Number(draft) });
+      setValue(data.minQuotations); setMsg("Saved");
+    } catch (err) { setMsg(err?.response?.data?.error || "Save failed"); }
+    finally { setSaving(false); }
+  };
+  return (
+    <div className="mb-5 flex flex-wrap items-center gap-3 rounded-sm border border-indigo-100 bg-indigo-50/50 px-4 py-3">
+      <div className="flex-1 min-w-[220px]">
+        <p className="text-[13px] font-bold text-slate-800">Minimum quotations</p>
+        <p className="text-[11px] text-slate-500">An intake needs at least this many vendor quotations before its comparison can be sent for approval. Approval is always required for a comparison — add a flow below.</p>
+      </div>
+      <input type="number" min="1" max="10" value={draft} disabled={!canEdit || value == null} onChange={e => setDraft(e.target.value)}
+        className="w-20 h-9 px-3 text-sm text-center font-bold border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:bg-slate-50" />
+      {canEdit && (
+        <button type="button" onClick={save} disabled={saving || String(value) === draft}
+          className="h-9 px-4 text-[13px] font-semibold rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40">
+          {saving ? "Saving…" : "Save"}
+        </button>
+      )}
+      {msg && <span className={`text-xs ${msg === "Saved" ? "text-emerald-600" : "text-red-600"}`}>{msg}</span>}
+    </div>
+  );
+}
+
+/* A titled block inside the Intake tab, with its own Add Flow */
+function FlowSection({ n, title, hint, canAdd, onAdd, children }) {
+  return (
+    <section>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-start gap-2.5">
+          <span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{n}</span>
+          <div>
+            <p className="text-[14px] font-bold text-slate-800">{title}</p>
+            <p className="text-[11px] text-slate-400">{hint}</p>
+          </div>
+        </div>
+        {canAdd && (
+          <button type="button" onClick={onAdd}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-sm bg-indigo-600 text-white text-[12px] font-bold hover:bg-indigo-700 shrink-0">
+            <Plus size={13} /> Add Flow
+          </button>
+        )}
+      </div>
+      {children}
+    </section>
   );
 }
