@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Search, Download, Trash2, Loader2, CalendarDays, ChevronDown, Edit2, History, ListChecks, UserCheck, UserX, CalendarOff, Clock, Timer } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Search, Download, Trash2, Loader2, CalendarDays, ChevronDown, Check, Plus, Upload, Edit2, History, ListChecks, UserCheck, UserX, CalendarOff, Clock, Timer } from "lucide-react";
 import StatCards from "./StatCards";
 import CategoryTabs, { inCategory } from "./CategoryTabs";
 import Pager, { pageOf } from "./Pager";
-import { AttendanceForm, LogModal } from "./DailyRegister";
+import { AttendanceForm, LogModal, MoreMenu } from "./DailyRegister";
+import BulkUpload from "./BulkUpload";
 import ViewModal from "./ViewModal";
 import ActionBtn, { RowMenu } from "./ActionBtn";
 import * as XLSX from "xlsx";
@@ -15,7 +16,7 @@ import { STATUSES, statusOf, isPresent, isLeave, otMin, lateMin, fmtDur, fmtTime
    Edit / Log / Delete per row. */
 
 export default function Records({ place }) {
-  const { canEdit, canDelete, canExport } = useModulePermissions("staff_attendance");
+  const { canAdd, canEdit, canDelete, canExport } = useModulePermissions("staff_attendance");
   const today = isoToday();
   const [from, setFrom] = useState(`${today.slice(0, 8)}01`);
   const [to, setTo] = useState(today);
@@ -29,6 +30,8 @@ export default function Records({ place }) {
   const [editing, setEditing] = useState(null); // record being edited
   const [logOf, setLogOf] = useState(null);     // record whose history is open
   const [viewOf, setViewOf] = useState(null);   // record open in View
+  const [adding, setAdding] = useState(false);
+  const [bulk, setBulk] = useState(false);
 
   const load = () => {
     setRows(null); setError("");
@@ -83,7 +86,6 @@ export default function Records({ place }) {
     XLSX.writeFile(wb, `Attendance_${place.code}_${from}_to_${to}.xlsx`);
   };
 
-  const sel = "appearance-none h-9 pl-3 pr-8 text-sm font-medium rounded-lg border border-slate-200 bg-white text-slate-600 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-400";
   const th = "px-3 py-2.5 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap";
   const td = "px-3 py-2.5 border-b border-r border-slate-200 text-[13px] text-slate-600 whitespace-nowrap";
 
@@ -97,25 +99,24 @@ export default function Records({ place }) {
           <DateBox value={to} min={from} max={today} onChange={setTo} />
         </div>
         <CategoryTabs list={peopleOf} value={group} onChange={setGroup} />
-        <div className="relative">
-          <select value={status} onChange={e => setStatus(e.target.value)} className={sel}>
-            <option value="">All status</option>
-            {STATUSES.map(s => <option key={s.v} value={s.v}>{s.v}</option>)}
-            <option value="Late">Late</option>
-          </select>
-          <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        </div>
+        <StatusPicker value={status} onChange={setStatus} rows={(rows || []).filter(r => inCategory(r.category, group))} />
         <div className="relative w-48 sm:w-60">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search name, remarks…"
             className="h-9 pl-9 pr-3 text-sm border border-slate-200 rounded-lg bg-white w-full focus:outline-none focus:ring-1 focus:ring-blue-400" />
         </div>
-        {canExport && (
-          <button onClick={exportExcel} disabled={!list.length}
-            className="ml-auto inline-flex items-center gap-1.5 h-9 px-4 text-sm font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40">
-            <Download size={14} /> Export
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          <MoreMenu items={[
+            (canAdd || canEdit) && { label: "Bulk Upload", hint: "From Excel / CSV", Icon: Upload, onClick: () => setBulk(true) },
+            canExport && { label: "Export", hint: "These records as Excel", Icon: Download, onClick: exportExcel, disabled: !list.length },
+          ].filter(Boolean)} />
+          {canAdd && (
+            <button onClick={() => setAdding(true)} title="Mark attendance"
+              className="inline-flex items-center gap-1.5 h-9 px-3.5 text-sm font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm">
+              <Plus size={15} /> Mark
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="shrink-0">
@@ -201,6 +202,12 @@ export default function Records({ place }) {
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }} />
       )}
+      {adding && (
+        <AttendanceForm place={place} date={to} today={today}
+          onClose={() => setAdding(false)}
+          onSaved={() => { setAdding(false); load(); }} />
+      )}
+      {bulk && <BulkUpload place={place} date={to} onClose={() => setBulk(false)} onDone={load} />}
       {viewOf && <ViewModal person={viewOf} date={viewOf.date} record={viewOf} place={place} onClose={() => setViewOf(null)} />}
       {logOf && <LogModal person={{ employeeId: logOf.employeeId, name: logOf.name }} date={logOf.date} onClose={() => setLogOf(null)} />}
     </div>
@@ -217,5 +224,54 @@ function DateBox({ value, min, max, onChange }) {
       <input type="date" value={value} min={min} max={max} onChange={e => e.target.value && onChange(e.target.value)}
         className="absolute inset-0 opacity-0 cursor-pointer" />
     </label>
+  );
+}
+
+/* Status filter — coloured like the badges in the table, with a count each */
+function StatusPicker({ value, onChange, rows }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+  const count = (v) => v === "Late" ? rows.filter(r => lateMin(r.category, r.shift, r.status, r.inTime) > 0).length
+    : rows.filter(r => r.status === v).length;
+  const opts = [
+    { v: "", label: "All status", n: rows.length, dot: "bg-slate-800" },
+    ...STATUSES.map(s => ({ v: s.v, label: s.v, n: count(s.v), dot: s.on.split(" ")[0] })),
+    { v: "Late", label: "Late", n: count("Late"), dot: "bg-amber-500", sep: true },
+  ];
+  const cur = opts.find(o => o.v === value) || opts[0];
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className={`flex items-center gap-2 h-9 pl-3 pr-2.5 rounded-lg border bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 min-w-[150px]
+          ${open ? "border-blue-400 ring-1 ring-blue-400" : "border-slate-200"}`}>
+        <span className={`w-2 h-2 rounded-full shrink-0 ${cur.dot}`} />
+        <span className="flex-1 text-left">{cur.label}</span>
+        <span className="text-[11px] text-slate-400 tabular-nums">{cur.n}</span>
+        <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1.5 z-30 w-56 bg-white border border-slate-200 rounded-lg shadow-lg py-1">
+          {opts.map(o => (
+            <React.Fragment key={o.v || "all"}>
+              {o.sep && <div className="my-1 border-t border-slate-100" />}
+              <button type="button" onClick={() => { onChange(o.v); setOpen(false); }}
+                className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-sm text-left hover:bg-slate-50
+                  ${value === o.v ? "font-semibold text-slate-800 bg-slate-50" : "text-slate-600"} ${o.n || !o.v ? "" : "opacity-50"}`}>
+                <span className={`w-2 h-2 rounded-full shrink-0 ${o.dot}`} />
+                <span className="flex-1">{o.label}</span>
+                <span className="text-[11px] text-slate-400 tabular-nums">{o.n}</span>
+                <Check size={13} className={value === o.v ? "text-blue-600" : "invisible"} />
+              </button>
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

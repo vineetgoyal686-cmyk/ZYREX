@@ -492,7 +492,7 @@ export function AttendanceForm({ place, date, today, person: fixed, record, onCl
 }
 
 /* ── "⋯" menu for the less used actions ── */
-function MoreMenu({ items }) {
+export function MoreMenu({ items }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
