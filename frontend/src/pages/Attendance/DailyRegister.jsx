@@ -327,7 +327,7 @@ export default function DailyRegister({ place, date, onDateChange }) {
 const LBL = "block text-xs font-semibold text-slate-500 mb-1";
 const INP = "w-full h-9 px-3 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:bg-slate-50 disabled:text-slate-400";
 
-function AttendanceForm({ place, date, today, person: fixed, record, onClose, onSaved }) {
+export function AttendanceForm({ place, date, today, person: fixed, record, onClose, onSaved }) {
   const { canDelete } = useModulePermissions("staff_attendance");
   const [list, setList] = useState(null);
   const [q, setQ] = useState("");
@@ -530,7 +530,7 @@ function MoreMenu({ items }) {
 }
 
 /* ── Edit history of one person's mark on one day ── */
-function LogModal({ person, date, onClose }) {
+export function LogModal({ person, date, onClose }) {
   const [logs, setLogs] = useState(null);
   useEffect(() => {
     API.get(`/api/audit-logs/attendance/${person.employeeId}_${date}`)

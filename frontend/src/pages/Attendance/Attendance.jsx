@@ -114,7 +114,7 @@ export default function Attendance() {
         ) : tab === "monthly" ? (
           <MonthlySheet key={place.code} place={place} onOpenDay={d => { setDate(d); setTab("register"); }} />
         ) : (
-          <Records key={place.code} place={place} onOpenDay={d => { setDate(d); setTab("register"); }} />
+          <Records key={place.code} place={place} />
         )}
       </div>
     </div>

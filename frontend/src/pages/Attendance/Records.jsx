@@ -1,18 +1,19 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Search, Download, Trash2, Loader2, CalendarDays, ChevronDown, ListChecks, UserCheck, UserX, CalendarOff, Clock, Timer } from "lucide-react";
+import { Search, Download, Trash2, Loader2, CalendarDays, ChevronDown, Edit2, History, ListChecks, UserCheck, UserX, CalendarOff, Clock, Timer } from "lucide-react";
 import StatCards from "./StatCards";
 import CategoryTabs, { inCategory } from "./CategoryTabs";
 import Pager, { pageOf } from "./Pager";
+import { AttendanceForm, LogModal } from "./DailyRegister";
 import * as XLSX from "xlsx";
 import API from "../../api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { STATUSES, statusOf, isPresent, isLeave, otMin, lateMin, fmtDur, fmtTime, fmtDate, isoToday, CATEGORY_DOT } from "./utils";
 
-/* Every mark at a place over a date range — search, filter, export,
-   delete; "Open" jumps to that day in the register to change it. */
+/* Every mark at a place over a date range — search, filter, export;
+   Edit / Log / Delete per row. */
 
-export default function Records({ place, onOpenDay }) {
-  const { canDelete, canExport } = useModulePermissions("staff_attendance");
+export default function Records({ place }) {
+  const { canEdit, canDelete, canExport } = useModulePermissions("staff_attendance");
   const today = isoToday();
   const [from, setFrom] = useState(`${today.slice(0, 8)}01`);
   const [to, setTo] = useState(today);
@@ -23,6 +24,8 @@ export default function Records({ place, onOpenDay }) {
   const [group, setGroup] = useState("all");
   const [page, setPage] = useState(1);
   const [per, setPer] = useState(50);
+  const [editing, setEditing] = useState(null); // record being edited
+  const [logOf, setLogOf] = useState(null);     // record whose history is open
 
   const load = () => {
     setRows(null); setError("");
@@ -86,11 +89,9 @@ export default function Records({ place, onOpenDay }) {
       <div className="shrink-0 flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-1.5 text-xs text-slate-500">
           <CalendarDays size={14} className="text-slate-400" />
-          <input type="date" value={from} max={to} onChange={e => e.target.value && setFrom(e.target.value)}
-            className="h-9 px-2.5 border border-slate-200 rounded-lg bg-white text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+          <DateBox value={from} max={to} onChange={setFrom} />
           to
-          <input type="date" value={to} min={from} max={today} onChange={e => e.target.value && setTo(e.target.value)}
-            className="h-9 px-2.5 border border-slate-200 rounded-lg bg-white text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+          <DateBox value={to} min={from} max={today} onChange={setTo} />
         </div>
         <CategoryTabs list={peopleOf} value={group} onChange={setGroup} />
         <div className="relative">
@@ -147,13 +148,15 @@ export default function Records({ place, onOpenDay }) {
                 const ot = otMin(r.category, r.shift, r.inTime, r.outTime);
                 return (
                   <tr key={`${r.table}-${r.id}`} className="hover:bg-slate-50/70">
-                    <td className={`${td} tabular-nums`}>{fmtDate(r.date, { weekday: "short", day: "2-digit", month: "short" })}</td>
-                    <td className={td}>
-                      <span className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${CATEGORY_DOT[r.category] || "bg-slate-300"}`} title={r.category} />
-                        <span className="font-semibold text-slate-800">{r.name}</span>
-                        {r.designation && <span className="text-[11px] text-slate-400">{r.designation}</span>}
-                      </span>
+                    <td className={`${td} w-[110px]`}>
+                      <p className="font-semibold text-slate-800 leading-tight tabular-nums">{fmtDate(r.date, { day: "numeric", month: "short", year: "numeric" })}</p>
+                      <p className="text-[11px] text-slate-400 mt-0.5">{fmtDate(r.date, { weekday: "long" })}</p>
+                    </td>
+                    <td className={`${td} min-w-[200px]`}>
+                      <p className="flex items-center gap-1.5 font-semibold text-slate-800 leading-tight">
+                        <span className={`w-2 h-2 rounded-full shrink-0 ${CATEGORY_DOT[r.category] || "bg-slate-300"}`} title={r.category} />{r.name}
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-0.5 pl-3.5">{r.designation || r.category || "—"}</p>
                     </td>
                     <td className={td}>
                       <span className={`inline-block px-2 py-0.5 rounded-full border text-[11px] font-semibold ${s?.soft || "bg-slate-50 text-slate-600 border-slate-200"}`}>{r.status || "—"}</span>
@@ -170,8 +173,13 @@ export default function Records({ place, onOpenDay }) {
                     <td className={`${td} text-xs text-slate-400`}>{r.markedBy || "—"}</td>
                     <td className={`${td} text-center`}>
                       <div className="flex items-center justify-center gap-1">
-                        <button onClick={() => onOpenDay(r.date)} className="px-2 py-1 rounded text-[11px] font-semibold text-blue-600 hover:bg-blue-50" title="Open this day in the register">Open</button>
-                        {canDelete && <button onClick={() => remove(r)} className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50" title="Delete"><Trash2 size={13} /></button>}
+                        {canEdit && r.employeeId && (
+                          <button onClick={() => setEditing(r)} className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50" title="Edit"><Edit2 size={14} /></button>
+                        )}
+                        {r.employeeId && (
+                          <button onClick={() => setLogOf(r)} className="p-1.5 rounded text-slate-400 hover:text-violet-600 hover:bg-violet-50" title="Edit history"><History size={14} /></button>
+                        )}
+                        {canDelete && <button onClick={() => remove(r)} className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50" title="Delete"><Trash2 size={14} /></button>}
                       </div>
                     </td>
                   </tr>
@@ -185,6 +193,27 @@ export default function Records({ place, onOpenDay }) {
 
       <Pager total={list.length} page={page} per={per} onPage={setPage} onPer={setPer} />
       </div>
+
+      {editing && (
+        <AttendanceForm place={place} date={editing.date} today={today} record={editing}
+          person={{ employeeId: editing.employeeId, name: editing.name, category: editing.category, designation: editing.designation }}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); load(); }} />
+      )}
+      {logOf && <LogModal person={{ employeeId: logOf.employeeId, name: logOf.name }} date={logOf.date} onClose={() => setLogOf(null)} />}
     </div>
+  );
+}
+
+/* A date picker that reads "1 Oct 2026" instead of the browser's 01-10-2026 */
+function DateBox({ value, min, max, onChange }) {
+  return (
+    <label className="relative">
+      <span className="flex items-center h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-700 min-w-[112px] justify-center tabular-nums">
+        {fmtDate(value, { day: "numeric", month: "short", year: "numeric" })}
+      </span>
+      <input type="date" value={value} min={min} max={max} onChange={e => e.target.value && onChange(e.target.value)}
+        className="absolute inset-0 opacity-0 cursor-pointer" />
+    </label>
   );
 }
