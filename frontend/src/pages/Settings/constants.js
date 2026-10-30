@@ -174,6 +174,7 @@ export const MODULE_PERM_CONFIG = {
   staff_attendance:        ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export"],
   payment_request:         ["can_view", "can_add", "can_edit", "can_delete", "can_export"],
   expense_book:            ["can_view", "can_add", "can_edit", "can_delete", "can_export", "can_bulk_upload"],
+  salary:                  ["can_view", "can_add", "can_edit", "can_delete", "can_export"],
   bills_docs:              ["can_view", "can_add", "can_delete", "can_download_document"],
 };
 
@@ -193,7 +194,7 @@ export const MODULE_BUILT_STATUS = {
   category_list: true, item_list: true,
   term_condition: true, payment_terms: true, government_laws: true,
   bills_docs: true, payment_request: true, expense_book: true,
-  staff_attendance: true,
+  staff_attendance: true, salary: true,
 };
 
 /*
@@ -237,6 +238,7 @@ export const PERMISSION_LAYOUT = [
       { key: "petty_cash_accounts", label: "Accounts" },
     ] },
     { key: "expense_book",           label: "Expense Book" },
+    { key: "salary",                 label: "Salary" },
     { key: "expenses_cheque_record", label: "Cheque Record" },
     { group: "Treasury", rows: [
       { key: "treasury_overview", label: "Overview" },

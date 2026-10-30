@@ -32,4 +32,5 @@ export const TAB_MODULE_KEY = {
   procurement__orders: "order",
   operations__staff_attendance: "staff_attendance",
   finance__expense_book: "expense_book",
+  finance__salary: "salary",
 };

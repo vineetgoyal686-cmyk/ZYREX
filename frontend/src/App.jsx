@@ -49,7 +49,7 @@ const Loans          = lazy(() => import("./pages/Treasury/Loans"));
 const TreasuryMasters = lazy(() => import("./pages/Treasury/Masters"));
 const Expenses       = lazy(() => import("./pages/Expenses/Expenses"));
 const ExpenseBook    = lazy(() => import("./pages/Finance/ExpenseBook"));
-const Salary         = lazy(() => import("./pages/Finance/Salary"));
+const Salary         = lazy(() => import("./pages/Finance/Salary/Salary"));
 const GlobalCreateOrder = lazy(() => import("./pages/Create/CreateOrder"));
 const IntakeList     = lazy(() => import("./pages/Create/IntakeList"));
 const ItemList       = lazy(() => import("./pages/Procurement/ItemList"));

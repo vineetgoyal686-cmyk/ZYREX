@@ -63,8 +63,8 @@ function baseVisible(tabId, user, perms) {
   if (!perms) return false;
   // Inbox, Petty Cash and Material Catalog: visible if any of their modules is granted
   if (TAB_GROUP_KEYS[tabId]) return TAB_GROUP_KEYS[tabId].some(k => map[k]?.can_view === true);
-  // Expenses tabs and ZyAI are hidden unless explicitly granted
-  if (tabId.startsWith("expenses__") || tabId === "zyhawk_ai") return map[TAB_MODULE_KEY[tabId]]?.can_view === true;
+  // Expenses tabs, ZyAI and Salary are hidden unless explicitly granted
+  if (tabId.startsWith("expenses__") || tabId === "zyhawk_ai" || tabId === "finance__salary") return map[TAB_MODULE_KEY[tabId]]?.can_view === true;
   const moduleKey = TAB_MODULE_KEY[tabId];
   if (!moduleKey) return true;
   const perm = map[moduleKey];

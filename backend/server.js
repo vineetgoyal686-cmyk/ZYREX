@@ -6,6 +6,7 @@ require("dotenv").config({ path: path.join(__dirname, ".env") });
 const express = require("express");
 
 const attendanceRoutes    = require("./src/routes/attendance");
+const salaryRoutes        = require("./src/routes/salary");
 const viewRoutes          = require("./src/routes/view");
 const procurementRoutes   = require("./src/routes/procurement");
 const authRoutes          = require("./src/routes/auth");
@@ -58,6 +59,7 @@ const { apiAuth } = require("./src/middleware/apiAuth");
 app.use("/api", apiAuth);
 
 app.use("/api/attendance",  attendanceRoutes);
+app.use("/api/salary",      salaryRoutes);
 app.use("/api/view",        viewRoutes);
 app.use("/api/procurement", procurementRoutes);
 app.use("/api/auth",        authRoutes);
