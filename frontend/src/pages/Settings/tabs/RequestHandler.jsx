@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Inbox, Loader2, X, Plus, AlertCircle, Pencil, Check } from "lucide-react";
 import api from "../../../utils/api";
+import BrandLoader from "../../../components/BrandLoader";
 
 const ORDER_ACTIONS = [
   { key: "issue",  label: "Issue Order",          single: true  },
@@ -172,7 +173,7 @@ export default function RequestHandler({ showToast, currentUser }) {
       <div className="p-6">
         {loading ? (
           <div className="flex items-center justify-center py-12 text-slate-400 text-sm gap-2">
-            <Loader2 size={16} className="animate-spin" /> Loading...
+            <BrandLoader />
           </div>
         ) : activeModule.actions.length === 0 ? (
           <div className="border-2 border-dashed border-slate-200 rounded-sm p-10 text-center">

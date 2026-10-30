@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import api from "../../../utils/api";
 import { inp, lbl } from "../utils";
+import BrandLoader from "../../../components/BrandLoader";
 
 /* ── Flowchart renderer ─────────────────────────────────────────── */
 function Flowchart({ steps }) {
@@ -220,7 +221,7 @@ export default function SOP({ showToast }) {
 
           {loading ? (
             <div className="flex items-center justify-center py-12 text-slate-400 text-sm">
-              <Loader2 className="animate-spin mr-2" size={16} /> Loading...
+              <BrandLoader />
             </div>
           ) : sops.length === 0 ? (
             <div className="border-2 border-dashed border-slate-200 rounded-sm p-10 text-center">

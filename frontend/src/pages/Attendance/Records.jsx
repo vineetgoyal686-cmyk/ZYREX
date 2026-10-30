@@ -11,6 +11,7 @@ import * as XLSX from "xlsx";
 import API from "../../api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { STATUSES, statusOf, isPresent, isLeave, otMin, lateMin, fmtDur, fmtTime, fmtDate, isoToday, CATEGORY_DOT } from "./utils";
+import BrandLoader from "../../components/BrandLoader";
 
 /* Every mark at a place over a date range — search, filter, export;
    Edit / Log / Delete per row. */
@@ -133,7 +134,7 @@ export default function Records({ place }) {
       <div className="flex-1 min-h-0 flex flex-col bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
       <div className="flex-1 min-h-0 overflow-auto">
         {!rows ? (
-          <div className="flex items-center justify-center h-48"><Loader2 size={20} className="text-blue-400 animate-spin" /></div>
+          <div className="flex items-center justify-center h-48"><BrandLoader /></div>
         ) : error ? (
           <p className="p-6 text-sm text-red-600">{error}</p>
         ) : (

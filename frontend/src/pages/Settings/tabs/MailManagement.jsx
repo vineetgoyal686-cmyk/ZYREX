@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Mail, Loader2, X, Plus, Pencil, Check, ChevronDown } from "lucide-react";
 import api from "../../../utils/api";
+import BrandLoader from "../../../components/BrandLoader";
 
 // Groups events under a heading per request-type. `main` events show right away;
 // `more` events (approve/reject/revert outcomes) are tucked behind "More options"
@@ -247,7 +248,7 @@ export default function MailManagement({ showToast, currentUser }) {
       <div className="p-6 space-y-4">
         {loading ? (
           <div className="flex items-center justify-center py-12 text-slate-400 text-sm gap-2">
-            <Loader2 size={16} className="animate-spin" /> Loading...
+            <BrandLoader />
           </div>
         ) : activeModule.groups.length === 0 ? (
           <div className="border-2 border-dashed border-slate-200 rounded-sm p-10 text-center">

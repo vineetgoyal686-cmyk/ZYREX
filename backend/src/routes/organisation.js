@@ -65,7 +65,7 @@ const mapEmployee = (r) => ({
 });
 
 // What an employee does — Staff Type (Permanent / Probation …) is separate
-const CATEGORIES = ["Office Staff", "Site Staff", "Guard", "Labour", "Driver", "Cook"];
+const CATEGORIES = ["Office Staff", "Site Staff", "Guard", "Driver", "Cook"]; // no Labour — not kept in Employees
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const normName  = (v) => String(v || "").trim().replace(/\s+/g, " ").toLowerCase();
 const normPhone = (v) => String(v || "").replace(/\D/g, "").slice(-10);

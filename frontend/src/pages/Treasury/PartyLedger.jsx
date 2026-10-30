@@ -11,6 +11,7 @@ import { logAudit } from "../../utils/auditLog";
 import LedgerEntries from "./LedgerEntries";
 import { HelpButton, HelpPanel } from "./mastersHelp";
 import { AccountPicker, AccountModal, mastersApi } from "./mastersShared";
+import BrandLoader from "../../components/BrandLoader";
 
 /*
  * Treasury › Party Ledger. "Entries" is the money in / money out register
@@ -74,7 +75,7 @@ function PartiesView({ onOpen }) {
 
       <div className="p-4 sm:p-6">
         {error ? <p className="text-sm text-red-600">{error}</p> : !parties ? (
-          <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-slate-400" /></div>
+          <div className="flex justify-center py-16"><BrandLoader /></div>
         ) : (
           <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
             <table className="w-full text-sm min-w-[720px]">
@@ -482,7 +483,7 @@ function LedgerView({ party, onBack, onNew, canAdd }) {
 
       <div className="p-4 sm:p-6">
         {error ? <p className="text-sm text-red-600">{error}</p> : !data ? (
-          <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-slate-400" /></div>
+          <div className="flex justify-center py-16"><BrandLoader /></div>
         ) : (
           <>
             {saved && <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] text-emerald-700">{saved}</p>}

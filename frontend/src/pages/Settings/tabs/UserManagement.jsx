@@ -17,6 +17,7 @@ import { inp, lbl, btnPrimary, secHeader, secTitle, resizeSignature } from "../u
 import GroupedPermissions from "../components/GroupedPermissions";
 import SearchableTemplateSelect from "../components/SearchableTemplateSelect";
 import { API } from "../constants";
+import BrandLoader from "../../../components/BrandLoader";
 
 export default function UserManagement({
   currentUser, isGlobalAdmin, pp,
@@ -504,7 +505,7 @@ export default function UserManagement({
             </div>
 
             {permLoading ? (
-              <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-blue-500" /></div>
+              <div className="flex justify-center py-16"><BrandLoader /></div>
             ) : (
               <div className="p-6 space-y-6">
 
@@ -610,7 +611,7 @@ export default function UserManagement({
             {/* Table area */}
             <div className="flex-1 bg-[#f0f2f5] p-5">
             {teamLoading ? (
-              <div className="flex justify-center py-16"><Loader2 size={32} className="animate-spin text-blue-500" /></div>
+              <div className="flex justify-center py-16"><BrandLoader /></div>
             ) : filtered.length === 0 ? (
               <div className="text-center py-16">
                 <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -899,7 +900,7 @@ export default function UserManagement({
                       </label>
                     </div>
                     {modulesLoading
-                      ? <div className="flex justify-center p-8"><Loader2 className="animate-spin text-emerald-500" /></div>
+                      ? <div className="flex justify-center p-8"><BrandLoader compact /></div>
                       : <GroupedPermissions modules={newUserModules} onChange={updateNewUserModule} allProjects={allProjects}
                           profilePerms={newUserProfilePerms}
                           onProfileChange={(sec, k, v) => setNewUserProfilePerms(prev => ({ ...prev, [sec]: { ...prev[sec], [k]: v } }))} />}

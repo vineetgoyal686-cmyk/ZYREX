@@ -16,6 +16,7 @@ import {
   STATUSES, statusOf, isPresent, isLeave, workedMin, otMin, lateMin, fmtDur, fmtTime,
   isoToday, shiftDate, fmtDate, CATEGORY_DOT, currentUserName,
 } from "./utils";
+import BrandLoader from "../../components/BrandLoader";
 
 /*
  * One day at a place: everyone posted there (HRMS › Employees) plus anyone
@@ -199,7 +200,7 @@ export default function DailyRegister({ place, date, onDateChange }) {
         </div>
         <div className="flex-1 min-h-0 overflow-auto">
           {loading ? (
-            <div className="flex items-center justify-center h-48"><Loader2 size={20} className="text-blue-400 animate-spin" /></div>
+            <div className="flex items-center justify-center h-48"><BrandLoader /></div>
           ) : !people.length ? (
             <div className="h-full min-h-[260px] flex flex-col items-center justify-center gap-3 text-center px-6">
               <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center"><ClipboardList size={22} className="text-slate-400" /></div>
@@ -397,7 +398,7 @@ export function AttendanceForm({ place, date, today, person: fixed, record, onCl
                 </div>
                 <div className="max-h-56 overflow-y-auto">
                   {!list ? (
-                    <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-slate-400" /></div>
+                    <div className="flex justify-center py-6"><BrandLoader compact /></div>
                   ) : !shown.length ? (
                     <p className="py-6 text-center text-sm text-slate-400">No one found — add them in HRMS › Employees first</p>
                   ) : shown.map(p => (
@@ -548,7 +549,7 @@ export function LogModal({ person, date, onClose }) {
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {!logs ? (
-            <div className="flex justify-center py-6"><Loader2 size={18} className="animate-spin text-slate-400" /></div>
+            <div className="flex justify-center py-6"><BrandLoader compact /></div>
           ) : !logs.length ? (
             <p className="py-6 text-center text-sm text-slate-400">No changes recorded for this day yet.</p>
           ) : (

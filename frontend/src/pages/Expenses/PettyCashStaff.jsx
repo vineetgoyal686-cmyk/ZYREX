@@ -15,6 +15,7 @@ import { logAudit } from "../../utils/auditLog";
 import {
   CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, docSectionsFor, docCount, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
 } from "./pettyCashConstants";
+import BrandLoader from "../../components/BrandLoader";
 
 const LAST_LOCATION_KEY = "petty_cash_last_location";
 
@@ -1144,7 +1145,7 @@ export default function PettyCashStaff({ scope }) {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400"><BrandLoader /></td></tr>
               ) : itemSummary.length === 0 ? (
                 <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">No items found — add items to an expense to see them here</td></tr>
               ) : itemPageRows.map(g => (
@@ -1193,7 +1194,7 @@ export default function PettyCashStaff({ scope }) {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={columns.length} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
+                <tr><td colSpan={columns.length} className="px-4 py-10 text-center text-slate-400"><BrandLoader /></td></tr>
               ) : pageRows.length === 0 ? (
                 <tr><td colSpan={columns.length} className="px-4 py-10 text-center text-slate-400">No entries found</td></tr>
               ) : pageRows.map(e => (

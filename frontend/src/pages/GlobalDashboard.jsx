@@ -5,6 +5,7 @@ import {
 } from "recharts";
 import { useModulePermissions } from "../hooks/useModulePermissions";
 import { getValidToken } from "../utils/authFetch";
+import BrandLoader from "../components/BrandLoader";
 
 // ─── API ─────────────────────────────────────────────────────────────────────
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
@@ -498,7 +499,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
 
       {/* ── LOADING / ERROR OVERLAY ── */}
       {(loading || loadError) && (
-        <div style={{ position: "absolute", inset: 0, zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.92)", borderRadius: 14 }}>
+        <div style={{ position: "absolute", inset: 0, zIndex: 500, display: "flex", alignItems: loadError ? "center" : "flex-start", justifyContent: "center", background: "rgba(255,255,255,0.92)", borderRadius: 14 }}>
           {loadError ? (
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 32, marginBottom: 10 }}>⚠️</div>
@@ -510,14 +511,7 @@ const GlobalDashboard = memo(function GlobalDashboard() {
               }}>Retry</button>
             </div>
           ) : (
-            <div style={{ textAlign: "center" }}>
-              <div style={{
-                width: 34, height: 34, margin: "0 auto 12px", borderRadius: "50%",
-                border: `3px solid ${CP}22`, borderTopColor: CP, animation: "gd-spin 0.8s linear infinite",
-              }} />
-              <div style={{ color: "#64748b", fontSize: 13, fontWeight: 600 }}>Loading dashboard…</div>
-              <style>{`@keyframes gd-spin { to { transform: rotate(360deg); } }`}</style>
-            </div>
+            <BrandLoader />
           )}
         </div>
       )}

@@ -25,6 +25,7 @@ import { effectiveProfilePerms } from "../Settings/access";
 import { OrgScopeContext, scopedUrl } from "./orgScope";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import ScopeDropdown from "../../components/ScopeDropdown";
+import BrandLoader from "../../components/BrandLoader";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -380,7 +381,7 @@ export function OrgScopedPage({ tab, currentUser }) {
 
   if (error) return <p className="p-6 text-sm text-red-600">{error}</p>;
   if (!companies) {
-    return <div className="flex justify-center py-16"><div className="w-8 h-8 border-2 border-slate-200 border-t-slate-700 rounded-full animate-spin" /></div>;
+    return <div className="flex justify-center py-16"><BrandLoader /></div>;
   }
   if (!org) return <p className="p-6 text-sm text-slate-500">No company found. Add one under Settings › Company first.</p>;
 

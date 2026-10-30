@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import { X, Plus, Trash2, UploadCloud, Loader2, Printer } from "lucide-react";
 import api from "../../utils/api";
 import { fmtDate, apiError } from "./pettyCashConstants";
+import BrandLoader from "../../components/BrandLoader";
 
 // Expense Voucher — same layout as the company's expense_voucher.html
 // (A5 landscape), drawn with jsPDF so it can be attached to the entry as a
@@ -435,7 +436,7 @@ export default function VoucherModal({ entry, company, project, initial, onClose
           <div className="bg-slate-100 min-h-[300px] flex flex-col">
             {previewUrl
               ? <iframe title="Voucher preview" src={`${previewUrl}#toolbar=0&view=FitH`} className="flex-1 w-full" />
-              : <div className="flex-1 flex items-center justify-center text-slate-400"><Loader2 size={20} className="animate-spin" /></div>}
+              : <div className="flex-1 flex items-center justify-center text-slate-400"><BrandLoader /></div>}
           </div>
         </div>
 

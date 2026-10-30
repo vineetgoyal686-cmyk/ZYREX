@@ -7,6 +7,7 @@ import StatCards from "./StatCards";
 import CategoryTabs, { inCategory } from "./CategoryTabs";
 import Pager, { pageOf } from "./Pager";
 import { STATUSES, statusOf, isLeave, otMin, paidValue, fmtDur, isoToday, CATEGORY_DOT } from "./utils";
+import BrandLoader from "../../components/BrandLoader";
 
 /*
  * Monthly Sheet (muster roll) — one row per person, one column per day,
@@ -151,7 +152,7 @@ export default function MonthlySheet({ place, onOpenDay }) {
       <div className="flex-1 min-h-0 flex flex-col bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
         <div className="flex-1 min-h-0 overflow-auto">
           {!records ? (
-            <div className="flex items-center justify-center h-48"><Loader2 size={20} className="text-blue-400 animate-spin" /></div>
+            <div className="flex items-center justify-center h-48"><BrandLoader /></div>
           ) : error ? (
             <p className="p-6 text-sm text-red-600">{error}</p>
           ) : (

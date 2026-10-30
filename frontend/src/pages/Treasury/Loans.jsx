@@ -7,6 +7,7 @@ import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { HelpButton, HelpPanel } from "./mastersHelp";
 import { RecordModal } from "./Masters";
 import { AccountPicker, AccountModal, mastersApi } from "./mastersShared";
+import BrandLoader from "../../components/BrandLoader";
 
 /*
  * Treasury › Loans & EMI. A loan's EMI schedule is worked out from its
@@ -283,7 +284,7 @@ function LoanDetail({ loanId, perms, onBack, onEdit }) {
   };
 
   if (error) return <p className="p-6 text-sm text-red-600">{error}</p>;
-  if (!data) return <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-slate-400" /></div>;
+  if (!data) return <div className="flex justify-center py-16"><BrandLoader /></div>;
   const { loan, schedule, summary } = data;
 
   return (
@@ -413,7 +414,7 @@ export default function Loans() {
       ) : (
         <div className="p-4 sm:p-6">
           {error ? <p className="text-sm text-red-600">{error}</p> : !loans ? (
-            <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-slate-400" /></div>
+            <div className="flex justify-center py-16"><BrandLoader /></div>
           ) : (
             <div className="bg-white border border-slate-200 rounded-xl overflow-x-auto">
               <table className="w-full text-sm min-w-[860px]">

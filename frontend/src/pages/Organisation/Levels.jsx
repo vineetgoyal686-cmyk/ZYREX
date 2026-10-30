@@ -4,6 +4,7 @@ import { StatusBadge } from "./helpers";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import BrandLoader from "../../components/BrandLoader";
 
 const STORAGE_KEY = "bms_org_levels";
 
@@ -210,7 +211,7 @@ export default function Levels({ actionsRef, onChange }) {
       {importing && (
         <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center">
           <div className="bg-white rounded px-10 py-8 shadow-2xl flex flex-col items-center gap-4">
-            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+            <BrandLoader compact />
             <p className="text-slate-700 font-semibold text-sm">Importing levels…</p>
           </div>
         </div>

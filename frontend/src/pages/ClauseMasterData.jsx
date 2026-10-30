@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Database, Download, Eye, FileText, Loader2, Plus, Search, Upload, X } from "lucide-react";
 import * as XLSX from "xlsx";
 import { useModulePermissions } from "../hooks/useModulePermissions";
+import BrandLoader from "../components/BrandLoader";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const LOCAL_ROWS_KEY = "bms_clause_master_manual_rows";
@@ -408,7 +409,7 @@ export default function ClauseMasterData() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} className="h-44 text-center text-slate-400"><Loader2 className="mx-auto mb-2 animate-spin" size={22} />Loading clauses master...</td></tr>
+                  <tr><td colSpan={7} className="h-44 text-center text-slate-400"><BrandLoader /></td></tr>
                 ) : filtered.length === 0 ? (
                   <tr><td colSpan={7} className="h-44 text-center text-xs font-bold uppercase tracking-[0.2em] text-slate-300">No clauses found</td></tr>
                 ) : (

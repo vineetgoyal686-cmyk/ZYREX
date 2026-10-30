@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { authFetch } from "../../utils/authFetch";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
+import BrandLoader from "../../components/BrandLoader";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -419,7 +420,7 @@ export default function Policy({ actionsRef, companyId, orgName }) {
         <div className="flex-1 overflow-auto">
           {loading ? (
             <div className="flex items-center justify-center h-40 gap-2 text-slate-400">
-              <Loader2 size={18} className="animate-spin" /> Loading policies…
+              <BrandLoader />
             </div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-40 gap-2 text-slate-400">

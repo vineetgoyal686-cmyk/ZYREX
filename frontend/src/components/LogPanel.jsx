@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { X, Clock, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
+import BrandLoader from "./BrandLoader";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -80,7 +81,7 @@ export default function LogPanel({ entityType, entityId, entityName, onClose }) 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {loading && (
             <div className="flex items-center justify-center py-16">
-              <Loader2 size={22} className="animate-spin text-cyan-500" />
+              <BrandLoader />
             </div>
           )}
 

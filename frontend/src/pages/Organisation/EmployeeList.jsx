@@ -13,6 +13,7 @@ import { authFetch } from "../../utils/authFetch";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { ContactLogModal } from "../Create/FullMasterModals";
 import { useOrgId, scopedUrl } from "./orgScope";
+import BrandLoader from "../../components/BrandLoader";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -61,14 +62,13 @@ const STAFF_TYPE_CLS = {
 };
 // "permanent", "Resigned " etc. from a sheet → the exact option, or "" if it isn't one
 // What a person does — separate from Staff Type (Permanent / Probation …)
-const CATEGORIES = ["Office Staff", "Site Staff", "Guard", "Labour", "Driver", "Cook"];
+const CATEGORIES = ["Office Staff", "Site Staff", "Guard", "Driver", "Cook"];
 // these get the short form: no division / grade / personal details
-const SHORT_FORM = ["Guard", "Labour", "Driver", "Cook"];
+const SHORT_FORM = ["Guard", "Driver", "Cook"];
 const CATEGORY_CLS = {
   "Office Staff": "bg-blue-50 text-blue-700 border-blue-200",
   "Site Staff":   "bg-teal-50 text-teal-700 border-teal-200",
   "Guard":        "bg-slate-100 text-slate-700 border-slate-300",
-  "Labour":       "bg-amber-50 text-amber-700 border-amber-200",
   "Driver":       "bg-violet-50 text-violet-700 border-violet-200",
   "Cook":         "bg-rose-50 text-rose-700 border-rose-200",
 };
@@ -638,7 +638,7 @@ const STATUS_OPTIONS = [["active", "Active"], ["inactive", "Inactive"], ["on_lea
 /* ── Category picker in the header — same size as the Filters button ── */
 const CATEGORY_DOT = {
   "Office Staff": "bg-blue-500", "Site Staff": "bg-teal-500", "Guard": "bg-slate-500",
-  "Labour": "bg-amber-500", "Driver": "bg-violet-500", "Cook": "bg-rose-500",
+  "Driver": "bg-violet-500", "Cook": "bg-rose-500",
 };
 
 function CategoryPicker({ value, emps, onChange }) {
@@ -1117,7 +1117,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     );
   });
 
-  // Guards / Labour / Driver / Cook have no division, department or grade —
+  // Guards / Drivers / Cooks have no division, department or grade —
   // their tabs show who they come through instead
   const workerTab = SHORT_FORM.includes(category);
 
@@ -1317,7 +1317,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       {importing && (
         <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center">
           <div className="bg-white rounded-lg px-10 py-8 shadow-2xl flex flex-col items-center gap-4">
-            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+            <BrandLoader compact />
             <p className="text-slate-700 font-semibold text-sm">Importing employees…</p>
           </div>
         </div>
@@ -1387,7 +1387,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       {/* Content */}
       {loading ? (
         <div className="flex items-center justify-center h-48">
-          <Loader2 size={20} className="text-blue-400 animate-spin" />
+          <BrandLoader />
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 gap-3 text-slate-300">

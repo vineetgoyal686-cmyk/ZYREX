@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { UserCheck, Plus, Trash2, Loader2, CalendarRange, ChevronDown, ToggleLeft, ToggleRight, X } from "lucide-react";
 import api from "../../../utils/api";
+import BrandLoader from "../../../components/BrandLoader";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -186,7 +187,7 @@ export default function Delegation({ showToast }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <Loader2 size={22} className="animate-spin text-indigo-500" />
+        <BrandLoader />
       </div>
     );
   }

@@ -5,6 +5,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import ViewOrder from "./Procurement/ViewOrder";
 import { useModulePermissions } from "../hooks/useModulePermissions";
+import BrandLoader from "../components/BrandLoader";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const LOCAL_ROWS_KEY = "bms_vendor_master_manual_rows";
@@ -742,7 +743,7 @@ function VendorTable({ loading, vendorGroups, setSelectedOrderId, setViewVendor 
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={columns.length} className="h-40 text-center text-slate-400"><Loader2 className="mx-auto mb-2 animate-spin" size={22} />Loading vendor master data...</td></tr>
+              <tr><td colSpan={columns.length} className="h-40 text-center text-slate-400"><BrandLoader /></td></tr>
             ) : vendorGroups.length === 0 ? (
               <tr><td colSpan={columns.length} className="h-40 text-center text-xs font-bold uppercase tracking-[0.2em] text-slate-300">No vendor master data found</td></tr>
             ) : (

@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import api from "../utils/api";
 import { PROFILE_SECTIONS, ROLE_DEFAULT_PERMS } from "../pages/Settings/constants";
+import BrandLoader from "./BrandLoader";
 
 // Hierarchy: global_admin > super_admin > admin > user. A role may only edit
 // (or sync) defaults for a role strictly below it — never its own row or above.
@@ -142,7 +143,7 @@ export default function RoleManagementPanel({ showToast }) {
   if (loading) {
     return (
       <div className="w-full flex items-center justify-center py-20 rounded-md border border-slate-200 bg-white shadow-sm">
-        <Loader2 size={22} className="animate-spin text-slate-400" />
+        <BrandLoader />
       </div>
     );
   }

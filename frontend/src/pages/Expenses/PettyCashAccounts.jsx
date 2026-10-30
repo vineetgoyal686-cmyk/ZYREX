@@ -7,6 +7,7 @@ import { useModulePermissions } from "../../hooks/useModulePermissions";
 import {
   CATEGORIES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
 } from "./pettyCashConstants";
+import BrandLoader from "../../components/BrandLoader";
 
 const monthStart = () => `${todayStr().slice(0, 8)}01`;
 
@@ -279,7 +280,7 @@ export default function PettyCashAccounts({ scope }) {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400"><Loader2 size={18} className="inline animate-spin" /></td></tr>
+                <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400"><BrandLoader /></td></tr>
               ) : !data || data.rows.length === 0 ? (
                 <tr><td colSpan={11} className="px-4 py-10 text-center text-slate-400">No expenses in this period</td></tr>
               ) : data.rows.slice((page - 1) * perPage, page * perPage).map(r => (

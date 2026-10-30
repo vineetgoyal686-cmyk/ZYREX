@@ -16,6 +16,7 @@ import { CATEGORY_DOT } from "../../Attendance/utils";
 import SalaryForm from "./SalaryForm";
 import HistoryModal from "./HistoryModal";
 import { calc, inr, fmtDay } from "./calc";
+import BrandLoader from "../../../components/BrandLoader";
 
 /*
  * Finance › Salary. Step 1 — Salary Records: each employee's salary
@@ -174,7 +175,7 @@ export default function Salary() {
           <div className="flex-1 min-h-0 flex flex-col bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
             <div className="flex-1 min-h-0 overflow-auto">
               {!data ? (
-                <div className="flex items-center justify-center h-48"><Loader2 size={20} className="text-blue-400 animate-spin" /></div>
+                <div className="flex items-center justify-center h-48"><BrandLoader /></div>
               ) : error ? (
                 <p className="p-6 text-sm text-red-600">{error}</p>
               ) : (

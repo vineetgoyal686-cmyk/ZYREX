@@ -9,6 +9,7 @@ import {
 } from "../constants";
 import { inp, lbl, btnPrimary } from "../utils";
 import GroupedPermissions from "../components/GroupedPermissions";
+import BrandLoader from "../../../components/BrandLoader";
 
 export default function Designations({ showToast, designations, designationsLoading, fetchDesignations }) {
   const [showForm, setShowForm]           = useState(false);
@@ -174,7 +175,7 @@ export default function Designations({ showToast, designations, designationsLoad
 
           {designationsLoading ? (
             <div className="flex items-center justify-center py-12 text-slate-400 text-sm">
-              <Loader2 className="animate-spin mr-2" size={16} /> Loading...
+              <BrandLoader />
             </div>
           ) : designations.length === 0 ? (
             <div className="border-2 border-dashed border-slate-200 rounded-sm p-10 text-center">

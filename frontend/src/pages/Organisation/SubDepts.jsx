@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useOrgId, scopedUrl } from "./orgScope";
+import BrandLoader from "../../components/BrandLoader";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -355,7 +356,7 @@ export default function SubDepts({ actionsRef, onChange }) {
       {importing && (
         <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center">
           <div className="bg-white rounded px-10 py-8 shadow-2xl flex flex-col items-center gap-4">
-            <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+            <BrandLoader compact />
             <p className="text-slate-700 font-semibold text-sm">Importing teams…</p>
           </div>
         </div>
@@ -388,7 +389,7 @@ export default function SubDepts({ actionsRef, onChange }) {
           <tbody className="divide-y divide-slate-100">
             {loading ? (
               <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-xs">
-                <Loader2 size={16} className="animate-spin inline mr-2" />Loading…
+                <BrandLoader />
               </td></tr>
             ) : rows.length === 0 ? (
               <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400 text-xs">

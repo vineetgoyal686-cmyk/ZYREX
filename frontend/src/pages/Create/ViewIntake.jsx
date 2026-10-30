@@ -4,6 +4,7 @@ import {
   XCircle, User, Calendar, Tag, Building, Package, Printer,
   ThumbsUp, ThumbsDown, AlertCircle, Hash,
 } from "lucide-react";
+import BrandLoader from "../../components/BrandLoader";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -228,7 +229,7 @@ export default function ViewIntake({ intake: initialIntake, onBack, currentUser 
     <div className="max-w-2xl">
       {logsLoading ? (
         <div className="flex items-center gap-2 py-12 justify-center text-slate-400">
-          <Loader2 size={18} className="animate-spin" /> Loading logs…
+          <BrandLoader compact text="Loading logs…" />
         </div>
       ) : !logs.length ? (
         <div className="py-12 text-center text-sm text-slate-400">No activity logs found.</div>

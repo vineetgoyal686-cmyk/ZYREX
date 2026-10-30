@@ -13,6 +13,7 @@ import ViewOrder from "../Procurement/ViewOrder";
 import { preloadOrderDetails, seedOrderDetails, getCachedOrderDetails, bustOrderCache } from "../Procurement/orderDetailsCache";
 import { normalizeOrderSite, getOrderSiteCode, siteCodeMatch } from "../../utils/orderSite";
 import { authFetch, getValidToken } from "../../utils/authFetch";
+import BrandLoader from "../../components/BrandLoader";
 
 // Module-level master data cache — avoids re-fetching on every form open (TTL: 2 min)
 let _masterCache = null;
@@ -1976,7 +1977,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
   const lockRecallIdentityFields = Boolean(editOrderId && isRecalledEdit);
 
-  if (loading && sites.length === 0 && companies.length === 0) return <div className="p-6 text-slate-400 text-center py-20 flex items-center justify-center flex-col gap-4"><Loader2 size={30} className="animate-spin text-indigo-500" /> <p>Loading master data...</p></div>;
+  if (loading && sites.length === 0 && companies.length === 0) return <div className="p-6 text-slate-400 text-center py-20 flex items-center justify-center flex-col gap-4"><BrandLoader /></div>;
 
   return (
     <div className="px-4 w-full max-w-none mx-0 pb-32">

@@ -70,7 +70,7 @@ export const fmtDate = (iso, opts = { weekday: "short", day: "numeric", month: "
 
 export const CATEGORY_DOT = {
   "Office Staff": "bg-blue-500", "Site Staff": "bg-teal-500", "Guard": "bg-slate-500",
-  "Labour": "bg-amber-500", "Driver": "bg-violet-500", "Cook": "bg-rose-500",
+  "Driver": "bg-violet-500", "Cook": "bg-rose-500",
 };
 
 export const currentUserName = () => {

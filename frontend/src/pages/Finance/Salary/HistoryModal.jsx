@@ -4,6 +4,7 @@ import API from "../../../api";
 import { useModulePermissions } from "../../../hooks/useModulePermissions";
 import ActionBtn from "../../Attendance/ActionBtn";
 import { calc, inr, fmtDay, EARNINGS } from "./calc";
+import BrandLoader from "../../../components/BrandLoader";
 
 /* One employee's salary records, newest first — what's in force today,
    any raise entered for later, and every earlier one. */
@@ -40,7 +41,7 @@ export default function HistoryModal({ person, onClose, onEdit, onChanged }) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700"><X size={16} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-3">
-          {!list ? <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-blue-400" /></div>
+          {!list ? <div className="flex justify-center py-10"><BrandLoader compact /></div>
             : error ? <p className="text-sm text-red-600">{error}</p>
             : !list.length ? <p className="text-sm text-slate-400 text-center py-8">No salary records</p>
             : list.map((r, i) => {

@@ -15,6 +15,7 @@ import ProjectSelect from "../../components/ProjectSelect";
 import CompanySelect from "../../components/CompanySelect";
 import ViewIntake from "./ViewIntake";
 import ScopeDropdown from "../../components/ScopeDropdown";
+import BrandLoader from "../../components/BrandLoader";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const PER_PAGE = 15;
@@ -1814,7 +1815,7 @@ export default function IntakeList({ project, allowAll = true, allowedProjects =
       <div className="flex-1 px-4 sm:px-5 py-4">
       <div className="bg-white rounded border border-slate-100 shadow-sm overflow-hidden">
         {loading ? (
-          <div className="py-16 flex justify-center"><Loader2 size={22} className="animate-spin text-indigo-400" /></div>
+          <div className="py-16 flex justify-center"><BrandLoader /></div>
         ) : filtered.length === 0 ? (
           <div className="py-16 text-center">
             <p className="text-slate-300 font-bold uppercase tracking-widest text-xs">No intakes here</p>

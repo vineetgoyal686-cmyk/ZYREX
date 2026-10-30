@@ -3,6 +3,7 @@ import { Loader2, ShieldCheck, Plus, X, Search, Save } from "lucide-react";
 import api from "../../../utils/api";
 import { MODULE_SECTIONS, MODULE_TAB_LABELS } from "../constants";
 import { refreshControlOwners } from "../../../hooks/useControlOwners";
+import BrandLoader from "../../../components/BrandLoader";
 
 /*
  * Control Center (Global Admin, or whoever Global Admin gave access to). A tab / sub-tab added here gets
@@ -189,7 +190,7 @@ export default function ControlCenter({ showToast }) {
 
       <div className="flex-1 bg-[#f0f2f5] p-5 flex flex-col gap-4">
         {loading ? (
-          <div className="flex justify-center py-16"><Loader2 size={32} className="animate-spin text-blue-500" /></div>
+          <div className="flex justify-center py-16"><BrandLoader /></div>
         ) : (
           <>
             {MODULE_SECTIONS.map(({ section, groups }) => (

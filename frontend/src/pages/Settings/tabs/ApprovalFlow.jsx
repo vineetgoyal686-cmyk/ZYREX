@@ -6,6 +6,7 @@ import {
 import api from "../../../utils/api";
 import { CompanyDetailPanel } from "../../Procurement/CompanyList";
 import { CategoryDetailPanel } from "../../Procurement/CategoryList";
+import BrandLoader from "../../../components/BrandLoader";
 
 const MODULES = [
   { key: "order",  label: "Order"  },
@@ -925,7 +926,7 @@ export default function ApprovalFlow({ showToast }) {
       <div className="p-6">
         {loading ? (
           <div className="flex items-center justify-center py-12 text-slate-400 text-sm gap-2">
-            <Loader2 size={16} className="animate-spin" /> Loading...
+            <BrandLoader />
           </div>
         ) : activeTab === "overview" ? (
           /* ── Overview: full table ── */

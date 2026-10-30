@@ -12,6 +12,7 @@ import { getValidToken } from "./utils/authFetch";
 import MobileHeader from "./components/MobileHeader";
 import MobileBottomNav from "./components/MobileBottomNav";
 import { BackContext } from "./components/BackButton";
+import BrandLoader from "./components/BrandLoader";
 
 // ── Route ↔ Tab mapping (see utils/navConfig.js) ─────────────────────────────
 // Project pages carry the project as ?project=<code>.
@@ -93,10 +94,7 @@ class ChunkErrorBoundary extends React.Component {
     if (this.state.hasError) {
       if (this.state.isChunkError) {
         return (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-slate-500">
-            <div className="w-8 h-8 border-2 border-slate-200 border-t-slate-700 rounded-full animate-spin" />
-            <p className="text-sm">Loading latest version…</p>
-          </div>
+          <BrandLoader text="Loading latest version…" />
         );
       }
       return (
@@ -362,7 +360,7 @@ function AppLayout({
           } ${mainPaddingClass}`}
         >
           <ChunkErrorBoundary>
-            <Suspense fallback={<div className="flex h-full items-center justify-center"><div className="w-8 h-8 border-2 border-slate-200 border-t-slate-700 rounded-full animate-spin" /></div>}>
+            <Suspense fallback={<BrandLoader />}>
               {TABS[activeTab]?.parent ? (
                 <BackContext.Provider value={{ label: TABS[TABS[activeTab].parent].label, onBack: () => onTabChange(TABS[activeTab].parent) }}>
                   {renderPage()}
