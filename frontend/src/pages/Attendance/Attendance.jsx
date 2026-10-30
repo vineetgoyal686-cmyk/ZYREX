@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Building2, FolderKanban, Briefcase, ClipboardCheck, History, Loader2 } from "lucide-react";
+import { Building2, FolderKanban, Briefcase, ClipboardCheck, CalendarRange, History, Loader2 } from "lucide-react";
 import API from "../../api";
 import ScopeDropdown from "../../components/ScopeDropdown";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import DailyRegister from "./DailyRegister";
 import Records from "./Records";
+import MonthlySheet from "./MonthlySheet";
 import { isoToday } from "./utils";
 
 /*
@@ -19,6 +20,7 @@ const KINDS = [
 ];
 const TABS = [
   { id: "register", label: "Daily Register", icon: ClipboardCheck },
+  { id: "monthly",  label: "Monthly Sheet",  icon: CalendarRange },
   { id: "records",  label: "Records",        icon: History },
 ];
 const STORE = "attendance_scope";
@@ -109,6 +111,8 @@ export default function Attendance() {
           </div>
         ) : tab === "register" ? (
           <DailyRegister key={place.code} place={place} date={date} onDateChange={setDate} />
+        ) : tab === "monthly" ? (
+          <MonthlySheet key={place.code} place={place} onOpenDay={d => { setDate(d); setTab("register"); }} />
         ) : (
           <Records key={place.code} place={place} onOpenDay={d => { setDate(d); setTab("register"); }} />
         )}

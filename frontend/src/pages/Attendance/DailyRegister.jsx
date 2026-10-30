@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ChevronLeft, ChevronRight, Search, Plus, CheckCheck, Loader2, X, Moon, Sun, AlertTriangle,
-  Users, UserCheck, UserX, CalendarOff, Clock, CircleDashed, ClipboardList, Edit2, History,
+  Users, UserCheck, UserX, CalendarOff, Clock, CircleDashed, ClipboardList, Edit2, History, Download, Upload,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import API from "../../api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import StatCards from "./StatCards";
+import BulkUpload from "./BulkUpload";
 import {
   STATUSES, statusOf, isPresent, isLeave, workedMin, otMin, lateMin, fmtDur, fmtTime,
   isoToday, shiftDate, fmtDate, CATEGORY_DOT, currentUserName,
@@ -36,7 +38,7 @@ const bucketOf = (p) => {
 const lateOf = (p) => p.record ? lateMin(p.category, p.record.shift, p.record.status, p.record.inTime) : 0;
 
 export default function DailyRegister({ place, date, onDateChange }) {
-  const { canAdd, canEdit } = useModulePermissions("staff_attendance");
+  const { canAdd, canEdit, canExport } = useModulePermissions("staff_attendance");
   const [loading, setLoading] = useState(true);
   const [people, setPeople] = useState([]);
   const [orphans, setOrphans] = useState(0);
@@ -47,6 +49,7 @@ export default function DailyRegister({ place, date, onDateChange }) {
   const [toast, setToast] = useState(null);
   const [form, setForm] = useState(null);   // { person?, record? } — the Add / Edit form
   const [logOf, setLogOf] = useState(null); // person whose history is open
+  const [bulk, setBulk] = useState(false);
   const today = isoToday();
 
   const flash = (msg, type = "success") => {
@@ -105,6 +108,25 @@ export default function DailyRegister({ place, date, onDateChange }) {
     } finally { setBusy(false); }
   };
 
+  // the rows on screen, as they are shown
+  const exportDay = () => {
+    const data = shown.map((p, i) => {
+      const r = p.record;
+      return {
+        "#": i + 1, Date: date, Name: p.name, "Contact ID": p.contactCode, Designation: p.designation, Category: p.category,
+        Status: p.elsewhere ? `At ${p.elsewhere.place} · ${p.elsewhere.status}` : r?.status || "Not marked",
+        Shift: r?.shift || "", In: r?.inTime || "", Out: r?.outTime || "",
+        Hours: r ? fmtDur(r.minutes) : "", OT: r ? fmtDur(otMin(p.category, r.shift, r.inTime, r.outTime)) : "",
+        Late: fmtDur(lateOf(p)), Remarks: r?.remarks || "", "Marked by": r?.markedBy || "",
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws["!cols"] = [4, 11, 24, 12, 18, 12, 14, 7, 7, 7, 9, 9, 9, 28, 16].map(wch => ({ wch }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Register");
+    XLSX.writeFile(wb, `Attendance_${place.code}_${date}.xlsx`);
+  };
+
   const pct = stats.total ? Math.round((stats.present / stats.total) * 100) : 0;
   const cards = [
     { id: "total",    label: "Total",       value: stats.total,    Icon: Users,        accent: "#475569", tint: "#f1f5f9" },
@@ -153,6 +175,18 @@ export default function DailyRegister({ place, date, onDateChange }) {
             className="h-9 pl-9 pr-3 text-sm border border-slate-200 rounded-lg bg-white w-full focus:outline-none focus:ring-1 focus:ring-blue-400" />
         </div>
         <div className="ml-auto flex items-center gap-2">
+          {canExport && (
+            <button onClick={exportDay} disabled={!shown.length} title="Download this day's register as Excel"
+              className="inline-flex items-center gap-1.5 h-9 px-3.5 text-sm font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+              <Download size={15} /> Export
+            </button>
+          )}
+          {(canAdd || canEdit) && (
+            <button onClick={() => setBulk(true)} title="Upload attendance from Excel / CSV"
+              className="inline-flex items-center gap-1.5 h-9 px-3.5 text-sm font-semibold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50">
+              <Upload size={15} /> Bulk Upload
+            </button>
+          )}
           {canAdd && people.length > 0 && (
             <button onClick={markAllPresent} disabled={busy}
               className="inline-flex items-center gap-1.5 h-9 px-3.5 text-sm font-semibold rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:opacity-50">
@@ -295,6 +329,7 @@ export default function DailyRegister({ place, date, onDateChange }) {
           }} />
       )}
       {logOf && <LogModal person={logOf} date={date} onClose={() => setLogOf(null)} />}
+      {bulk && <BulkUpload place={place} date={date} onClose={() => setBulk(false)} onDone={load} />}
 
       {toast && (
         <div className={`fixed top-5 right-5 z-[200] max-w-md px-4 py-3 rounded-lg text-sm font-medium shadow-lg border

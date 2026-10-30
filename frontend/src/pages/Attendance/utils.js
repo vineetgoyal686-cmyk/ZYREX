@@ -75,3 +75,49 @@ export const CATEGORY_DOT = {
 export const currentUserName = () => {
   try { return JSON.parse(localStorage.getItem("bms_user") || "{}").name || ""; } catch { return ""; }
 };
+
+/* ── Reading an uploaded sheet (Bulk Upload) ── */
+// "P", "present", "Leave", "WO" … → the saved status; "" if unknown
+export const parseStatus = (v) => {
+  const s = String(v ?? "").trim().toLowerCase().replace(/[^a-z]/g, "");
+  if (!s) return "";
+  const alias = { leave: "Annual Leave", l: "Annual Leave", al: "Annual Leave", halfday: "Half Day", weekoff: "Week Off", onduty: "On Duty", compoff: "Comp Off" };
+  if (alias[s]) return alias[s];
+  const hit = STATUSES.find(x => x.k.toLowerCase() === s || x.v.toLowerCase().replace(/[^a-z]/g, "") === s);
+  return hit ? hit.v : "";
+};
+// "9:30", "09:30 AM", Excel time (0.3958…) or a Date → "HH:MM"; "" if blank/bad
+export const parseTime = (v) => {
+  if (v == null || v === "") return "";
+  let m = null;
+  if (v instanceof Date) m = v.getHours() * 60 + v.getMinutes();
+  else if (typeof v === "number") m = Math.round((v % 1) * 1440) % 1440;
+  else {
+    const x = /^\s*(\d{1,2})[:.](\d{2})(?::\d{2})?\s*(am|pm)?\s*$/i.exec(String(v));
+    if (!x) return null;
+    let h = Number(x[1]);
+    if (x[3]) h = (h % 12) + (x[3].toLowerCase() === "pm" ? 12 : 0);
+    if (h > 23 || Number(x[2]) > 59) return null;
+    m = h * 60 + Number(x[2]);
+  }
+  return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+};
+// "2026-10-30", "30-10-2026", "30/10/2026", Excel date number or Date → "YYYY-MM-DD"; null if bad
+export const parseDate = (v) => {
+  const iso = (y, mo, d) => {
+    const dt = new Date(y, mo - 1, d);
+    return dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d
+      ? `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}` : null;
+  };
+  if (v instanceof Date) return iso(v.getFullYear(), v.getMonth() + 1, v.getDate());
+  if (typeof v === "number") { const d = new Date(Math.round((v - 25569) * 864e5)); return iso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); }
+  const s = String(v ?? "").trim();
+  let x = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if (x) return iso(+x[1], +x[2], +x[3]);
+  x = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/.exec(s);
+  return x ? iso(+x[3], +x[2], +x[1]) : null;
+};
+
+// days counted for pay in the Monthly Sheet: present / on duty / paid off = 1, half day = ½
+export const PAID_FULL = ["Present", "On Duty", "Annual Leave", "Week Off", "Holiday", "Comp Off"];
+export const paidValue = (v) => v === "Half Day" ? 0.5 : PAID_FULL.includes(v) ? 1 : 0;

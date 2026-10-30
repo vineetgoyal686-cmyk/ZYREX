@@ -274,17 +274,17 @@ router.post("/mark/:place", async (req, res) => {
 });
 
 /* ═══ GET /api/attendance/people/:place — everyone active in the place's
-   company, for "Add from another place" ═══ */
+   company: "Add Attendance", Bulk Upload matching, Monthly Sheet rows ═══ */
 router.get("/people/:place", requirePerm("staff_attendance", "can_view"), async (req, res) => {
   try {
-    const { data, error } = await emps().select("id, person_name, category, designation, contact_number, posted_kind, posted_id")
+    const { data, error } = await emps().select("id, person_name, category, designation, contact_number, contact_code, employee_id, posted_kind, posted_id")
       .eq("company_id", req.place.companyId).neq("status", "inactive").order("person_name");
     if (error) throw error;
     const places = await allPlaces();
     res.json({
       people: (data || []).filter(onAttendance).map(e => ({
         employeeId: e.id, name: e.person_name || "", category: e.category || "", designation: e.designation || "",
-        mobile: e.contact_number || "",
+        mobile: e.contact_number || "", contactCode: e.contact_code || "", empCode: e.employee_id || "",
         postedAt: places.find(p => p.id === e.posted_id)?.code || "",
       })),
     });
