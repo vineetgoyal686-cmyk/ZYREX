@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Workflow, Plus, Eye, Pencil, Trash2, Loader2, X, ChevronDown,
+  Workflow, Plus, Eye, Pencil, Trash2, Loader2, X, ChevronDown, ClipboardCheck, Scale, ShoppingCart,
   GripVertical, AlertCircle, Check, ChevronLeft, Settings2, Users,
 } from "lucide-react";
 import api from "../../../utils/api";
 import { CompanyDetailPanel } from "../../Procurement/CompanyList";
 import { CategoryDetailPanel } from "../../Procurement/CategoryList";
 import BrandLoader from "../../../components/BrandLoader";
+import { HelpButton, HelpDrawer } from "../../../components/HelpDrawer";
+import { GUIDES, formGuide } from "./approvalGuides";
 
 const MODULES = [
   { key: "order",  label: "Order"  },
@@ -507,9 +509,11 @@ function FlowForm({ flow, module, allUsers, designations, onSave, onBack, saving
   const removeLevel  = (idx) => setField("levels", form.levels.filter((_, i) => i !== idx));
 
   const toggleConfig = (key) => setField("config_options", { ...form.config_options, [key]: !form.config_options[key] });
+  const [guide, setGuide] = useState(false);
 
   return (
     <div className="flex flex-col h-full">
+      {guide && <HelpDrawer guide={formGuide(module)} onClose={() => setGuide(false)} />}
       {/* Sticky Header */}
       <div className="sticky top-0 z-10 flex items-center gap-3 px-6 py-4 border-b border-slate-200 bg-white shrink-0">
         <button type="button" onClick={onBack}
@@ -517,10 +521,10 @@ function FlowForm({ flow, module, allUsers, designations, onSave, onBack, saving
           <ChevronLeft size={15} className="text-slate-600" />
         </button>
         <div>
-          <h3 className="text-[14px] font-bold text-slate-800">{flow ? "Edit Approval Flow" : "New Approval Flow"}</h3>
-          <p className="text-[11px] text-slate-400">{MODULES.find(m => m.key === module)?.label} module</p>
+          <h3 className="text-[14px] font-bold text-slate-800">{flow ? "Edit Approval Flow" : "New Approval Flow"} <span className="font-semibold text-slate-400">· {MODULES.find(m => m.key === module)?.label}</span></h3>
         </div>
         <div className="ml-auto flex gap-2">
+          <HelpButton onClick={() => setGuide(true)} />
           <button type="button" onClick={onBack}
             className="h-8 px-4 rounded-sm border border-slate-300 text-[12px] font-semibold text-slate-600 hover:bg-slate-50 transition">
             Cancel
@@ -834,6 +838,7 @@ export default function ApprovalFlow({ showToast }) {
   const [selected, setSelected]         = useState(null);
   const [allUsers, setAllUsers]         = useState([]);
   const [designations, setDesignations] = useState([]);
+  const [guideOpen, setGuideOpen]       = useState(false);
 
   const fetchFlows = useCallback(async (module, tab) => {
     setLoading(true);
@@ -890,36 +895,48 @@ export default function ApprovalFlow({ showToast }) {
 
   // one module's flows as rows (Order tab, and each Intake section)
   const renderFlows = (list, module) => (
-          list.length === 0 ? (
-            <div className="border-2 border-dashed border-slate-200 rounded-sm p-12 text-center">
-              <Workflow size={28} className="text-slate-300 mx-auto mb-2" />
-              <p className="text-sm font-semibold text-slate-400">No approval flows configured</p>
-              <p className="text-xs text-slate-300 mt-1">Click "Add Flow" to create the first workflow</p>
+    list.length === 0 ? (
+      <div className="flex items-center justify-center gap-2 py-7 text-[13px] text-slate-400">
+        <Workflow size={15} className="text-slate-300" /> No flow yet{canAdd ? " — click Add Flow" : ""}
+      </div>
+    ) : (
+      <div className="divide-y divide-slate-100">
+        {list.map((flow, idx) => {
+          const levels = flow.levels || [];
+          const people = [...new Map(levels.flatMap(l => (l.designations || []).flatMap(d => d.users || [])).map(u => [u.id, u])).values()];
+          const conds = flow.conditions || [];
+          const fieldLabel = (f) => (CONDITION_FIELDS_BY_MODULE[module] || []).find(x => x.value === f)?.label || f;
+          const condText = !conds.length ? "Applies to all"
+            : conds.map(c => `${fieldLabel(c.field)} ${c.operator === "is_equal_to" ? "=" : (CONDITION_OPS.find(o => o.value === c.operator)?.label || "")} ${c.value === "__all__" ? "All" : (c.value_label || c.value)}`).join(" · ");
+          return (
+            <div key={flow.id} className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50/70 transition">
+              <GripVertical size={14} className="text-slate-300 shrink-0" />
+              <span className="w-6 h-6 rounded-md bg-slate-100 text-[11px] font-bold text-slate-500 flex items-center justify-center shrink-0" title="Checked in this order">{idx + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[13px] font-semibold text-slate-800 truncate">{flow.name}</p>
+                <p className="text-[11px] text-slate-400 truncate">
+                  {levels.length} level{levels.length === 1 ? "" : "s"}
+                  {" · "}{people.length ? people.map(u => u.name).join(", ") : <span className="text-amber-600">nobody ticked</span>}
+                  {" · "}{condText}
+                </p>
+              </div>
+              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full shrink-0
+                ${flow.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                {flow.status === "active" ? "Active" : "Inactive"}
+              </span>
+              <div className="flex items-center gap-0.5 shrink-0">
+                <button type="button" title="View" onClick={() => { setActiveModule(module); setSelected(flow); setView("detail"); }}
+                  className="w-8 h-8 flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 transition"><Eye size={15} /></button>
+                {canEdit && <button type="button" title="Edit" onClick={() => { setActiveModule(module); setSelected(flow); setView("edit"); }}
+                  className="w-8 h-8 flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 transition"><Pencil size={14} /></button>}
+                {canDelete && <button type="button" title="Delete" onClick={() => handleDelete(flow.id)}
+                  className="w-8 h-8 flex items-center justify-center rounded-md text-rose-400 hover:bg-rose-50 transition"><Trash2 size={14} /></button>}
+              </div>
             </div>
-          ) : (
-            <div className="space-y-2">
-              {list.map((flow, idx) => (
-                <div key={flow.id}
-                  className="flex items-center gap-3 border border-slate-200 rounded-sm px-4 py-3 bg-white hover:bg-slate-50/50 transition">
-                  <GripVertical size={14} className="text-slate-300 shrink-0" />
-                  <span className="text-[12px] font-bold text-slate-400 w-5 shrink-0">{idx + 1}</span>
-                  <span className="text-[13px] font-semibold text-slate-800 flex-1">{flow.name}</span>
-                  <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full
-                    ${flow.status === "active" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                    {flow.status === "active" ? "Active" : "Inactive"}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button type="button" onClick={() => { setActiveModule(module); setSelected(flow); setView("detail"); }}
-                      className="w-8 h-8 flex items-center justify-center rounded-sm text-slate-500 hover:bg-slate-100 transition"><Eye size={15} /></button>
-                    {canEdit && <button type="button" onClick={() => { setActiveModule(module); setSelected(flow); setView("edit"); }}
-                      className="w-8 h-8 flex items-center justify-center rounded-sm text-slate-500 hover:bg-slate-100 transition"><Pencil size={14} /></button>}
-                    {canDelete && <button type="button" onClick={() => handleDelete(flow.id)}
-                      className="w-8 h-8 flex items-center justify-center rounded-sm text-rose-400 hover:bg-rose-50 transition"><Trash2 size={14} /></button>}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )
+          );
+        })}
+      </div>
+    )
   );
 
   /* ── Render ── */
@@ -941,42 +958,38 @@ export default function ApprovalFlow({ showToast }) {
   /* List view — header + tabs stick to the top, the flows below scroll */
   return (
     <div className="min-h-full flex flex-col bg-white">
+      {guideOpen && <HelpDrawer guide={GUIDES[activeTab] || GUIDES.overview} onClose={() => setGuideOpen(false)} />}
       <div className="sticky top-0 z-20 bg-white shadow-sm">
 
-      {/* Header */}
-      <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-sm bg-indigo-50 flex items-center justify-center shrink-0">
-            <Workflow size={18} className="text-indigo-600" />
+      {/* One header: title · tabs … guide · Add Flow */}
+      <div className="px-6 py-3 border-b border-slate-200 flex flex-wrap items-center gap-x-5 gap-y-2">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-sm bg-indigo-50 flex items-center justify-center shrink-0">
+            <Workflow size={16} className="text-indigo-600" />
           </div>
-          <div>
-            <h2 className="text-[15px] font-bold text-slate-800">Approval Flow</h2>
-            <p className="text-[11px] text-slate-400 mt-0.5">Configure multi-level approval workflows per module</p>
-          </div>
+          <h2 className="text-[15px] font-bold text-slate-800 whitespace-nowrap">Approval Flow</h2>
         </div>
-        {activeTab !== "overview" && activeTab !== "intake" && canAdd && (
-          <button type="button"
-            onClick={() => { setSelected(null); setView("edit"); }}
-            className="inline-flex items-center gap-2 h-8 px-4 rounded-sm bg-indigo-600 text-white text-[12px] font-bold hover:bg-indigo-700 transition">
-            <Plus size={13} /> Add Flow
-          </button>
-        )}
-      </div>
-
-      {/* Tabs */}
-      <div className="flex border-b border-slate-200 px-6">
-        <button type="button" onClick={() => { setActiveTab("overview"); setFlows([]); }}
-          className={`px-5 py-3 text-[13px] font-semibold border-b-2 -mb-px transition-colors
-            ${activeTab === "overview" ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"}`}>
-          Overview
-        </button>
-        {MODULES.filter(m => m.key !== "comparison").map(m => (
-          <button key={m.key} type="button" onClick={() => { setActiveTab(m.key); setActiveModule(m.key); setFlows([]); }}
-            className={`px-5 py-3 text-[13px] font-semibold border-b-2 -mb-px transition-colors
-              ${activeTab === m.key ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800 hover:border-slate-300"}`}>
-            {m.label}
-          </button>
-        ))}
+        <span className="h-6 w-px bg-slate-200 hidden sm:block" />
+        <div className="flex items-center gap-1 bg-slate-100 rounded-md p-1">
+          {[{ key: "overview", label: "Overview" }, ...MODULES.filter(m => m.key !== "comparison")].map(m => (
+            <button key={m.key} type="button"
+              onClick={() => { setActiveTab(m.key); if (m.key !== "overview") setActiveModule(m.key); setFlows([]); }}
+              className={`px-4 h-7 rounded text-[13px] font-semibold transition-all
+                ${activeTab === m.key ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <HelpButton onClick={() => setGuideOpen(true)} />
+          {activeTab !== "overview" && activeTab !== "intake" && canAdd && (
+            <button type="button"
+              onClick={() => { setSelected(null); setView("edit"); }}
+              className="inline-flex items-center gap-2 h-8 px-4 rounded-sm bg-indigo-600 text-white text-[12px] font-bold hover:bg-indigo-700 transition">
+              <Plus size={13} /> Add Flow
+            </button>
+          )}
+        </div>
       </div>
 
       </div>
@@ -1054,18 +1067,21 @@ export default function ApprovalFlow({ showToast }) {
         ) : (
           /* ── Module tab: its flows; Intake shows the intake (PR) and comparison (CS) approvals ── */
           activeTab === "intake" ? (
-            <div className="space-y-8">
-              <FlowSection n={1} title="Intake Approval (PR)" hint="Is this material needed? — after an intake is submitted."
+            <div className="space-y-5">
+              <FlowSection icon={ClipboardCheck} tone="indigo" title="Intake Approval" tag="PR" count={flows.length}
                 canAdd={canAdd} onAdd={() => { setActiveModule("intake"); setSelected(null); setView("edit"); }}>
                 {renderFlows(flows, "intake")}
               </FlowSection>
-              <FlowSection n={2} title="Comparison Approval (CS)" hint="Is this vendor and price right? — after quotations are compared. Always required."
+              <FlowSection icon={Scale} tone="emerald" title="Comparison Approval" tag="CS" count={cmpFlows.length} extra={<MinQuotations canEdit={isAdmin} />}
                 canAdd={canAdd} onAdd={() => { setActiveModule("comparison"); setSelected(null); setView("edit"); }}>
-                <MinQuotations canEdit={isAdmin} />
                 {renderFlows(cmpFlows, "comparison")}
               </FlowSection>
             </div>
-          ) : renderFlows(flows, activeModule)
+          ) : (
+            <FlowSection icon={ShoppingCart} tone="indigo" title="Order Approval" tag="PO / WO" count={flows.length}>
+              {renderFlows(flows, activeModule)}
+            </FlowSection>
+          )
         )}
       </div>
     </div>
@@ -1091,44 +1107,49 @@ function MinQuotations({ canEdit }) {
     finally { setSaving(false); }
   };
   return (
-    <div className="mb-5 flex flex-wrap items-center gap-3 rounded-sm border border-indigo-100 bg-indigo-50/50 px-4 py-3">
-      <div className="flex-1 min-w-[220px]">
-        <p className="text-[13px] font-bold text-slate-800">Minimum quotations</p>
-        <p className="text-[11px] text-slate-500">An intake needs at least this many vendor quotations before its comparison can be sent for approval. Approval is always required for a comparison — add a flow below.</p>
-      </div>
+    <div className="flex items-center gap-2" title="Quotations an intake needs before its comparison can be sent for approval">
+      <span className="text-[12px] font-semibold text-slate-500 whitespace-nowrap">Min. quotations</span>
       <input type="number" min="1" max="10" value={draft} disabled={!canEdit || value == null} onChange={e => setDraft(e.target.value)}
-        className="w-20 h-9 px-3 text-sm text-center font-bold border border-slate-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:bg-slate-50" />
-      {canEdit && (
-        <button type="button" onClick={save} disabled={saving || String(value) === draft}
-          className="h-9 px-4 text-[13px] font-semibold rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40">
+        className="w-14 h-8 px-2 text-sm text-center font-bold border border-slate-200 rounded-sm bg-white focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:bg-slate-50" />
+      {canEdit && String(value) !== draft && (
+        <button type="button" onClick={save} disabled={saving}
+          className="h-8 px-3 text-[12px] font-semibold rounded-sm border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-40">
           {saving ? "Saving…" : "Save"}
         </button>
       )}
-      {msg && <span className={`text-xs ${msg === "Saved" ? "text-emerald-600" : "text-red-600"}`}>{msg}</span>}
+      {msg && <span className={`text-[11px] ${msg === "Saved" ? "text-emerald-600" : "text-red-600"}`}>{msg}</span>}
     </div>
   );
 }
 
-/* A titled block inside the Intake tab, with its own Add Flow */
-function FlowSection({ n, title, hint, canAdd, onAdd, children }) {
+/* A card per approval: header (icon, name, count, actions) + its flows */
+const TONES = {
+  indigo:  { tile: "bg-indigo-50 text-indigo-600", bar: "bg-indigo-500", tag: "bg-indigo-50 text-indigo-700 border-indigo-200" },
+  emerald: { tile: "bg-emerald-50 text-emerald-600", bar: "bg-emerald-500", tag: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+};
+function FlowSection({ icon: Icon, tone = "indigo", title, tag, count, extra, canAdd, onAdd, children }) {
+  const t = TONES[tone];
   return (
-    <section>
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <div className="flex items-start gap-2.5">
-          <span className="w-6 h-6 rounded-full bg-indigo-600 text-white text-[11px] font-bold flex items-center justify-center shrink-0 mt-0.5">{n}</span>
-          <div>
-            <p className="text-[14px] font-bold text-slate-800">{title}</p>
-            <p className="text-[11px] text-slate-400">{hint}</p>
-          </div>
+    <section className="relative rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+      <span className={`absolute inset-y-0 left-0 w-1 ${t.bar}`} />
+      <div className="flex flex-wrap items-center gap-3 pl-5 pr-4 py-3 border-b border-slate-100 bg-slate-50/60">
+        <span className={`w-8 h-8 rounded-md flex items-center justify-center shrink-0 ${t.tile}`}><Icon size={16} /></span>
+        <div className="flex items-center gap-2 min-w-0">
+          <p className="text-[14px] font-bold text-slate-800">{title}</p>
+          {tag && <span className={`px-1.5 py-0.5 rounded border text-[10px] font-bold ${t.tag}`}>{tag}</span>}
+          <span className="text-[12px] text-slate-400">{count} flow{count === 1 ? "" : "s"}</span>
         </div>
-        {canAdd && (
-          <button type="button" onClick={onAdd}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-sm bg-indigo-600 text-white text-[12px] font-bold hover:bg-indigo-700 shrink-0">
-            <Plus size={13} /> Add Flow
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-3">
+          {extra}
+          {onAdd && canAdd && (
+            <button type="button" onClick={onAdd}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md border border-indigo-200 bg-white text-indigo-700 text-[12px] font-bold hover:bg-indigo-50 transition">
+              <Plus size={13} /> Add Flow
+            </button>
+          )}
+        </div>
       </div>
-      {children}
+      <div className="pl-1">{children}</div>
     </section>
   );
 }

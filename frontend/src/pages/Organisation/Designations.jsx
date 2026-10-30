@@ -8,6 +8,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useOrgId, scopedUrl } from "./orgScope";
 import BrandLoader from "../../components/BrandLoader";
+import { FromEmployeesBanner } from "./FromEmployees";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -16,7 +17,7 @@ const TEMPLATE_HEADERS = ["Designation Name", "Grade", "Status"];
 const EMPTY_FORM = { title: "", grade: "", active: true };
 
 export default function Designations({ actionsRef }) {
-  const { canEdit, canDelete } = useModulePermissions("designations");
+  const { canAdd, canEdit, canDelete } = useModulePermissions("designations");
   const orgId = useOrgId();
   const [rows,      setRows]      = useState([]);
   const [grades,    setGrades]    = useState([]);
@@ -175,6 +176,7 @@ export default function Designations({ actionsRef }) {
 
   return (
     <>
+      {canAdd && <FromEmployeesBanner kind="designations" orgId={orgId} existing={rows.map(r => r.title)} onAdded={fetchDesigs} />}
       {importing && (
         <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center">
           <div className="bg-white rounded px-10 py-8 shadow-2xl flex flex-col items-center gap-4">

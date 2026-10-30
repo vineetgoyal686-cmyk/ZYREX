@@ -69,7 +69,7 @@ function OrgCard({ company, onOpen }) {
       </div>
       <div className="border-t border-slate-100" />
       <div className="grid grid-cols-3 divide-x divide-slate-100">
-        {[{ label: "Divisions", val: company._divCount ?? 0 }, { label: "Depts", val: company._deptCount ?? 0 }, { label: "Employees", val: company._empCount ?? 0 }].map(s => (
+        {[{ label: "Depts", val: company._deptCount ?? 0 }, { label: "Employees", val: company._empCount ?? 0 }].map(s => (
           <div key={s.label} className="text-center py-3">
             <p className="text-[17px] font-bold text-slate-800 leading-none">{s.val}</p>
             <p className="text-[10px] text-slate-400 mt-1 font-medium">{s.label}</p>
@@ -118,13 +118,13 @@ export default function OrgList({ onSelectOrg, showAdd, onAddDone, actionsRef, v
     try {
       const h = { headers: { Authorization: `Bearer ${TOKEN()}` } };
       const get = (path) => fetch(`${API}${path}`, h).then(r => r.json()).catch(() => ({}));
-      const [data, divs, depts, emps] = await Promise.all([
-        get("/api/procurement/companies"), get("/api/organisation/divisions"),
+      const [data, depts, emps] = await Promise.all([
+        get("/api/procurement/companies"),
         get("/api/departments"), get("/api/organisation/employees"),
       ]);
       const countBy = (rows, key) => (rows || []).reduce((m, r) => { const id = r[key]; if (id) m[id] = (m[id] || 0) + 1; return m; }, {});
-      const divC = countBy(divs.divisions, "company_id"), deptC = countBy(depts.departments, "company_id"), empC = countBy(emps.contacts, "companyId");
-      setCompanies((data.companies || []).map(c => ({ ...c, _divCount: divC[c.id] || 0, _deptCount: deptC[c.id] || 0, _empCount: empC[c.id] || 0 })));
+      const deptC = countBy(depts.departments, "company_id"), empC = countBy(emps.contacts, "companyId");
+      setCompanies((data.companies || []).map(c => ({ ...c, _deptCount: deptC[c.id] || 0, _empCount: empC[c.id] || 0 })));
     } catch { setCompanies([]); }
     finally { setLoading(false); }
   };

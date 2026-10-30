@@ -37,7 +37,6 @@ const TABS = ["Main Detail", "Billing Address", "Bank Detail", "State Billing", 
 export default function OrgOverview({ org: initialOrg, onDeleted }) {
   const [org,       setOrg]       = useState(initialOrg);
   const [deptCount, setDeptCount] = useState(0);
-  const [divCount,  setDivCount]  = useState(0);
   const [subCount,  setSubCount]  = useState(0);
   const [activeTab, setActiveTab] = useState("Main Detail");
   const [showLog,   setShowLog]   = useState(false);
@@ -50,7 +49,6 @@ export default function OrgOverview({ org: initialOrg, onDeleted }) {
   useEffect(() => {
     const h = { Authorization: `Bearer ${TOKEN()}` };
     fetch(scopedUrl(`${API}/api/departments`, orgId), { headers: h }).then(r => r.json()).then(j => setDeptCount((j.departments || []).length)).catch(() => {});
-    fetch(scopedUrl(`${API}/api/organisation/divisions`, orgId), { headers: h }).then(r => r.json()).then(j => setDivCount((j.divisions || []).length)).catch(() => {});
     fetch(scopedUrl(`${API}/api/teams`, orgId), { headers: h }).then(r => r.json()).then(j => setSubCount((j.teams || []).length)).catch(() => {});
   }, []);
 
@@ -71,9 +69,8 @@ export default function OrgOverview({ org: initialOrg, onDeleted }) {
   ].filter(Boolean).join(" · ").replace(/·\s*(\d)/, "— $1");
 
   const STATS = [
-    { label: "Divisions",   val: divCount },
     { label: "Departments", val: deptCount },
-    { label: "Sub-Depts",   val: subCount },
+    { label: "Teams",       val: subCount },
     { label: "Employees",   val: 0 },
   ];
 

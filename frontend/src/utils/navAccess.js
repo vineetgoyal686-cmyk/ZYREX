@@ -12,9 +12,9 @@ const TAB_GROUP_KEYS = {
 // HRMS / company tabs → module key. These used to live inside the
 // Organisation page, which hid a tab unless it was granted (no fail-open).
 const ORG_TAB_MODULE = {
-  employees: "employees", divisions: "divisions", departments: "departments",
+  employees: "employees", departments: "departments",
   sub_departments: "teams", grades: "grades", designations: "designations",
-  structure: "structure", org_chart: "org_chart", policy: "policy", sop: "sop",
+  org_chart: "org_chart", policy: "policy", sop: "sop",
   locations: "locations",
 };
 

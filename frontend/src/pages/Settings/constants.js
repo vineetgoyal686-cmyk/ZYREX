@@ -132,7 +132,6 @@ export const MODULE_PERM_CONFIG = {
   sop:                     ["can_view"],
   departments:             ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export"],
   teams:                   ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export"],
-  divisions:               ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export"],
   grades:                  ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export"],
   designations:            ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export"],
   employees:               ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export"],
@@ -183,7 +182,7 @@ export const DEFAULT_MODULE_PERMS = ["can_view", "can_add", "can_edit", "can_del
 export const MODULE_BUILT_STATUS = {
   global_dashboard: true, zyhawk_ai: true, treasury_overview: true, treasury_ledger: true, inbox: true,
   petty_cash_staff: true, petty_cash_accounts: true, expenses_cheque_record: true, annexure: true,
-  departments: true, teams: true, divisions: true, grades: true,
+  departments: true, teams: true, grades: true,
   designations: true, employees: true, locations: true, policy: true,
   master_data_vendor: true,
   master_data_orders: true, master_data_intakes: true, master_data_clauses: true,
@@ -248,15 +247,7 @@ export const PERMISSION_LAYOUT = [
   { section: "HRMS", rows: [
     { key: "employees",        label: "Employees" },
     { key: "staff_attendance", label: "Attendance" },
-    { group: "Structure", rows: [
-      { key: "structure",    label: "Hierarchy" },
-      { key: "divisions",    label: "Divisions" },
-      { key: "departments",  label: "Departments" },
-      { key: "teams",        label: "Teams" },
-      { key: "grades",       label: "Grades" },
-      { key: "designations", label: "Designations" },
-      { key: "org_chart",    label: "Org Chart" },
-    ] },
+    { key: "org_chart",        label: "Org Chart" },
     { group: "Documents", rows: [
       { key: "policy", label: "Policy" },
       { key: "sop",    label: "SOP" },
@@ -276,6 +267,10 @@ export const PERMISSION_LAYOUT = [
       { key: "company_list",       label: "Companies" },
       { profile: "manage_project", label: "Projects" },
       { key: "locations",          label: "Branch" },
+      { key: "departments",        label: "Departments" },
+      { key: "teams",              label: "Teams" },
+      { key: "designations",       label: "Designations" },
+      { key: "grades",             label: "Grades" },
     ] },
     { group: "Access", rows: [
       { profile: "manage_user", label: "User Management" },

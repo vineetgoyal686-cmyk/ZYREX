@@ -23,7 +23,6 @@ const EMPLOYEE_LOG_FIELDS = [
   { key: "personName",    label: "Name" },
   { key: "employeeId",    label: "Employee ID" },
   { key: "company",       label: "Company" },
-  { key: "division",      label: "Division" },
   { key: "department",    label: "Department" },
   { key: "designation",   label: "Designation" },
   { key: "grade",         label: "Grade" },
@@ -63,7 +62,7 @@ const STAFF_TYPE_CLS = {
 // "permanent", "Resigned " etc. from a sheet → the exact option, or "" if it isn't one
 // What a person does — separate from Staff Type (Permanent / Probation …)
 const CATEGORIES = ["Office Staff", "Site Staff", "Guard", "Driver", "Cook"];
-// these get the short form: no division / grade / personal details
+// these get the short form: no department / grade / personal details
 const SHORT_FORM = ["Guard", "Driver", "Cook"];
 const CATEGORY_CLS = {
   "Office Staff": "bg-blue-50 text-blue-700 border-blue-200",
@@ -149,7 +148,6 @@ const DETAIL_TABS = ["Overview", "Documents", "Notes", "Permissions"];
 function EmployeeDetail({ emp, imgUrl, opts, onBack, onEdit, onMove, onDelete }) {
   const [tab, setTab] = useState("Overview");
   const s   = STATUS[emp.status || "active"];
-  const div = emp.division || "";
   const grd = emp.grade || "";
 
   return (
@@ -199,7 +197,6 @@ function EmployeeDetail({ emp, imgUrl, opts, onBack, onEdit, onMove, onDelete })
             <p className="text-sm text-slate-500 font-medium">{emp.designation || "—"}</p>
             <div className="flex items-center gap-3 mt-1.5 flex-wrap">
               {emp.department && <span className="inline-flex items-center gap-1 text-[11px] text-slate-400"><Briefcase size={10} />{emp.department}</span>}
-              {div && <span className="inline-flex items-center gap-1 text-[11px] text-slate-400"><Building2 size={10} />{div}</span>}
               {emp.contactCode && <code className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-mono font-bold">{emp.contactCode}</code>}
             </div>
           </div>
@@ -283,7 +280,6 @@ function EmployeeDetail({ emp, imgUrl, opts, onBack, onEdit, onMove, onDelete })
               </div>
               <div className="p-4 space-y-2">
                 {[
-                  { label: "Division",    value: div,            Icon: Building2 },
                   { label: "Department",  value: emp.department, Icon: Briefcase },
                   { label: "Team",        value: emp.team,       Icon: Users     },
                   { label: "Designation", value: emp.designation, Icon: BadgeCheck },
@@ -319,13 +315,40 @@ const SEL = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:o
 const INP = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400";
 const LBL = "block text-xs font-semibold text-slate-500 mb-1";
 
-function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, allEmps, opts }) {
+/* A value picked from a Settings › Organisation list. A value the
+   employee already has that isn't in the list is kept and flagged, so
+   nothing is lost; it can be added to the list or changed. */
+function ListPick({ value, onChange, options, what, empty }) {
+  const inList = !value || options.some(o => o.toLowerCase() === String(value).toLowerCase());
+  return (
+    <>
+      <select value={value || ""} onChange={e => onChange(e.target.value)} className={SEL}>
+        <option value="">{options.length ? "— Select —" : (empty || `No ${what.toLowerCase()} yet`)}</option>
+        {!inList && <option value={value}>{value} (not in list)</option>}
+        {options.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+      {!inList && <p className="mt-1 text-[10px] font-semibold text-amber-600">Not in {what} — add it in Settings › Organisation › {what}, or pick one</p>}
+    </>
+  );
+}
+
+function EmpModal({ form, setForm, editId, saving, onClose, onSave, allEmps, opts }) {
   const orgId = useOrgId();
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
   const [gradeList, setGradeList] = useState([]);
   const [desigList, setDesigList] = useState([]);
+  const [deptList,  setDeptList]  = useState([]);
+  const [teamList,  setTeamList]  = useState([]);
+  const [appUsers,  setAppUsers]  = useState([]);
   useEffect(() => {
+    fetch(`${API}/api/organisation/app-users`, { headers: { Authorization: `Bearer ${TOKEN()}` } })
+      .then(r => r.json()).then(d => setAppUsers(d.users || [])).catch(() => {});
+    // Department, Team and Designation come from Settings › Organisation
+    fetch(scopedUrl(`${API}/api/departments`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } })
+      .then(r => r.json()).then(d => setDeptList((d.departments || []).filter(x => x.status !== "inactive"))).catch(() => {});
+    fetch(scopedUrl(`${API}/api/teams`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } })
+      .then(r => r.json()).then(d => setTeamList((d.teams || []).filter(x => x.status !== "inactive"))).catch(() => {});
     fetch(scopedUrl(`${API}/api/organisation/grades`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } })
       .then(r => r.json()).then(d => setGradeList(
         (d.grades || []).map(g => ({ ...g, gradeId: g.grade_id || g.gradeId, order: g.sort_order ?? g.order ?? 1 }))
@@ -458,11 +481,8 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, a
             <div className="grid grid-cols-3 gap-4">
               <div className="col-span-2">
                 <label className={LBL}>Designation</label>
-                <input value={form.designation} onChange={handleDesigChange}
-                  placeholder={form.category === "Guard" ? "e.g. Security Guard" : "e.g. Helper"} className={INP} list="desig-suggestions" />
-                <datalist id="desig-suggestions">
-                  {desigList.map(d => <option key={d.id} value={d.title} />)}
-                </datalist>
+                <ListPick value={form.designation} onChange={v => handleDesigChange({ target: { value: v } })}
+                  options={desigList.map(d => d.title)} what="Designations" />
               </div>
               <div>
                 <label className={LBL}>Phone (Alternate)</label>
@@ -480,30 +500,20 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, a
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-3">Organisation</p>
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className={LBL}>Division</label>
-                <select value={form.division} onChange={set("division")} className={SEL}>
-                  <option value="">— Select Division —</option>
-                  {divisions.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-                </select>
-              </div>
-              <div>
                 <label className={LBL}>Department</label>
-                <input value={form.department} onChange={set("department")} placeholder="e.g. Technical" className={INP} />
+                <ListPick value={form.department} what="Departments" options={deptList.map(d => d.name)}
+                  onChange={v => setForm(f => ({ ...f, department: v, team: "" }))} />
               </div>
               <div>
                 <label className={LBL}>Team</label>
-                <input value={form.team} onChange={set("team")} placeholder="e.g. Site Team A" className={INP} />
+                <ListPick value={form.team} what="Teams" onChange={v => setForm(f => ({ ...f, team: v }))}
+                  options={teamList.filter(t => { const d = deptList.find(x => x.name === form.department); return !d || !t.department_id || String(t.department_id) === String(d.id); }).map(t => t.name)}
+                  empty={form.department ? "No team in this department" : "Pick the department first"} />
               </div>
               <div className="col-span-2">
                 <label className={LBL}>Designation</label>
-                <input
-                  value={form.designation} onChange={handleDesigChange}
-                  placeholder="e.g. Site Engineer" className={INP}
-                  list="desig-suggestions"
-                />
-                <datalist id="desig-suggestions">
-                  {desigList.map(d => <option key={d.id} value={d.title} />)}
-                </datalist>
+                <ListPick value={form.designation} onChange={v => handleDesigChange({ target: { value: v } })}
+                  options={desigList.map(d => d.title)} what="Designations" />
               </div>
               <div>
                 <label className={LBL}>Grade</label>
@@ -525,16 +535,8 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, a
               </div>
               <div>
                 <label className={LBL}>Reporting Manager</label>
-                <input
-                  value={form.reportingTo} onChange={set("reportingTo")}
-                  placeholder="Manager name" className={INP}
-                  list="mgr-suggestions"
-                />
-                <datalist id="mgr-suggestions">
-                  {allEmps.filter(e => e.personName && e.id !== editId).map(e => (
-                    <option key={e.id} value={e.personName} />
-                  ))}
-                </datalist>
+                <ListPick value={form.reportingTo} what="Employees" onChange={v => setForm(f => ({ ...f, reportingTo: v }))}
+                  options={[...new Set(allEmps.filter(e => e.personName && e.id !== editId && e.status !== "inactive").map(e => e.personName))].sort()} />
                 {managerGradeWarn && (
                   <p className="text-[11px] text-amber-600 mt-1.5 flex items-center gap-1">
                     <span className="inline-block w-1 h-1 rounded-full bg-amber-500 shrink-0" />
@@ -560,6 +562,17 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, a
               <div className="col-span-2">
                 <label className={LBL}>Work Email</label>
                 <input type="email" value={form.email} onChange={set("email")} placeholder="If the company gave one" className={INP} />
+              </div>
+              <div className="col-span-3">
+                <label className={LBL}>App Login</label>
+                <select value={form.userId || ""} onChange={set("userId")} className={SEL}>
+                  <option value="">— No login —</option>
+                  {appUsers.map(u => {
+                    const elsewhere = u.linkedTo && u.linkedTo.id !== editId;
+                    return <option key={u.id} value={u.id} disabled={elsewhere}>{u.name} · {u.email}{elsewhere ? ` — linked to ${u.linkedTo.name}` : ""}{u.active ? "" : " (inactive)"}</option>;
+                  })}
+                </select>
+                <p className="mt-1 text-[10px] text-slate-400">The Zyhawk login this person uses (Settings › User Management). Approvals and the Org Chart use it.</p>
               </div>
               <div className="col-span-3">
                 <label className={LBL}>Address</label>
@@ -621,18 +634,18 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, a
 ═══════════════════════════════ */
 const EMPTY_FORM = {
   personName: "", employeeId: "", status: "active", staffType: "",
-  division: "", department: "", designation: "", grade: "", team: "", role: "",
+  department: "", designation: "", grade: "", team: "", role: "",
   reportingTo: "", workLocation: "", joiningDate: "", dateOfBirth: "",
   gender: "", maritalStatus: "", nationality: "",
   contactNumber: "", alternatePhone: "", email: "", address: "",
-  company: "", bio: "", tags: "",
+  company: "", bio: "", tags: "", userId: "",
   category: "", postedKind: "project", postedId: "", employedThrough: "direct", agencyVendorId: "",
 };
 
 /* ═══════════════════════════════
    MAIN COMPONENT
 ═══════════════════════════════ */
-/* ── "Filters" button — Division / Department / Status in one popover ── */
+/* ── "Filters" button — Department / Status in one popover ── */
 const STATUS_OPTIONS = [["active", "Active"], ["inactive", "Inactive"], ["on_leave", "On Leave"]];
 
 /* ── Category picker in the header — same size as the Filters button ── */
@@ -693,7 +706,7 @@ function CategoryPicker({ value, emps, onChange }) {
   );
 }
 
-function EmpFilters({ filters, divs, depts, onChange, onClear }) {
+function EmpFilters({ filters, depts, onChange, onClear }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -728,7 +741,6 @@ function EmpFilters({ filters, divs, depts, onChange, onClear }) {
       </button>
       {open && (
         <div className="absolute left-0 top-full mt-1 w-60 bg-white border border-slate-200 rounded-lg shadow-lg z-30 p-3 flex flex-col gap-2.5">
-          {field("Division", "div", divs.map(d => [d, d]))}
           {field("Department", "dept", depts.map(d => [d, d]))}
           {field("Status", "status", STATUS_OPTIONS)}
           {field("Staff Type", "type", STAFF_TYPES.map(t => [t, t]))}
@@ -890,7 +902,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [search,   setSearch]   = useState("");
-  const [filterDiv,    setFilterDiv]    = useState("");
   const [filterDept,   setFilterDept]   = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterType,   setFilterType]   = useState("");
@@ -912,11 +923,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const [moveEmps,   setMoveEmps]  = useState(null);
   const importRef = useRef(null);
 
-  const [divisions, setDivisions] = useState([]);
-  useEffect(() => {
-    fetch(scopedUrl(`${API}/api/organisation/divisions`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } })
-      .then(r => r.json()).then(d => setDivisions(d.divisions || [])).catch(() => {});
-  }, []);
 
   useEffect(() => { fetchEmps(); }, []);
   useEffect(() => {
@@ -988,10 +994,10 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       personName: emp.personName || "", employeeId: emp.employeeId || "",
       status: emp.status || "active",
       staffType: emp.staffType || "",
-      division: emp.division || "",
       department: emp.department || "", designation: emp.designation || "",
       grade: emp.grade || "", team: emp.team || "", role: emp.role || "",
       reportingTo: emp.reportingTo || "", workLocation: emp.workLocation || "",
+      userId: emp.userId || "",
       joiningDate: emp.joiningDate || "", dateOfBirth: emp.dateOfBirth || "",
       gender: emp.gender || "", maritalStatus: emp.maritalStatus || "",
       nationality: emp.nationality || "", contactNumber: emp.contactNumber || "",
@@ -1101,15 +1107,12 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   );
 
   /* ── Filter ── */
-  const allDivs  = [...new Set(emps.map(e => e.division || "").filter(Boolean))].sort();
   const allDepts = [...new Set(emps.map(e => e.department).filter(Boolean))].sort();
 
   const filtered = emps.filter(e => {
-    const div = e.division || "";
     const q   = search.toLowerCase();
     return (
-      (!search || [e.personName, e.employeeId, e.designation, e.department, div, e.contactNumber].some(v => v?.toLowerCase().includes(q))) &&
-      (!filterDiv    || div === filterDiv) &&
+      (!search || [e.personName, e.employeeId, e.designation, e.department, e.contactNumber].some(v => v?.toLowerCase().includes(q))) &&
       (!filterDept   || e.department === filterDept) &&
       (!filterStatus || e.status === filterStatus) &&
       (!filterType   || e.staffType === filterType) &&
@@ -1117,7 +1120,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     );
   });
 
-  // Guards / Drivers / Cooks have no division, department or grade —
+  // Guards / Drivers / Cooks have no department or grade —
   // their tabs show who they come through instead
   const workerTab = SHORT_FORM.includes(category);
 
@@ -1130,7 +1133,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const exportExcel = () => {
     const data = filtered.map((e, i) => ({
       "#": i + 1, "Emp ID": e.employeeId, "Name": e.personName,
-      "Division": e.division || "",
       "Department": e.department || "", "Designation": e.designation || "",
       "Grade": e.grade || "", "Status": STATUS[e.status]?.label || "Active", "Staff Type": e.staffType || "",
       "Category": e.category || "", "Posted At": postedLabel(e, opts), "Employed Through": agencyName(e, opts),
@@ -1155,9 +1157,9 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     doc.setDrawColor(226, 232, 240); doc.setLineWidth(0.4); doc.line(14, 26, pageW - 14, 26);
     autoTable(doc, {
       startY: 30,
-      head: [["#", "Emp ID", "Name", "Division", "Department", "Designation", "Grade", "Status", "Staff Type"]],
+      head: [["#", "Emp ID", "Name", "Department", "Designation", "Grade", "Status", "Staff Type"]],
       body: filtered.map((e, i) => [
-        i + 1, e.employeeId, e.personName, e.division || "—",
+        i + 1, e.employeeId, e.personName,
         e.department || "—", e.designation || "—", e.grade || "—",
         STATUS[e.status]?.label || "Active", e.staffType || "—",
       ]),
@@ -1175,7 +1177,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   /* ── Download Template ── */
   const downloadTemplate = () => {
     const gradeHint = "as set in the Grades tab (A, B, C…)";
-    const headers = ["Person Name", "Phone", "Employee ID", "Category", "Posted At", "Employed Through", "Agency", "Company", "Division", "Department", "Designation", "Grade", "Team", "Role", "Reporting Manager", "Joining Date", "Status", "Staff Type", "Email", "Gender", "Marital Status", "Nationality", "Address"];
+    const headers = ["Person Name", "Phone", "Employee ID", "Category", "Posted At", "Employed Through", "Agency", "Company", "Department", "Designation", "Grade", "Team", "Role", "Reporting Manager", "Joining Date", "Status", "Staff Type", "Email", "Gender", "Marital Status", "Nationality", "Address"];
     const ws = XLSX.utils.aoa_to_sheet([
       headers,
       ["Rahul Sharma", "9876543210", "BITL-001", "Site Staff", "B47", "Direct", "", "Bootes Impex Tech Pvt Ltd", "Engineering", "Civil", "Site Engineer", "C", "Site Team A", "Civil Engineer", "Ravi Kumar", "2024-01-01", "Active", "Permanent", "rahul@company.com", "Male", "Single", "Indian", "New Delhi"],
@@ -1215,7 +1217,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         .map(r => ({
           personName:    String(r["Person Name"]        || r["name"]        || "").trim(),
           employeeId:    String(r["Employee ID"]        || r["employeeId"]  || "").trim(),
-          division:      String(r["Division"]           || "").trim(),
           company:       String(r["Company"]            || "").trim(),
           department:    String(r["Department"]         || "").trim(),
           designation:   String(r["Designation"]        || "").trim(),
@@ -1273,7 +1274,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         />
         {modal && (
           <EmpModal form={form} setForm={setForm} editId={editId} saving={saving}
-            onClose={() => setModal(false)} onSave={handleSave} divisions={divisions} allEmps={emps} opts={opts} />
+            onClose={() => setModal(false)} onSave={handleSave} allEmps={emps} opts={opts} />
         )}
         {moveModal}
         {toast && (
@@ -1368,13 +1369,13 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
             </div>
             <CategoryPicker value={category} emps={emps} onChange={c => { setCategory(c); setPage(1); }} />
             <EmpFilters
-              filters={{ div: filterDiv, dept: filterDept, status: filterStatus, type: filterType }}
-              divs={allDivs} depts={allDepts}
+              filters={{ dept: filterDept, status: filterStatus, type: filterType }}
+              depts={allDepts}
               onChange={(k, v) => {
-                ({ div: setFilterDiv, dept: setFilterDept, status: setFilterStatus, type: setFilterType })[k](v);
+                ({ dept: setFilterDept, status: setFilterStatus, type: setFilterType })[k](v);
                 setPage(1);
               }}
-              onClear={() => { setFilterDiv(""); setFilterDept(""); setFilterStatus(""); setFilterType(""); setPage(1); }} />
+              onClear={() => { setFilterDept(""); setFilterStatus(""); setFilterType(""); setPage(1); }} />
           </>
         );
         return toolbarSlot
@@ -1392,14 +1393,13 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 gap-3 text-slate-300">
           <Users size={32} />
-          <p className="text-sm">{search || filterDiv || filterDept || filterStatus || filterType || category ? "No employees match your filters" : "No employees yet — add one above"}</p>
+          <p className="text-sm">{search || filterDept || filterStatus || filterType || category ? "No employees match your filters" : "No employees yet — add one above"}</p>
         </div>
       ) : view === "card" ? (
 
         /* ── CARD VIEW ── */
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {paginated.map(emp => {
-            const div = emp.division || "";
             return (
               <div key={emp.id} onClick={() => setSelected(emp)}
                 className="bg-white rounded-lg border border-slate-200 p-4 cursor-pointer hover:shadow-md hover:border-blue-200 transition-all flex flex-col items-center text-center gap-2 group">
@@ -1408,8 +1408,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                   <p className="font-bold text-[13px] text-slate-800 truncate group-hover:text-blue-700 transition-colors">{emp.personName}</p>
                   <p className="text-[11px] text-slate-400 truncate mt-0.5">{emp.designation || "—"}</p>
                 </div>
-                {div && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-600 border border-blue-100 truncate max-w-full">{div}</span>
+                {emp.department && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-600 border border-blue-100 truncate max-w-full">{emp.department}</span>
                 )}
                 <div className="flex items-center justify-between w-full mt-1">
                   <GradeBadge grade={emp.grade} />
@@ -1454,7 +1454,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Category</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Posted At</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Mobile</th>
-                  {!workerTab && <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Division</th>}
                   {!workerTab && <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Department</th>}
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Designation</th>
                   {workerTab
@@ -1467,7 +1466,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
               </thead>
               <tbody>
                 {paginated.map((emp) => {
-                  const div = emp.division || "";
                   const td = "px-4 py-3 border-b border-r border-slate-200 text-[13px] text-slate-600 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors";
                   return (
                     <tr key={emp.id} className="group cursor-pointer" onClick={() => setSelected(emp)}>
@@ -1492,7 +1490,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                         {!workerTab && emp.employedThrough === "agency" && <span className="ml-1.5 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">{agencyName(emp, opts)}</span>}
                       </td>
                       <td className={`${td} tabular-nums`}>{emp.contactNumber || "—"}</td>
-                      {!workerTab && <td className={td}>{div || "—"}</td>}
                       {!workerTab && <td className={td}>{emp.department || "—"}</td>}
                       <td className={td}>{emp.designation || "—"}</td>
                       {workerTab
@@ -1567,7 +1564,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       {/* Modal */}
       {modal && (
         <EmpModal form={form} setForm={setForm} editId={editId} saving={saving}
-          onClose={() => setModal(false)} onSave={handleSave} divisions={divisions} allEmps={emps} opts={opts} />
+          onClose={() => setModal(false)} onSave={handleSave} allEmps={emps} opts={opts} />
       )}
       {logEmp && <ContactLogModal contact={logEmp} onClose={() => setLogEmp(null)} />}
       {moveModal}

@@ -7,18 +7,19 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useOrgId, scopedUrl } from "./orgScope";
 import BrandLoader from "../../components/BrandLoader";
+import { FromEmployeesBanner } from "./FromEmployees";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
 
-const TEMPLATE_HEADERS = ["Department Name", "Division", "Department Head", "Status"];
+const TEMPLATE_HEADERS = ["Department Name", "Department Head", "Status"];
 
-function DeptModal({ dept, divisions, onClose, onSaved }) {
+function DeptModal({ dept, onClose, onSaved }) {
   const orgId = useOrgId();
   const [form, setForm] = useState(
     dept
-      ? { name: dept.name, head: dept.head || "", status: dept.status || "active", division_id: dept.division_id || "" }
-      : { name: "", head: "", status: "active", division_id: "" }
+      ? { name: dept.name, head: dept.head || "", status: dept.status || "active" }
+      : { name: "", head: "", status: "active" }
   );
   const [saving, setSaving] = useState(false);
   const [err, setErr]       = useState("");
@@ -26,7 +27,6 @@ function DeptModal({ dept, divisions, onClose, onSaved }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const save = async () => {
-    if (!form.division_id) { setErr("Please select a division"); return; }
     if (!form.name.trim()) { setErr("Department name is required"); return; }
     setSaving(true); setErr("");
     try {
@@ -48,14 +48,6 @@ function DeptModal({ dept, divisions, onClose, onSaved }) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700"><X size={16} /></button>
         </div>
         <div className="space-y-3">
-          <div>
-            <label className="text-xs font-semibold text-slate-600 block mb-1">Division *</label>
-            <select value={form.division_id} onChange={e => set("division_id", e.target.value)}
-              className="w-full border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2012%2012%22%3E%3Cpath%20fill%3D%22%2394a3b8%22%20d%3D%22M6%208L1%203h10z%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[right_0.75rem_center]">
-              <option value="">— Select Division —</option>
-              {divisions.map(d => <option key={d.id} value={String(d.id)}>{d.name}</option>)}
-            </select>
-          </div>
           <div>
             <label className="text-xs font-semibold text-slate-600 block mb-1">Department Name *</label>
             <input value={form.name} onChange={e => set("name", e.target.value)}
@@ -92,7 +84,7 @@ function DeptModal({ dept, divisions, onClose, onSaved }) {
 }
 
 export default function Departments({ actionsRef }) {
-  const { canEdit, canDelete } = useModulePermissions("departments");
+  const { canAdd, canEdit, canDelete } = useModulePermissions("departments");
   const orgId = useOrgId();
   const [depts, setDepts]         = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -102,11 +94,6 @@ export default function Departments({ actionsRef }) {
   const [deleting, setDeleting]   = useState(null);
   const importRef = useRef(null);
 
-  const [divisions, setDivisions] = useState([]);
-  useEffect(() => {
-    fetch(scopedUrl(`${API}/api/organisation/divisions`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } })
-      .then(r => r.json()).then(d => setDivisions(d.divisions || [])).catch(() => {});
-  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -199,11 +186,10 @@ export default function Departments({ actionsRef }) {
 
   /* ── Download template ── */
   const downloadTemplate = () => {
-    const divisionNames = divisions.map(d => d.name).join(", ");
     const ws = XLSX.utils.aoa_to_sheet([TEMPLATE_HEADERS]);
     ws["!cols"] = TEMPLATE_HEADERS.map(h => ({ wch: Math.max(20, h.length + 2) }));
-    // Add a hint row so user knows valid division names
-    XLSX.utils.sheet_add_aoa(ws, [[`e.g. HR Dept`, divisionNames ? `e.g. ${divisions[0]?.name || "Support"}` : "Support", "e.g. Pooja Sharma", "Active"]], { origin: "A2" });
+    // an example row
+    XLSX.utils.sheet_add_aoa(ws, [[`e.g. HR Dept`, "e.g. Pooja Sharma", "Active"]], { origin: "A2" });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Departments");
     XLSX.writeFile(wb, "departments_template.xlsx");
@@ -219,11 +205,8 @@ export default function Departments({ actionsRef }) {
       const rawRows  = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: "" });
       const toImport = rawRows
         .map(r => {
-          const divName = String(r["Division"] || r["division"] || "").trim();
-          const divMatch = divisions.find(d => d.name.toLowerCase() === divName.toLowerCase());
           return {
             name:        String(r["Department Name"] || r["name"] || "").trim(),
-            division_id: divMatch ? String(divMatch.id) : "",
             head:        String(r["Department Head"] || r["head"] || "").trim(),
             status:      String(r["Status"] || r["status"] || "active").toLowerCase().includes("inactive") ? "inactive" : "active",
           };
@@ -253,6 +236,7 @@ export default function Departments({ actionsRef }) {
 
   return (
     <>
+      {canAdd && <FromEmployeesBanner kind="departments" orgId={orgId} existing={depts.map(d => d.name)} onAdded={load} />}
       {importing && (
         <div className="fixed inset-0 z-[100] bg-black/40 flex items-center justify-center">
           <div className="bg-white rounded px-10 py-8 shadow-2xl flex flex-col items-center gap-4">
@@ -279,7 +263,6 @@ export default function Departments({ actionsRef }) {
               <th className="px-4 py-3 text-left font-semibold w-14">S.No</th>
               <th className="px-4 py-3 text-left font-semibold w-32">Dept ID</th>
               <th className="px-4 py-3 text-left font-semibold">Department Name</th>
-              <th className="px-4 py-3 text-left font-semibold">Division</th>
               <th className="px-4 py-3 text-left font-semibold">Head</th>
               <th className="px-4 py-3 text-center font-semibold w-28">Status</th>
               <th className="px-4 py-3 text-right font-semibold w-20">Action</th>
@@ -287,9 +270,9 @@ export default function Departments({ actionsRef }) {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-xs">Loading…</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-xs">Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400 text-xs">
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-xs">
                 {search ? "No departments match your search" : "No departments yet — add one above"}
               </td></tr>
             ) : rows.map((d, idx) => (
@@ -299,9 +282,6 @@ export default function Departments({ actionsRef }) {
                   <span className="text-slate-500 text-[13px]">{d.dept_id || "—"}</span>
                 </td>
                 <td className="px-4 py-3 font-semibold text-slate-800">{d.name}</td>
-                <td className="px-4 py-3 text-slate-600 text-[13px]">
-                  {divisions.find(v => String(v.id) === String(d.division_id))?.name || <span className="text-slate-300">—</span>}
-                </td>
                 <td className="px-4 py-3 text-slate-600">{d.head || "—"}</td>
                 <td className="px-4 py-3 text-center"><StatusBadge active={d.status === "active"} /></td>
                 <td className="px-4 py-3">
@@ -329,7 +309,6 @@ export default function Departments({ actionsRef }) {
       {modal && (
         <DeptModal
           dept={modal === "add" ? null : modal}
-          divisions={divisions}
           onClose={() => setModal(null)}
           onSaved={handleSaved}
         />

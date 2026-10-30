@@ -1,4 +1,4 @@
-// Organisation master data (divisions, departments, teams, grades, designations,
+// Organisation master data (departments, teams, grades, designations,
 // branches, employees) belongs to one company via `company_id`.
 // GETs filter only when `?company_id=` is passed, so callers outside the
 // Organisation module (Settings, Attendance, …) keep their existing behaviour.

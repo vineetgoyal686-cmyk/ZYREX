@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 
 // The organisation currently opened in OrgDetail. Every tab reads and writes
-// master data (divisions, departments, employees…) scoped to this company.
+// master data (departments, employees…) scoped to this company.
 export const OrgScopeContext = createContext(null);
 
 export const useOrgId = () => useContext(OrgScopeContext);

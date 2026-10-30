@@ -3,7 +3,7 @@ import {
   Plus, LayoutGrid, GitBranch, Building2, Briefcase,
   MapPin, PanelLeftClose, PanelLeftOpen,
   Download, Upload, ChevronDown, FileSpreadsheet, FileText,
-  Layers, Network, UserSquare2, FolderTree, ArrowLeft, Table2, BarChart2, ClipboardList, FileSignature, FolderKanban,
+  Network, UserSquare2, ArrowLeft, Table2, BarChart2, ClipboardList, FileSignature, FolderKanban,
   MoreHorizontal,
 } from "lucide-react";
 import OrgOverview   from "./OrgOverview";
@@ -11,8 +11,6 @@ import Departments   from "./Departments";
 import Designations  from "./Designations";
 import OrgChart      from "./OrgChart";
 import Locations     from "./Locations";
-import Structure     from "./Structure";
-import Divisions     from "./Divisions";
 import SubDepts      from "./SubDepts";
 import Grades        from "./Grades";
 import EmployeeList  from "./EmployeeList";
@@ -38,7 +36,6 @@ const NAV_SECTIONS = [
       // Projects = the main project list, filtered to this company (its own header has Add)
       { id: "projects",   label: "Projects",   icon: FolderKanban,  hasAdd: false, hasExport: false },
       { id: "locations",  label: "Branch",     icon: MapPin,        hasAdd: true,  hasExport: false, btnLabel: "Add Branch" },
-      { id: "structure",  label: "Structure",  icon: FolderTree,    hasAdd: false, hasExport: false },
       { id: "org_chart",  label: "Org Chart",  icon: GitBranch,     hasAdd: false, hasExport: false },
       { id: "sop",        label: "SOP",        icon: ClipboardList, hasAdd: false, hasExport: false },
       { id: "policy",     label: "Policy",     icon: FileText,      hasAdd: true,  hasExport: false, btnLabel: "Add Policy" },
@@ -47,11 +44,11 @@ const NAV_SECTIONS = [
   {
     label: "Master Data",
     items: [
-      { id: "divisions",       label: "Divisions",       icon: Layers,    hasAdd: true,  hasExport: true,  btnLabel: "Add Division"       },
-      { id: "departments",     label: "Departments",     icon: Building2, hasAdd: true,  hasExport: true,  btnLabel: "Add Department"     },
+      // Company → Department → Team; Designation and Grade are set on each employee
+      { id: "departments",     label: "Departments",  icon: Building2, hasAdd: true, hasExport: true, btnLabel: "Add Department"  },
       { id: "sub_departments", label: "Teams",        icon: Network,   hasAdd: true, hasExport: true, btnLabel: "Add Team"        },
-      { id: "grades",          label: "Grades",       icon: BarChart2, hasAdd: true, hasExport: true, btnLabel: "Add Grade"       },
       { id: "designations",    label: "Designations", icon: Briefcase, hasAdd: true, hasExport: true, btnLabel: "Add Designation" },
+      { id: "grades",          label: "Grades",       icon: BarChart2, hasAdd: true, hasExport: true, btnLabel: "Add Grade"       },
     ],
   },
   {
@@ -78,7 +75,6 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
   const [collapsed,  setCollapsed]  = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [tooltip,    setTooltip]    = useState(null);
-  const [divCount,    setDivCount]    = useState(0);
   const [subCount,    setSubCount]    = useState(0);
   const [lvlCount,    setLvlCount]    = useState(0);
   const [deptCount,   setDeptCount]   = useState(0);
@@ -101,13 +97,11 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
 
   const permDepartments  = useModulePermissions("departments");
   const permTeams        = useModulePermissions("teams");
-  const permDivisions    = useModulePermissions("divisions");
   const permGrades       = useModulePermissions("grades");
   const permDesignations = useModulePermissions("designations");
   const permEmployees    = useModulePermissions("employees");
   const permLocations    = useModulePermissions("locations");
   const permPolicy       = useModulePermissions("policy");
-  const permStructure    = useModulePermissions("structure");
   const permOrgChart     = useModulePermissions("org_chart");
   const permSop          = useModulePermissions("sop");
   // Projects follow Project Management access (profile permission manage_project)
@@ -116,9 +110,9 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
   const permProjects     = { canView: isGlobalAdmin || !!pmPerms.view };
 
   const TAB_PERMS = {
-    departments: permDepartments, sub_departments: permTeams, divisions: permDivisions,
+    departments: permDepartments, sub_departments: permTeams,
     grades: permGrades, designations: permDesignations, employees: permEmployees,
-    structure: permStructure, org_chart: permOrgChart, sop: permSop,
+    org_chart: permOrgChart, sop: permSop,
     locations: permLocations, policy: permPolicy, projects: permProjects,
   };
 
@@ -126,7 +120,6 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
     const h = { Authorization: `Bearer ${TOKEN()}` };
     const u = (path) => scopedUrl(`${API}${path}`, org.id);
     fetch(u("/api/departments"), { headers: h }).then(r => r.json()).then(j => setDeptCount((j.departments || []).length)).catch(() => {});
-    fetch(u("/api/organisation/divisions"), { headers: h }).then(r => r.json()).then(j => setDivCount((j.divisions || []).length)).catch(() => {});
     fetch(u("/api/organisation/grades"), { headers: h }).then(r => r.json()).then(j => setLvlCount((j.grades || []).length)).catch(() => {});
     fetch(u("/api/teams"), { headers: h }).then(r => r.json()).then(j => setSubCount((j.teams || []).length)).catch(() => {});
     fetch(u("/api/organisation/branches"), { headers: h }).then(r => r.json()).then(j => setBranchCount((j.branches || []).length)).catch(() => {});
@@ -142,7 +135,6 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
   }, []);
 
   const badges = {
-    divisions:       divCount    || null,
     departments:     deptCount   || null,
     sub_departments: subCount    || null,
     grades:          lvlCount    || null,
@@ -153,10 +145,8 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
   const renderContent = () => {
     switch (activeTab) {
       case "overview":        return <OrgOverview org={org} onNavigate={setActiveTab} />;
-      case "structure":       return <Structure />;
       case "org_chart":       return <OrgChart    onNavigate={setActiveTab} />;
       case "sop":             return <SOPTab showToast={showToast} />;
-      case "divisions":       return <Divisions   actionsRef={actionsRef} onChange={d => setDivCount(d.length)} />;
       case "departments":     return <Departments actionsRef={actionsRef} />;
       case "sub_departments": return <SubDepts    actionsRef={actionsRef} onChange={d => setSubCount(d.length)} />;
       case "grades":          return <Grades      actionsRef={actionsRef} onChange={d => setLvlCount(d.length)} />;

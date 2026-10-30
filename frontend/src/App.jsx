@@ -273,7 +273,7 @@ function AppLayout({
 
       // Settings › Company
       // a company's Projects and Branches live inside it
-      case "settings__company":           return <Organisation currentUser={currentUser} allowedTabs={["overview", "projects", "locations"]} onProjectsUpdate={onProjectsRefresh} />;
+      case "settings__company":           return <Organisation currentUser={currentUser} allowedTabs={["overview", "projects", "locations", "departments", "sub_departments", "designations", "grades"]} onProjectsUpdate={onProjectsRefresh} />;
 
       case "view_3d":
         return projectPage(project => <View3D key={project} project={project} />, { padded: true });

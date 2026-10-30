@@ -44,12 +44,6 @@ export const TABS = {
   hr__employees:                 { path: "/hrms/employees",                     label: "Employees",          orgTab: "employees" },
   operations__staff_attendance:  { path: "/hrms/attendance",                    label: "Attendance" },
   hr__letters:                   { path: "/hrms/offer-letters",                 label: "Offer & Appointment", orgTab: "hr_letters" },
-  hr__structure:                 { path: "/hrms/structure",                     label: "Hierarchy",          orgTab: "structure" },
-  hr__divisions:                 { path: "/hrms/divisions",                     label: "Divisions",          orgTab: "divisions" },
-  hr__departments:               { path: "/hrms/departments",                   label: "Departments",        orgTab: "departments" },
-  hr__teams:                     { path: "/hrms/teams",                         label: "Teams",              orgTab: "sub_departments" },
-  hr__grades:                    { path: "/hrms/grades",                        label: "Grades",             orgTab: "grades" },
-  hr__designations:              { path: "/hrms/designations",                  label: "Designations",       orgTab: "designations" },
   hr__org_chart:                 { path: "/hrms/org-chart",                     label: "Org Chart",          orgTab: "org_chart" },
   hr__policy:                    { path: "/hrms/policy",                        label: "Policy",             orgTab: "policy" },
   hr__sop:                       { path: "/hrms/sop",                           label: "SOP",                orgTab: "sop" },
@@ -98,9 +92,7 @@ export const NAV = [
   ] },
   { section: "hrms", label: "HRMS", items: [
     "hr__employees", "operations__staff_attendance", "hr__letters",
-    { group: "hr_structure", label: "Structure", items: [
-      "hr__structure", "hr__divisions", "hr__departments", "hr__teams", "hr__grades", "hr__designations", "hr__org_chart",
-    ] },
+    "hr__org_chart",
     { group: "hr_documents", label: "Documents", items: ["hr__policy", "hr__sop"] },
   ] },
   { section: "reports", label: "Reports", items: [
@@ -134,7 +126,14 @@ export const LEGACY_PATHS = {
   // Projects and Branch moved inside Settings › Company
   "/settings/projects":        "/settings/company",
   "/settings/branch":          "/settings/company",
-  "/organisation/structure":   "/hrms/structure",
+  "/organisation/structure":   "/settings/company",
+  // Departments, Teams, Designations, Grades moved to Settings › Organisation; Divisions and Hierarchy removed
+  "/hrms/structure":           "/settings/company",
+  "/hrms/divisions":           "/settings/company",
+  "/hrms/departments":         "/settings/company",
+  "/hrms/teams":               "/settings/company",
+  "/hrms/grades":              "/settings/company",
+  "/hrms/designations":        "/settings/company",
   "/organisation/sop":         "/hrms/sop",
   "/historical-data":          "/archive",
   "/setup/vendors":            "/procurement/registration/vendors",

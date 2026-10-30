@@ -37,7 +37,6 @@ const mapEmployee = (r) => ({
   contactNumber:  r.contact_number  || "",
   designation:    r.designation     || "",
   company:        r.company         || "",
-  division:       r.division        || "",
   email:          r.email           || "",
   department:     r.department      || "",
   reportingTo:    r.reporting_to    || "",
@@ -57,6 +56,7 @@ const mapEmployee = (r) => ({
   alternatePhone: r.alternate_phone || "",
   address:        r.address         || "",
   joiningDate:    r.joining_date    ? String(r.joining_date).slice(0, 10) : "",
+  userId:         r.user_id         || "",   // the app login this person uses (sql/hrms_structure.sql)
   category:        r.category         || "",
   postedKind:      r.posted_kind      || "",
   postedId:        r.posted_id        || "",
@@ -113,10 +113,44 @@ router.get("/employees", async (req, res) => {
   }
 });
 
+/* The app login linked to an employee (one login ↔ one employee).
+   Returns { user_id } to save, or { error }. Only when the form sends userId. */
+const loginField = async (body, exceptId) => {
+  if (!("userId" in body)) return {};
+  const userId = String(body.userId || "").trim();
+  if (!userId) return { user_id: null };
+  const { data: u } = await supabase.from("users").select("id, name").eq("id", userId).maybeSingle();
+  if (!u) return { error: "That app login doesn't exist" };
+  let q = supabase.schema("organisation").from("employees").select("id, person_name").eq("user_id", userId);
+  if (exceptId) q = q.neq("id", exceptId);
+  const { data: taken } = await q.limit(1).maybeSingle();
+  if (taken) return { error: `${u.name}'s login is already linked to ${taken.person_name}` };
+  return { user_id: userId };
+};
+
+/* GET /api/organisation/app-users — app logins, for "App login" on the
+   employee form, with who each is already linked to */
+router.get("/app-users", requirePerm("employees", "can_view"), async (_req, res) => {
+  try {
+    const [{ data: users, error }, { data: linked }] = await Promise.all([
+      supabase.from("users").select("id, name, email, is_active").order("name"),
+      supabase.schema("organisation").from("employees").select("id, person_name, user_id").not("user_id", "is", null),
+    ]);
+    if (error) throw error;
+    const by = new Map((linked || []).map(e => [e.user_id, e]));
+    res.json({ users: (users || []).map(u => ({
+      id: u.id, name: u.name || "", email: u.email || "", active: u.is_active !== false,
+      linkedTo: by.get(u.id) ? { id: by.get(u.id).id, name: by.get(u.id).person_name } : null,
+    })) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* POST /api/organisation/employees */
 router.post("/employees", requirePerm("employees", "can_add"), async (req, res) => {
   try {
-    const { personName, contactNumber, designation, company, division, email, department, reportingTo, status, staffType,
+    const { personName, contactNumber, designation, company, email, department, reportingTo, status, staffType,
             workLocation, role, team, bio, tags, employeeId,
             dateOfBirth, gender, maritalStatus, nationality,
             alternatePhone, address, joiningDate,
@@ -130,11 +164,14 @@ router.post("/employees", requirePerm("employees", "can_add"), async (req, res) 
     const dup = await findDuplicate(company_id, req.body);
     if (dup) return res.status(409).json({ duplicate: true, error: dup, message: dup });
 
+    const login = await loginField(req.body);
+    if (login.error) return res.status(409).json({ error: login.error });
+
     const code = await getNextEmployeeCode();
     const payload = {
       contact_code: code, person_name: personName || "",
       contact_number: contactNumber || "", designation: designation || "",
-      company: company || "", division: division || "", email: email || "", department: department || "",
+      company: company || "", email: email || "", department: department || "",
       reporting_to: reportingTo || "", status: status || "active", staff_type: staffType || null,
       work_location: workLocation || "", role: role || "", team: team || "",
       bio: bio || "", tags: tags || "", employee_id: (employeeId || "").trim(),
@@ -145,6 +182,7 @@ router.post("/employees", requirePerm("employees", "can_add"), async (req, res) 
       created_by_id: createdById || null, created_by_name: createdByName || null,
       company_id,
       ...placementFields(req.body),
+      ...login,
     };
 
     let { data, error } = await supabase.schema("organisation").from("employees").insert(payload).select().single();
@@ -163,7 +201,7 @@ router.post("/employees", requirePerm("employees", "can_add"), async (req, res) 
 /* POST /api/organisation/employees/move — shift employees to another company.
    Same rows (same id), so orders, attendance and history stay with them.
    Skips anyone whose Employee ID is already taken in the target company.
-   Returns the division / department / designation / grade / team names the
+   Returns the department / designation / grade / team names the
    target company does not have yet, so they can be added there. */
 router.post("/employees/move", requirePerm("employees", "can_edit"), async (req, res) => {
   try {
@@ -207,8 +245,7 @@ router.post("/employees/move", requirePerm("employees", "can_edit"), async (req,
     }
 
     // names the target company's lists don't have yet
-    const [divs, depts, desigs, grades, teamsThere] = await Promise.all([
-      org.from("divisions").select("name").eq("company_id", company_id),
+    const [depts, desigs, grades, teamsThere] = await Promise.all([
       org.from("departments").select("name").eq("company_id", company_id),
       org.from("designations").select("title").eq("company_id", company_id),
       org.from("grades").select("grade").eq("company_id", company_id),
@@ -216,7 +253,6 @@ router.post("/employees/move", requirePerm("employees", "can_edit"), async (req,
     ]);
     const has = (rows, col) => new Set((rows.data || []).map(r => (r[col] || "").trim().toLowerCase()));
     const lists = [
-      ["Division", "division", has(divs, "name")],
       ["Department", "department", has(depts, "name")],
       ["Designation", "designation", has(desigs, "title")],
       ["Grade", "grade", has(grades, "grade")],
@@ -238,7 +274,7 @@ router.post("/employees/move", requirePerm("employees", "can_edit"), async (req,
 /* PUT /api/organisation/employees/:id */
 router.put("/employees/:id", requirePerm("employees", "can_edit"), async (req, res) => {
   try {
-    const { personName, contactNumber, designation, company, division, email, department, reportingTo, status, staffType,
+    const { personName, contactNumber, designation, company, email, department, reportingTo, status, staffType,
             workLocation, role, team, bio, tags, employeeId,
             dateOfBirth, gender, maritalStatus, nationality,
             alternatePhone, address, joiningDate } = req.body;
@@ -248,9 +284,11 @@ router.put("/employees/:id", requirePerm("employees", "can_edit"), async (req, r
     if (!cur) return res.status(404).json({ error: "Employee not found" });
     const dup = await findDuplicate(cur.company_id, req.body, req.params.id);
     if (dup) return res.status(409).json({ duplicate: true, error: dup, message: dup });
+    const login = await loginField(req.body, req.params.id);
+    if (login.error) return res.status(409).json({ error: login.error });
     const update = {
       person_name: personName || "", contact_number: contactNumber || "",
-      designation: designation || "", company: company || "", division: division || "", email: email || "",
+      designation: designation || "", company: company || "", email: email || "",
       department: department || "", reporting_to: reportingTo || "", status: status || "active",
       staff_type: staffType || null,
       work_location: workLocation || "", role: role || "", team: team || "",
@@ -261,6 +299,7 @@ router.put("/employees/:id", requirePerm("employees", "can_edit"), async (req, r
       joining_date: joiningDate || null,
       // smaller forms (Orders' Contact Person) don't send these — keep them
       ...("category" in req.body ? placementFields(req.body) : {}),
+      ...login,
     };
     const { error } = await supabase.schema("organisation").from("employees").update(update).eq("id", req.params.id);
     if (error) throw error;
@@ -335,7 +374,6 @@ router.post("/employees/bulk", requirePerm("employees", "can_add"), async (req, 
       const { error } = await supabase.schema("organisation").from("employees").insert({
         contact_code: code, person_name: name, contact_number: String(row["Phone Number"] || ""),
         designation: String(row["Designation"] || ""), company: String(row["Company"] || ""),
-        division: String(row["Division"] || ""),
         email: String(row["Work Email"] || ""), department: String(row["Department"] || ""),
         reporting_to: String(row["Reporting To"] || ""), status: "active",
         work_location: String(row["Work Location"] || ""), role: String(row["Role"] || ""),
@@ -484,40 +522,6 @@ router.get("/policies/:id/pdf", async (req, res) => {
 });
 
 /* ════════════════════════════════════
-   DIVISIONS
-════════════════════════════════════ */
-const nextDivId = async () => {
-  const { data } = await supabase.schema("organisation").from("divisions").select("div_id").not("div_id", "is", null);
-  const max = (data || []).reduce((m, r) => Math.max(m, parseInt((r.div_id || "DIV-000").replace("DIV-", "")) || 0), 0);
-  return `DIV-${String(max + 1).padStart(3, "0")}`;
-};
-
-router.get("/divisions", async (req, res) => {
-  const { data, error } = await scopeQuery(supabase.schema("organisation").from("divisions").select("*"), req).order("name");
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ divisions: data || [] });
-});
-router.post("/divisions", requirePerm("divisions", "can_add"), async (req, res) => {
-  const { name, status } = req.body;
-  if (!name?.trim()) return res.status(400).json({ error: "Name is required" });
-  const div_id = await nextDivId();
-  const { data, error } = await supabase.schema("organisation").from("divisions").insert({ div_id, name: name.trim(), status: status || "active", company_id: companyIdFrom(req.body) }).select().single();
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ success: true, division: data });
-});
-router.put("/divisions/:id", requirePerm("divisions", "can_edit"), async (req, res) => {
-  const { name, status } = req.body;
-  const { data, error } = await supabase.schema("organisation").from("divisions").update({ name: name?.trim(), status }).eq("id", req.params.id).select().single();
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ success: true, division: data });
-});
-router.delete("/divisions/:id", requirePerm("divisions", "can_delete"), async (req, res) => {
-  const { error } = await supabase.schema("organisation").from("divisions").delete().eq("id", req.params.id);
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ success: true });
-});
-
-/* ════════════════════════════════════
    GRADES
 ════════════════════════════════════ */
 const nextGradeId = async () => {
@@ -594,6 +598,84 @@ router.delete("/org-designations/:id", requirePerm("designations", "can_delete")
   const { error } = await supabase.schema("organisation").from("designations").delete().eq("id", req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
+});
+
+/* ── Designations from what employees already have ─────────────────────
+   Employees' designation is typed text. GET lists the ones a company uses
+   that aren't in its Designations list yet (with how many people use each);
+   POST adds the chosen ones — renamed / merged as the user decides — and
+   sets those employees' designation to the list name, so from now on it
+   comes from the list. */
+const desigKey = (v) => String(v || "").trim().replace(/\s+/g, " ").toLowerCase();
+
+router.get("/org-designations/from-employees", requirePerm("designations", "can_view"), async (req, res) => {
+  try {
+    const company_id = companyIdFrom(req.query);
+    if (!company_id) return res.status(400).json({ error: "Pick a company" });
+    const org = supabase.schema("organisation");
+    const [{ data: emps, error: e1 }, { data: master, error: e2 }] = await Promise.all([
+      org.from("employees").select("person_name, designation").eq("company_id", company_id).neq("status", "inactive"),
+      org.from("designations").select("title").eq("company_id", company_id),
+    ]);
+    if (e1) throw e1;
+    if (e2) throw e2;
+    const have = new Set((master || []).map(d => desigKey(d.title)));
+    const by = new Map();
+    for (const e of emps || []) {
+      const k = desigKey(e.designation);
+      if (!k || have.has(k)) continue;
+      const cur = by.get(k) || { text: String(e.designation).trim().replace(/\s+/g, " "), count: 0, people: [] };
+      cur.count++;
+      if (cur.people.length < 4) cur.people.push(e.person_name);
+      by.set(k, cur);
+    }
+    res.json({ suggestions: [...by.values()].sort((a, b) => b.count - a.count || a.text.localeCompare(b.text)) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/org-designations/from-employees", requirePerm("designations", "can_add"), async (req, res) => {
+  try {
+    const company_id = companyIdFrom(req.body);
+    if (!company_id) return res.status(400).json({ error: "Pick a company" });
+    // items: [{ from: "Manager - Procurement", title: "Procurement Manager" }]
+    const items = (Array.isArray(req.body.items) ? req.body.items : [])
+      .map(i => ({ from: desigKey(i.from), title: String(i.title || "").trim().replace(/\s+/g, " ") }))
+      .filter(i => i.from && i.title);
+    if (!items.length) return res.status(400).json({ error: "Nothing to add" });
+    const org = supabase.schema("organisation");
+    const { data: master } = await org.from("designations").select("id, title").eq("company_id", company_id);
+    const have = new Map((master || []).map(d => [desigKey(d.title), d.title]));
+
+    let added = 0;
+    for (const title of [...new Set(items.map(i => i.title))]) {
+      if (have.has(desigKey(title))) continue;
+      const desig_id = await nextDesigId();
+      const { error } = await org.from("designations").insert({ desig_id, title, grade: null, active: true, company_id });
+      if (error) throw error;
+      have.set(desigKey(title), title);
+      added++;
+    }
+    // point the employees at the list name
+    const { data: emps } = await org.from("employees").select("id, designation").eq("company_id", company_id);
+    const target = new Map(items.map(i => [i.from, have.get(desigKey(i.title))]));
+    const updates = new Map(); // title → ids
+    for (const e of emps || []) {
+      const t = target.get(desigKey(e.designation));
+      if (t && e.designation !== t) updates.set(t, [...(updates.get(t) || []), e.id]);
+    }
+    let linked = 0;
+    for (const [title, ids] of updates) {
+      const { error } = await org.from("employees").update({ designation: title }).in("id", ids);
+      if (error) throw error;
+      linked += ids.length;
+    }
+    res.json({ success: true, added, linked });
+  } catch (err) {
+    console.error("Designations from employees error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* GET /api/organisation/employee-options?company_id= — lists the Employee
