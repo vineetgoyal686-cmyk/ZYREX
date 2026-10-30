@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   Search, Plus, X, Edit2, Trash2, Loader2, ChevronLeft,
   BadgeCheck, Calendar, UserCheck, MapPin,
-  Briefcase, Building2, ChevronDown, Users, Clock, SlidersHorizontal, ArrowRightLeft,
+  Briefcase, Building2, ChevronDown, Users, Clock, SlidersHorizontal, ArrowRightLeft, Check,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
@@ -60,6 +60,35 @@ const STAFF_TYPE_CLS = {
   Resigned:  "bg-red-50 text-red-500 border-red-200",
 };
 // "permanent", "Resigned " etc. from a sheet → the exact option, or "" if it isn't one
+// What a person does — separate from Staff Type (Permanent / Probation …)
+const CATEGORIES = ["Office Staff", "Site Staff", "Guard", "Labour", "Driver", "Cook"];
+// these get the short form: no division / grade / personal details
+const SHORT_FORM = ["Guard", "Labour", "Driver", "Cook"];
+const CATEGORY_CLS = {
+  "Office Staff": "bg-blue-50 text-blue-700 border-blue-200",
+  "Site Staff":   "bg-teal-50 text-teal-700 border-teal-200",
+  "Guard":        "bg-slate-100 text-slate-700 border-slate-300",
+  "Labour":       "bg-amber-50 text-amber-700 border-amber-200",
+  "Driver":       "bg-violet-50 text-violet-700 border-violet-200",
+  "Cook":         "bg-rose-50 text-rose-700 border-rose-200",
+};
+const toCategory = (v) => CATEGORIES.find(c => c.toLowerCase() === String(v || "").trim().toLowerCase()) || "";
+function CategoryBadge({ category }) {
+  if (!category) return <span className="text-slate-300">—</span>;
+  return <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold border ${CATEGORY_CLS[category]}`}>{category}</span>;
+}
+const digits = (v) => String(v || "").replace(/\D/g, "");
+
+// "B47 · IAS House" for the place an employee is posted at; opts from
+// /api/organisation/employee-options
+const postedLabel = (emp, opts) => {
+  if (!emp.postedId) return emp.workLocation || "";
+  const p = (emp.postedKind === "office" ? opts.offices : opts.projects).find(x => x.id === emp.postedId);
+  return p ? [p.code, p.name].filter(Boolean).join(" · ") : "";
+};
+const agencyName = (emp, opts) =>
+  emp.employedThrough === "agency" ? (opts.agencies.find(a => a.id === emp.agencyVendorId)?.name || "Agency") : "Direct";
+
 const toStaffType = (v) => STAFF_TYPES.find(t => t.toLowerCase() === String(v || "").trim().toLowerCase()) || "";
 function StaffTypeBadge({ type }) {
   if (!type) return <span className="text-slate-300">—</span>;
@@ -117,7 +146,7 @@ function InfoBox({ label, value, span2 }) {
 ═══════════════════════════════ */
 const DETAIL_TABS = ["Overview", "Documents", "Notes", "Permissions"];
 
-function EmployeeDetail({ emp, imgUrl, onBack, onEdit, onMove, onDelete }) {
+function EmployeeDetail({ emp, imgUrl, opts, onBack, onEdit, onMove, onDelete }) {
   const [tab, setTab] = useState("Overview");
   const s   = STATUS[emp.status || "active"];
   const div = emp.division || "";
@@ -164,6 +193,7 @@ function EmployeeDetail({ emp, imgUrl, onBack, onEdit, onMove, onDelete }) {
             <div className="flex items-center gap-3 flex-wrap mb-0.5">
               <h2 className="text-xl font-bold text-slate-800">{emp.personName}</h2>
               <StatusBadge status={emp.status} />
+              {emp.category && <CategoryBadge category={emp.category} />}
               {emp.staffType && <StaffTypeBadge type={emp.staffType} />}
             </div>
             <p className="text-sm text-slate-500 font-medium">{emp.designation || "—"}</p>
@@ -183,7 +213,7 @@ function EmployeeDetail({ emp, imgUrl, onBack, onEdit, onMove, onDelete }) {
             { Icon: BadgeCheck, label: "Employee ID",       value: emp.employeeId },
             { Icon: Calendar,   label: "Joining Date",      value: emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "" },
             { Icon: UserCheck,  label: "Reporting Manager", value: emp.reportingTo },
-            { Icon: MapPin,     label: "Work Location",     value: emp.workLocation },
+            { Icon: MapPin,     label: "Posted At",         value: postedLabel(emp, opts) },
           ].map(({ Icon, label, value }) => (
             <div key={label} className="flex items-center gap-3 px-5 first:pl-0 last:pr-0">
               <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center shrink-0">
@@ -238,7 +268,8 @@ function EmployeeDetail({ emp, imgUrl, onBack, onEdit, onMove, onDelete }) {
               </div>
               <div className="grid grid-cols-2 gap-3 p-4">
                 <InfoBox label="Email" value={emp.email} span2 />
-                <InfoBox label="Phone (Primary)" value={emp.contactNumber} />
+                <InfoBox label="Mobile" value={emp.contactNumber} />
+                <InfoBox label="Employed Through" value={agencyName(emp, opts)} />
                 <InfoBox label="Phone (Alternate)" value={emp.alternatePhone} />
                 <InfoBox label="Address" value={emp.address || "No address added"} span2 />
               </div>
@@ -288,7 +319,7 @@ const SEL = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:o
 const INP = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400";
 const LBL = "block text-xs font-semibold text-slate-500 mb-1";
 
-function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, allEmps }) {
+function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, allEmps, opts }) {
   const orgId = useOrgId();
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -318,6 +349,8 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, a
   const empGradeCode     = form.grade?.charCodeAt(0) || 0;
   const managerGradeCode = managerEmp?.grade?.charCodeAt(0) || 0;
   const managerGradeWarn = form.reportingTo?.trim() && managerEmp && managerGradeCode > 0 && managerGradeCode > 0 && managerGradeCode < empGradeCode;
+  const short = SHORT_FORM.includes(form.category);
+  const places = form.postedKind === "office" ? opts.offices : opts.projects;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col border border-slate-200 overflow-hidden">
@@ -338,8 +371,19 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, a
                 <input value={form.personName} onChange={set("personName")} placeholder="e.g. Rahul Sharma" className={INP} />
               </div>
               <div>
-                <label className={LBL}>Employee ID *</label>
-                <input value={form.employeeId} onChange={set("employeeId")} placeholder="e.g. BITL-001" className={INP} />
+                <label className={LBL}>Category</label>
+                <select value={form.category} onChange={set("category")} className={SEL}>
+                  <option value="">— Select —</option>
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className={LBL}>Mobile *</label>
+                <input value={form.contactNumber} onChange={set("contactNumber")} placeholder="9876543210" inputMode="numeric" className={INP} />
+              </div>
+              <div>
+                <label className={LBL}>Employee ID</label>
+                <input value={form.employeeId} onChange={set("employeeId")} placeholder="If the company gave one" className={INP} />
               </div>
               <div>
                 <label className={LBL}>Status</label>
@@ -360,13 +404,77 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, a
                 <label className={LBL}>Joining Date</label>
                 <input type="date" value={form.joiningDate} onChange={set("joiningDate")} className={INP} />
               </div>
-              <div>
-                <label className={LBL}>Work Location</label>
-                <input value={form.workLocation} onChange={set("workLocation")} placeholder="e.g. Delhi Office" className={INP} />
-              </div>
             </div>
           </div>
 
+          {/* Posting & employment */}
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-3">Posting</p>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className={LBL}>Posted At</label>
+                <div className="flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+                  {[["project", "Project"], ["office", "Office"]].map(([k, l]) => (
+                    <button key={k} type="button" onClick={() => setForm(f => ({ ...f, postedKind: k, postedId: "" }))}
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${form.postedKind === k ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="col-span-2">
+                <label className={LBL}>{form.postedKind === "office" ? "Office" : "Project"}</label>
+                <select value={form.postedId} onChange={set("postedId")} className={SEL}>
+                  <option value="">— Not posted —</option>
+                  {places.map(p => <option key={p.id} value={p.id}>{[p.code, p.name].filter(Boolean).join(" · ")}</option>)}
+                </select>
+                {places.length === 0 && (
+                  <p className="text-[11px] text-slate-400 mt-1">This company has no {form.postedKind === "office" ? "offices" : "projects"} yet.</p>
+                )}
+              </div>
+              <div>
+                <label className={LBL}>Employed Through</label>
+                <select value={form.employedThrough} onChange={e => setForm(f => ({ ...f, employedThrough: e.target.value, agencyVendorId: "" }))} className={SEL}>
+                  <option value="direct">Direct (company payroll)</option>
+                  <option value="agency">Agency</option>
+                </select>
+              </div>
+              {form.employedThrough === "agency" && (
+                <div className="col-span-2">
+                  <label className={LBL}>Agency</label>
+                  <select value={form.agencyVendorId} onChange={set("agencyVendorId")} className={SEL}>
+                    <option value="">— Select agency —</option>
+                    {opts.agencies.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                  <p className="text-[11px] text-slate-400 mt-1">Agencies come from the Vendor list.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {short ? (
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-3">Work</p>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="col-span-2">
+                <label className={LBL}>Designation</label>
+                <input value={form.designation} onChange={handleDesigChange}
+                  placeholder={form.category === "Guard" ? "e.g. Security Guard" : "e.g. Helper"} className={INP} list="desig-suggestions" />
+                <datalist id="desig-suggestions">
+                  {desigList.map(d => <option key={d.id} value={d.title} />)}
+                </datalist>
+              </div>
+              <div>
+                <label className={LBL}>Phone (Alternate)</label>
+                <input value={form.alternatePhone} onChange={set("alternatePhone")} placeholder="Optional" className={INP} />
+              </div>
+              <div className="col-span-3">
+                <label className={LBL}>Address</label>
+                <textarea value={form.address} onChange={set("address")} rows={2} placeholder="Residential address…" className={`${INP} resize-none`} />
+              </div>
+            </div>
+          </div>
+          ) : (<>
           {/* Organisation */}
           <div>
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-3">Organisation</p>
@@ -446,16 +554,12 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, a
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-3">Contact</p>
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className={LBL}>Phone (Primary)</label>
-                <input value={form.contactNumber} onChange={set("contactNumber")} placeholder="9876543210" className={INP} />
-              </div>
-              <div>
                 <label className={LBL}>Phone (Alternate)</label>
                 <input value={form.alternatePhone} onChange={set("alternatePhone")} placeholder="Optional" className={INP} />
               </div>
-              <div>
+              <div className="col-span-2">
                 <label className={LBL}>Work Email</label>
-                <input type="email" value={form.email} onChange={set("email")} placeholder="name@company.com" className={INP} />
+                <input type="email" value={form.email} onChange={set("email")} placeholder="If the company gave one" className={INP} />
               </div>
               <div className="col-span-3">
                 <label className={LBL}>Address</label>
@@ -495,6 +599,7 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, divisions, a
               </div>
             </div>
           </div>
+          </>)}
 
         </div>
 
@@ -521,6 +626,7 @@ const EMPTY_FORM = {
   gender: "", maritalStatus: "", nationality: "",
   contactNumber: "", alternatePhone: "", email: "", address: "",
   company: "", bio: "", tags: "",
+  category: "", postedKind: "project", postedId: "", employedThrough: "direct", agencyVendorId: "",
 };
 
 /* ═══════════════════════════════
@@ -528,6 +634,64 @@ const EMPTY_FORM = {
 ═══════════════════════════════ */
 /* ── "Filters" button — Division / Department / Status in one popover ── */
 const STATUS_OPTIONS = [["active", "Active"], ["inactive", "Inactive"], ["on_leave", "On Leave"]];
+
+/* ── Category picker in the header — same size as the Filters button ── */
+const CATEGORY_DOT = {
+  "Office Staff": "bg-blue-500", "Site Staff": "bg-teal-500", "Guard": "bg-slate-500",
+  "Labour": "bg-amber-500", "Driver": "bg-violet-500", "Cook": "bg-rose-500",
+};
+
+function CategoryPicker({ value, emps, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  const label = (c) => c === "Guard" ? "Guards" : c;
+  const rows = [
+    { id: "", label: "All categories", n: emps.length },
+    ...CATEGORIES.map(c => ({ id: c, label: label(c), n: emps.filter(e => e.category === c).length, dot: CATEGORY_DOT[c] })),
+  ];
+  const cur = rows.find(r => r.id === value) || rows[0];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button type="button" onClick={() => setOpen(v => !v)}
+        className={`inline-flex items-center gap-1.5 px-2.5 py-[7px] text-xs font-medium rounded-md border transition-colors
+          ${value ? "border-blue-200 bg-blue-50 text-blue-700" : open ? "border-slate-300 bg-slate-50 text-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+        {cur.dot ? <span className={`w-2 h-2 rounded-full ${cur.dot}`} /> : <Users size={13} />}
+        {cur.label}
+        <span className={`min-w-4 h-4 px-1 rounded text-[10px] font-bold flex items-center justify-center tabular-nums
+          ${value ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>{cur.n}</span>
+        <ChevronDown size={12} className={`text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-30 p-1">
+          {rows.map((r, i) => {
+            const on = r.id === value;
+            return (
+              <React.Fragment key={r.id || "all"}>
+                {i === 1 && <div className="my-1 border-t border-slate-100" />}
+                <button type="button" onClick={() => { onChange(r.id); setOpen(false); }}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-left text-[13px] transition-colors
+                    ${on ? "bg-blue-50 text-blue-700 font-semibold" : "text-slate-700 hover:bg-slate-50"}`}>
+                  {r.dot ? <span className={`w-2 h-2 rounded-full shrink-0 ${r.dot}`} /> : <Users size={13} className="text-slate-400 shrink-0" />}
+                  <span className={`flex-1 ${!r.n && !on ? "text-slate-400" : ""}`}>{r.label}</span>
+                  <span className={`text-[11px] tabular-nums ${on ? "text-blue-600" : "text-slate-400"}`}>{r.n}</span>
+                  <Check size={13} className={`shrink-0 ${on ? "text-blue-600" : "invisible"}`} />
+                </button>
+              </React.Fragment>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function EmpFilters({ filters, divs, depts, onChange, onClear }) {
   const [open, setOpen] = useState(false);
@@ -583,6 +747,57 @@ function EmpFilters({ filters, divs, depts, onChange, onClear }) {
    MOVE TO ANOTHER COMPANY
    Same employee (same id) — orders, attendance and history go along.
 ═══════════════════════════════ */
+/* company list for the move window — initials, name and code on each row */
+function CompanyPicker({ companies, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+
+  const cur = companies.find(c => c.id === value);
+  const Row = ({ c }) => (
+    <>
+      <span className="w-8 h-8 rounded-md bg-slate-100 text-slate-600 text-[11px] font-bold flex items-center justify-center shrink-0">
+        {(c.companyCode || ini(c.companyName)).slice(0, 4)}
+      </span>
+      <span className="min-w-0 flex-1 text-left">
+        <span className="block text-sm font-semibold text-slate-800 truncate">{c.companyName}</span>
+        {c.companyCode && <span className="block text-[11px] text-slate-400">{c.companyCode}</span>}
+      </span>
+    </>
+  );
+
+  return (
+    <div className="relative" ref={ref}>
+      <button type="button" onClick={() => setOpen(v => !v)}
+        className={`w-full flex items-center gap-3 rounded-lg border bg-white px-3 py-2 transition-colors
+          ${open ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-200 hover:border-slate-300"}`}>
+        {cur ? <Row c={cur} /> : (
+          <span className="flex-1 text-left text-sm text-slate-400 py-1.5">Choose company…</span>
+        )}
+        <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute left-0 right-0 top-full mt-1.5 z-10 max-h-64 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl p-1">
+          {companies.length === 0 && <p className="px-3 py-2 text-sm text-slate-400">No other company</p>}
+          {companies.map(c => (
+            <button key={c.id} type="button" onClick={() => { onChange(c.id); setOpen(false); }}
+              className={`w-full flex items-center gap-3 rounded-md px-2.5 py-2 transition-colors
+                ${c.id === value ? "bg-blue-50" : "hover:bg-slate-50"}`}>
+              <Row c={c} />
+              {c.id === value && <BadgeCheck size={16} className="text-blue-600 shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MoveModal({ emps, fromId, onClose, onMoved }) {
   const [companies, setCompanies] = useState([]);
   const [to, setTo]           = useState("");
@@ -628,11 +843,7 @@ function MoveModal({ emps, fromId, onClose, onMoved }) {
 
         {!result ? (
           <>
-            <select value={to} onChange={e => setTo(e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400">
-              <option value="">Choose company…</option>
-              {companies.map(c => <option key={c.id} value={c.id}>{c.companyName}{c.companyCode ? ` (${c.companyCode})` : ""}</option>)}
-            </select>
+            <CompanyPicker companies={companies} value={to} onChange={setTo} />
             <p className="text-[11px] text-slate-400 leading-relaxed">
               Orders, attendance and history stay with the employee. They leave their teams in this company.
             </p>
@@ -683,6 +894,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const [filterDept,   setFilterDept]   = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterType,   setFilterType]   = useState("");
+  const [category,     setCategory]     = useState(""); // tab above the list; "" = all
+  const [opts, setOpts] = useState({ projects: [], offices: [], agencies: [] });
   const [modal,      setModal]     = useState(false);
   const [form,       setForm]      = useState(EMPTY_FORM);
   const [editId,     setEditId]    = useState(null);
@@ -706,6 +919,11 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   }, []);
 
   useEffect(() => { fetchEmps(); }, []);
+  useEffect(() => {
+    authFetch(scopedUrl(`${API}/api/organisation/employee-options`, orgId)).then(r => r.json())
+      .then(d => setOpts({ projects: d.projects || [], offices: d.offices || [], agencies: d.agencies || [] }))
+      .catch(() => {});
+  }, [orgId]);
 
   /* wire actionsRef for parent header buttons */
   useEffect(() => {
@@ -764,7 +982,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     setTimeout(() => setToast(null), 4000);
   };
 
-  const openAdd  = () => { setForm(EMPTY_FORM); setEditId(null); setModal(true); };
+  const openAdd  = () => { setForm({ ...EMPTY_FORM, category }); setEditId(null); setModal(true); };
   const openEdit = (emp) => {
     setForm({
       personName: emp.personName || "", employeeId: emp.employeeId || "",
@@ -780,6 +998,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       alternatePhone: emp.alternatePhone || "", email: emp.email || "",
       address: emp.address || "", bio: emp.bio || "", tags: emp.tags || "",
       company: emp.company || "",
+      category: emp.category || "", postedKind: emp.postedKind || "project", postedId: emp.postedId || "",
+      employedThrough: emp.employedThrough || "direct", agencyVendorId: emp.agencyVendorId || "",
     });
     setEditId(emp.id);
     setModal(true);
@@ -787,7 +1007,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
 
   const handleSave = async () => {
     if (!form.personName.trim()) { showToast("Name is required", "error"); return; }
-    if (!form.employeeId.trim()) { showToast("Employee ID is required", "error"); return; }
+    if (digits(form.contactNumber).length < 10) { showToast("A 10-digit mobile number is required", "error"); return; }
+    if (form.employedThrough === "agency" && !form.agencyVendorId) { showToast("Pick the agency", "error"); return; }
     setSaving(true);
     try {
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
@@ -797,7 +1018,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       const method = editId ? "PUT" : "POST";
       const res    = await authFetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data   = await res.json();
-      if (!data.success) throw new Error(data.error);
+      if (!data.success) throw new Error(data.error || data.message);
       const savedId = editId || data.id;
 
       // Audit trail — same log every contact edit lands in, regardless of
@@ -833,7 +1054,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       }
       showToast(editId ? "Employee updated" : "Employee added");
       setModal(false);
-    } catch { showToast("Failed to save", "error"); }
+    } catch (err) { showToast(err.message || "Failed to save", "error"); }
     finally { setSaving(false); }
   };
 
@@ -868,10 +1089,15 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     });
     setEmps(prev => prev.filter(e => !moved.includes(e.id)));
     setPicked(prev => prev.filter(id => !moved.includes(id)));
-    if (selected && moved.includes(selected.id)) setSelected(null);
+  };
+  // leave the detail screen only once the result is closed — switching
+  // screens while it is open would remount the window and lose the result
+  const closeMove = () => {
+    setMoveEmps(null);
+    if (selected && !emps.some(e => e.id === selected.id)) setSelected(null);
   };
   const moveModal = moveEmps && (
-    <MoveModal emps={moveEmps} fromId={orgId} onClose={() => setMoveEmps(null)} onMoved={handleMoved} />
+    <MoveModal emps={moveEmps} fromId={orgId} onClose={closeMove} onMoved={handleMoved} />
   );
 
   /* ── Filter ── */
@@ -882,13 +1108,18 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     const div = e.division || "";
     const q   = search.toLowerCase();
     return (
-      (!search || [e.personName, e.employeeId, e.designation, e.department, div].some(v => v?.toLowerCase().includes(q))) &&
+      (!search || [e.personName, e.employeeId, e.designation, e.department, div, e.contactNumber].some(v => v?.toLowerCase().includes(q))) &&
       (!filterDiv    || div === filterDiv) &&
       (!filterDept   || e.department === filterDept) &&
       (!filterStatus || e.status === filterStatus) &&
-      (!filterType   || e.staffType === filterType)
+      (!filterType   || e.staffType === filterType) &&
+      (!category     || e.category === category)
     );
   });
+
+  // Guards / Labour / Driver / Cook have no division, department or grade —
+  // their tabs show who they come through instead
+  const workerTab = SHORT_FORM.includes(category);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
   const paginated  = filtered.slice((page - 1) * perPage, page * perPage);
@@ -902,11 +1133,12 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       "Division": e.division || "",
       "Department": e.department || "", "Designation": e.designation || "",
       "Grade": e.grade || "", "Status": STATUS[e.status]?.label || "Active", "Staff Type": e.staffType || "",
-      "Phone": e.contactNumber || "", "Email": e.email || "",
-      "Reporting Manager": e.reportingTo || "", "Work Location": e.workLocation || "",
+      "Category": e.category || "", "Posted At": postedLabel(e, opts), "Employed Through": agencyName(e, opts),
+      "Mobile": e.contactNumber || "", "Email": e.email || "",
+      "Reporting Manager": e.reportingTo || "",
     }));
     const ws = XLSX.utils.json_to_sheet(data);
-    ws["!cols"] = [4, 14, 24, 18, 18, 24, 8, 12, 12, 16, 28, 22, 18].map(wch => ({ wch }));
+    ws["!cols"] = [4, 14, 24, 18, 18, 24, 8, 12, 12, 14, 24, 20, 16, 28, 22].map(wch => ({ wch }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Employees");
     XLSX.writeFile(wb, "employees.xlsx");
@@ -942,13 +1174,14 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
 
   /* ── Download Template ── */
   const downloadTemplate = () => {
-    const gradeHint = loadActiveGrades().map(g => g.grade).join(", ") || "Add grades in the Grades tab (A, B, C...)";
-    const headers = ["Person Name", "Employee ID", "Company", "Division", "Department", "Designation", "Grade", "Team", "Role", "Reporting Manager", "Work Location", "Joining Date", "Status", "Staff Type", "Phone", "Email", "Gender", "Marital Status", "Nationality", "Address"];
+    const gradeHint = "as set in the Grades tab (A, B, C…)";
+    const headers = ["Person Name", "Phone", "Employee ID", "Category", "Posted At", "Employed Through", "Agency", "Company", "Division", "Department", "Designation", "Grade", "Team", "Role", "Reporting Manager", "Joining Date", "Status", "Staff Type", "Email", "Gender", "Marital Status", "Nationality", "Address"];
     const ws = XLSX.utils.aoa_to_sheet([
       headers,
-      ["Rahul Sharma", "BITL-001", "Bootes Impex Tech Pvt Ltd", "Engineering", "Civil", "Site Engineer", "C", "Site Team A", "Civil Engineer", "Ravi Kumar", "Gurgaon", "2024-01-01", "Active", "Permanent", "9876543210", "rahul@company.com", "Male", "Single", "Indian", "New Delhi"],
+      ["Rahul Sharma", "9876543210", "BITL-001", "Site Staff", "B47", "Direct", "", "Bootes Impex Tech Pvt Ltd", "Engineering", "Civil", "Site Engineer", "C", "Site Team A", "Civil Engineer", "Ravi Kumar", "2024-01-01", "Active", "Permanent", "rahul@company.com", "Male", "Single", "Indian", "New Delhi"],
+      ["Ramesh Singh", "9812345678", "", "Guard", "B47", "Agency", "SecureX Services", "", "", "", "Security Guard", "", "", "", "", "2025-06-01", "Active", "Temporary", "", "Male", "", "", ""],
       [],
-      [`Valid grades: ${gradeHint}  (A=entry ascending)`, "Valid status: Active / Inactive / On Leave", `Valid staff type: ${STAFF_TYPES.join(" / ")}`],
+      ["Phone is required; Employee ID and Email only if the company gave one", `Valid category: ${CATEGORIES.join(" / ")}`, "Posted At: project or office code", "Employed Through: Direct / Agency (Agency = vendor name)", `Valid grades: ${gradeHint}`, "Valid status: Active / Inactive / On Leave", `Valid staff type: ${STAFF_TYPES.join(" / ")}`],
     ]);
     ws["!cols"] = headers.map(h => ({ wch: Math.max(14, h.length + 2) }));
     const wb = XLSX.utils.book_new();
@@ -957,6 +1190,19 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   };
 
   /* ── Bulk Import ── */
+  // "Posted At" is a project / office code, "Agency" a vendor name
+  const placementFromRow = (r) => {
+    const code = String(r["Posted At"] || "").trim().toLowerCase();
+    const prj = code && opts.projects.find(p => p.code.toLowerCase() === code);
+    const off = code && !prj && opts.offices.find(o => o.code.toLowerCase() === code);
+    const agencyText = String(r["Agency"] || "").trim().toLowerCase();
+    const agency = agencyText && opts.agencies.find(a => a.name.toLowerCase() === agencyText);
+    return {
+      postedKind: off ? "office" : "project", postedId: (prj || off)?.id || "",
+      employedThrough: agency || String(r["Employed Through"] || "").toLowerCase().startsWith("agency") ? "agency" : "direct",
+      agencyVendorId: agency?.id || "",
+    };
+  };
   const handleImport = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -978,10 +1224,12 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
           role:          String(r["Role"]               || "").trim(),
           reportingTo:   String(r["Reporting Manager"]  || "").trim(),
           workLocation:  String(r["Work Location"]      || "").trim(),
+          category:      toCategory(r["Category"]),
+          ...placementFromRow(r),
           joiningDate:   String(r["Joining Date"]       || "").trim(),
           status:        String(r["Status"]             || "active").toLowerCase().includes("inactive") ? "inactive" : String(r["Status"] || "").toLowerCase().includes("leave") ? "on_leave" : "active",
           staffType:     toStaffType(r["Staff Type"]),
-          contactNumber: String(r["Phone"]              || "").trim(),
+          contactNumber: String(r["Phone"] || r["Mobile"] || "").trim(),
           email:         String(r["Email"]              || "").trim(),
           gender:        String(r["Gender"]             || "").trim(),
           maritalStatus: String(r["Marital Status"]     || "").trim(),
@@ -993,17 +1241,19 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
 
       if (!rows.length) { alert("No valid rows found. Make sure 'Person Name' column exists."); return; }
 
-      let imported = 0, failed = 0;
+      let imported = 0;
+      const failed = [];
       for (const row of rows) {
         const res = await authFetch(`${API}/api/organisation/employees`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ...row, company_id: orgId }),
         });
-        if (res.ok) imported++; else failed++;
+        if (res.ok) imported++;
+        else failed.push(`${row.personName}: ${(await res.json().catch(() => ({}))).error || "failed"}`);
       }
       await fetchEmps();
-      alert(`${imported} employee(s) imported${failed ? `, ${failed} failed` : ""}.`);
+      alert(`${imported} employee(s) imported.` + (failed.length ? `\n\n${failed.length} not imported:\n${failed.slice(0, 15).join("\n")}` : ""));
     } catch { alert("Failed to read file. Please use the template format."); }
     finally { setImporting(false); e.target.value = ""; }
   };
@@ -1015,6 +1265,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         <EmployeeDetail
           emp={selected}
           imgUrl={selectedImgUrl}
+          opts={opts}
           onBack={() => setSelected(null)}
           onEdit={canEdit ? () => openEdit(selected) : undefined}
           onMove={canEdit ? () => setMoveEmps([selected]) : undefined}
@@ -1022,7 +1273,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         />
         {modal && (
           <EmpModal form={form} setForm={setForm} editId={editId} saving={saving}
-            onClose={() => setModal(false)} onSave={handleSave} divisions={divisions} allEmps={emps} />
+            onClose={() => setModal(false)} onSave={handleSave} divisions={divisions} allEmps={emps} opts={opts} />
         )}
         {moveModal}
         {toast && (
@@ -1115,6 +1366,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                 placeholder="Search employees…"
                 className="pl-8 pr-3 py-[7px] text-xs border border-slate-200 rounded-md bg-slate-50 w-full focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-white" />
             </div>
+            <CategoryPicker value={category} emps={emps} onChange={c => { setCategory(c); setPage(1); }} />
             <EmpFilters
               filters={{ div: filterDiv, dept: filterDept, status: filterStatus, type: filterType }}
               divs={allDivs} depts={allDepts}
@@ -1132,50 +1384,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
 
       <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
 
-      {/* Analytics — click a status card to filter by it */}
-      {!loading && emps.length > 0 && (() => {
-        const now = new Date();
-        const by = (s) => emps.filter(e => (e.status || "active") === s).length;
-        const newThisMonth = emps.filter(e => {
-          const d = e.joiningDate ? new Date(e.joiningDate) : null;
-          return d && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-        }).length;
-        const cards = [
-          { label: "Total",             value: emps.length,    Icon: Users,     accent: "#475569", tint: "#f1f5f9", sub: `${allDepts.length} dept${allDepts.length === 1 ? "" : "s"}` },
-          { label: "Active",            value: by("active"),   Icon: UserCheck, accent: "#059669", tint: "#ecfdf5", status: "active" },
-          { label: "On Leave",          value: by("on_leave"), Icon: Clock,     accent: "#d97706", tint: "#fffbeb", status: "on_leave" },
-          { label: "Inactive",          value: by("inactive"), Icon: X,         accent: "#64748b", tint: "#f1f5f9", status: "inactive" },
-          { label: "Joined This Month", value: newThisMonth,   Icon: Calendar,  accent: "#2563eb", tint: "#eff6ff",
-            sub: now.toLocaleDateString("en-IN", { month: "short" }) },
-        ];
-        // same card style as Treasury › Party Ledger
-        return (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            {cards.map(c => {
-              const on = c.status && filterStatus === c.status;
-              const Tag = c.status ? "button" : "div";
-              return (
-                <Tag key={c.label}
-                  {...(c.status ? { onClick: () => { setFilterStatus(on ? "" : c.status); setPage(1); }, title: on ? "Show all" : `Show ${c.label.toLowerCase()} only` } : {})}
-                  className={`relative overflow-hidden text-left bg-white rounded-lg border shadow-sm p-3 flex items-center gap-3 min-w-0 transition-colors
-                    ${on ? "border-blue-400 ring-1 ring-blue-400" : "border-slate-200/80"} ${c.status ? "hover:border-slate-300 cursor-pointer" : ""}`}>
-                  <div className="absolute inset-y-0 left-0 w-[3px]" style={{ background: c.accent }} />
-                  <div className="w-9 h-9 rounded-md flex items-center justify-center shrink-0" style={{ background: c.tint, color: c.accent }}>
-                    <c.Icon size={16} strokeWidth={2.25} />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide truncate">{c.label}</p>
-                    <p className="text-lg font-extrabold leading-tight tracking-tight truncate tabular-nums text-slate-800">
-                      {c.value}{c.sub && <span className="ml-1.5 text-[11px] font-semibold text-slate-400">{c.sub}</span>}
-                    </p>
-                  </div>
-                </Tag>
-              );
-            })}
-          </div>
-        );
-      })()}
-
       {/* Content */}
       {loading ? (
         <div className="flex items-center justify-center h-48">
@@ -1184,7 +1392,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 gap-3 text-slate-300">
           <Users size={32} />
-          <p className="text-sm">{search || filterDiv || filterDept || filterStatus || filterType ? "No employees match your filters" : "No employees yet — add one above"}</p>
+          <p className="text-sm">{search || filterDiv || filterDept || filterStatus || filterType || category ? "No employees match your filters" : "No employees yet — add one above"}</p>
         </div>
       ) : view === "card" ? (
 
@@ -1215,7 +1423,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       ) : (
 
         /* ── TABLE VIEW ── */
-        <div className="bg-white rounded-lg border border-slate-200 flex flex-col" style={{ height: "calc(100svh - 185px)" }}>
+        <div className="bg-white rounded-lg border border-slate-200 flex flex-col" style={{ height: "calc(100svh - 110px)" }}>
           {picked.length > 0 && (
             <div className="flex items-center gap-3 px-4 py-2 border-b border-slate-200 bg-blue-50/60 text-[12px]">
               <span className="font-semibold text-slate-700">{picked.length} selected</span>
@@ -1243,10 +1451,15 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                   <th style={{ width: 110, minWidth: 110, left: canEdit ? 40 : 0 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[22]">Contact ID</th>
                   <th style={{ minWidth: 180, left: canEdit ? 150 : 110 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[22]">Name</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Emp ID</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Division</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Department</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Category</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Posted At</th>
+                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Mobile</th>
+                  {!workerTab && <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Division</th>}
+                  {!workerTab && <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Department</th>}
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Designation</th>
-                  <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Grade</th>
+                  {workerTab
+                    ? <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Through</th>
+                    : <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Grade</th>}
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Status</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Staff Type</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-l border-slate-200 whitespace-nowrap text-center sticky right-0 z-[22]">Action</th>
@@ -1271,10 +1484,20 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                         <span className="font-semibold text-slate-800 text-[13px]">{emp.personName}</span>
                       </td>
                       <td className={`${td} text-xs font-medium`}>{emp.employeeId || "—"}</td>
-                      <td className={td}>{div || "—"}</td>
-                      <td className={td}>{emp.department || "—"}</td>
+                      <td className={`${td} text-center`}><CategoryBadge category={emp.category} /></td>
+                      <td className={td}>
+                        {emp.postedId ? postedLabel(emp, opts) || "—"
+                          : emp.workLocation ? <span className="text-slate-400 italic" title="Old location text — pick a project or office in Edit">{emp.workLocation}</span>
+                          : "—"}
+                        {!workerTab && emp.employedThrough === "agency" && <span className="ml-1.5 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">{agencyName(emp, opts)}</span>}
+                      </td>
+                      <td className={`${td} tabular-nums`}>{emp.contactNumber || "—"}</td>
+                      {!workerTab && <td className={td}>{div || "—"}</td>}
+                      {!workerTab && <td className={td}>{emp.department || "—"}</td>}
                       <td className={td}>{emp.designation || "—"}</td>
-                      <td className={`${td} text-center`}><GradeBadge grade={emp.grade} /></td>
+                      {workerTab
+                        ? <td className={td}>{agencyName(emp, opts)}</td>
+                        : <td className={`${td} text-center`}><GradeBadge grade={emp.grade} /></td>}
                       <td className={`${td} text-center`}><StatusBadge status={emp.status} /></td>
                       <td className={`${td} text-center`}><StaffTypeBadge type={emp.staffType} /></td>
                       <td className="px-4 py-3 border-b border-l border-slate-200 text-center whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky right-0 z-[5]" onClick={e => e.stopPropagation()}>
@@ -1344,7 +1567,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       {/* Modal */}
       {modal && (
         <EmpModal form={form} setForm={setForm} editId={editId} saving={saving}
-          onClose={() => setModal(false)} onSave={handleSave} divisions={divisions} allEmps={emps} />
+          onClose={() => setModal(false)} onSave={handleSave} divisions={divisions} allEmps={emps} opts={opts} />
       )}
       {logEmp && <ContactLogModal contact={logEmp} onClose={() => setLogEmp(null)} />}
       {moveModal}

@@ -57,7 +57,48 @@ const mapEmployee = (r) => ({
   alternatePhone: r.alternate_phone || "",
   address:        r.address         || "",
   joiningDate:    r.joining_date    ? String(r.joining_date).slice(0, 10) : "",
+  category:        r.category         || "",
+  postedKind:      r.posted_kind      || "",
+  postedId:        r.posted_id        || "",
+  employedThrough: r.employed_through || "direct",
+  agencyVendorId:  r.agency_vendor_id || "",
 });
+
+// What an employee does — Staff Type (Permanent / Probation …) is separate
+const CATEGORIES = ["Office Staff", "Site Staff", "Guard", "Labour", "Driver", "Cook"];
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const normName  = (v) => String(v || "").trim().replace(/\s+/g, " ").toLowerCase();
+const normPhone = (v) => String(v || "").replace(/\D/g, "").slice(-10);
+
+// Category, posting and agency fields as stored
+const placementFields = (b) => {
+  const kind = b.postedKind === "office" ? "office" : b.postedKind === "project" ? "project" : null;
+  const agency = b.employedThrough === "agency";
+  return {
+    category:         CATEGORIES.includes(b.category) ? b.category : null,
+    posted_kind:      kind && UUID_RE.test(b.postedId || "") ? kind : null,
+    posted_id:        kind && UUID_RE.test(b.postedId || "") ? b.postedId : null,
+    employed_through: agency ? "agency" : "direct",
+    agency_vendor_id: agency && UUID_RE.test(b.agencyVendorId || "") ? b.agencyVendorId : null,
+  };
+};
+
+// Same person already there? Employee ID when given, else name + mobile.
+// Two people may share a name (two guards called Ramesh Kumar), not a mobile.
+const findDuplicate = async (company_id, { employeeId, personName, contactNumber }, exceptId) => {
+  let q = supabase.schema("organisation").from("employees").select("id, person_name, employee_id, contact_number");
+  q = company_id ? q.eq("company_id", company_id) : q.is("company_id", null);
+  const { data } = await q;
+  const others = (data || []).filter(r => r.id !== exceptId);
+  const id = String(employeeId || "").trim().toLowerCase();
+  if (id) {
+    const hit = others.find(r => String(r.employee_id || "").trim().toLowerCase() === id);
+    if (hit) return `Employee ID "${employeeId.trim()}" is already used by ${hit.person_name}`;
+  }
+  const name = normName(personName), phone = normPhone(contactNumber);
+  const hit = others.find(r => normName(r.person_name) === name && normPhone(r.contact_number) === phone);
+  return hit ? `${hit.person_name} with mobile ${contactNumber} already exists` : null;
+};
 
 /* GET /api/organisation/employees */
 router.get("/employees", async (req, res) => {
@@ -81,21 +122,13 @@ router.post("/employees", requirePerm("employees", "can_add"), async (req, res) 
             alternatePhone, address, joiningDate,
             createdById, createdByName } = req.body;
 
-    if (!employeeId || !employeeId.trim())
-      return res.status(400).json({ error: "Employee ID is required" });
+    // Employee ID and email are optional (guards, many site staff have neither)
+    if (!personName?.trim()) return res.status(400).json({ error: "Name is required" });
+    if (normPhone(contactNumber).length < 10) return res.status(400).json({ error: "A 10-digit mobile number is required" });
 
     const company_id = companyIdFrom(req.body);
-    const inCompany = (q) => company_id ? q.eq("company_id", company_id) : q.is("company_id", null);
-
-    const { data: byId } = await inCompany(supabase.schema("organisation").from("employees")
-      .select("id").eq("employee_id", employeeId.trim())).limit(1).maybeSingle();
-    if (byId) return res.status(409).json({ duplicate: true, message: "Employee with this ID already exists" });
-
-    if (personName?.trim()) {
-      const { data: byName } = await inCompany(supabase.schema("organisation").from("employees")
-        .select("id").ilike("person_name", personName.trim())).limit(1).maybeSingle();
-      if (byName) return res.status(409).json({ duplicate: true, message: `"${personName.trim()}" naam ka employee already exists` });
-    }
+    const dup = await findDuplicate(company_id, req.body);
+    if (dup) return res.status(409).json({ duplicate: true, error: dup, message: dup });
 
     const code = await getNextEmployeeCode();
     const payload = {
@@ -104,13 +137,14 @@ router.post("/employees", requirePerm("employees", "can_add"), async (req, res) 
       company: company || "", division: division || "", email: email || "", department: department || "",
       reporting_to: reportingTo || "", status: status || "active", staff_type: staffType || null,
       work_location: workLocation || "", role: role || "", team: team || "",
-      bio: bio || "", tags: tags || "", employee_id: employeeId.trim(),
+      bio: bio || "", tags: tags || "", employee_id: (employeeId || "").trim(),
       date_of_birth: dateOfBirth || null, gender: gender || "",
       marital_status: maritalStatus || "", nationality: nationality || "",
       alternate_phone: alternatePhone || "", address: address || "",
       joining_date: joiningDate || null,
       created_by_id: createdById || null, created_by_name: createdByName || null,
       company_id,
+      ...placementFields(req.body),
     };
 
     let { data, error } = await supabase.schema("organisation").from("employees").insert(payload).select().single();
@@ -208,17 +242,25 @@ router.put("/employees/:id", requirePerm("employees", "can_edit"), async (req, r
             workLocation, role, team, bio, tags, employeeId,
             dateOfBirth, gender, maritalStatus, nationality,
             alternatePhone, address, joiningDate } = req.body;
+    if (!personName?.trim()) return res.status(400).json({ error: "Name is required" });
+    if (normPhone(contactNumber).length < 10) return res.status(400).json({ error: "A 10-digit mobile number is required" });
+    const { data: cur } = await supabase.schema("organisation").from("employees").select("company_id").eq("id", req.params.id).maybeSingle();
+    if (!cur) return res.status(404).json({ error: "Employee not found" });
+    const dup = await findDuplicate(cur.company_id, req.body, req.params.id);
+    if (dup) return res.status(409).json({ duplicate: true, error: dup, message: dup });
     const update = {
       person_name: personName || "", contact_number: contactNumber || "",
       designation: designation || "", company: company || "", division: division || "", email: email || "",
       department: department || "", reporting_to: reportingTo || "", status: status || "active",
       staff_type: staffType || null,
       work_location: workLocation || "", role: role || "", team: team || "",
-      bio: bio || "", tags: tags || "", employee_id: employeeId || "",
+      bio: bio || "", tags: tags || "", employee_id: (employeeId || "").trim(),
       date_of_birth: dateOfBirth || null, gender: gender || "",
       marital_status: maritalStatus || "", nationality: nationality || "",
       alternate_phone: alternatePhone || "", address: address || "",
       joining_date: joiningDate || null,
+      // smaller forms (Orders' Contact Person) don't send these — keep them
+      ...("category" in req.body ? placementFields(req.body) : {}),
     };
     const { error } = await supabase.schema("organisation").from("employees").update(update).eq("id", req.params.id);
     if (error) throw error;
@@ -552,6 +594,28 @@ router.delete("/org-designations/:id", requirePerm("designations", "can_delete")
   const { error } = await supabase.schema("organisation").from("designations").delete().eq("id", req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ success: true });
+});
+
+/* GET /api/organisation/employee-options?company_id= — lists the Employee
+   form picks from: where someone is posted (the company's projects and
+   offices) and which agency they come through (vendors) */
+router.get("/employee-options", async (req, res) => {
+  try {
+    const [p, b, v] = await Promise.all([
+      scopeQuery(supabase.from("projects").select("id, project_code, project_name, is_active, company_id"), req).order("project_name"),
+      scopeQuery(supabase.schema("organisation").from("branches").select("id, code, label, status, company_id"), req).order("label"),
+      supabase.schema("procurement").from("vendors").select("id, vendor_name").is("deleted_at", null).order("vendor_name"),
+    ]);
+    if (p.error) throw p.error;
+    res.json({
+      projects: (p.data || []).filter(r => r.is_active !== false).map(r => ({ id: r.id, code: r.project_code || "", name: r.project_name || r.project_code || "" })),
+      offices:  (b.data || []).filter(r => (r.status || "active") === "active").map(r => ({ id: r.id, code: r.code || "", name: r.label || r.code || "" })),
+      agencies: (v.data || []).map(r => ({ id: r.id, name: r.vendor_name || "" })),
+    });
+  } catch (err) {
+    console.error("Employee options error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ════════════════════════════════════

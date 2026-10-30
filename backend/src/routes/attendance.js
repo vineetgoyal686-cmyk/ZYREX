@@ -1,442 +1,361 @@
 const express  = require("express");
 const router   = express.Router();
-const multer   = require("multer");
-const supabase  = require("../helpers/supabaseHelper");
+const supabase = require("../helpers/supabaseHelper");
 const { projectScope, allows, userIdFrom } = require("../helpers/projectScope");
+const { requirePerm, hasPerm } = require("../helpers/permHelper");
 
-const upload = multer({ storage: multer.memoryStorage() });
+/*
+ * Attendance for a project or an office ("place"). People come from HRMS
+ * Employees (sql/employee_category_posting.sql): everyone posted at the
+ * place, plus anyone already marked there that day (sent from elsewhere).
+ * Rows keep the place's code in project_id (e.g. "B47", office "HO-GU");
+ * guards go to guard_attendance, everyone else to attendance.
+ * One person, one row per day — across all places.
+ */
 
-// Attendance tab's project access: every route carries the project (its
-// code, e.g. B47) in the URL — checked once here (helpers/projectScope.js)
-router.param("projectId", async (req, res, next, projectId) => {
+const att = (table) => supabase.schema("attendance").from(table);
+const emps = () => supabase.schema("organisation").from("employees");
+// Labour isn't on attendance — only employees (staff, guards, drivers, cooks)
+const NOT_ON_ATTENDANCE = ["Labour"];
+const onAttendance = (e) => !NOT_ON_ATTENDANCE.includes(e?.category);
+const tableFor = (category) => category === "Guard" ? "guard_attendance" : "attendance";
+const isoDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : null;
+const today = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10); // IST
+const norm = (v) => String(v || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+
+const STATUSES = ["Present", "Absent", "Annual Leave", "Comp Off", "Holiday", "On Duty", "Week Off", "Half Day"];
+
+/* ── Places: active projects + offices, with their company ── */
+let _places = null, _placesAt = 0;
+const allPlaces = async () => {
+  if (_places && Date.now() - _placesAt < 60e3) return _places;
+  const [p, b] = await Promise.all([
+    supabase.from("projects").select("id, company_id, project_code, project_name, city, state, is_active").order("project_name"),
+    supabase.schema("organisation").from("branches").select("id, company_id, code, label, city, state, status").order("label"),
+  ]);
+  if (p.error) throw p.error;
+  if (b.error) throw b.error;
+  _places = [
+    ...(p.data || []).filter(r => r.is_active !== false && r.project_code).map(r => ({
+      id: r.id, kind: "project", code: r.project_code, name: r.project_name || r.project_code,
+      companyId: r.company_id, detail: [r.city, r.state].filter(Boolean).join(", "),
+    })),
+    ...(b.data || []).filter(r => String(r.status || "active").toLowerCase() === "active" && r.code).map(r => ({
+      id: r.id, kind: "office", code: r.code, name: r.label || r.code,
+      companyId: r.company_id, detail: [r.city, r.state].filter(Boolean).join(", "),
+    })),
+  ];
+  _placesAt = Date.now();
+  return _places;
+};
+const placeByCode = async (code) => (await allPlaces()).find(p => norm(p.code) === norm(code)) || null;
+
+// Every :place in the URL is checked against the user's Attendance access
+router.param("place", async (req, res, next, code) => {
   try {
-    if (allows(await projectScope(userIdFrom(req), "staff_attendance"), projectId)) return next();
-    res.status(403).json({ error: "This project isn't in your Attendance access" });
+    const place = await placeByCode(code);
+    if (!place) return res.status(404).json({ error: `No project or office with code "${code}"` });
+    if (!allows(await projectScope(userIdFrom(req), "staff_attendance"), place.id, place.code))
+      return res.status(403).json({ error: "This project/office isn't in your Attendance access" });
+    req.place = place;
+    next();
   } catch (err) { next(err); }
 });
 
-/* ─── Working hours calculator (HH:MM format) ─── */
-const calcWorkingHours = (inTime, outTime) => {
-  if (!inTime || !outTime) return { workingHrs: "0Hrs 0Min", otHrs: "0Hrs 0Min" };
-  const [ih, im] = inTime.split(":").map(Number);
-  const [oh, om] = outTime.split(":").map(Number);
-  if (isNaN(ih) || isNaN(im) || isNaN(oh) || isNaN(om)) return { workingHrs: "0Hrs 0Min", otHrs: "0Hrs 0Min" };
-  const inMin  = ih * 60 + im;
-  const outMin = oh * 60 + om;
-  if (outMin <= inMin) return { workingHrs: "0Hrs 0Min", otHrs: "0Hrs 0Min" };
-  const total = outMin - inMin;
-  const ot    = Math.max(0, total - 480);
-  const fmt   = (m) => `${Math.floor(m / 60)}Hrs ${m % 60}Min`;
-  return { workingHrs: fmt(total), otHrs: fmt(ot) };
+/* ── Hours: "HH:MM" in/out → minutes worked; night shift may cross midnight ── */
+// accepts "09:30" and old rows' "8:00 PM"
+const toMin = (t) => {
+  const m = /^\s*(\d{1,2}):(\d{2})(?::\d{2})?\s*(am|pm)?/i.exec(String(t || ""));
+  if (!m) return null;
+  let h = Number(m[1]) % 24;
+  if (m[3]) h = (h % 12) + (m[3].toLowerCase() === "pm" ? 12 : 0);
+  return h * 60 + Number(m[2]);
+};
+const hhmm = (t) => {
+  const m = toMin(t);
+  return m == null ? "" : `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+};
+const workedMin = (inT, outT) => {
+  const a = toMin(inT), b = toMin(outT);
+  if (a == null || b == null) return 0;
+  return b > a ? b - a : b < a ? b + 1440 - a : 0;
 };
 
-/* ── Backend cache (60s TTL per project) ── */
-const _cache = {};
-const CACHE_TTL = 60 * 1000;
-
-const getCached = (key) => {
-  const entry = _cache[key];
-  if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.data;
-  return null;
-};
-const setCache = (key, data) => { _cache[key] = { data, ts: Date.now() }; };
-const clearCache = (projectId) => { delete _cache[projectId]; };
-
-/* ── Fetch all rows bypassing PostgREST 1000-row max_rows limit ── */
-const TABLES_WITH_DATE = ["attendance", "guard_attendance"];
-const TABLE_SCHEMA = {
-  attendance:       "attendance",
-  guard_attendance: "attendance",
-  staff_contacts:   "attendance",
-  guard_contacts:   "attendance",
-};
-const schemaFrom = (table) => {
-  const schema = TABLE_SCHEMA[table];
-  return schema ? supabase.schema(schema).from(table) : supabase.from(table);
+const companiesList = async () => {
+  const { data, error } = await supabase.schema("organisation").from("companies")
+    .select("id, company_code, company_name, status").order("company_name");
+  if (error) throw error;
+  return (data || []).filter(c => String(c.status || "active").toLowerCase() === "active")
+    .map(c => ({ id: c.id, code: c.company_code || "", name: c.company_name || "" }));
 };
 
-const fetchAll = async (table, filters = {}) => {
-  const PAGE = 1000;
-  let all = [], from = 0;
-  while (true) {
-    let q = schemaFrom(table).select("*");
-    if (TABLES_WITH_DATE.includes(table)) q = q.order("date", { ascending: true });
-    else q = q.order("created_at", { ascending: true });
-    q = q.range(from, from + PAGE - 1);
-    Object.entries(filters).forEach(([k, v]) => { q = q.eq(k, v); });
-    const { data, error } = await q;
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    all = all.concat(data);
-    if (data.length < PAGE) break;
-    from += PAGE;
-  }
-  return all;
+const through = (e, agencies) => e.employed_through === "agency" ? (agencies.get(e.agency_vendor_id) || "Agency") : "Direct";
+const agencyMap = async (list) => {
+  const ids = [...new Set(list.map(e => e.agency_vendor_id).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const { data } = await supabase.schema("procurement").from("vendors").select("id, vendor_name").in("id", ids);
+  return new Map((data || []).map(v => [v.id, v.vendor_name || ""]));
 };
 
-/* ═══════════════════════════════════
-   GET /api/attendance/read/:projectId
-═══════════════════════════════════ */
-router.get("/read/:projectId", async (req, res) => {
+const rowOut = (r, table) => ({
+  id: r.id, table, date: r.date, status: r.status || "", inTime: hhmm(r.in_time), outTime: hhmm(r.out_time),
+  shift: r.shift || "Day", remarks: r.remarks || "", markedBy: r.created_by_name || "",
+  minutes: workedMin(r.in_time, r.out_time),
+});
+
+/* ═══ GET /api/attendance/places — companies, and the projects / offices
+   this user may take attendance for ═══ */
+router.get("/places", requirePerm("staff_attendance", "can_view"), async (req, res) => {
   try {
-    const { projectId } = req.params;
+    const scope = await projectScope(userIdFrom(req), "staff_attendance");
+    const [companies, places] = await Promise.all([companiesList(), allPlaces()]);
+    const mine = places.filter(p => p.companyId && allows(scope, p.id, p.code));
+    res.json({
+      companies: companies.filter(c => mine.some(p => p.companyId === c.id)),
+      places: mine,
+    });
+  } catch (err) {
+    console.error("Attendance places error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
-    const cached = getCached(projectId);
-    if (cached) return res.json(cached);
+/* ═══ GET /api/attendance/register/:place?date= — the day's register ═══ */
+router.get("/register/:place", requirePerm("staff_attendance", "can_view"), async (req, res) => {
+  try {
+    const place = req.place;
+    const date = isoDate(req.query.date) || today();
 
-    const [staffData, guardsData, scData, gcData] = await Promise.all([
-      fetchAll("attendance",      { project_id: projectId }),
-      fetchAll("guard_attendance",{ project_id: projectId }),
-      fetchAll("staff_contacts",  { project_id: projectId }),
-      fetchAll("guard_contacts",  { project_id: projectId }),
+    // rows marked here today, and the people they belong to
+    const [here1, here2, posted] = await Promise.all([
+      att("attendance").select("*").eq("date", date).ilike("project_id", place.code),
+      att("guard_attendance").select("*").eq("date", date).ilike("project_id", place.code),
+      emps().select("*").eq("posted_kind", place.kind).eq("posted_id", place.id).neq("status", "inactive"),
     ]);
+    for (const r of [here1, here2, posted]) if (r.error) throw r.error;
+    const hereRows = [...here1.data.map(r => ({ r, table: "attendance" })), ...here2.data.map(r => ({ r, table: "guard_attendance" }))];
 
-    const staffRes   = { data: staffData };
-    const guardsRes  = { data: guardsData };
-    const scRes      = { data: scData };
-    const gcRes      = { data: gcData };
+    const people = new Map((posted.data || []).filter(onAttendance).map(e => [e.id, e]));
+    const visitorIds = hereRows.map(x => x.r.employee_id).filter(id => id && !people.has(id));
+    if (visitorIds.length) {
+      const { data } = await emps().select("*").in("id", [...new Set(visitorIds)]);
+      (data || []).filter(onAttendance).forEach(e => people.set(e.id, e));
+    }
 
-    const staff = (staffRes.data || []).map(r => {
-      const { workingHrs, otHrs } = calcWorkingHours(r.in_time, r.out_time);
+    // same people marked somewhere else that day
+    const ids = [...people.keys()];
+    const elsewhere = new Map();
+    if (ids.length) {
+      const [o1, o2] = await Promise.all([
+        att("attendance").select("employee_id, project_id, status").eq("date", date).in("employee_id", ids).not("project_id", "ilike", place.code),
+        att("guard_attendance").select("employee_id, project_id, status").eq("date", date).in("employee_id", ids).not("project_id", "ilike", place.code),
+      ]);
+      [...(o1.data || []), ...(o2.data || [])].forEach(r => elsewhere.set(r.employee_id, { place: r.project_id, status: r.status }));
+    }
+
+    const agencies = await agencyMap([...people.values()]);
+    const byEmp = new Map(hereRows.filter(x => x.r.employee_id).map(x => [x.r.employee_id, x]));
+    const list = [...people.values()].map(e => {
+      const rec = byEmp.get(e.id);
       return {
-        id:          r.id,
-        date:        r.date        || "",
-        siteCode:    r.site_code   || "",
-        name:        r.name        || "",
-        designation: r.designation || "",
-        department:  r.department  || "",
-        status:      r.status      || "",
-        inTime:      r.in_time     || "",
-        outTime:     r.out_time    || "",
-        shift:       r.shift       || "Day",
-        workingHrs,
-        otHrs,
-        remarks:     r.remarks     || "",
-        createdById: r.created_by_id || "",
-        createdByName: r.created_by_name || "",
+        employeeId: e.id, contactCode: e.contact_code || "", name: e.person_name || "", category: e.category || "",
+        designation: e.designation || "", mobile: e.contact_number || "", through: through(e, agencies),
+        visiting: !(e.posted_kind === place.kind && e.posted_id === place.id),
+        record: rec ? rowOut(rec.r, rec.table) : null,
+        elsewhere: elsewhere.get(e.id) || null,
       };
-    });
+    }).sort((a, b) => (a.category === "Guard") - (b.category === "Guard") || a.name.localeCompare(b.name));
 
-    const guards = (guardsRes.data || []).map(r => ({
-      id:          r.id,
-      date:        r.date        || "",
-      siteCode:    r.site_code   || "",
-      name:        r.name        || "",
-      designation: r.type        || "Security Guard",
-      department:  r.location    || "",
-      status:      r.status      || "",
-      inTime:      r.in_time     || "",
-      outTime:     r.out_time    || "",
-      shift:       r.shift       || "Day",
-      remarks:     r.remarks     || "",
-      createdById: r.created_by_id || "",
-      createdByName: r.created_by_name || "",
-    }));
+    // rows here that point at no employee (old data not linked yet)
+    const orphans = hereRows.filter(x => !x.r.employee_id).map(x => ({ name: x.r.name, ...rowOut(x.r, x.table) }));
 
-    const staffContacts = (scRes.data || []).map(r => ({
-      id:          r.id,
-      sNo:         r.id,
-      site:        r.project_id   || "",
-      empId:       r.emp_id        || "",
-      joiningDate: r.joining_date  || "",
-      email:       r.email         || "",
-      name:        r.name          || "",
-      designation: r.designation   || "",
-      department:  r.department    || "",
-      manager:     r.manager       || "",
-      contact:     r.contact_no    || "",
-      createdById: r.created_by_id || "",
-      createdByName: r.created_by_name || "",
-    }));
-
-    const guardContacts = (gcRes.data || []).map(r => ({
-      id:          r.id,
-      sNo:         r.id,
-      site:        r.project_id  || "",
-      name:        r.name        || "",
-      joiningDate: r.joining_date|| "",
-      designation: r.designation || "",
-      status:      r.status      || "",
-      shift:       r.shift_duty  || "",
-      contact:     r.contact_no  || "",
-      remarks:     r.remarks     || "",
-      createdById: r.created_by_id || "",
-      createdByName: r.created_by_name || "",
-    }));
-
-    const result = { staff, guards, staffContacts, guardContacts, contacts: staffContacts };
-    setCache(projectId, result);
-    res.json(result);
+    res.json({ place, date, people: list, orphans });
   } catch (err) {
-    console.error("Attendance read error:", err.message);
-    res.status(500).json({ error: "Failed to fetch attendance data" });
+    console.error("Attendance register error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-/* ═══════════════════════════════════
-   POST /api/attendance/add/:projectId/:sheetName
-═══════════════════════════════════ */
-router.post("/add/:projectId/:sheetName", async (req, res) => {
+/* ═══ POST /api/attendance/mark/:place — save the day's changes
+   body { date, rows: [{ employeeId, status, inTime, outTime, shift, remarks }] }
+   status "" clears that person's mark here ═══ */
+router.post("/mark/:place", async (req, res) => {
   try {
-    const { projectId, sheetName } = req.params;
-    clearCache(projectId);
-    const data = req.body;
+    const uid = userIdFrom(req);
+    const [canAdd, canEdit, canDelete] = await Promise.all([
+      hasPerm(uid, "staff_attendance", "can_add"), hasPerm(uid, "staff_attendance", "can_edit"), hasPerm(uid, "staff_attendance", "can_delete"),
+    ]);
+    if (!canAdd && !canEdit) return res.status(403).json({ error: "You can't mark attendance" });
 
-    if (sheetName === "Staff") {
-      const { error } = await supabase.schema("attendance").from("attendance").insert({
-        project_id:  projectId,
-        date:        data.date        || null,
-        site_code:   data.siteCode    || data.site || projectId,
-        name:        data.name        || "",
-        designation: data.designation || "",
-        department:  data.department  || "",
-        status:      data.status      || "Absent",
-        in_time:     data.inTime      || data.in_time  || "",
-        out_time:    data.outTime     || data.out_time || "",
-        shift:       data.shift       || "Day",
-        remarks:     data.remarks     || "",
-        created_by_id:   data.createdById   || "",
-        created_by_name: data.createdByName || "",
-      });
-      if (error) throw error;
+    const place = req.place;
+    const date = isoDate(req.body.date);
+    if (!date) return res.status(400).json({ error: "Date is required" });
+    if (date > today()) return res.status(400).json({ error: "Can't mark attendance for a future date" });
+    const rows = (Array.isArray(req.body.rows) ? req.body.rows : []).filter(r => r?.employeeId);
+    if (!rows.length) return res.status(400).json({ error: "Nothing to save" });
 
-    } else if (sheetName === "Guard") {
-      const { error } = await supabase.schema("attendance").from("guard_attendance").insert({
-        project_id: projectId,
-        date:       data.date        || null,
-        site_code:  data.siteCode    || data.site || projectId,
-        name:       data.name        || "",
-        type:       data.designation || data.type || "Security Guard",
-        location:   data.department  || data.location || "",
-        status:     data.status      || "Absent",
-        in_time:    data.inTime      || data.in_time  || "",
-        out_time:   data.outTime     || data.out_time || "",
-        shift:      data.shift       || "Day",
-        remarks:    data.remarks     || "",
-        created_by_id:   data.createdById   || "",
-        created_by_name: data.createdByName || "",
-      });
-      if (error) throw error;
+    const { data: people, error: pe } = await emps().select("id, person_name, category, designation, department")
+      .in("id", rows.map(r => r.employeeId));
+    if (pe) throw pe;
+    const byId = new Map((people || []).map(e => [e.id, e]));
+    const ids = [...byId.keys()];
+    const [x1, x2] = await Promise.all([
+      att("attendance").select("id, employee_id, project_id, status, in_time, out_time, shift, remarks").eq("date", date).in("employee_id", ids),
+      att("guard_attendance").select("id, employee_id, project_id, status, in_time, out_time, shift, remarks").eq("date", date).in("employee_id", ids),
+    ]);
+    const existing = new Map();
+    (x1.data || []).forEach(r => existing.set(r.employee_id, { ...r, table: "attendance" }));
+    (x2.data || []).forEach(r => existing.set(r.employee_id, { ...r, table: "guard_attendance" }));
 
-    } else if (sheetName === "SC" || sheetName === "Contact") {
-      // Duplicate EmpID check
-      if (data.empId) {
-        const { data: existing } = await supabase.schema("attendance")
-          .from("staff_contacts")
-          .select("id")
-          .eq("project_id", projectId)
-          .ilike("emp_id", data.empId);
-        if (existing?.length > 0)
-          return res.status(400).json({ error: "Duplicate Employee ID", detail: `EmpID "${data.empId}" is already registered` });
+    const user = req.body.createdByName || "";
+    // edit history per person per day — GET /api/audit-logs/attendance/<employeeId>_<date>
+    const logs = [];
+    const LOG_FIELDS = [["status", "Status"], ["shift", "Shift"], ["in_time", "In"], ["out_time", "Out"], ["remarks", "Remarks"]];
+    const log = (e, action, before, after) => {
+      const changes = LOG_FIELDS
+        .map(([k, label]) => ({ field: label, from: k.endsWith("_time") ? hhmm(before?.[k]) : (before?.[k] || ""), to: after?.[k] || "" }))
+        .filter(c => c.from !== c.to);
+      if (action === "Updated" && !changes.length) return;
+      logs.push({ entity_type: "attendance", entity_id: `${e.id}_${date}`, entity_name: `${e.person_name} · ${date} · ${place.code}`,
+        action, user_id: uid || null, user_name: user || null, changes });
+    };
+    let saved = 0;
+    const skipped = [];
+    for (const r of rows) {
+      const e = byId.get(r.employeeId);
+      if (!e) { skipped.push({ name: r.employeeId, reason: "Employee not found" }); continue; }
+      if (!onAttendance(e)) { skipped.push({ name: e.person_name, reason: `${e.category} isn't on attendance` }); continue; }
+      const cur = existing.get(e.id);
+      if (cur && norm(cur.project_id) !== norm(place.code)) {
+        skipped.push({ name: e.person_name, reason: `Already marked at ${cur.project_id}` }); continue;
       }
-      const { error } = await supabase.schema("attendance").from("staff_contacts").insert({
-        project_id:   projectId,
-        emp_id:       data.empId       || "",
-        joining_date: data.joiningDate || null,
-        email:        data.emailId     || data.email || "",
-        name:         data.name        || "",
-        designation:  data.designation || "",
-        department:   data.department  || "",
-        manager:      data.manager     || "",
-        contact_no:   data.contactNo   || data.contact || "",
-        created_by_id:   data.createdById   || "",
-        created_by_name: data.createdByName || "",
-      });
-      if (error) throw error;
+      const status = String(r.status || "");
+      if (!status) {
+        if (!cur) continue;
+        if (!canDelete) { skipped.push({ name: e.person_name, reason: "You can't remove a mark" }); continue; }
+        const { error } = await att(cur.table).delete().eq("id", cur.id);
+        if (error) throw error;
+        log(e, "Removed", cur, null);
+        saved++; continue;
+      }
+      if (!STATUSES.includes(status)) { skipped.push({ name: e.person_name, reason: `Unknown status "${status}"` }); continue; }
+      if (cur ? !canEdit : !canAdd) { skipped.push({ name: e.person_name, reason: cur ? "You can't edit a mark" : "You can't add a mark" }); continue; }
 
-    } else if (sheetName === "GC") {
-      const { error } = await supabase.schema("attendance").from("guard_contacts").insert({
-        project_id:   projectId,
-        name:         data.name        || "",
-        joining_date: data.joiningDate || null,
-        designation:  data.designation || "Security Guard",
-        status:       data.status      || "Deactive",
-        shift_duty:   data.shift       || data.shiftDuty || "",
-        contact_no:   data.contactNo   || data.contact || "",
-        remarks:      data.remarks     || "",
-        created_by_id:   data.createdById   || "",
-        created_by_name: data.createdByName || "",
-      });
+      const table = tableFor(e.category);
+      const common = {
+        date, status, name: e.person_name || "", employee_id: e.id, site_code: place.code,
+        in_time: hhmm(r.inTime), out_time: hhmm(r.outTime), shift: r.shift === "Night" ? "Night" : "Day",
+        remarks: String(r.remarks || "").slice(0, 300),
+      };
+      const fields = table === "guard_attendance"
+        ? { ...common, type: e.designation || "Security Guard", location: "" }
+        : { ...common, designation: e.designation || "", department: e.department || "" };
+
+      // moved category (e.g. staff → guard): the row changes table
+      if (cur && cur.table !== table) {
+        await att(cur.table).delete().eq("id", cur.id);
+      }
+      const { error } = cur && cur.table === table
+        ? await att(table).update(fields).eq("id", cur.id)
+        : await att(table).insert({ ...fields, project_id: place.code, created_by_id: uid || null, created_by_name: user });
       if (error) throw error;
+      log(e, cur ? "Updated" : "Marked", cur, fields);
+      saved++;
     }
-
-    res.json({ success: true });
+    if (logs.length) {
+      const { error } = await supabase.schema("procurement").from("audit_logs").insert(logs);
+      if (error) console.error("Attendance log write error:", error.message);
+    }
+    res.json({ success: true, saved, skipped });
   } catch (err) {
-    console.error("ADD ERROR:", err.message);
-    res.status(500).json({ error: "Failed to add record", detail: err.message });
+    console.error("Attendance mark error:", err.message);
+    res.status(500).json({ error: "Save failed", detail: err.message });
   }
 });
 
-/* ═══════════════════════════════════
-   PATCH /api/attendance/update/:projectId/:sheetName/:id
-═══════════════════════════════════ */
-router.patch("/update/:projectId/:sheetName/:id", async (req, res) => {
+/* ═══ GET /api/attendance/people/:place — everyone active in the place's
+   company, for "Add from another place" ═══ */
+router.get("/people/:place", requirePerm("staff_attendance", "can_view"), async (req, res) => {
   try {
-    const { projectId, sheetName, id } = req.params;
-    clearCache(projectId);
-    const data = req.body;
-
-    if (sheetName === "Staff") {
-      const { error } = await supabase.schema("attendance").from("attendance").update({
-        date:        data.date        || null,
-        site_code:   data.siteCode    || data.site || projectId,
-        name:        data.name        || "",
-        designation: data.designation || "",
-        department:  data.department  || "",
-        status:      data.status      || "Absent",
-        in_time:     data.inTime      || data.in_time  || "",
-        out_time:    data.outTime     || data.out_time || "",
-        shift:       data.shift       || "Day",
-        remarks:     data.remarks     || "",
-      }).eq("id", id);
-      if (error) throw error;
-
-    } else if (sheetName === "Guard") {
-      const { error } = await supabase.schema("attendance").from("guard_attendance").update({
-        date:      data.date        || null,
-        site_code: data.siteCode    || data.site || projectId,
-        name:      data.name        || "",
-        type:      data.designation || data.type || "Security Guard",
-        location:  data.department  || data.location || "",
-        status:    data.status      || "Absent",
-        in_time:   data.inTime      || data.in_time  || "",
-        out_time:  data.outTime     || data.out_time || "",
-        shift:     data.shift       || "Day",
-        remarks:   data.remarks     || "",
-      }).eq("id", id);
-      if (error) throw error;
-
-    } else if (sheetName === "SC" || sheetName === "Contact") {
-      const { error } = await supabase.schema("attendance").from("staff_contacts").update({
-        emp_id:       data.empId       || "",
-        joining_date: data.joiningDate || null,
-        email:        data.emailId     || data.email || "",
-        name:         data.name        || "",
-        designation:  data.designation || "",
-        department:   data.department  || "",
-        manager:      data.manager     || "",
-        contact_no:   data.contactNo   || data.contact || "",
-      }).eq("id", id);
-      if (error) throw error;
-
-    } else if (sheetName === "GC") {
-      const { error } = await supabase.schema("attendance").from("guard_contacts").update({
-        name:         data.name        || "",
-        joining_date: data.joiningDate || null,
-        designation:  data.designation || "Security Guard",
-        status:       data.status      || "Deactive",
-        shift_duty:   data.shift       || data.shiftDuty || "",
-        contact_no:   data.contactNo   || data.contact || "",
-        remarks:      data.remarks     || "",
-      }).eq("id", id);
-      if (error) throw error;
-    }
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error("UPDATE ERROR:", err.message);
-    res.status(500).json({ error: "Update failed", detail: err.message });
-  }
-});
-
-/* ═══════════════════════════════════
-   DELETE /api/attendance/delete/:projectId/:sheetName/:id
-═══════════════════════════════════ */
-router.delete("/delete/:projectId/:sheetName/:id", async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    clearCache(projectId);
-    const { sheetName, id } = req.params;
-    const tableMap = { Staff: "attendance", Guard: "guard_attendance", SC: "staff_contacts", Contact: "staff_contacts", GC: "guard_contacts" };
-    const table = tableMap[sheetName];
-    if (!table) return res.status(400).json({ error: `Unknown sheet: ${sheetName}` });
-    const { error } = await schemaFrom(table).delete().eq("id", id);
+    const { data, error } = await emps().select("id, person_name, category, designation, contact_number, posted_kind, posted_id")
+      .eq("company_id", req.place.companyId).neq("status", "inactive").order("person_name");
     if (error) throw error;
+    const places = await allPlaces();
+    res.json({
+      people: (data || []).filter(onAttendance).map(e => ({
+        employeeId: e.id, name: e.person_name || "", category: e.category || "", designation: e.designation || "",
+        mobile: e.contact_number || "",
+        postedAt: places.find(p => p.id === e.posted_id)?.code || "",
+      })),
+    });
+  } catch (err) {
+    console.error("Attendance people error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ═══ GET /api/attendance/records/:place?from=&to= — every mark in a range ═══ */
+router.get("/records/:place", requirePerm("staff_attendance", "can_view"), async (req, res) => {
+  try {
+    const place = req.place;
+    const to = isoDate(req.query.to) || today();
+    const from = isoDate(req.query.from) || `${to.slice(0, 8)}01`;
+    const fetchAll = async (table) => {
+      let out = [], i = 0;
+      for (;;) {
+        const { data, error } = await att(table).select("*").ilike("project_id", place.code)
+          .gte("date", from).lte("date", to).order("date", { ascending: false }).range(i, i + 999);
+        if (error) throw error;
+        out = out.concat(data || []);
+        if (!data || data.length < 1000) return out;
+        i += 1000;
+      }
+    };
+    const [a, g] = await Promise.all([fetchAll("attendance"), fetchAll("guard_attendance")]);
+    const ids = [...new Set([...a, ...g].map(r => r.employee_id).filter(Boolean))];
+    const people = new Map();
+    for (let i = 0; i < ids.length; i += 200) {
+      const { data } = await emps().select("id, person_name, category, designation, contact_code").in("id", ids.slice(i, i + 200));
+      (data || []).forEach(e => people.set(e.id, e));
+    }
+    const out = [...a.map(r => [r, "attendance"]), ...g.map(r => [r, "guard_attendance"])].map(([r, table]) => {
+      const e = people.get(r.employee_id);
+      return {
+        ...rowOut(r, table), employeeId: r.employee_id || "", name: e?.person_name || r.name || "",
+        category: e?.category || (table === "guard_attendance" ? "Guard" : ""),
+        designation: e?.designation || r.designation || r.type || "", contactCode: e?.contact_code || "",
+      };
+    }).filter(r => !NOT_ON_ATTENDANCE.includes(r.category))
+      .sort((x, y) => y.date.localeCompare(x.date) || x.name.localeCompare(y.name));
+    res.json({ place, from, to, records: out });
+  } catch (err) {
+    console.error("Attendance records error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ═══ DELETE /api/attendance/records/:place/:table/:id — one mark, only
+   when it belongs to this place ═══ */
+router.delete("/records/:place/:table/:id", requirePerm("staff_attendance", "can_delete"), async (req, res) => {
+  try {
+    const { table, id } = req.params;
+    if (!["attendance", "guard_attendance"].includes(table)) return res.status(400).json({ error: "Unknown table" });
+    const { data, error } = await att(table).delete().eq("id", id).ilike("project_id", req.place.code)
+      .select("id, employee_id, date, name, status, shift, in_time, out_time, remarks");
+    if (error) throw error;
+    if (!data?.length) return res.status(404).json({ error: "Record not found at this place" });
+    const r = data[0];
+    if (r.employee_id) {
+      await supabase.schema("procurement").from("audit_logs").insert({
+        entity_type: "attendance", entity_id: `${r.employee_id}_${r.date}`, entity_name: `${r.name} · ${r.date} · ${req.place.code}`,
+        action: "Removed", user_id: userIdFrom(req) || null, user_name: req.query.by || null,
+        changes: [{ field: "Status", from: r.status || "", to: "" }],
+      });
+    }
     res.json({ success: true });
   } catch (err) {
-    console.error("DELETE ERROR:", err.message);
+    console.error("Attendance delete error:", err.message);
     res.status(500).json({ error: "Delete failed", detail: err.message });
-  }
-});
-
-/* ═══════════════════════════════════
-   POST /api/attendance/bulk-upload/:projectId/:type
-═══════════════════════════════════ */
-const EXPECTED_HEADERS = {
-  staff:   ["Date", "SiteCode", "Name", "Designation", "Department", "Status", "InTime", "OutTime", "Shift", "Remarks"],
-  guard:   ["Date", "SiteCode", "Name", "Type", "Location", "Status", "InTime", "OutTime", "Shift", "Remarks"],
-  contact: ["S.No", "Site", "EmpID", "JoiningDate", "Email", "Name", "Designation", "Department", "Manager", "Contact"],
-  sc:      ["S.No", "Site", "EmpID", "JoiningDate", "Email", "Name", "Designation", "Department", "Manager", "Contact"],
-  gc:      ["S.No", "Site", "Name", "JoiningDate", "Designation", "Status", "ShiftDuty", "ContactNo", "Remarks"],
-};
-
-const parseCSVLine = (line) => {
-  const result = []; let cur = "", inQuote = false;
-  for (const ch of line) {
-    if (ch === '"') { inQuote = !inQuote; continue; }
-    if (ch === "," && !inQuote) { result.push(cur.trim()); cur = ""; continue; }
-    cur += ch;
-  }
-  result.push(cur.trim());
-  return result;
-};
-
-const normalizeHeader = (h) => String(h || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-
-router.post("/bulk-upload/:projectId/:type", upload.single("file"), async (req, res) => {
-  try {
-    const { projectId, type } = req.params;
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
-    const expected = EXPECTED_HEADERS[type];
-    if (!expected) return res.status(400).json({ error: `Unknown type: ${type}` });
-
-    const csv   = req.file.buffer.toString("utf-8").replace(/^\uFEFF/, "");
-    const lines = csv.split(/\r?\n/).filter(l => l.trim());
-    if (lines.length < 2) return res.status(400).json({ error: "CSV is empty or has no data rows" });
-
-    const headerRow  = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, "").trim());
-    const missingCols = expected.filter((h, i) => normalizeHeader(headerRow[i]) !== normalizeHeader(h));
-    if (missingCols.length > 0 || headerRow.length < expected.length)
-      return res.status(400).json({ error: "Wrong column format", detail: `Expected: ${expected.join(", ")}\nGot: ${headerRow.join(", ")}` });
-
-    const errors = [], rows = [];
-    lines.slice(1).forEach((line, idx) => {
-      const rowNum = idx + 2;
-      const clean  = parseCSVLine(line).map(c => c.replace(/^"|"$/g, "").trim());
-      if (clean.every(c => !c)) return;
-
-      if (type === "staff") {
-        if (!clean[0]) { errors.push(`Row ${rowNum}: Date required`); return; }
-        if (!clean[2]) { errors.push(`Row ${rowNum}: Name required`); return; }
-        rows.push({ project_id: projectId, date: clean[0] || null, site_code: clean[1] || projectId, name: clean[2], designation: clean[3] || "", department: clean[4] || "", status: clean[5] || "Absent", in_time: clean[6] || "", out_time: clean[7] || "", shift: clean[8] || "Day", remarks: clean[9] || "", created_by_id: req.body.createdById || null, created_by_name: req.body.createdByName || "Bulk Upload" });
-
-      } else if (type === "guard") {
-        if (!clean[0]) { errors.push(`Row ${rowNum}: Date required`); return; }
-        if (!clean[2]) { errors.push(`Row ${rowNum}: Name required`); return; }
-        rows.push({ project_id: projectId, date: clean[0] || null, site_code: clean[1] || projectId, name: clean[2], type: clean[3] || "Security Guard", location: clean[4] || "", status: clean[5] || "Absent", in_time: clean[6] || "", out_time: clean[7] || "", shift: clean[8] || "Day", remarks: clean[9] || "", created_by_id: req.body.createdById || null, created_by_name: req.body.createdByName || "Bulk Upload" });
-
-      } else if (type === "contact" || type === "sc") {
-        if (!clean[5]) { errors.push(`Row ${rowNum}: Name required`); return; }
-        rows.push({ project_id: projectId, emp_id: clean[2] || "", joining_date: clean[3] || null, email: clean[4] || "", name: clean[5], designation: clean[6] || "", department: clean[7] || "", manager: clean[8] || "", contact_no: clean[9] || "", created_by_id: req.body.createdById || null, created_by_name: req.body.createdByName || "Bulk Upload" });
-
-      } else if (type === "gc") {
-        if (!clean[2]) { errors.push(`Row ${rowNum}: Name required`); return; }
-        rows.push({ project_id: projectId, name: clean[2], joining_date: clean[3] || null, designation: clean[4] || "Security Guard", status: clean[5] || "Deactive", shift_duty: clean[6] || "", contact_no: clean[7] || "", remarks: clean[8] || "", created_by_id: req.body.createdById || null, created_by_name: req.body.createdByName || "Bulk Upload" });
-      }
-    });
-
-    if (errors.length > 0) return res.status(400).json({ error: "Validation errors", detail: errors.join("\n") });
-    if (!rows.length)      return res.status(400).json({ error: "No valid rows found in CSV" });
-
-    const tableMap = { staff: "attendance", guard: "guard_attendance", contact: "staff_contacts", sc: "staff_contacts", gc: "guard_contacts" };
-    const { error } = await schemaFrom(tableMap[type]).insert(rows);
-    if (error) throw error;
-
-    res.json({ success: true, rowsAdded: rows.length });
-  } catch (err) {
-    console.error("BULK UPLOAD ERROR:", err.message);
-    res.status(500).json({ error: "Bulk upload failed", detail: err.message });
   }
 });
 

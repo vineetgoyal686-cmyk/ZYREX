@@ -266,7 +266,7 @@ function AppLayout({
 
       // HRMS (the rest are Organisation tabs, above)
       case "operations__staff_attendance":
-        return projectPage(project => <Attendance key={project} selectedProject={project} />, { padded: true });
+        return <Attendance />; // own Company / Project | Office header
 
       // Reports
       case "master_data__vendor":         return <MasterData view="vendor" />;
@@ -298,7 +298,7 @@ function AppLayout({
     if (isSettingsPage) return "pt-0 px-0 pb-4 bg-[#f0f2f5]";
     if (FULL_BLEED_GREY.includes(activeTab)) return "pt-0 px-0 pb-0 bg-[#f0f2f5]";
     if (TABS[activeTab]?.orgTab || TABS[activeTab]?.project || activeTab.startsWith("finance__") || activeTab.startsWith("treasury__") || activeTab.startsWith("expenses__")
-        || ["settings__company", "inventory", "procurement__registration", "zyhawk_ai",
+        || ["settings__company", "inventory", "operations__staff_attendance", "procurement__registration", "zyhawk_ai",
             "proc_setup__item_list", "proc_setup__category_list", "proc_setup__uom", "proc_setup__vendor_list",
             "proc_setup__term_condition", "proc_setup__payment_terms", "proc_setup__government_laws", "proc_setup__annexure"].includes(activeTab))
       return "pt-0 px-0 pb-0";

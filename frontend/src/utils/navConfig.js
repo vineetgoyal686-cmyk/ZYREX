@@ -42,7 +42,7 @@ export const TABS = {
   expenses__cheque_record:       { path: "/finance/cheque-record",              label: "Cheque Record" },
 
   hr__employees:                 { path: "/hrms/employees",                     label: "Employees",          orgTab: "employees" },
-  operations__staff_attendance:  { path: "/hrms/attendance",                    label: "Attendance",         project: "required" },
+  operations__staff_attendance:  { path: "/hrms/attendance",                    label: "Attendance" },
   hr__letters:                   { path: "/hrms/offer-letters",                 label: "Offer & Appointment", orgTab: "hr_letters" },
   hr__structure:                 { path: "/hrms/structure",                     label: "Hierarchy",          orgTab: "structure" },
   hr__divisions:                 { path: "/hrms/divisions",                     label: "Divisions",          orgTab: "divisions" },

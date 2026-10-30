@@ -297,7 +297,7 @@ export const PERMISSION_LAYOUT = [
 // permissions ("Projects ▾", saved as the permission's scope —
 // sql/permission_scope.sql). Orders and Petty Cash also list offices.
 export const SCOPE_PICKER_KEYS = ["view_3d", "intake", "order", "staff_attendance", "expense_book", "petty_cash_staff", "petty_cash_accounts"];
-export const OFFICE_SCOPE_KEYS = ["order", "petty_cash_staff", "petty_cash_accounts"];
+export const OFFICE_SCOPE_KEYS = ["order", "staff_attendance", "petty_cash_staff", "petty_cash_accounts"];
 
 // module key → name as shown on the permission screen ("Inbox › Orders")
 // (module rows only — profile rows aren't modules)

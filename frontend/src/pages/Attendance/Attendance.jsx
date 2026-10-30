@@ -1,356 +1,118 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Building2, FolderKanban, Briefcase, ClipboardCheck, History, Loader2 } from "lucide-react";
 import API from "../../api";
-import Toast from "../../components/Toast";
-import { excelToJSDate, formatTime } from "./utils";
-import TodayTab from "./tabs/TodayTab";
-import StaffTab from "./tabs/StaffTab";
-import GuardTab from "./tabs/GuardTab";
-import ContactsTab from "./tabs/ContactsTab";
-import "./Attendance.css";
+import ScopeDropdown from "../../components/ScopeDropdown";
+import { useModulePermissions } from "../../hooks/useModulePermissions";
+import DailyRegister from "./DailyRegister";
+import Records from "./Records";
+import { isoToday } from "./utils";
 
-const TABS = ["Today", "Staff", "Guard", "Contacts"];
+/*
+ * Attendance — for one project or office of a company.
+ * Header like Petty Cash: Company ▾ · Project | Office · place ▾.
+ * People come from HRMS Employees (posted at the place); rows are saved
+ * against the place's code (routes/attendance.js).
+ */
+const KINDS = [
+  { id: "project", label: "Project", plural: "projects", icon: FolderKanban },
+  { id: "office",  label: "Office",  plural: "offices",  icon: Briefcase },
+];
+const TABS = [
+  { id: "register", label: "Daily Register", icon: ClipboardCheck },
+  { id: "records",  label: "Records",        icon: History },
+];
+const STORE = "attendance_scope";
+const readStore = () => { try { return JSON.parse(localStorage.getItem(STORE) || "{}"); } catch { return {}; } };
 
-// Module-level cache — survives tab switches (component unmount/remount)
-const _cache = {};
-
-const Attendance = ({ selectedProject }) => {
-  const [activeTab, setActiveTab] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [staffData, setStaffData] = useState([]);
-  const [guardData, setGuardData] = useState([]);
-  const [staffContacts, setStaffContacts] = useState([]);
-  const [guardContacts, setGuardContacts] = useState([]);
-  const [toast, setToast] = useState(null);
-
-  const showToast = useCallback((message, type = "success") => {
-    setToast({ message, type, key: Date.now() });
-  }, []);
-
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const formatClock = () => {
-    const h = currentTime.getHours();
-    const m = String(currentTime.getMinutes()).padStart(2, "0");
-    const s = String(currentTime.getSeconds()).padStart(2, "0");
-    const ampm = h >= 12 ? "PM" : "AM";
-    return `${h % 12 || 12}:${m}:${s} ${ampm}`;
-  };
+export default function Attendance() {
+  const { canView } = useModulePermissions("staff_attendance");
+  const [tab, setTab] = useState("register");
+  const [data, setData] = useState(null); // { companies, places }
+  const [error, setError] = useState("");
+  const [companyId, setCompanyId] = useState(() => readStore().companyId || "");
+  const [kind, setKind] = useState(() => readStore().kind === "office" ? "office" : "project");
+  const [placeCode, setPlaceCode] = useState(() => readStore().placeCode || "");
+  const [date, setDate] = useState(isoToday); // register day; Records can open a day
 
   useEffect(() => {
-    if (selectedProject) fetchData();
-  }, [selectedProject]);
+    API.get("/api/attendance/places")
+      .then(({ data }) => setData(data))
+      .catch(err => setError(err?.response?.data?.error || "Could not load projects"));
+  }, []);
 
-  const fetchData = async () => {
-    // Serve from cache immediately, then refresh in background
-    if (_cache[selectedProject]) {
-      const c = _cache[selectedProject];
-      setStaffData(c.staff);
-      setGuardData(c.guard);
-      setStaffContacts(c.staffContacts);
-      setGuardContacts(c.guardContacts);
-    } else {
-      setLoading(true);
-    }
-    try {
-      const res = await API.get(`/api/attendance/read/${selectedProject}`);
-      // ═══ STAFF PARSING ═══
-      const staffParsed = (res.data.staff || []).map((r) => ({
-        id:          r.id,
-        date:        r.date        || "",
-        siteCode:    r.siteCode    || selectedProject || "",
-        name:        r.name        || "",
-        designation: r.designation || "",
-        department:  r.department  || "",
-        status:      r.status      || "",
-        inTime:      r.inTime      || "",
-        outTime:     r.outTime     || "",
-        shift:       r.shift       || "Day",
-        workingHrs:  r.workingHrs  || "",
-        otHrs:       r.otHrs       || "",
-        remarks:     r.remarks     || "",
-        type: "staff",
-      }));
+  const companies = data?.companies || [];
+  const company = companies.find(c => c.id === companyId) || companies[0] || null;
+  const inCompany = useMemo(() => (data?.places || []).filter(p => p.companyId === company?.id), [data, company?.id]);
+  // a company with only offices (or only projects) opens on what it has
+  const hasKind = (k) => inCompany.some(p => p.kind === k);
+  const kindNow = hasKind(kind) || !inCompany.length ? kind : (kind === "project" ? "office" : "project");
+  const places = inCompany.filter(p => p.kind === kindNow);
+  const place = places.find(p => p.code === placeCode) || places[0] || null;
+  const K = KINDS.find(k => k.id === kindNow);
 
-      // ═══ GUARD PARSING ═══
-      const guardParsed = (res.data.guards || []).map((r) => ({
-        id:          r.id,
-        date:        r.date        || "",
-        siteCode:    r.siteCode    || selectedProject || "",
-        name:        r.name        || "",
-        designation: r.designation || "",
-        department:  r.department  || "",
-        status:      r.status      || "",
-        inTime:      r.inTime      || "",
-        outTime:     r.outTime     || "",
-        shift:       r.shift       || "Day",
-        remarks:     r.remarks     || "",
-        workingHrs:  "",
-        otHrs: "",
-        type: "guard",
-      }));
+  useEffect(() => {
+    if (company) localStorage.setItem(STORE, JSON.stringify({ companyId: company.id, kind: kindNow, placeCode: place?.code || "" }));
+  }, [company, kindNow, place]);
 
-      // ═══ STAFF CONTACTS PARSING ═══
-      const staffContactsParsed = (res.data.staffContacts || res.data.contacts || []).map((r, i) => ({
-        id:          r.id,
-        sNo:         i + 1,
-        site:        r.site        || "",
-        empId:       r.empId       || "",
-        joiningDate: r.joiningDate || "",
-        email:       r.email       || "",
-        name:        r.name        || "",
-        designation: r.designation || "",
-        department:  r.department  || "",
-        manager:     r.manager     || "",
-        contact:     r.contact     || "",
-        sheetType: "staffContact",
-        type: "staffContact",
-      }));
-
-      // ═══ GUARD CONTACTS PARSING ═══
-      const guardContactsParsed = (res.data.guardContacts || []).map((r, i) => ({
-        id:          r.id,
-        sNo:         i + 1,
-        site:        r.site        || "",
-        name:        r.name        || "",
-        joiningDate: r.joiningDate || "",
-        designation: r.designation || "",
-        status:      r.status      || "",
-        shift:       r.shift       || "",
-        contact:     r.contact     || "",
-        remarks:     r.remarks     || "",
-        sheetType: "guardContact",
-        type: "guardContact",
-      }));
-
-      setStaffData(staffParsed);
-      setGuardData(guardParsed);
-      setStaffContacts(staffContactsParsed);
-      setGuardContacts(guardContactsParsed);
-      _cache[selectedProject] = { staff: staffParsed, guard: guardParsed, staffContacts: staffContactsParsed, guardContacts: guardContactsParsed };
-    } catch (err) {
-      console.error("Error fetching attendance:", err);
-      setStaffData([]);
-      setGuardData([]);
-      setStaffContacts([]);
-      setGuardContacts([]);
-      showToast("Failed to load attendance data for this project", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // ─── CRUD ────────────────────────────────────────────
-  const handleEdit = () => {}; // handled locally in each tab
-
-  const handleEditRecord = async (data) => {
-    try {
-      const sheetMap = { staff: "Staff", guard: "Guard", staffContact: "SC", guardContact: "GC" };
-      const sheet = sheetMap[data.type];
-      const payload = buildPayload(data);
-      await API.patch(`/api/attendance/update/${selectedProject}/${sheet}/${data.id}`, payload);
-      delete _cache[selectedProject];
-      showToast("Record updated successfully");
-      fetchData();
-    } catch (err) {
-      const detail = err?.response?.data?.detail || err.message;
-      console.error("Update failed:", detail);
-      showToast("Update failed: " + detail, "error");
-    }
-  };
-
-  const handleDelete = async (record) => {
-    if (!window.confirm(`Delete record for ${record.name}?`)) return;
-    try {
-      const sheetMap = { staff: "Staff", guard: "Guard", staffContact: "SC", guardContact: "GC" };
-      await API.delete(`/api/attendance/delete/${selectedProject}/${sheetMap[record.type]}/${record.id}`);
-      delete _cache[selectedProject];
-      showToast("Record deleted successfully");
-      fetchData();
-    } catch (err) {
-      const detail = err?.response?.data?.detail || err.message;
-      console.error("Delete failed:", detail);
-      showToast("Delete failed: " + detail, "error");
-    }
-  };
-
-  // Map frontend field names → backend field names before sending
-  const buildPayload = (data) => {
-    if (data.type === "staff") {
-      return {
-        date:        data.date,
-        siteCode:    data.siteCode || selectedProject,
-        name:        data.name,
-        designation: data.designation,
-        department:  data.department || "",
-        status:      data.status,
-        inTime:      data.inTime  || "",
-        outTime:     data.outTime || "",
-        shift:       data.shift   || "Day",
-        remarks:     data.remarks || "",
-      };
-    }
-    if (data.type === "guard") {
-      return {
-        date:        data.date,
-        siteCode:    data.siteCode || selectedProject,
-        name:        data.name,
-        designation: data.designation,
-        department:  data.department || "",
-        status:      data.status,
-        inTime:      data.inTime  || "",
-        outTime:     data.outTime || "",
-        shift:       data.shift   || "Day",
-        remarks:     data.remarks || "",
-      };
-    }
-    if (data.type === "staffContact") {
-      return {
-        empId:       data.empId,
-        joiningDate: data.joiningDate,
-        emailId:     data.email || data.emailId,
-        name:        data.name,
-        designation: data.designation,
-        department:  data.department || "",
-        manager:     data.manager,
-        contactNo:   data.contact || data.contactNo,
-      };
-    }
-    if (data.type === "guardContact") {
-      return {
-        name:        data.name,
-        joiningDate: data.joiningDate,
-        designation: data.designation || "Security Guard",
-        status:      data.status      || "Deactive",
-        shift:       data.shift       || "",
-        contactNo:   data.contact     || data.contactNo,
-        remarks:     data.remarks     || "",
-      };
-    }
-    return data;
-  };
-
-  const handleAddRecord = async (data) => {
-    // Validate: name must exist in contacts for staff/guard
-    if (data.type === "staff" && staffContacts.length > 0) {
-      const known = staffContacts.some(c => c.name?.toLowerCase() === data.name?.trim().toLowerCase());
-      if (!known) {
-        showToast(`"${data.name}" is not registered in Contacts. Please add the employee to Contacts first.`, "error");
-        return;
-      }
-    }
-    if (data.type === "guard" && guardContacts.length > 0) {
-      const known = guardContacts.some(c => c.name?.toLowerCase() === data.name?.trim().toLowerCase());
-      if (!known) {
-        showToast(`"${data.name}" is not registered in Guard Contacts. Please add the employee to GC first.`, "error");
-        return;
-      }
-    }
-    try {
-      const sheetMap = { staff: "Staff", guard: "Guard", staffContact: "SC", guardContact: "GC" };
-      const sheet = sheetMap[data.type];
-      const payload = buildPayload(data);
-      const currentUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
-      payload.createdById = currentUser.id || "";
-      payload.createdByName = currentUser.name || "";
-      await API.post(`/api/attendance/add/${selectedProject}/${sheet}`, payload);
-      delete _cache[selectedProject];
-      showToast("Record added successfully");
-      fetchData();
-    } catch (err) {
-      const detail = err?.response?.data?.detail || err.message;
-      console.error("Add failed:", detail);
-      showToast("Failed to add record: " + detail, "error");
-    }
-  };
-
-  const handleBulkUpload = async (file, type) => {
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const currentUser = JSON.parse(localStorage.getItem("bms_user") || "{}");
-      fd.append("createdById", currentUser.id || "");
-      fd.append("createdByName", currentUser.name || "");
-      const res = await API.post(`/api/attendance/bulk-upload/${selectedProject}/${type}`, fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      showToast(`Bulk upload successful — ${res.data.rowsAdded} rows added`);
-      fetchData();
-    } catch (err) {
-      const data = err?.response?.data;
-      const msg = data?.error || "Bulk upload failed";
-      const detail = data?.detail || err.message;
-      console.error(err);
-      // Show full detail so user knows exactly what to fix
-      if (detail && detail !== msg) {
-        alert(`${msg}\n\n${detail}`);
-      } else {
-        showToast(msg, "error");
-      }
-    }
-  };
-
-  if (loading) return (
-    <div className="attendance-page" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "400px" }}>
-      <div className="loading-bar" style={{ width: "200px" }}><div className="loading-progress" /></div>
+  if (!canView) return (
+    <div className="flex min-h-full items-center justify-center p-10">
+      <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-sm">You don't have access to this area</p>
     </div>
   );
 
   return (
-    <div className="attendance-page">
-      {toast && (
-        <Toast
-          key={toast.key}
-          message={toast.message}
-          type={toast.type}
-          onClose={() => setToast(null)}
-        />
-      )}
-
-      <div className="attendance-header">
-        <div className="header-glow-1" />
-        <div className="header-glow-2" />
-        <div className="header-glow-3" />
-        <div className="header-left">
-          <div className="header-icon">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-              <path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>
-            </svg>
-          </div>
-          <div>
-            <h1 className="page-title">Attendance Management</h1>
-            <p className="page-subtitle">Real-time tracking system</p>
-          </div>
-        </div>
-        <div className="header-right">
-          <div className="live-clock">
-            <div className="clock-time">{formatClock()}</div>
-            <div className="clock-label"><span className="pulse-dot" /> Live</div>
-          </div>
-          <div className="project-badge">{selectedProject || "Project"}</div>
-        </div>
-      </div>
-
-      <div className="tabs-bar">
-        <div className="tab-group">
-          {TABS.map((tab, i) => (
-            <button key={tab} className={`tab-btn ${activeTab === i ? "active" : ""}`} onClick={() => setActiveTab(i)}>{tab}</button>
+    <div className="h-full flex flex-col bg-[#f8fafc]">
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 px-5 sm:px-6 py-3 bg-white border-b border-slate-200">
+        <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 w-fit shrink-0">
+          {TABS.map(t => (
+            <button key={t.id} type="button" onClick={() => setTab(t.id)}
+              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-semibold transition-all
+                ${tab === t.id ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+              <t.icon size={14} /> {t.label}
+            </button>
           ))}
         </div>
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          {!data && !error && <Loader2 size={16} className="animate-spin text-slate-400" />}
+          {data && company && (
+            <>
+              <ScopeDropdown subtle icon={Building2} value={company.id} placeholder="Select company" countLabel="Total Companies"
+                onChange={id => { setCompanyId(id); setPlaceCode(""); }}
+                options={companies.map(c => ({ id: c.id, title: c.name, code: c.code }))} />
+              <span className="h-5 w-px bg-slate-200 shrink-0" />
+              <div className="flex items-center bg-slate-100 rounded-md p-0.5 shrink-0">
+                {KINDS.map(k => (
+                  <button key={k.id} type="button" disabled={!hasKind(k.id)} onClick={() => { setKind(k.id); setPlaceCode(""); }}
+                    title={hasKind(k.id) ? "" : `No ${k.plural} you can open in this company`}
+                    className={`px-2.5 py-1 rounded text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed
+                      ${kindNow === k.id ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                    {k.label}
+                  </button>
+                ))}
+              </div>
+              <ScopeDropdown subtle icon={K.icon} value={place?.code || ""} placeholder={`Select ${K.label.toLowerCase()}`}
+                countLabel={`Total ${K.plural}`} onChange={setPlaceCode}
+                options={places.map(p => ({ id: p.code, title: p.name, code: p.code, detail: p.detail }))} />
+            </>
+          )}
+        </div>
       </div>
 
-      <div className="tab-container">
-        {activeTab === 0 && <TodayTab staffData={staffData} guardData={guardData} onEdit={handleEdit} onDelete={handleDelete} />}
-        {activeTab === 1 && <StaffTab data={staffData} contacts={staffContacts} onDelete={handleDelete} onBulkUpload={handleBulkUpload} onAddRecord={handleAddRecord} onEditRecord={handleEditRecord} />}
-        {activeTab === 2 && <GuardTab data={guardData} contacts={guardContacts} onDelete={handleDelete} onBulkUpload={handleBulkUpload} onAddRecord={handleAddRecord} onEditRecord={handleEditRecord} />}
-        {activeTab === 3 && <ContactsTab staffData={staffContacts} guardData={guardContacts} onDelete={handleDelete} onBulkUpload={handleBulkUpload} onAddRecord={handleAddRecord} onEditRecord={handleEditRecord} />}
+      <div className="flex-1 min-h-0">
+        {error ? (
+          <p className="p-6 text-sm text-red-600">{error}</p>
+        ) : !data ? null : !place ? (
+          <div className="h-full flex items-center justify-center p-10">
+            <p className="text-slate-400 font-bold uppercase tracking-wider text-sm text-center">
+              {companies.length ? `No ${K.plural} in your Attendance access for this company` : "You don't have any project or office in your Attendance access"}
+            </p>
+          </div>
+        ) : tab === "register" ? (
+          <DailyRegister key={place.code} place={place} date={date} onDateChange={setDate} />
+        ) : (
+          <Records key={place.code} place={place} onOpenDay={d => { setDate(d); setTab("register"); }} />
+        )}
       </div>
     </div>
   );
-};
-
-export default Attendance;
+}

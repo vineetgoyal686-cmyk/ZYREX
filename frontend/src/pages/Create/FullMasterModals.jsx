@@ -1484,7 +1484,7 @@ export const FullContactModal = ({ onClose, onSuccess, editData, companies = [] 
 
   const handleSave = async () => {
     if (!form.personName.trim()) return alert("Person Name is required");
-    if (!form.employeeId.trim()) return alert("Employee ID is required");
+    if (String(form.contactNumber || "").replace(/\D/g, "").length < 10) return alert("A 10-digit mobile number is required");
     setSaving(true);
     try {
       const u = JSON.parse(localStorage.getItem("bms_user") || "{}");
@@ -1538,8 +1538,8 @@ export const FullContactModal = ({ onClose, onSuccess, editData, companies = [] 
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           <Field label="Person Name *" value={form.personName} onChange={e => setForm({ ...form, personName: e.target.value })} placeholder="e.g. Rajesh Kumar" />
-          <Field label="Employee ID *" value={form.employeeId} onChange={e => setForm({ ...form, employeeId: e.target.value })} placeholder="e.g. EMP-001" />
-          <Field label="Contact Number" value={form.contactNumber} onChange={e => setForm({ ...form, contactNumber: e.target.value })} placeholder="e.g. 9876543210" type="tel" />
+          <Field label="Employee ID" value={form.employeeId} onChange={e => setForm({ ...form, employeeId: e.target.value })} placeholder="e.g. EMP-001" />
+          <Field label="Mobile Number *" value={form.contactNumber} onChange={e => setForm({ ...form, contactNumber: e.target.value })} placeholder="e.g. 9876543210" type="tel" />
           <Field label="Designation" value={form.designation} onChange={e => setForm({ ...form, designation: e.target.value })} placeholder="e.g. Site Engineer" />
         </div>
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0">
