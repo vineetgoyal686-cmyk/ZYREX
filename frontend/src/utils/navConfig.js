@@ -43,7 +43,7 @@ export const TABS = {
 
   hr__employees:                 { path: "/hrms/employees",                     label: "Employees",          orgTab: "employees" },
   operations__staff_attendance:  { path: "/hrms/attendance",                    label: "Attendance" },
-  hr__letters:                   { path: "/hrms/offer-letters",                 label: "Offer & Appointment", orgTab: "hr_letters" },
+  hr__letters:                   { path: "/hrms/hr-letters",                    label: "HR Letters",         orgTab: "hr_letters" },
   hr__org_chart:                 { path: "/hrms/org-chart",                     label: "Org Chart",          orgTab: "org_chart" },
   hr__policy:                    { path: "/hrms/policy",                        label: "Policy",             orgTab: "policy" },
   hr__sop:                       { path: "/hrms/sop",                           label: "SOP",                orgTab: "sop" },
@@ -91,9 +91,9 @@ export const NAV = [
     { group: "treasury", label: "Treasury", secure: true, items: ["treasury__overview", "treasury__ledger", "treasury__loans", "treasury__masters"] },
   ] },
   { section: "hrms", label: "HRMS", items: [
-    "hr__employees", "operations__staff_attendance", "hr__letters",
-    "hr__org_chart",
-    { group: "hr_documents", label: "Documents", items: ["hr__policy", "hr__sop"] },
+    "hr__employees", "operations__staff_attendance", "hr__org_chart",
+    // HR Letters = offer / appointment letters (later experience, relieving …)
+    { group: "hr_documents", label: "Documents", items: ["hr__letters", "hr__policy", "hr__sop"] },
   ] },
   { section: "reports", label: "Reports", items: [
     "master_data__vendor", "master_data__clauses", "reports__user_analytics",
@@ -127,6 +127,7 @@ export const LEGACY_PATHS = {
   "/settings/projects":        "/settings/company",
   "/settings/branch":          "/settings/company",
   "/organisation/structure":   "/settings/company",
+  "/hrms/offer-letters":       "/hrms/hr-letters",
   // Departments, Teams, Designations, Grades moved to Settings › Organisation; Divisions and Hierarchy removed
   "/hrms/structure":           "/settings/company",
   "/hrms/divisions":           "/settings/company",

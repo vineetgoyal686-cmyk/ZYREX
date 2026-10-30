@@ -47,7 +47,7 @@ function baseVisible(tabId, user, perms) {
   // HRMS / Branch: hidden unless granted (super/global bypass unless controlled)
   if (t?.orgTab) {
     const key = ORG_TAB_MODULE[t.orgTab];
-    if (!key) return true; // Offer & Appointment had no permission of its own
+    if (!key) return true; // HR Letters (offer / appointment) has no permission of its own
     const p = map[key] || {};
     if (isGlobalAdmin) return true;
     if (role === "super_admin" && !p.controlled) return true;

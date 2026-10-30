@@ -55,7 +55,7 @@ const NAV_SECTIONS = [
     label: "People",
     items: [
       { id: "employees", label: "Employees", icon: UserSquare2, hasAdd: true,  hasExport: true,  btnLabel: "Add Employee" },
-      { id: "hr_letters", label: "Offer & Appointment", icon: FileSignature, hasAdd: false, hasExport: false },
+      { id: "hr_letters", label: "HR Letters", icon: FileSignature, hasAdd: false, hasExport: false },
     ],
   },
 ];
