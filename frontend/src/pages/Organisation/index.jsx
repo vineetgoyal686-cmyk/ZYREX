@@ -4,7 +4,7 @@ import {
   MapPin, PanelLeftClose, PanelLeftOpen,
   Download, Upload, ChevronDown, FileSpreadsheet, FileText,
   Network, UserSquare2, ArrowLeft, Table2, BarChart2, ClipboardList, FileSignature, FolderKanban,
-  MoreHorizontal, RefreshCw,
+  MoreHorizontal,
 } from "lucide-react";
 import OrgOverview   from "./OrgOverview";
 import Departments   from "./Departments";
@@ -54,7 +54,7 @@ const NAV_SECTIONS = [
   {
     label: "People",
     items: [
-      { id: "employees", label: "Employees", icon: UserSquare2, hasAdd: true,  hasExport: true,  btnLabel: "Add Employee" },
+      { id: "employees", label: "Employees", icon: UserSquare2, hasAdd: true,  hasExport: true,  btnLabel: "Add" },
       { id: "hr_letters", label: "HR Letters", icon: FileSignature, hasAdd: false, hasExport: false },
     ],
   },
@@ -276,21 +276,9 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
           </div>
 
           {/* filled by the tab (Employees: search + Filters) */}
-          <div ref={setToolbarSlot} className="flex items-center gap-2 empty:hidden" />
+          <div ref={setToolbarSlot} className="flex flex-1 min-w-0 items-center gap-2 empty:hidden" />
 
-          <div className="flex items-center gap-2 ml-auto">
-            {activeTab === "employees" && (
-              <div className="flex items-center border border-slate-200 rounded-md overflow-hidden">
-                <button onClick={() => setEmpView("table")} title="Table view"
-                  className={`p-2 transition-colors ${empView === "table" ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
-                  <Table2 size={14} />
-                </button>
-                <button onClick={() => setEmpView("card")} title="Card view"
-                  className={`p-2 transition-colors ${empView === "card" ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-50"}`}>
-                  <LayoutGrid size={14} />
-                </button>
-              </div>
-            )}
+          <div className="flex items-center gap-2 ml-auto shrink-0">
             {(canExport || canBulk) && (
               <div className="relative" ref={exportDropRef}>
                 <button onClick={() => setShowExport(v => !v)} title="More"
@@ -299,6 +287,16 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
                 </button>
                 {showExport && (
                   <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-slate-200 rounded-lg shadow-lg z-30 py-1">
+                    {activeTab === "employees" && <>
+                      <p className="px-3.5 pt-1.5 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">View</p>
+                      <button onClick={() => { setEmpView("table"); setShowExport(false); }} className={`${menuItem} ${empView === "table" ? "font-semibold text-blue-700" : ""}`}>
+                        <Table2 size={14} className="text-slate-400" /> Table{empView === "table" && " ✓"}
+                      </button>
+                      <button onClick={() => { setEmpView("card"); setShowExport(false); }} className={`${menuItem} ${empView === "card" ? "font-semibold text-blue-700" : ""}`}>
+                        <LayoutGrid size={14} className="text-slate-400" /> Cards{empView === "card" && " ✓"}
+                      </button>
+                      <div className="my-1 border-t border-slate-100" />
+                    </>}
                     {canExport && <>
                       <p className="px-3.5 pt-1.5 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Export</p>
                       <button onClick={() => { actionsRef.current?.exportExcel?.(); setShowExport(false); }} className={menuItem}>
@@ -316,13 +314,6 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
                       </button>
                       <button onClick={() => { actionsRef.current?.openUpload?.(); setShowExport(false); }} className={menuItem}>
                         <Upload size={14} className="text-blue-500" /> Upload Excel File
-                      </button>
-                    </>}
-                    {activeTab === "employees" && actionsRef.current?.openKeka && <>
-                      <div className="my-1 border-t border-slate-100" />
-                      <p className="px-3.5 pt-1.5 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Keka</p>
-                      <button onClick={() => { actionsRef.current.openKeka(); setShowExport(false); }} className={menuItem}>
-                        <RefreshCw size={14} className="text-violet-500" /> Sync from Keka
                       </button>
                     </>}
                   </div>

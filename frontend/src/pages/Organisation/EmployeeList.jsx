@@ -3,6 +3,7 @@ import {
   Search, Plus, X, Edit2, Trash2, Loader2, ChevronLeft,
   BadgeCheck, Calendar, UserCheck, MapPin,
   Briefcase, Building2, ChevronDown, Users, Clock, SlidersHorizontal, ArrowRightLeft, Check,
+  MoreHorizontal, ExternalLink, Mail, Phone,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
@@ -13,12 +14,10 @@ import { authFetch } from "../../utils/authFetch";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { ContactLogModal } from "../Create/FullMasterModals";
 import { useOrgId, scopedUrl } from "./orgScope";
-import KekaSync from "./KekaSync";
 import BrandLoader from "../../components/BrandLoader";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
-const PER_PAGE = 20;
 
 const EMPLOYEE_LOG_FIELDS = [
   { key: "personName",    label: "Name" },
@@ -112,6 +111,90 @@ function Avatar({ name, size = "md", imgUrl }) {
   const sz = { xl: "w-[72px] h-[72px] text-2xl", lg: "w-14 h-14 text-lg", md: "w-10 h-10 text-sm", sm: "w-8 h-8 text-xs" }[size];
   if (imgUrl) return <div className={`${sz} rounded-full overflow-hidden shrink-0`}><img src={imgUrl} alt={name} className="w-full h-full object-cover" /></div>;
   return <div className={`${sz} rounded-full flex items-center justify-center shrink-0 font-bold`} style={avatarGrad(name)}>{ini(name)}</div>;
+}
+
+/* Employee card (Keka-style) with a details popover behind "⋯" */
+function EmpCard({ emp, imgUrl, place, onOpen }) {
+  const [open, setOpen] = useState(false);
+  const [zoom, setZoom] = useState(false);   // photo shown big
+  useEffect(() => {
+    if (!zoom) return;
+    const k = (e) => { if (e.key === "Escape") setZoom(false); };
+    document.addEventListener("keydown", k);
+    return () => document.removeEventListener("keydown", k);
+  }, [zoom]);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  const Line = ({ label, value }) => (
+    <p className="text-[12.5px] text-slate-500 truncate"><span className="text-slate-400">{label} :</span> <span className="text-slate-700">{value || "—"}</span></p>
+  );
+  const Item = ({ label, value }) => (
+    <div className="min-w-0">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="mt-0.5 text-[13px] text-slate-800 whitespace-nowrap">{value || "—"}</p>
+    </div>
+  );
+  return (
+    <div ref={ref} className="relative bg-white rounded-lg border border-slate-200 p-4 flex items-start gap-4 hover:border-blue-200 hover:shadow-sm transition-all">
+      <button type="button" onClick={() => imgUrl ? setZoom(true) : onOpen()} title={imgUrl ? "View photo" : "Open"}
+        className="shrink-0 rounded-full ring-0 ring-blue-200 hover:ring-4 transition-shadow">
+        <Avatar name={emp.personName} size="xl" imgUrl={imgUrl} />
+      </button>
+      {zoom && (
+        <div className="fixed inset-0 z-[100] bg-black/70 flex flex-col items-center justify-center gap-3 p-6" onClick={() => setZoom(false)}>
+          <button type="button" onClick={() => setZoom(false)} title="Close" className="absolute top-4 right-4 p-2 rounded-full text-white/80 hover:text-white hover:bg-white/10"><X size={20} /></button>
+          <img src={imgUrl} alt={emp.personName} onClick={e => e.stopPropagation()} className="max-h-[80vh] max-w-[90vw] rounded-lg shadow-2xl object-contain bg-white" />
+          <p className="text-white text-sm font-semibold">{emp.personName}</p>
+        </div>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <button type="button" onClick={onOpen} className="font-bold text-[14px] text-slate-800 truncate hover:text-blue-700 text-left">{emp.personName}</button>
+          <button type="button" onClick={() => setOpen(o => !o)} title="Details"
+            className={`shrink-0 h-5 px-1.5 rounded border flex items-center justify-center transition-colors ${open ? "bg-blue-600 border-blue-600 text-white" : "border-slate-200 text-slate-400 hover:text-slate-700 hover:border-slate-300"}`}>
+            <MoreHorizontal size={12} />
+          </button>
+        </div>
+        <p className="text-[12.5px] text-slate-600 truncate mt-0.5">{emp.designation || "—"}</p>
+        <div className="mt-2 space-y-0.5">
+          <Line label="Department" value={emp.department} />
+          <Line label="Location" value={place} />
+          <Line label="Email" value={emp.email} />
+        </div>
+      </div>
+
+      {open && (
+        <div className="absolute z-30 right-4 top-12 w-max min-w-[340px] max-w-[90vw] bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden">
+          <div className="flex items-center gap-2.5 px-4 py-3 bg-slate-50 border-b border-slate-200">
+            <Avatar name={emp.personName} size="sm" imgUrl={imgUrl} />
+            <p className="flex-1 min-w-0 text-[14px] font-semibold text-slate-800 truncate">{emp.personName}</p>
+            <button type="button" onClick={() => { setOpen(false); onOpen(); }} title="Open profile" className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50"><ExternalLink size={15} /></button>
+            <button type="button" onClick={() => setOpen(false)} title="Close" className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"><X size={15} /></button>
+          </div>
+          <div className="px-4 py-3 space-y-3">
+            <div>
+              <p className="text-[12px] font-semibold text-slate-500 mb-1">Contact Details</p>
+              <p className="flex items-center gap-2 text-[13px] text-slate-700 whitespace-nowrap"><Mail size={13} className="text-slate-400 shrink-0" />{emp.email || "—"}</p>
+              <p className="flex items-center gap-2 text-[13px] text-slate-700 mt-1"><Phone size={13} className="text-slate-400 shrink-0" />{emp.contactNumber || "—"}</p>
+            </div>
+            <div className="grid grid-cols-[auto_auto] gap-x-8 gap-y-2.5 pt-1">
+              <Item label="Location" value={place} />
+              <Item label="Employee ID" value={emp.employeeId} />
+              <Item label="Job Title" value={emp.designation} />
+              <Item label="Department" value={emp.department} />
+              <Item label="Reporting To" value={emp.reportingTo} />
+              <Item label="Company" value={emp.company} />
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function StatusBadge({ status }) {
@@ -654,59 +737,8 @@ const CATEGORY_DOT = {
   "Driver": "bg-violet-500", "Cook": "bg-rose-500",
 };
 
-function CategoryPicker({ value, emps, onChange }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!open) return;
-    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [open]);
 
-  const label = (c) => c === "Guard" ? "Guards" : c;
-  const rows = [
-    { id: "", label: "All categories", n: emps.length },
-    ...CATEGORIES.map(c => ({ id: c, label: label(c), n: emps.filter(e => e.category === c).length, dot: CATEGORY_DOT[c] })),
-  ];
-  const cur = rows.find(r => r.id === value) || rows[0];
-
-  return (
-    <div className="relative" ref={ref}>
-      <button type="button" onClick={() => setOpen(v => !v)}
-        className={`inline-flex items-center gap-1.5 px-2.5 py-[7px] text-xs font-medium rounded-md border transition-colors
-          ${value ? "border-blue-200 bg-blue-50 text-blue-700" : open ? "border-slate-300 bg-slate-50 text-slate-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-        {cur.dot ? <span className={`w-2 h-2 rounded-full ${cur.dot}`} /> : <Users size={13} />}
-        {cur.label}
-        <span className={`min-w-4 h-4 px-1 rounded text-[10px] font-bold flex items-center justify-center tabular-nums
-          ${value ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"}`}>{cur.n}</span>
-        <ChevronDown size={12} className={`text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full mt-1 w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-30 p-1">
-          {rows.map((r, i) => {
-            const on = r.id === value;
-            return (
-              <React.Fragment key={r.id || "all"}>
-                {i === 1 && <div className="my-1 border-t border-slate-100" />}
-                <button type="button" onClick={() => { onChange(r.id); setOpen(false); }}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-left text-[13px] transition-colors
-                    ${on ? "bg-blue-50 text-blue-700 font-semibold" : "text-slate-700 hover:bg-slate-50"}`}>
-                  {r.dot ? <span className={`w-2 h-2 rounded-full shrink-0 ${r.dot}`} /> : <Users size={13} className="text-slate-400 shrink-0" />}
-                  <span className={`flex-1 ${!r.n && !on ? "text-slate-400" : ""}`}>{r.label}</span>
-                  <span className={`text-[11px] tabular-nums ${on ? "text-blue-600" : "text-slate-400"}`}>{r.n}</span>
-                  <Check size={13} className={`shrink-0 ${on ? "text-blue-600" : "invisible"}`} />
-                </button>
-              </React.Fragment>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function EmpFilters({ filters, depts, onChange, onClear }) {
+function EmpFilters({ filters, depts, categories, onChange, onClear }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
@@ -741,6 +773,7 @@ function EmpFilters({ filters, depts, onChange, onClear }) {
       </button>
       {open && (
         <div className="absolute left-0 top-full mt-1 w-60 bg-white border border-slate-200 rounded-lg shadow-lg z-30 p-3 flex flex-col gap-2.5">
+          {field("Category", "cat", categories)}
           {field("Department", "dept", depts.map(d => [d, d]))}
           {field("Staff Type", "type", STAFF_TYPES.map(t => [t, t]))}
           {active > 0 && (
@@ -897,7 +930,6 @@ function MoveModal({ emps, fromId, onClose, onMoved }) {
 export default function EmployeeList({ actionsRef, view = "card", onViewChange, onCountChange, toolbarSlot }) {
   const { canEdit, canDelete } = useModulePermissions("employees");
   const orgId = useOrgId();
-  const [kekaOpen, setKekaOpen] = useState(false);
   const [emps,    setEmps]    = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -921,7 +953,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const [toast,      setToast]     = useState(null);
   const [importing,  setImporting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [picked,     setPicked]    = useState([]);
   const [moveEmps,   setMoveEmps]  = useState(null);
   const importRef = useRef(null);
 
@@ -942,8 +973,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       exportPDF:        exportPDF,
       downloadTemplate: downloadTemplate,
       openUpload:       () => importRef.current?.click(),
-      // in the header's "⋯" menu (index.jsx)
-      openKeka:         canEdit ? () => setKekaOpen(true) : undefined,
     };
     return () => { actionsRef.current = {}; };
   });
@@ -1100,7 +1129,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       }).catch(() => {});
     });
     setEmps(prev => prev.filter(e => !moved.includes(e.id)));
-    setPicked(prev => prev.filter(id => !moved.includes(id)));
   };
   // leave the detail screen only once the result is closed — switching
   // screens while it is open would remount the window and lose the result
@@ -1132,6 +1160,41 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
   const paginated  = filtered.slice((page - 1) * perPage, page * perPage);
+  // fixed footer with paging — same for the table and the cards
+  const pageFooter = (
+  <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] text-slate-400">Rows per page:</span>
+      <div className="relative">
+        <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+          className="appearance-none text-[11px] border border-slate-200 rounded pl-2 pr-5 py-1 text-slate-600 bg-white focus:outline-none">
+          {[10, 20, 30, 40, 50].map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <ChevronDown size={11} className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400" />
+      </div>
+      <span className="text-[11px] text-slate-400">
+        {filtered.length > 0 ? `${(page - 1) * perPage + 1}–${Math.min(page * perPage, filtered.length)} of ${filtered.length}` : "0 results"}
+      </span>
+    </div>
+    {totalPages > 1 && (
+      <div className="flex items-center gap-1">
+        <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+          className="px-2.5 py-1 text-xs border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 transition-colors">Prev</button>
+        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+          const n = Math.max(1, Math.min(page - 2, totalPages - 4)) + i;
+          return (
+            <button key={n} onClick={() => setPage(n)}
+              className={`w-7 h-7 text-xs rounded border transition-colors ${page === n ? "bg-slate-800 text-white border-slate-800" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
+              {n}
+            </button>
+          );
+        })}
+        <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
+          className="px-2.5 py-1 text-xs border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 transition-colors">Next</button>
+      </div>
+    )}
+  </div>
+  );
 
   useEffect(() => { onCountChange?.(filtered.length); }, [filtered.length]);
 
@@ -1363,7 +1426,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         </div>
       )}
 
-      {kekaOpen && <KekaSync orgId={orgId} onClose={() => setKekaOpen(false)} onDone={fetchEmps} />}
 
       {/* Search + Filters — shown in the page header (toolbarSlot) */}
       {(() => {
@@ -1379,21 +1441,22 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                 </button>
               ))}
             </div>
-            <div className="relative w-40 sm:w-56">
+            {/* the search gives way first, so the header stays on one line */}
+            <div className="relative flex-1 min-w-[120px] max-w-[240px]">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
                 placeholder="Search employees…"
                 className="pl-8 pr-3 py-[7px] text-xs border border-slate-200 rounded-md bg-slate-50 w-full focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-white" />
             </div>
-            <CategoryPicker value={category} emps={emps.filter(inTab)} onChange={c => { setCategory(c); setPage(1); }} />
             <EmpFilters
-              filters={{ dept: filterDept, type: filterType }}
+              filters={{ cat: category, dept: filterDept, type: filterType }}
               depts={allDepts}
+              categories={CATEGORIES.map(c => [c, `${c} · ${emps.filter(e => inTab(e) && (e.category || "Office Staff") === c).length}`])}
               onChange={(k, v) => {
-                ({ dept: setFilterDept, type: setFilterType })[k](v);
+                ({ cat: setCategory, dept: setFilterDept, type: setFilterType })[k](v);
                 setPage(1);
               }}
-              onClear={() => { setFilterDept(""); setFilterType(""); setPage(1); }} />
+              onClear={() => { setCategory(""); setFilterDept(""); setFilterType(""); setPage(1); }} />
           </>
         );
         return toolbarSlot
@@ -1415,59 +1478,29 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         </div>
       ) : view === "card" ? (
 
-        /* ── CARD VIEW ── */
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {paginated.map(emp => {
-            return (
-              <div key={emp.id} onClick={() => setSelected(emp)}
-                className="bg-white rounded-lg border border-slate-200 p-4 cursor-pointer hover:shadow-md hover:border-blue-200 transition-all flex flex-col items-center text-center gap-2 group">
-                <Avatar name={emp.personName} size="lg" imgUrl={imgUrls[emp.id]} />
-                <div className="min-w-0 w-full">
-                  <p className="font-bold text-[13px] text-slate-800 truncate group-hover:text-blue-700 transition-colors">{emp.personName}</p>
-                  <p className="text-[11px] text-slate-400 truncate mt-0.5">{emp.designation || "—"}</p>
-                </div>
-                {emp.department && (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-600 border border-blue-100 truncate max-w-full">{emp.department}</span>
-                )}
-                <div className="flex items-center justify-between w-full mt-1">
-                  <GradeBadge grade={emp.grade} />
-                  <StatusBadge status={emp.status} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        /* ── CARD VIEW — like Keka's directory: photo, name, title, department,
+           location, email; "⋯" by the name shows the details ── */
+        <>
+          <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(360px,1fr))]">
+            {paginated.map(emp => (
+              <EmpCard key={emp.id} emp={emp} imgUrl={imgUrls[emp.id]} place={postedLabel(emp, opts)} onOpen={() => setSelected(emp)} />
+            ))}
+          </div>
+          {/* footer sits on the bottom edge, full width — like the header on top
+              (negative margins undo the page padding in index.jsx) */}
+          <div className="sticky bottom-0 z-20 mt-auto -mx-4 sm:-mx-5 lg:-mx-6 -mb-5 bg-white border-t border-slate-200 [&>div]:border-t-0 [&>div]:px-5 sm:[&>div]:px-6">{pageFooter}</div>
+        </>
 
       ) : (
 
         /* ── TABLE VIEW ── */
         <div className="bg-white rounded-lg border border-slate-200 flex flex-col" style={{ height: "calc(100svh - 110px)" }}>
-          {picked.length > 0 && (
-            <div className="flex items-center gap-3 px-4 py-2 border-b border-slate-200 bg-blue-50/60 text-[12px]">
-              <span className="font-semibold text-slate-700">{picked.length} selected</span>
-              <button onClick={() => setMoveEmps(emps.filter(e => picked.includes(e.id)))}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors">
-                <ArrowRightLeft size={12} /> Move to company
-              </button>
-              <button onClick={() => setPicked([])} className="text-slate-500 hover:text-slate-800 font-semibold">Clear</button>
-            </div>
-          )}
           <div className="overflow-auto flex-1">
             <table className="w-full text-left border-separate border-spacing-0 min-w-[1000px]">
               <thead className="sticky top-0 z-[20]">
                 <tr className="text-[11px] uppercase tracking-wider text-slate-500">
-                  {canEdit && (
-                    <th style={{ width: 40, minWidth: 40, left: 0 }} className="px-3 py-3 bg-slate-50 border-b border-r border-slate-200 sticky z-[22]">
-                      <input type="checkbox" className="w-3.5 h-3.5 accent-blue-600 cursor-pointer" title="Select this page"
-                        checked={paginated.length > 0 && paginated.every(e => picked.includes(e.id))}
-                        onChange={ev => {
-                          const ids = paginated.map(e => e.id);
-                          setPicked(prev => ev.target.checked ? [...new Set([...prev, ...ids])] : prev.filter(id => !ids.includes(id)));
-                        }} />
-                    </th>
-                  )}
-                  <th style={{ width: 110, minWidth: 110, left: canEdit ? 40 : 0 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[22]">Contact ID</th>
-                  <th style={{ minWidth: 180, left: canEdit ? 150 : 110 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[22]">Name</th>
+                  <th style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[22]">Contact ID</th>
+                  <th style={{ minWidth: 180, left: 110 }} className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap sticky z-[22]">Name</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Emp ID</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap text-center">Category</th>
                   <th className="px-4 py-3 font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap">Posted At</th>
@@ -1487,16 +1520,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                   const td = "px-4 py-3 border-b border-r border-slate-200 text-[13px] text-slate-600 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors";
                   return (
                     <tr key={emp.id} className="group cursor-pointer" onClick={() => setSelected(emp)}>
-                      {canEdit && (
-                        <td style={{ width: 40, minWidth: 40, left: 0 }} onClick={e => e.stopPropagation()}
-                          className="px-3 py-3 border-b border-r border-slate-200 bg-white group-hover:bg-slate-50 transition-colors sticky z-[5]">
-                          <input type="checkbox" className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
-                            checked={picked.includes(emp.id)}
-                            onChange={() => setPicked(prev => prev.includes(emp.id) ? prev.filter(id => id !== emp.id) : [...prev, emp.id])} />
-                        </td>
-                      )}
-                      <td style={{ width: 110, minWidth: 110, left: canEdit ? 40 : 0 }} className="px-4 py-3 border-b border-r border-slate-200 text-xs font-medium text-slate-500 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[5]">{emp.contactCode || "—"}</td>
-                      <td style={{ minWidth: 180, left: canEdit ? 150 : 110 }} className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[5]">
+                      <td style={{ width: 110, minWidth: 110, left: 0 }} className="px-4 py-3 border-b border-r border-slate-200 text-xs font-medium text-slate-500 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[5]">{emp.contactCode || "—"}</td>
+                      <td style={{ minWidth: 180, left: 110 }} className="px-4 py-3 border-b border-r border-slate-200 whitespace-nowrap bg-white group-hover:bg-slate-50 transition-colors sticky z-[5]">
                         <span className="font-semibold text-slate-800 text-[13px]">{emp.personName}</span>
                       </td>
                       <td className={`${td} text-xs font-medium`}>{emp.employeeId || "—"}</td>
@@ -1530,52 +1555,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
             </table>
           </div>
 
-          {/* Pagination — always visible, outside scroll */}
-          <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-400">Rows per page:</span>
-              <div className="relative">
-                <select value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
-                  className="appearance-none text-[11px] border border-slate-200 rounded pl-2 pr-5 py-1 text-slate-600 bg-white focus:outline-none">
-                  {[10, 20, 30, 40, 50].map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
-                <ChevronDown size={11} className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400" />
-              </div>
-              <span className="text-[11px] text-slate-400">
-                {filtered.length > 0 ? `${(page - 1) * perPage + 1}–${Math.min(page * perPage, filtered.length)} of ${filtered.length}` : "0 results"}
-              </span>
-            </div>
-            {totalPages > 1 && (
-              <div className="flex items-center gap-1">
-                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                  className="px-2.5 py-1 text-xs border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 transition-colors">Prev</button>
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  const n = Math.max(1, Math.min(page - 2, totalPages - 4)) + i;
-                  return (
-                    <button key={n} onClick={() => setPage(n)}
-                      className={`w-7 h-7 text-xs rounded border transition-colors ${page === n ? "bg-slate-800 text-white border-slate-800" : "border-slate-200 text-slate-500 hover:bg-slate-50"}`}>
-                      {n}
-                    </button>
-                  );
-                })}
-                <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-                  className="px-2.5 py-1 text-xs border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 transition-colors">Next</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Card view pagination */}
-      {view === "card" && totalPages > 1 && (
-        <div className="flex items-center justify-between mt-2">
-          <p className="text-[11px] text-slate-400">Showing {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, filtered.length)} of {filtered.length}</p>
-          <div className="flex items-center gap-1">
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-              className="px-2.5 py-1 text-xs border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 transition-colors">Prev</button>
-            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-              className="px-2.5 py-1 text-xs border border-slate-200 rounded text-slate-500 hover:bg-slate-50 disabled:opacity-30 transition-colors">Next</button>
-          </div>
+          {pageFooter}
         </div>
       )}
 
