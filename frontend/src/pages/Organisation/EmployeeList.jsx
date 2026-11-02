@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   Search, Plus, X, Edit2, Trash2, Loader2, ChevronLeft,
   BadgeCheck, Calendar, UserCheck, MapPin,
-  Briefcase, Building2, ChevronDown, Users, Clock, SlidersHorizontal, ArrowRightLeft, Check, RefreshCw,
+  Briefcase, Building2, ChevronDown, Users, Clock, SlidersHorizontal, ArrowRightLeft, Check,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
@@ -942,6 +942,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       exportPDF:        exportPDF,
       downloadTemplate: downloadTemplate,
       openUpload:       () => importRef.current?.click(),
+      // in the header's "⋯" menu (index.jsx)
+      openKeka:         canEdit ? () => setKekaOpen(true) : undefined,
     };
     return () => { actionsRef.current = {}; };
   });
@@ -1392,12 +1394,6 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                 setPage(1);
               }}
               onClear={() => { setFilterDept(""); setFilterType(""); setPage(1); }} />
-            {canEdit && (
-              <button onClick={() => setKekaOpen(true)} title="Update designations, departments and leavers from Keka's Org Tree export"
-                className="inline-flex items-center gap-1.5 px-3 py-[7px] text-xs font-semibold rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">
-                <RefreshCw size={12} /> Sync from Keka
-              </button>
-            )}
           </>
         );
         return toolbarSlot

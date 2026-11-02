@@ -4,7 +4,7 @@ import {
   MapPin, PanelLeftClose, PanelLeftOpen,
   Download, Upload, ChevronDown, FileSpreadsheet, FileText,
   Network, UserSquare2, ArrowLeft, Table2, BarChart2, ClipboardList, FileSignature, FolderKanban,
-  MoreHorizontal,
+  MoreHorizontal, RefreshCw,
 } from "lucide-react";
 import OrgOverview   from "./OrgOverview";
 import Departments   from "./Departments";
@@ -316,6 +316,13 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
                       </button>
                       <button onClick={() => { actionsRef.current?.openUpload?.(); setShowExport(false); }} className={menuItem}>
                         <Upload size={14} className="text-blue-500" /> Upload Excel File
+                      </button>
+                    </>}
+                    {activeTab === "employees" && actionsRef.current?.openKeka && <>
+                      <div className="my-1 border-t border-slate-100" />
+                      <p className="px-3.5 pt-1.5 pb-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Keka</p>
+                      <button onClick={() => { actionsRef.current.openKeka(); setShowExport(false); }} className={menuItem}>
+                        <RefreshCw size={14} className="text-violet-500" /> Sync from Keka
                       </button>
                     </>}
                   </div>
