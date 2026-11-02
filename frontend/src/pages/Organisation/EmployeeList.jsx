@@ -113,16 +113,38 @@ function Avatar({ name, size = "md", imgUrl }) {
   return <div className={`${sz} rounded-full flex items-center justify-center shrink-0 font-bold`} style={avatarGrad(name)}>{ini(name)}</div>;
 }
 
-/* Employee card (Keka-style) with a details popover behind "⋯" */
-function EmpCard({ emp, imgUrl, place, onOpen }) {
-  const [open, setOpen] = useState(false);
-  const [zoom, setZoom] = useState(false);   // photo shown big
+/* Big avatar: ring on hover, click shows the photo full size (card + profile) */
+function PhotoAvatar({ name, imgUrl }) {
+  const [zoom, setZoom] = useState(false);
   useEffect(() => {
     if (!zoom) return;
     const k = (e) => { if (e.key === "Escape") setZoom(false); };
     document.addEventListener("keydown", k);
     return () => document.removeEventListener("keydown", k);
   }, [zoom]);
+  return (
+    <>
+      <button type="button" onClick={() => setZoom(true)} title="View photo"
+        className="shrink-0 rounded-full ring-0 ring-blue-200 hover:ring-4 transition-shadow">
+        <Avatar name={name} size="xl" imgUrl={imgUrl} />
+      </button>
+      {zoom && (
+        <div className="fixed inset-0 z-[100] bg-black/70 flex flex-col items-center justify-center gap-3 p-6" onClick={() => setZoom(false)}>
+          <button type="button" onClick={() => setZoom(false)} title="Close" className="absolute top-4 right-4 p-2 rounded-full text-white/80 hover:text-white hover:bg-white/10"><X size={20} /></button>
+          {imgUrl
+            ? <img src={imgUrl} alt={name} onClick={e => e.stopPropagation()} className="max-h-[80vh] max-w-[90vw] rounded-lg shadow-2xl object-contain bg-white" />
+            : <div onClick={e => e.stopPropagation()} className="scale-[2.5] my-20"><Avatar name={name} size="xl" /></div>}
+          <p className="text-white text-sm font-semibold">{name}</p>
+          {!imgUrl && <p className="text-white/60 text-xs -mt-2">No photo uploaded yet</p>}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* Employee card (Keka-style) with a details popover behind "⋯" */
+function EmpCard({ emp, imgUrl, place, onOpen }) {
+  const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => {
     if (!open) return;
@@ -141,17 +163,7 @@ function EmpCard({ emp, imgUrl, place, onOpen }) {
   );
   return (
     <div ref={ref} className="relative bg-white rounded-lg border border-slate-200 p-4 flex items-start gap-4 hover:border-blue-200 hover:shadow-sm transition-all">
-      <button type="button" onClick={() => imgUrl ? setZoom(true) : onOpen()} title={imgUrl ? "View photo" : "Open"}
-        className="shrink-0 rounded-full ring-0 ring-blue-200 hover:ring-4 transition-shadow">
-        <Avatar name={emp.personName} size="xl" imgUrl={imgUrl} />
-      </button>
-      {zoom && (
-        <div className="fixed inset-0 z-[100] bg-black/70 flex flex-col items-center justify-center gap-3 p-6" onClick={() => setZoom(false)}>
-          <button type="button" onClick={() => setZoom(false)} title="Close" className="absolute top-4 right-4 p-2 rounded-full text-white/80 hover:text-white hover:bg-white/10"><X size={20} /></button>
-          <img src={imgUrl} alt={emp.personName} onClick={e => e.stopPropagation()} className="max-h-[80vh] max-w-[90vw] rounded-lg shadow-2xl object-contain bg-white" />
-          <p className="text-white text-sm font-semibold">{emp.personName}</p>
-        </div>
-      )}
+      <PhotoAvatar name={emp.personName} imgUrl={imgUrl} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 min-w-0">
           <button type="button" onClick={onOpen} className="font-bold text-[14px] text-slate-800 truncate hover:text-blue-700 text-left">{emp.personName}</button>
@@ -270,7 +282,7 @@ function EmployeeDetail({ emp, imgUrl, opts, onBack, onEdit, onMove, onDelete })
       {/* Hero */}
       <div className="px-8 py-5 bg-white border-b border-slate-100 shrink-0">
         <div className="flex items-center gap-5">
-          <Avatar name={emp.personName} size="xl" imgUrl={imgUrl} />
+          <PhotoAvatar name={emp.personName} imgUrl={imgUrl} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 flex-wrap mb-0.5">
               <h2 className="text-xl font-bold text-slate-800">{emp.personName}</h2>
