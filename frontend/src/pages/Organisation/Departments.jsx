@@ -272,7 +272,6 @@ export default function Departments({ actionsRef, onChange }) {
           <table className="w-full text-sm border-separate border-spacing-0">
             <thead className="sticky top-0 z-10">
               <tr className="text-[11px] uppercase tracking-wide text-slate-500">
-                <th className={`${TH} w-16 text-center`}>S.No</th>
                 <th className={`${TH} w-32`}>Dept ID</th>
                 <th className={TH}>Department Name</th>
                 <th className={TH}>Head</th>
@@ -282,14 +281,13 @@ export default function Departments({ actionsRef, onChange }) {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} className="py-10"><BrandLoader compact /></td></tr>
+                <tr><td colSpan={5} className="py-10"><BrandLoader compact /></td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400 text-xs border-b border-slate-200">
+                <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400 text-xs border-b border-slate-200">
                   {search ? "No departments match your search" : "No departments yet — add one above"}
                 </td></tr>
-              ) : pageRows.map((d, idx) => (
+              ) : pageRows.map(d => (
                 <tr key={d.id} className="group">
-                  <td className={`${TD} text-center text-slate-400 text-xs tabular-nums`}>{(page - 1) * per + idx + 1}</td>
                   <td className={`${TD} text-slate-500 text-[13px] tabular-nums`}>{d.dept_id || "—"}</td>
                   <td className={`${TD} font-semibold text-slate-800`}>{d.name}</td>
                   <td className={`${TD} text-slate-600`}>{d.head || "—"}</td>

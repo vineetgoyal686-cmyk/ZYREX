@@ -147,6 +147,146 @@ router.get("/app-users", requirePerm("employees", "can_view"), async (_req, res)
   }
 });
 
+/* ── Sync from Keka ──────────────────────────────────────────────────
+   The company's live staff list is Keka's Org Tree export (Org › Organization
+   Tree › Download Excel): Employee Number, Display Name, Job Title,
+   Department … No manager column, so reporting stays as it is here.
+   preview: match each Keka row to an employee (by Employee Number, else name,
+   across all companies), show what would change, and list this company's
+   active employees that aren't in Keka. apply: write the chosen changes,
+   add missing designations / departments to this company's lists, and mark
+   the chosen people inactive (never deleted — history stays). */
+const kekaNo   = (v) => String(v || "").toUpperCase().replace(/\s+/g, "").trim();          // "BIL - 186" → "BIL-186"
+const kekaName = (v) => String(v || "").toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim()
+  .replace(/^(dr|mr|mrs|ms|er|ca) /, "");                                                   // "Dr. Mayank Tomar" → "mayank tomar"
+// letters apart (for "Amit Aagrwal" ~ "Amit Agarwal")
+const editDistance = (a, b) => {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+};
+const kekaText = (v) => String(v || "").trim().replace(/\s+/g, " ");
+
+router.post("/keka-sync/preview", requirePerm("employees", "can_edit"), async (req, res) => {
+  try {
+    const company_id = companyIdFrom(req.body);
+    if (!company_id) return res.status(400).json({ error: "Pick a company" });
+    const rows = (Array.isArray(req.body.rows) ? req.body.rows : []).slice(0, 2000)
+      .map(r => ({ no: kekaNo(r.number), name: kekaText(r.name), title: kekaText(r.title), dept: /^not available$/i.test(kekaText(r.department)) ? "" : kekaText(r.department) }))
+      .filter(r => r.name);
+    if (!rows.length) return res.status(400).json({ error: "No rows in the file" });
+
+    const org = supabase.schema("organisation");
+    const [{ data: emps, error }, { data: companies }] = await Promise.all([
+      org.from("employees").select("id, person_name, employee_id, designation, department, status, category, company_id"),
+      org.from("companies").select("id, company_name"),
+    ]);
+    if (error) throw error;
+    const coName = new Map((companies || []).map(c => [c.id, c.company_name]));
+    const byNo = new Map(), byName = new Map();
+    for (const e of emps || []) {
+      if (kekaNo(e.employee_id)) byNo.set(kekaNo(e.employee_id), [...(byNo.get(kekaNo(e.employee_id)) || []), e]);
+      const k = kekaName(e.person_name);
+      if (k) byName.set(k, [...(byName.get(k) || []), e]);
+    }
+    const pickOne = (list) => !list?.length ? null : list.find(e => e.company_id === company_id) || (list.length === 1 ? list[0] : null);
+
+    // a near-same name in this company (one letter or two apart, same first name) — shown as "check"
+    const similar = (name) => {
+      const k = kekaName(name), first = k.split(" ")[0];
+      const hits = (emps || []).filter(e => e.company_id === company_id && !used.has(e.id) && e.status !== "inactive" && kekaName(e.person_name).split(" ")[0] === first
+        && editDistance(kekaName(e.person_name), k) <= 2);
+      return hits.length === 1 ? hits[0] : null;
+    };
+    const matched = [], missing = [], used = new Set();
+    for (const r of rows) {
+      let guess = false;
+      let e = pickOne(byNo.get(r.no)) || pickOne(byName.get(kekaName(r.name)));
+      if (e && used.has(e.id)) e = null;
+      if (!e) { e = similar(r.name); guess = !!e; }
+      if (!e) { missing.push(r); continue; }
+      used.add(e.id);
+      const changes = [];
+      if (r.title && kekaText(e.designation) !== r.title) changes.push({ field: "Designation", from: e.designation || "", to: r.title });
+      if (r.dept && kekaText(e.department) !== r.dept) changes.push({ field: "Department", from: e.department || "", to: r.dept });
+      if (r.no && e.employee_id !== r.no) changes.push({ field: "Employee ID", from: e.employee_id || "", to: r.no });
+      if (e.status === "inactive") changes.push({ field: "Status", from: "Inactive", to: "Active" });
+      matched.push({
+        id: e.id, name: e.person_name, kekaName: r.name, guess, company: coName.get(e.company_id) || "",
+        otherCompany: e.company_id !== company_id, changes,
+        set: { designation: r.title, department: r.dept, employeeId: r.no },
+      });
+    }
+    // this company's active people Keka doesn't have
+    const notInKeka = (emps || [])
+      .filter(e => e.company_id === company_id && e.status !== "inactive" && !used.has(e.id))
+      .map(e => ({ id: e.id, name: e.person_name, employeeId: e.employee_id || "", designation: e.designation || "", department: e.department || "", category: e.category || "" }))
+      .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+    res.json({ matched, missing, notInKeka });
+  } catch (err) {
+    console.error("Keka preview error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/keka-sync/apply", requirePerm("employees", "can_edit"), async (req, res) => {
+  try {
+    const company_id = companyIdFrom(req.body);
+    if (!company_id) return res.status(400).json({ error: "Pick a company" });
+    const updates = Array.isArray(req.body.updates) ? req.body.updates : [];
+    const deactivate = (Array.isArray(req.body.deactivate) ? req.body.deactivate : []).filter(Boolean);
+    const org = supabase.schema("organisation");
+
+    // the lists: add any Keka designation / department this company doesn't have yet
+    const [{ data: desigs }, { data: depts }] = await Promise.all([
+      org.from("designations").select("title").eq("company_id", company_id),
+      org.from("departments").select("name, dept_id").eq("company_id", company_id),
+    ]);
+    const haveD = new Set((desigs || []).map(d => kekaName(d.title)));
+    const haveP = new Set((depts || []).map(d => kekaName(d.name)));
+    let deptMax = (depts || []).reduce((m, d) => Math.max(m, parseInt(String(d.dept_id || "").replace("DEPT-", ""), 10) || 0), 0);
+    let addedDesig = 0, addedDept = 0;
+    for (const t of [...new Set(updates.map(u => kekaText(u.designation)).filter(Boolean))]) {
+      if (haveD.has(kekaName(t))) continue;
+      const { error } = await org.from("designations").insert({ desig_id: await nextDesigId(), title: t, grade: null, active: true, company_id });
+      if (error) throw error;
+      haveD.add(kekaName(t)); addedDesig++;
+    }
+    for (const n of [...new Set(updates.map(u => kekaText(u.department)).filter(Boolean))]) {
+      if (haveP.has(kekaName(n))) continue;
+      deptMax++;
+      const { error } = await org.from("departments").insert({ name: n, dept_id: `DEPT-${String(deptMax).padStart(3, "0")}`, status: "active", company_id });
+      if (error) throw error;
+      haveP.add(kekaName(n)); addedDept++;
+    }
+
+    let updated = 0;
+    const skipped = [];
+    for (const u of updates) {
+      if (!u?.id) continue;
+      const patch = { status: "active" };
+      if (kekaText(u.designation)) patch.designation = kekaText(u.designation);
+      if (kekaText(u.department)) patch.department = kekaText(u.department);
+      if (kekaNo(u.employeeId)) patch.employee_id = kekaNo(u.employeeId);
+      const { error } = await org.from("employees").update(patch).eq("id", u.id);
+      if (error) { skipped.push({ name: u.name || u.id, reason: error.code === "23505" ? `Employee ID ${patch.employee_id} is already used by someone else` : error.message }); continue; }
+      updated++;
+    }
+    let deactivated = 0;
+    if (deactivate.length) {
+      const { data, error } = await org.from("employees").update({ status: "inactive" }).in("id", deactivate).eq("company_id", company_id).select("id");
+      if (error) throw error;
+      deactivated = (data || []).length;
+    }
+    res.json({ success: true, updated, deactivated, addedDesig, addedDept, skipped });
+  } catch (err) {
+    console.error("Keka apply error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* POST /api/organisation/employees */
 router.post("/employees", requirePerm("employees", "can_add"), async (req, res) => {
   try {

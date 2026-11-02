@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import {
   Search, Plus, X, Edit2, Trash2, Loader2, ChevronLeft,
   BadgeCheck, Calendar, UserCheck, MapPin,
-  Briefcase, Building2, ChevronDown, Users, Clock, SlidersHorizontal, ArrowRightLeft, Check,
+  Briefcase, Building2, ChevronDown, Users, Clock, SlidersHorizontal, ArrowRightLeft, Check, RefreshCw,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
@@ -13,6 +13,7 @@ import { authFetch } from "../../utils/authFetch";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import { ContactLogModal } from "../Create/FullMasterModals";
 import { useOrgId, scopedUrl } from "./orgScope";
+import KekaSync from "./KekaSync";
 import BrandLoader from "../../components/BrandLoader";
 
 const API   = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
@@ -898,6 +899,7 @@ function MoveModal({ emps, fromId, onClose, onMoved }) {
 export default function EmployeeList({ actionsRef, view = "card", onViewChange, onCountChange, toolbarSlot }) {
   const { canEdit, canDelete } = useModulePermissions("employees");
   const orgId = useOrgId();
+  const [kekaOpen, setKekaOpen] = useState(false);
   const [emps,    setEmps]    = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -1357,6 +1359,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         </div>
       )}
 
+      {kekaOpen && <KekaSync orgId={orgId} onClose={() => setKekaOpen(false)} onDone={fetchEmps} />}
+
       {/* Search + Filters — shown in the page header (toolbarSlot) */}
       {(() => {
         const bar = (
@@ -1376,6 +1380,12 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
                 setPage(1);
               }}
               onClear={() => { setFilterDept(""); setFilterStatus(""); setFilterType(""); setPage(1); }} />
+            {canEdit && (
+              <button onClick={() => setKekaOpen(true)} title="Update designations, departments and leavers from Keka's Org Tree export"
+                className="inline-flex items-center gap-1.5 px-3 py-[7px] text-xs font-semibold rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">
+                <RefreshCw size={12} /> Sync from Keka
+              </button>
+            )}
           </>
         );
         return toolbarSlot
