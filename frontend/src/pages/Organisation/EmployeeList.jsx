@@ -3,7 +3,7 @@ import {
   Search, Plus, X, Edit2, Trash2, Loader2, ChevronLeft,
   BadgeCheck, Calendar, UserCheck, MapPin,
   Briefcase, Building2, ChevronDown, Users, Clock, SlidersHorizontal, ArrowRightLeft, Check,
-  MoreHorizontal, ExternalLink, Mail, Phone, Copy,
+  MoreHorizontal, ExternalLink, Mail, Phone, Copy, ChevronRight,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
@@ -108,8 +108,8 @@ const ini = (n) => (n || "?").split(" ").slice(0, 2).map(w => w[0]).join("").toU
 
 /* ── Tiny components ── */
 function Avatar({ name, size = "md", imgUrl, square }) {
-  const sz = { xl: "w-[72px] h-[72px] text-2xl", lg: "w-14 h-14 text-lg", md: "w-10 h-10 text-sm", sm: "w-8 h-8 text-xs" }[size];
-  const shape = square ? (size === "sm" ? "rounded-md" : "rounded-xl") : "rounded-full";
+  const sz = { "2xl": "w-28 h-28 text-4xl", xl: "w-[72px] h-[72px] text-2xl", lg: "w-14 h-14 text-lg", md: "w-10 h-10 text-sm", sm: "w-8 h-8 text-xs" }[size];
+  const shape = square ? (size === "sm" ? "rounded-md" : size === "2xl" ? "rounded-2xl" : "rounded-xl") : "rounded-full";
   if (imgUrl) return <div className={`${sz} ${shape} overflow-hidden shrink-0`}><img src={imgUrl} alt={name} className="w-full h-full object-cover" /></div>;
   return <div className={`${sz} ${shape} flex items-center justify-center shrink-0 font-bold`} style={avatarGrad(name)}>{ini(name)}</div>;
 }
@@ -256,11 +256,33 @@ function GradeBadge({ grade }) {
   );
 }
 
-function InfoBox({ label, value, span2 }) {
+/* one field of a profile section — empty ones offer "+ Add" (opens Edit) */
+function InfoBox({ label, value, span2, onAdd }) {
   return (
-    <div className={`rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2.5 ${span2 ? "col-span-2" : ""}`}>
-      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
-      <p className={`mt-0.5 text-[13px] font-semibold break-words ${value ? "text-slate-800" : "text-slate-300 italic"}`}>{value || "—"}</p>
+    <div className={`min-w-0 ${span2 ? "col-span-2" : ""}`}>
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
+      <div className="mt-1 text-[13px] font-medium text-slate-800 break-words">
+        {value || (onAdd
+          ? <button type="button" onClick={onAdd} className="px-2 py-1 rounded-md bg-slate-50 border border-slate-200 text-[12px] font-medium text-blue-600 hover:bg-blue-50 hover:border-blue-200">+ Add</button>
+          : <span className="text-slate-300 font-normal">—</span>)}
+      </div>
+    </div>
+  );
+}
+
+/* profile section card: title · "x of y filled" · pencil */
+function InfoCard({ title, fields, onEdit }) {
+  const filled = fields.filter(f => f.value).length;
+  return (
+    <div className="bg-white rounded-xl border border-slate-200">
+      <div className="flex items-center gap-2 px-5 py-3.5 border-b border-slate-100">
+        <h3 className="text-[14px] font-semibold text-slate-800">{title}</h3>
+        <span className="text-[11px] text-slate-400">{filled} of {fields.length} filled</span>
+        {onEdit && <button type="button" onClick={onEdit} title="Edit" className="ml-auto p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Edit2 size={13} /></button>}
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4 p-5">
+        {fields.map(f => <InfoBox key={f.label} label={f.label} value={f.value} onAdd={onEdit} />)}
+      </div>
     </div>
   );
 }
@@ -269,165 +291,165 @@ function InfoBox({ label, value, span2 }) {
    DETAIL VIEW
 ═══════════════════════════════ */
 const DETAIL_TABS = ["Overview", "Documents"];
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "";
 
-function EmployeeDetail({ emp, imgUrl, opts, onBack, onEdit, onMove, onDelete }) {
+function EmployeeDetail({ emp, imgUrl, opts, emps = [], onOpenEmp, onBack, onEdit, onMove, onDelete }) {
   const [tab, setTab] = useState("Overview");
-  const s   = STATUS[emp.status || "active"];
-  const grd = emp.grade || "";
+  const place   = postedLabel(emp, opts);
+  const manager = emp.reportingTo && emps.find(e => e.personName?.toLowerCase() === emp.reportingTo.toLowerCase().trim());
+
+  const sections = [
+    { title: "Personal", fields: [
+      { label: "Date of Birth",  value: fmtDate(emp.dateOfBirth) },
+      { label: "Gender",         value: emp.gender },
+      { label: "Marital Status", value: emp.maritalStatus },
+      { label: "Nationality",    value: emp.nationality },
+    ] },
+    { title: "Contact details", fields: [
+      { label: "Email",           value: emp.email },
+      { label: "Mobile",          value: emp.contactNumber },
+      { label: "Alternate Phone", value: emp.alternatePhone },
+      { label: "Address",         value: emp.address },
+    ] },
+    { title: "Job", fields: [
+      { label: "Employed Through", value: agencyName(emp, opts) },
+      { label: "Grade",            value: emp.grade && <GradeBadge grade={emp.grade} /> },
+      { label: "Team",             value: emp.team },
+    ] },
+  ];
+  const all     = sections.flatMap(x => x.fields);
+  const missing = all.filter(f => !f.value).length;
+  const pct     = Math.round(((all.length - missing) / all.length) * 100);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="min-h-[100svh] bg-[#f5f6f8]">
+      {/* top stays put (sticky to the page scroll): back · actions · header card */}
+      <div className="sticky top-0 z-20 bg-[#f5f6f8] px-4 sm:px-6 pt-4 pb-4 space-y-4 border-b border-slate-200/70">
 
-      {/* Back + actions */}
-      <div className="flex items-center justify-between px-6 py-3 bg-white border-b border-slate-100 shrink-0">
-        <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 font-medium transition-colors">
-          <ChevronLeft size={15} /> Back to Employees
-        </button>
-        <div className="flex items-center gap-2">
-          {onEdit && (
-            <button onClick={onEdit}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 font-medium transition-colors">
-              <Edit2 size={13} /> Edit
-            </button>
-          )}
-          {onMove && (
-            <button onClick={onMove}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 rounded-lg text-sm text-slate-600 hover:bg-slate-50 font-medium transition-colors">
-              <ArrowRightLeft size={13} /> Move
-            </button>
-          )}
-          {onDelete && (
-            <button onClick={onDelete}
-              className="p-1.5 border border-slate-200 rounded-lg text-slate-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors">
-              <Trash2 size={14} />
-            </button>
-          )}
+        {/* back · actions */}
+        <div className="flex items-center justify-between">
+          <button onClick={onBack} className="flex items-center gap-1 text-[13px] text-slate-500 hover:text-slate-800 font-medium">
+            <ChevronLeft size={15} /> Back to Employees
+          </button>
+          <div className="flex items-center gap-2">
+            {onDelete && (
+              <button onClick={onDelete} title="Delete"
+                className="h-9 w-9 flex items-center justify-center rounded-lg border border-slate-200 bg-white text-red-500 hover:bg-red-50 hover:border-red-200">
+                <Trash2 size={14} />
+              </button>
+            )}
+            {onMove && (
+              <button onClick={onMove} className="flex items-center gap-1.5 h-9 px-3.5 rounded-lg border border-slate-200 bg-white text-[13px] font-semibold text-slate-700 hover:bg-slate-50">
+                <ArrowRightLeft size={13} /> Move
+              </button>
+            )}
+            {onEdit && (
+              <button onClick={onEdit} className="flex items-center gap-1.5 h-9 px-4 rounded-lg bg-blue-600 text-[13px] font-semibold text-white hover:bg-blue-700">
+                <Edit2 size={13} /> Edit profile
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Status stripe */}
-      <div className={`h-1 ${s.bar} shrink-0`} />
-
-      {/* Hero */}
-      <div className="px-8 py-5 bg-white border-b border-slate-100 shrink-0">
-        <div className="flex items-center gap-5">
-          <PhotoAvatar name={emp.personName} imgUrl={imgUrl} />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 flex-wrap mb-0.5">
-              <h2 className="text-xl font-bold text-slate-800">{emp.personName}</h2>
+        {/* header card */}
+        <div className="bg-white rounded-xl border border-slate-200 px-5 py-4 flex items-center gap-5 flex-wrap">
+          <PhotoAvatar name={emp.personName} imgUrl={imgUrl} size="xl" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-[20px] font-bold text-slate-800">{emp.personName}</h2>
               <StatusBadge status={emp.status} />
               {emp.category && <CategoryBadge category={emp.category} />}
               {emp.staffType && <StaffTypeBadge type={emp.staffType} />}
             </div>
-            <p className="text-sm text-slate-500 font-medium">{emp.designation || "—"}</p>
-            <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-              {emp.department && <span className="inline-flex items-center gap-1 text-[11px] text-slate-400"><Briefcase size={10} />{emp.department}</span>}
-              {emp.contactCode && <code className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-mono font-bold">{emp.contactCode}</code>}
+            <p className="text-[13.5px] text-slate-500 mt-0.5">{[emp.designation, emp.department].filter(Boolean).join(" · ") || "—"}</p>
+            <div className="mt-2 flex items-center gap-x-5 gap-y-1 flex-wrap text-[12px] text-slate-500">
+              {emp.employeeId && <span className="flex items-center gap-1.5"><BadgeCheck size={13} className="text-slate-400" />ID: <b className="text-slate-700 font-semibold">{emp.employeeId}</b></span>}
+              {emp.joiningDate && <span className="flex items-center gap-1.5"><Calendar size={13} className="text-slate-400" />Joined <b className="text-slate-700 font-semibold">{fmtDate(emp.joiningDate)}</b></span>}
+              {place && <span className="flex items-center gap-1.5"><MapPin size={13} className="text-slate-400" /><b className="text-slate-700 font-semibold">{place}</b></span>}
             </div>
           </div>
+          <div className="w-full sm:w-64 rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] font-semibold text-slate-700">Profile complete</span>
+              <span className={`text-[12px] font-bold ${pct === 100 ? "text-emerald-600" : "text-amber-600"}`}>{pct}%</span>
+            </div>
+            <div className="mt-2 h-1.5 rounded-full bg-slate-200 overflow-hidden">
+              <div className={`h-full rounded-full ${pct === 100 ? "bg-emerald-500" : "bg-amber-500"}`} style={{ width: `${pct}%` }} />
+            </div>
+            <p className="mt-1.5 text-[11px] text-slate-500">
+              {missing ? <>{missing} details missing{onEdit && <> · <button type="button" onClick={onEdit} className="font-semibold text-blue-600 hover:underline">Fill now</button></>}</> : "All details filled"}
+            </p>
+          </div>
         </div>
+
       </div>
 
-      {/* Stat bar */}
-      <div className="px-8 py-4 bg-white border-b border-slate-100 shrink-0">
-        <div className="grid grid-cols-4 divide-x divide-slate-100">
-          {[
-            { Icon: BadgeCheck, label: "Employee ID",       value: emp.employeeId },
-            { Icon: Calendar,   label: "Joining Date",      value: emp.joiningDate ? new Date(emp.joiningDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "" },
-            { Icon: UserCheck,  label: "Reporting Manager", value: emp.reportingTo },
-            { Icon: MapPin,     label: "Posted At",         value: postedLabel(emp, opts) },
-          ].map(({ Icon, label, value }) => (
-            <div key={label} className="flex items-center gap-3 px-5 first:pl-0 last:pr-0">
-              <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center shrink-0">
-                <Icon size={16} className="text-slate-400" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider truncate">{label}</p>
-                <p className={`text-sm font-semibold truncate ${value ? "text-slate-700" : "text-slate-300"}`}>{value || "—"}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="px-8 bg-white border-b border-slate-100 shrink-0">
-        <div className="flex">
-          {DETAIL_TABS.map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`px-5 py-3.5 text-sm font-medium border-b-2 transition-colors ${tab === t ? "border-blue-600 text-blue-600" : "border-transparent text-slate-400 hover:text-slate-600"}`}>
-              {t}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Tab content */}
-      <div className="flex-1 overflow-y-auto bg-slate-50/60 p-6">
-        {tab === "Overview" ? (
-          <div className="grid grid-cols-3 gap-4">
-
-            {/* Personal Info */}
-            <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
-                <div className="w-1 h-4 rounded-full bg-indigo-500" />
-                <h3 className="text-[13px] font-bold text-slate-800">Personal Info</h3>
-              </div>
-              <div className="grid grid-cols-2 gap-3 p-4">
-                <InfoBox label="Full Name" value={emp.personName} span2 />
-                <InfoBox label="Date of Birth" value={emp.dateOfBirth ? new Date(emp.dateOfBirth).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : ""} />
-                <InfoBox label="Gender" value={emp.gender} />
-                <InfoBox label="Marital Status" value={emp.maritalStatus} />
-                <InfoBox label="Nationality" value={emp.nationality} />
-              </div>
-            </div>
-
-            {/* Contact Info */}
-            <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
-                <div className="w-1 h-4 rounded-full bg-sky-500" />
-                <h3 className="text-[13px] font-bold text-slate-800">Contact Info</h3>
-              </div>
-              <div className="grid grid-cols-2 gap-3 p-4">
-                <InfoBox label="Email" value={emp.email} span2 />
-                <InfoBox label="Mobile" value={emp.contactNumber} />
-                <InfoBox label="Employed Through" value={agencyName(emp, opts)} />
-                <InfoBox label="Phone (Alternate)" value={emp.alternatePhone} />
-                <InfoBox label="Address" value={emp.address || "No address added"} span2 />
-              </div>
-            </div>
-
-            {/* Organisation Info — hierarchy chain */}
-            <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-5 py-3.5 border-b border-slate-100 flex items-center gap-2">
-                <div className="w-1 h-4 rounded-full bg-violet-500" />
-                <h3 className="text-[13px] font-bold text-slate-800">Organisation Info</h3>
-              </div>
-              <div className="p-4 space-y-2">
+      <div className="px-4 sm:px-6 py-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4 items-start">
+          {/* left: quick contact + organisation */}
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <h3 className="text-[14px] font-semibold text-slate-800 mb-3">Quick contact</h3>
+              <div className="space-y-3">
                 {[
-                  { label: "Department",  value: emp.department, Icon: Briefcase },
-                  { label: "Team",        value: emp.team,       Icon: Users     },
-                  { label: "Designation", value: emp.designation, Icon: BadgeCheck },
-                ].map((item, idx, arr) => (
-                  <React.Fragment key={item.label}>
-                    <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{item.label}</p>
-                      <p className={`mt-0.5 text-[13px] font-semibold ${item.value ? "text-slate-800" : "text-slate-300 italic"}`}>{item.value || "—"}</p>
+                  { Icon: Mail,  tint: "bg-blue-50 text-blue-600",       label: "Email",  value: emp.email, href: emp.email && `mailto:${emp.email}` },
+                  { Icon: Phone, tint: "bg-emerald-50 text-emerald-600", label: "Mobile", value: emp.contactNumber, href: emp.contactNumber && `tel:${emp.contactNumber}` },
+                ].map(({ Icon, tint, label, value, href }) => (
+                  <div key={label} className="flex items-center gap-3 min-w-0">
+                    <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${tint}`}><Icon size={15} /></span>
+                    <div className="min-w-0">
+                      <p className="text-[11px] text-slate-400">{label}</p>
+                      {value
+                        ? <a href={href} title={value} className={`block text-[13px] font-medium truncate hover:underline ${label === "Email" ? "text-blue-600" : "text-slate-800"}`}>{value}</a>
+                        : <p className="text-[13px] text-slate-300">—</p>}
                     </div>
-                    {idx < arr.length - 1 && <div className="text-center text-slate-300 text-xs leading-none">↓</div>}
-                  </React.Fragment>
+                  </div>
                 ))}
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Grade</span>
-                  <GradeBadge grade={grd} />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 p-4">
+              <h3 className="text-[14px] font-semibold text-slate-800 mb-3">Organisation</h3>
+              <div className="space-y-3">
+                {[["Company", emp.company], ["Department", emp.department]].map(([label, value]) => (
+                  <div key={label}>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
+                    <p className={`mt-0.5 text-[13px] font-medium ${value ? "text-slate-800" : "text-slate-300"}`}>{value || "—"}</p>
+                  </div>
+                ))}
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Reports to</p>
+                  {emp.reportingTo ? (
+                    <button type="button" disabled={!manager} onClick={() => manager && onOpenEmp?.(manager)}
+                      className="mt-1.5 w-full flex items-center gap-2.5 rounded-lg py-1 text-left enabled:hover:bg-slate-50">
+                      <Avatar name={emp.reportingTo} size="sm" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[13px] font-semibold text-slate-800 truncate">{emp.reportingTo}</span>
+                        {manager?.designation && <span className="block text-[11px] text-slate-400 truncate">{manager.designation}</span>}
+                      </span>
+                      {manager && <ChevronRight size={14} className="text-slate-400 shrink-0" />}
+                    </button>
+                  ) : <p className="mt-0.5 text-[13px] text-slate-300">—</p>}
                 </div>
               </div>
             </div>
-
           </div>
-        ) : (
-          <div className="flex items-center justify-center h-40 text-slate-300 text-sm italic">{tab} — coming soon</div>
-        )}
+
+          {/* right: tabs + sections */}
+          <div className="space-y-4 min-w-0">
+            <div className="inline-flex gap-1 p-1 bg-white rounded-lg border border-slate-200">
+              {DETAIL_TABS.map(t => (
+                <button key={t} onClick={() => setTab(t)}
+                  className={`px-3.5 py-1.5 rounded-md text-[13px] font-medium outline-none transition-colors ${tab === t ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-800"}`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            {tab === "Overview"
+              ? sections.map(x => <InfoCard key={x.title} title={x.title} fields={x.fields} onEdit={onEdit} />)
+              : <div className="bg-white rounded-xl border border-slate-200 flex items-center justify-center h-40 text-slate-300 text-sm">{tab} — coming soon</div>}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1376,9 +1398,11 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   /* ── Detail screen — takes the whole page; the list header is hidden (index.jsx) ── */
   if (selected) {
     return (
-      <div className="flex-1 overflow-hidden -my-5 -mx-4 sm:-mx-5 lg:-mx-6" style={{ height: "100svh" }}>
+      <div className="-my-5 -mx-4 sm:-mx-5 lg:-mx-6">
         <EmployeeDetail
           emp={selected}
+          emps={emps}
+          onOpenEmp={setSelected}
           imgUrl={selectedImgUrl}
           opts={opts}
           onBack={() => setSelected(null)}
