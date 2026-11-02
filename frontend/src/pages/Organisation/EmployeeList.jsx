@@ -402,8 +402,8 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, allEmps, opt
                 </select>
               </div>
               <div>
-                <label className={LBL}>Mobile *</label>
-                <input value={form.contactNumber} onChange={set("contactNumber")} placeholder="9876543210" inputMode="numeric" className={INP} />
+                <label className={LBL}>Mobile{String(form.employeeId || "").trim() ? "" : " *"}</label>
+                <input value={form.contactNumber} onChange={set("contactNumber")} placeholder={String(form.employeeId || "").trim() ? "Optional (has Employee ID)" : "9876543210"} inputMode="numeric" className={INP} />
               </div>
               <div>
                 <label className={LBL}>Employee ID</label>
@@ -646,8 +646,7 @@ const EMPTY_FORM = {
 /* ═══════════════════════════════
    MAIN COMPONENT
 ═══════════════════════════════ */
-/* ── "Filters" button — Department / Status in one popover ── */
-const STATUS_OPTIONS = [["active", "Active"], ["inactive", "Inactive"], ["on_leave", "On Leave"]];
+/* ── "Filters" button — Department / Staff Type in one popover ── */
 
 /* ── Category picker in the header — same size as the Filters button ── */
 const CATEGORY_DOT = {
@@ -743,7 +742,6 @@ function EmpFilters({ filters, depts, onChange, onClear }) {
       {open && (
         <div className="absolute left-0 top-full mt-1 w-60 bg-white border border-slate-200 rounded-lg shadow-lg z-30 p-3 flex flex-col gap-2.5">
           {field("Department", "dept", depts.map(d => [d, d]))}
-          {field("Status", "status", STATUS_OPTIONS)}
           {field("Staff Type", "type", STAFF_TYPES.map(t => [t, t]))}
           {active > 0 && (
             <button onClick={onClear} className="self-end text-[11px] font-semibold text-slate-500 hover:text-slate-800">
@@ -905,7 +903,9 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
   const [selected, setSelected] = useState(null);
   const [search,   setSearch]   = useState("");
   const [filterDept,   setFilterDept]   = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
+  // Active (default) / Inactive — people who left are kept, just apart
+  const [statusTab, setStatusTab] = useState("active");
+  const inTab = (e) => statusTab === "inactive" ? e.status === "inactive" : e.status !== "inactive";
   const [filterType,   setFilterType]   = useState("");
   const [category,     setCategory]     = useState(""); // tab above the list; "" = all
   const [opts, setOpts] = useState({ projects: [], offices: [], agencies: [] });
@@ -1015,7 +1015,9 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
 
   const handleSave = async () => {
     if (!form.personName.trim()) { showToast("Name is required", "error"); return; }
-    if (digits(form.contactNumber).length < 10) { showToast("A 10-digit mobile number is required", "error"); return; }
+    // an Employee ID or a mobile — one is enough (guards have no ID, Keka staff may have no mobile here)
+    if (digits(form.contactNumber) && digits(form.contactNumber).length < 10) { showToast("Mobile number should be 10 digits", "error"); return; }
+    if (!digits(form.contactNumber) && !String(form.employeeId || "").trim()) { showToast("Give a mobile number or an Employee ID", "error"); return; }
     if (form.employedThrough === "agency" && !form.agencyVendorId) { showToast("Pick the agency", "error"); return; }
     setSaving(true);
     try {
@@ -1116,7 +1118,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     return (
       (!search || [e.personName, e.employeeId, e.designation, e.department, e.contactNumber].some(v => v?.toLowerCase().includes(q))) &&
       (!filterDept   || e.department === filterDept) &&
-      (!filterStatus || e.status === filterStatus) &&
+      inTab(e) &&
       (!filterType   || e.staffType === filterType) &&
       (!category     || e.category === category)
     );
@@ -1363,23 +1365,33 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
 
       {/* Search + Filters — shown in the page header (toolbarSlot) */}
       {(() => {
+        const nActive = emps.filter(e => e.status !== "inactive").length;
         const bar = (
           <>
+            <div className="flex items-center bg-slate-100 rounded-md p-0.5 shrink-0">
+              {[["active", "Active", nActive], ["inactive", "Inactive", emps.length - nActive]].map(([id, label, n]) => (
+                <button key={id} type="button" onClick={() => { setStatusTab(id); setPage(1); }}
+                  className={`flex items-center gap-1.5 px-3 h-7 rounded text-xs font-semibold transition-all
+                    ${statusTab === id ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                  {label} <span className={`text-[10px] tabular-nums ${statusTab === id ? (id === "inactive" ? "text-red-500" : "text-emerald-600") : "text-slate-400"}`}>{n}</span>
+                </button>
+              ))}
+            </div>
             <div className="relative w-40 sm:w-56">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
                 placeholder="Search employees…"
                 className="pl-8 pr-3 py-[7px] text-xs border border-slate-200 rounded-md bg-slate-50 w-full focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-white" />
             </div>
-            <CategoryPicker value={category} emps={emps} onChange={c => { setCategory(c); setPage(1); }} />
+            <CategoryPicker value={category} emps={emps.filter(inTab)} onChange={c => { setCategory(c); setPage(1); }} />
             <EmpFilters
-              filters={{ dept: filterDept, status: filterStatus, type: filterType }}
+              filters={{ dept: filterDept, type: filterType }}
               depts={allDepts}
               onChange={(k, v) => {
-                ({ dept: setFilterDept, status: setFilterStatus, type: setFilterType })[k](v);
+                ({ dept: setFilterDept, type: setFilterType })[k](v);
                 setPage(1);
               }}
-              onClear={() => { setFilterDept(""); setFilterStatus(""); setFilterType(""); setPage(1); }} />
+              onClear={() => { setFilterDept(""); setFilterType(""); setPage(1); }} />
             {canEdit && (
               <button onClick={() => setKekaOpen(true)} title="Update designations, departments and leavers from Keka's Org Tree export"
                 className="inline-flex items-center gap-1.5 px-3 py-[7px] text-xs font-semibold rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50">
@@ -1403,7 +1415,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 gap-3 text-slate-300">
           <Users size={32} />
-          <p className="text-sm">{search || filterDept || filterStatus || filterType || category ? "No employees match your filters" : "No employees yet — add one above"}</p>
+          <p className="text-sm">{search || filterDept || filterType || category ? "No employees match your filters" : statusTab === "inactive" ? "No inactive employees" : "No employees yet — add one above"}</p>
         </div>
       ) : view === "card" ? (
 

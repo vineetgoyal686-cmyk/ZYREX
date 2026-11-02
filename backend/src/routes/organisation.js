@@ -287,6 +287,16 @@ router.post("/keka-sync/apply", requirePerm("employees", "can_edit"), async (req
   }
 });
 
+/* Who someone is: an Employee ID (office staff — Keka) or a mobile (guards
+   and site staff have no ID). One of the two is enough; a mobile given must
+   be 10 digits. */
+const mobileOrId = (b) => {
+  const raw = String(b.contactNumber || "").replace(/\D/g, "");
+  if (raw && raw.length < 10) return "Mobile number should be 10 digits";
+  if (!raw && !String(b.employeeId || "").trim()) return "Give a mobile number or an Employee ID";
+  return null;
+};
+
 /* POST /api/organisation/employees */
 router.post("/employees", requirePerm("employees", "can_add"), async (req, res) => {
   try {
@@ -298,7 +308,8 @@ router.post("/employees", requirePerm("employees", "can_add"), async (req, res) 
 
     // Employee ID and email are optional (guards, many site staff have neither)
     if (!personName?.trim()) return res.status(400).json({ error: "Name is required" });
-    if (normPhone(contactNumber).length < 10) return res.status(400).json({ error: "A 10-digit mobile number is required" });
+    const idErr = mobileOrId(req.body);
+    if (idErr) return res.status(400).json({ error: idErr });
 
     const company_id = companyIdFrom(req.body);
     const dup = await findDuplicate(company_id, req.body);
@@ -419,7 +430,8 @@ router.put("/employees/:id", requirePerm("employees", "can_edit"), async (req, r
             dateOfBirth, gender, maritalStatus, nationality,
             alternatePhone, address, joiningDate } = req.body;
     if (!personName?.trim()) return res.status(400).json({ error: "Name is required" });
-    if (normPhone(contactNumber).length < 10) return res.status(400).json({ error: "A 10-digit mobile number is required" });
+    const idErr = mobileOrId(req.body);
+    if (idErr) return res.status(400).json({ error: idErr });
     const { data: cur } = await supabase.schema("organisation").from("employees").select("company_id").eq("id", req.params.id).maybeSingle();
     if (!cur) return res.status(404).json({ error: "Employee not found" });
     const dup = await findDuplicate(cur.company_id, req.body, req.params.id);
