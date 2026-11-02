@@ -293,6 +293,18 @@ function InfoCard({ title, fields, onEdit, onAdd }) {
 const DETAIL_TABS = ["Overview", "Documents"];
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "";
 
+/* small copy button — turns into a ✓ for a moment */
+function CopyBtn({ text, what = "" }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button type="button" title={done ? "Copied" : `Copy ${what.toLowerCase()}`}
+      onClick={() => { navigator.clipboard?.writeText(text); setDone(true); setTimeout(() => setDone(false), 1200); }}
+      className={`shrink-0 w-7 h-7 rounded-md border flex items-center justify-center transition-colors ${done ? "border-emerald-200 bg-emerald-50 text-emerald-600" : "border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50"}`}>
+      {done ? <Check size={13} /> : <Copy size={13} />}
+    </button>
+  );
+}
+
 /* the employee a typed name points to — "Ravi Kant" = "Ravikant", "Dr. X" = "X",
    and a one-letter slip (Reja / Raja) still finds them; active people first */
 const normName = (n) => String(n || "").toLowerCase().replace(/^(dr|mr|mrs|ms|er|ca)\.?\s+/, "").replace(/[^a-z]/g, "");
@@ -461,12 +473,13 @@ function EmployeeDetail({ emp, imgUrl, opts, emps = [], onOpenEmp, onBack, onEdi
                 ].map(({ Icon, tint, label, value, href }) => (
                   <div key={label} className="flex items-center gap-3 min-w-0">
                     <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${tint}`}><Icon size={15} /></span>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-[11px] text-slate-400">{label}</p>
                       {value
-                        ? <a href={href} title={value} className={`block text-[13px] font-medium truncate hover:underline ${label === "Email" ? "text-blue-600" : "text-slate-800"}`}>{value}</a>
+                        ? <a href={href} className={`block text-[13px] font-medium break-all leading-snug hover:underline ${label === "Email" ? "text-blue-600" : "text-slate-800"}`}>{value}</a>
                         : <p className="text-[13px] text-slate-300">—</p>}
                     </div>
+                    {value && <CopyBtn text={value} what={label} />}
                   </div>
                 ))}
               </div>
