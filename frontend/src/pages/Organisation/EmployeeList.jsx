@@ -115,7 +115,7 @@ function Avatar({ name, size = "md", imgUrl, square }) {
 }
 
 /* Big avatar: ring on hover, click shows the photo full size (card + profile) */
-function PhotoAvatar({ name, imgUrl, size = "xl" }) {
+function PhotoAvatar({ name, imgUrl, size = "xl", round }) {
   const [zoom, setZoom] = useState(false);
   useEffect(() => {
     if (!zoom) return;
@@ -126,8 +126,8 @@ function PhotoAvatar({ name, imgUrl, size = "xl" }) {
   return (
     <>
       <button type="button" onClick={() => setZoom(true)} title="View photo"
-        className="shrink-0 rounded-xl ring-0 ring-blue-200 hover:ring-4 transition-shadow">
-        <Avatar name={name} size={size} imgUrl={imgUrl} square />
+        className={`shrink-0 ${round ? "rounded-full" : "rounded-xl"} ring-0 ring-blue-200 hover:ring-4 transition-shadow`}>
+        <Avatar name={name} size={size} imgUrl={imgUrl} square={!round} />
       </button>
       {zoom && (
         <div data-stop className="fixed inset-0 z-[100] bg-black/70 flex flex-col items-center justify-center gap-3 p-6" onClick={() => setZoom(false)}>
@@ -376,8 +376,8 @@ function EmployeeDetail({ emp, imgUrl, opts, emps = [], onOpenEmp, onBack, onEdi
           <div className="pointer-events-none absolute inset-0"
             style={{ background: "radial-gradient(600px 160px at 0% 0%, rgba(59,130,246,.10), transparent 70%), radial-gradient(500px 160px at 100% 100%, rgba(16,185,129,.08), transparent 70%)" }} />
           <div className="relative flex items-center gap-4 min-w-0 pr-2">
-            <div className="rounded-xl ring-4 ring-white shadow-md">
-              <PhotoAvatar name={emp.personName} imgUrl={imgUrl} size="lg" />
+            <div className="rounded-full ring-4 ring-white shadow-md">
+              <PhotoAvatar name={emp.personName} imgUrl={imgUrl} size="2xl" round />
             </div>
             <div className="min-w-0">
               <h2 className="text-[19px] font-bold text-slate-800 leading-tight">{emp.personName}</h2>
@@ -535,7 +535,7 @@ function ListPick({ value, onChange, options, what, empty }) {
   );
 }
 
-function EmpModal({ form, setForm, editId, saving, onClose, onSave, allEmps, opts, onMissing }) {
+function EmpModal({ form, setForm, editId, saving, onClose, onSave, allEmps, opts, onMissing, photo, setPhoto, photoUrl }) {
   const orgId = useOrgId();
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -587,6 +587,30 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, allEmps, opt
         </div>
 
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">
+
+          {/* Photo — saved together with the form */}
+          {setPhoto && (() => {
+            const shown = photo?.remove ? null : (photo?.preview || photoUrl);
+            return (
+              <div className="flex items-center gap-4">
+                <Avatar name={form.personName || "?"} size="xl" imgUrl={shown} />
+                <div>
+                  <p className="text-[13px] font-semibold text-slate-700">Photo</p>
+                  <p className="text-[11px] text-slate-400 mb-2">JPG or PNG, a clear face photo works best</p>
+                  <div className="flex items-center gap-2">
+                    <label className="cursor-pointer px-3 py-1.5 rounded-lg border border-slate-200 text-[12px] font-semibold text-slate-700 hover:bg-slate-50">
+                      {shown ? "Change photo" : "Upload photo"}
+                      <input type="file" accept="image/*" className="hidden" onChange={e => {
+                        const f = e.target.files?.[0]; e.target.value = "";
+                        if (f) setPhoto({ file: f, preview: URL.createObjectURL(f) });
+                      }} />
+                    </label>
+                    {shown && <button type="button" onClick={() => setPhoto({ remove: true })} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold text-red-500 hover:bg-red-50">Remove</button>}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Identity */}
           <div>
@@ -1217,12 +1241,33 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     setTimeout(() => setToast(null), 4000);
   };
 
+  const [photo, setPhoto] = useState(null);           // picked in the form: { file, preview } or { remove: true }
   const [fillOnly, setFillOnly] = useState(false);   // modal shows only the missing details
   const [fillBack, setFillBack] = useState(false);   // full form opened from it — offer the way back
-  const openAdd  = () => { setForm({ ...EMPTY_FORM, category }); setEditId(null); setFillOnly(false); setModal(true); };
+  const openAdd  = () => { setForm({ ...EMPTY_FORM, category }); setEditId(null); setFillOnly(false); setPhoto(null); setModal(true); };
+
+  /* photo: upload / remove right away and show it everywhere without a reload */
+  const putPhoto = (id, path, url) => {
+    setEmps(prev => prev.map(e => e.id === id ? { ...e, profileImage: path } : e));
+    setImgUrls(m => { const n = { ...m }; if (url) n[id] = url; else delete n[id]; return n; });
+    setSelected(sel => sel?.id === id ? { ...sel, profileImage: path } : sel);
+    if (selected?.id === id) setSelectedImgUrl(url || null);
+  };
+  const uploadPhoto = async (id, file) => {
+    const fd = new FormData(); fd.append("image", file);
+    const res = await authFetch(`${API}/api/organisation/employees/${id}/profile-image`, { method: "POST", body: fd });
+    const d = await res.json();
+    if (!res.ok || !d.success) throw new Error(d.error || "Photo upload failed");
+    putPhoto(id, d.path, URL.createObjectURL(file));
+  };
+  const removePhoto = async (id) => {
+    const res = await authFetch(`${API}/api/organisation/employees/${id}/profile-image`, { method: "DELETE" });
+    if (!res.ok) throw new Error("Could not remove the photo");
+    putPhoto(id, "", null);
+  };
   const openFill = (emp) => { openEdit(emp); setFillOnly(true); };
   const openEdit = (emp) => {
-    setFillOnly(false); setFillBack(false);
+    setFillOnly(false); setFillBack(false); setPhoto(null);
     setForm({
       personName: emp.personName || "", employeeId: emp.employeeId || "",
       status: emp.status || "active",
@@ -1292,6 +1337,14 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         if (selected?.id === editId) setSelected(updated);
       } else {
         await fetchEmps();
+      }
+      // the photo picked in the form goes up after the employee is saved
+      if (savedId && photo) {
+        try {
+          if (photo.file) await uploadPhoto(savedId, photo.file);
+          else if (photo.remove) await removePhoto(savedId);
+        } catch (e) { showToast(e.message, "error"); }
+        setPhoto(null);
       }
       showToast(editId ? "Employee updated" : "Employee added");
       setModal(false);
@@ -1553,6 +1606,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
               onClose={() => setModal(false)} onSave={handleSave} onFull={() => { setFillOnly(false); setFillBack(true); }} />
           : <EmpModal form={form} setForm={setForm} editId={editId} saving={saving}
               onClose={() => setModal(false)} onSave={handleSave} allEmps={emps} opts={opts}
+              photo={photo} setPhoto={setPhoto} photoUrl={editId ? (imgUrls[editId] || (selected?.id === editId ? selectedImgUrl : null)) : null}
               onMissing={fillBack ? () => { setFillOnly(true); setFillBack(false); } : undefined} />
         )}
         {moveModal}
@@ -1772,7 +1826,8 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
       {/* Modal */}
       {modal && (
         <EmpModal form={form} setForm={setForm} editId={editId} saving={saving}
-          onClose={() => setModal(false)} onSave={handleSave} allEmps={emps} opts={opts} />
+          onClose={() => setModal(false)} onSave={handleSave} allEmps={emps} opts={opts}
+              photo={photo} setPhoto={setPhoto} photoUrl={editId ? (imgUrls[editId] || (selected?.id === editId ? selectedImgUrl : null)) : null} />
       )}
       {logEmp && <ContactLogModal contact={logEmp} onClose={() => setLogEmp(null)} />}
       {moveModal}
