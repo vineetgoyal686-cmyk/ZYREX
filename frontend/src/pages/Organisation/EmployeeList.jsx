@@ -3,7 +3,7 @@ import {
   Search, Plus, X, Edit2, Trash2, Loader2, ChevronLeft,
   BadgeCheck, Calendar, UserCheck, MapPin,
   Briefcase, Building2, ChevronDown, Users, Clock, SlidersHorizontal, ArrowRightLeft, Check,
-  MoreHorizontal, ExternalLink, Mail, Phone,
+  MoreHorizontal, ExternalLink, Mail, Phone, Copy,
 } from "lucide-react";
 import { createPortal } from "react-dom";
 import * as XLSX from "xlsx";
@@ -107,14 +107,15 @@ const avatarGrad = (name) => {
 const ini = (n) => (n || "?").split(" ").slice(0, 2).map(w => w[0]).join("").toUpperCase();
 
 /* ── Tiny components ── */
-function Avatar({ name, size = "md", imgUrl }) {
+function Avatar({ name, size = "md", imgUrl, square }) {
   const sz = { xl: "w-[72px] h-[72px] text-2xl", lg: "w-14 h-14 text-lg", md: "w-10 h-10 text-sm", sm: "w-8 h-8 text-xs" }[size];
-  if (imgUrl) return <div className={`${sz} rounded-full overflow-hidden shrink-0`}><img src={imgUrl} alt={name} className="w-full h-full object-cover" /></div>;
-  return <div className={`${sz} rounded-full flex items-center justify-center shrink-0 font-bold`} style={avatarGrad(name)}>{ini(name)}</div>;
+  const shape = square ? (size === "sm" ? "rounded-md" : "rounded-xl") : "rounded-full";
+  if (imgUrl) return <div className={`${sz} ${shape} overflow-hidden shrink-0`}><img src={imgUrl} alt={name} className="w-full h-full object-cover" /></div>;
+  return <div className={`${sz} ${shape} flex items-center justify-center shrink-0 font-bold`} style={avatarGrad(name)}>{ini(name)}</div>;
 }
 
 /* Big avatar: ring on hover, click shows the photo full size (card + profile) */
-function PhotoAvatar({ name, imgUrl }) {
+function PhotoAvatar({ name, imgUrl, size = "xl" }) {
   const [zoom, setZoom] = useState(false);
   useEffect(() => {
     if (!zoom) return;
@@ -125,15 +126,15 @@ function PhotoAvatar({ name, imgUrl }) {
   return (
     <>
       <button type="button" onClick={() => setZoom(true)} title="View photo"
-        className="shrink-0 rounded-full ring-0 ring-blue-200 hover:ring-4 transition-shadow">
-        <Avatar name={name} size="xl" imgUrl={imgUrl} />
+        className="shrink-0 rounded-xl ring-0 ring-blue-200 hover:ring-4 transition-shadow">
+        <Avatar name={name} size={size} imgUrl={imgUrl} square />
       </button>
       {zoom && (
         <div className="fixed inset-0 z-[100] bg-black/70 flex flex-col items-center justify-center gap-3 p-6" onClick={() => setZoom(false)}>
           <button type="button" onClick={() => setZoom(false)} title="Close" className="absolute top-4 right-4 p-2 rounded-full text-white/80 hover:text-white hover:bg-white/10"><X size={20} /></button>
           {imgUrl
             ? <img src={imgUrl} alt={name} onClick={e => e.stopPropagation()} className="max-h-[80vh] max-w-[90vw] rounded-lg shadow-2xl object-contain bg-white" />
-            : <div onClick={e => e.stopPropagation()} className="scale-[2.5] my-20"><Avatar name={name} size="xl" /></div>}
+            : <div onClick={e => e.stopPropagation()} className="scale-[2.5] my-20"><Avatar name={name} size="xl" square /></div>}
           <p className="text-white text-sm font-semibold">{name}</p>
           {!imgUrl && <p className="text-white/60 text-xs -mt-2">No photo uploaded yet</p>}
         </div>
@@ -152,8 +153,17 @@ function EmpCard({ emp, imgUrl, place, onOpen }) {
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [open]);
-  const Line = ({ label, value }) => (
-    <p className="text-[12.5px] text-slate-500 truncate"><span className="text-slate-400">{label} :</span> <span className="text-slate-700">{value || "—"}</span></p>
+  const [copied, setCopied] = useState(false);
+  const copyEmail = () => {
+    if (!emp.email) return;
+    navigator.clipboard?.writeText(emp.email);
+    setCopied(true); setTimeout(() => setCopied(false), 1200);
+  };
+  const Field = ({ label, children }) => (
+    <div className="min-w-0">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+      <div className="mt-0.5 text-[13px] font-medium text-slate-700 truncate">{children}</div>
+    </div>
   );
   const Item = ({ label, value }) => (
     <div className="min-w-0">
@@ -162,28 +172,46 @@ function EmpCard({ emp, imgUrl, place, onOpen }) {
     </div>
   );
   return (
-    <div ref={ref} className="relative bg-white rounded-lg border border-slate-200 p-4 flex items-start gap-4 hover:border-blue-200 hover:shadow-sm transition-all">
-      <PhotoAvatar name={emp.personName} imgUrl={imgUrl} />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 min-w-0">
-          <button type="button" onClick={onOpen} className="font-bold text-[14px] text-slate-800 truncate hover:text-blue-700 text-left">{emp.personName}</button>
-          <button type="button" onClick={() => setOpen(o => !o)} title="Details"
-            className={`shrink-0 h-5 px-1.5 rounded border flex items-center justify-center transition-colors ${open ? "bg-blue-600 border-blue-600 text-white" : "border-slate-200 text-slate-400 hover:text-slate-700 hover:border-slate-300"}`}>
-            <MoreHorizontal size={12} />
-          </button>
+    <div ref={ref} className="relative bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-200 hover:shadow-sm transition-all">
+      {/* photo · name · title · ⋯ */}
+      <div className="flex items-center gap-3 pr-8">
+        <PhotoAvatar name={emp.personName} imgUrl={imgUrl} size="lg" />
+        <div className="min-w-0">
+          <button type="button" onClick={onOpen} className="block max-w-full font-bold text-[14px] text-slate-800 truncate hover:text-blue-700 text-left">{emp.personName}</button>
+          <p className="text-[12.5px] text-slate-500 truncate">{emp.designation || "—"}</p>
         </div>
-        <p className="text-[12.5px] text-slate-600 truncate mt-0.5">{emp.designation || "—"}</p>
-        <div className="mt-2 space-y-0.5">
-          <Line label="Department" value={emp.department} />
-          <Line label="Location" value={place} />
-          <Line label="Email" value={emp.email} />
+      </div>
+      <button type="button" onClick={() => setOpen(o => !o)} title="Details"
+        className={`absolute top-3 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-colors ${open ? "bg-blue-600 text-white" : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"}`}>
+        <MoreHorizontal size={16} />
+      </button>
+
+      <div className="mt-3 pt-3 border-t border-slate-100 grid grid-cols-2 gap-x-4 gap-y-2.5">
+        <Field label="Department">
+          {emp.department
+            ? <span className="flex items-center gap-1.5 min-w-0"><span className="w-2 h-2 rounded-full shrink-0" style={{ background: PALETTE[[...emp.department].reduce((n, c) => n + c.charCodeAt(0), 0) % PALETTE.length][0] }} /><span className="truncate">{emp.department}</span></span>
+            : "—"}
+        </Field>
+        <Field label="Location"><span title={place || ""}>{place || "—"}</span></Field>
+        <div className="col-span-2 flex items-end gap-2">
+          <div className="flex-1 min-w-0">
+            <Field label="Email">
+              {emp.email ? <a href={`mailto:${emp.email}`} className="text-blue-600 hover:underline">{emp.email}</a> : "—"}
+            </Field>
+          </div>
+          {emp.email && (
+            <button type="button" onClick={copyEmail} title={copied ? "Copied" : "Copy email"}
+              className={`shrink-0 w-7 h-7 rounded-md border flex items-center justify-center transition-colors ${copied ? "border-emerald-200 bg-emerald-50 text-emerald-600" : "border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50"}`}>
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+            </button>
+          )}
         </div>
       </div>
 
       {open && (
-        <div className="absolute z-30 right-4 top-12 w-max min-w-[340px] max-w-[90vw] bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden">
+        <div className="absolute z-30 right-3 top-11 w-max min-w-[340px] max-w-[90vw] bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden">
           <div className="flex items-center gap-2.5 px-4 py-3 bg-slate-50 border-b border-slate-200">
-            <Avatar name={emp.personName} size="sm" imgUrl={imgUrl} />
+            <Avatar name={emp.personName} size="sm" imgUrl={imgUrl} square />
             <p className="flex-1 min-w-0 text-[14px] font-semibold text-slate-800 truncate">{emp.personName}</p>
             <button type="button" onClick={() => { setOpen(false); onOpen(); }} title="Open profile" className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50"><ExternalLink size={15} /></button>
             <button type="button" onClick={() => setOpen(false)} title="Close" className="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100"><X size={15} /></button>
@@ -1493,7 +1521,7 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
         /* ── CARD VIEW — like Keka's directory: photo, name, title, department,
            location, email; "⋯" by the name shows the details ── */
         <>
-          <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(360px,1fr))]">
+          <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(320px,1fr))]">
             {paginated.map(emp => (
               <EmpCard key={emp.id} emp={emp} imgUrl={imgUrls[emp.id]} place={postedLabel(emp, opts)} onOpen={() => setSelected(emp)} />
             ))}
