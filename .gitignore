@@ -9,3 +9,5 @@ build
 
 # Database backups
 database backup/
+# working Excel files (uploads), not part of the code
+excel/

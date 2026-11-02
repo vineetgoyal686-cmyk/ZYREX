@@ -147,7 +147,7 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
       case "overview":        return <OrgOverview org={org} onNavigate={setActiveTab} />;
       case "org_chart":       return <OrgChart    onNavigate={setActiveTab} />;
       case "sop":             return <SOPTab showToast={showToast} />;
-      case "departments":     return <Departments actionsRef={actionsRef} />;
+      case "departments":     return <Departments actionsRef={actionsRef} onChange={d => setDeptCount(d.length)} />;
       case "sub_departments": return <SubDepts    actionsRef={actionsRef} onChange={d => setSubCount(d.length)} />;
       case "grades":          return <Grades      actionsRef={actionsRef} onChange={d => setLvlCount(d.length)} />;
       case "designations":    return <Designations actionsRef={actionsRef} />;

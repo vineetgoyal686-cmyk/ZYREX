@@ -6,18 +6,14 @@ const { requireAuth } = require("../middleware/auth");
 const { requirePerm } = require("../helpers/permHelper");
 const { companyIdFrom, scopeQuery } = require("../helpers/companyScope");
 
-/* Auto-generate next dept_id e.g. DEPT-001 */
-const generateDeptId = async (admin) => {
-  const { data } = await admin
-    .schema("organisation").from("departments")
-    .select("dept_id")
-    .not("dept_id", "is", null)
-    .order("dept_id", { ascending: false })
-    .limit(1);
-  if (!data || data.length === 0) return "DEPT-001";
-  const last = data[0].dept_id || "DEPT-000";
-  const num  = parseInt(last.replace("DEPT-", ""), 10) || 0;
-  return `DEPT-${String(num + 1).padStart(3, "0")}`;
+/* Next dept_id of a company, e.g. DEPT-001 — numbered per company
+   (sql/dept_id_per_company.sql) */
+const generateDeptId = async (admin, company_id) => {
+  let q = admin.schema("organisation").from("departments").select("dept_id").not("dept_id", "is", null);
+  q = company_id ? q.eq("company_id", company_id) : q.is("company_id", null);
+  const { data } = await q;
+  const max = (data || []).reduce((m, r) => Math.max(m, parseInt(String(r.dept_id || "").replace("DEPT-", ""), 10) || 0), 0);
+  return `DEPT-${String(max + 1).padStart(3, "0")}`;
 };
 
 /* GET /api/departments */
@@ -80,7 +76,7 @@ router.post("/from-employees", requirePerm("departments", "can_add"), async (req
     let added = 0;
     for (const name of [...new Set(items.map(i => i.title))]) {
       if (have.has(deptKey(name))) continue;
-      const dept_id = await generateDeptId(admin);
+      const dept_id = await generateDeptId(admin, company_id);
       const { error } = await org.from("departments").insert({ name, dept_id, head: null, status: "active", company_id });
       if (error) throw error;
       have.set(deptKey(name), name);
@@ -119,7 +115,7 @@ router.post("/", requirePerm("departments", "can_add"), async (req, res) => {
   const { data: existing } = await dupQ.limit(1).maybeSingle();
   if (existing) return res.status(400).json({ error: "Department with this name already exists" });
 
-  const dept_id = await generateDeptId(admin);
+  const dept_id = await generateDeptId(admin, company_id);
 
   const { data, error } = await admin.schema("organisation").from("departments").insert({
     name:        name.trim(),

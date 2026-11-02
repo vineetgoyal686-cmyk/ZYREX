@@ -83,7 +83,7 @@ function DeptModal({ dept, onClose, onSaved }) {
   );
 }
 
-export default function Departments({ actionsRef }) {
+export default function Departments({ actionsRef, onChange }) {
   const { canAdd, canEdit, canDelete } = useModulePermissions("departments");
   const orgId = useOrgId();
   const [depts, setDepts]         = useState([]);
@@ -101,6 +101,7 @@ export default function Departments({ actionsRef }) {
       const res  = await fetch(scopedUrl(`${API}/api/departments`, orgId), { headers: { Authorization: `Bearer ${TOKEN()}` } });
       const json = await res.json();
       setDepts(json.departments || []);
+      onChange?.(json.departments || []); // the count in the page header
     } catch { setDepts([]); }
     finally { setLoading(false); }
   };
