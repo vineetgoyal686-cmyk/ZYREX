@@ -8,6 +8,11 @@ import autoTable from "jspdf-autotable";
 import { useOrgId, scopedUrl } from "./orgScope";
 import BrandLoader from "../../components/BrandLoader";
 import { FromEmployeesBanner } from "./FromEmployees";
+import Pager, { pageOf } from "../Attendance/Pager";
+
+// box table: a line after every column and row
+const TH = "px-4 py-2.5 text-left font-semibold bg-slate-50 border-b border-r border-slate-200 whitespace-nowrap";
+const TD = "px-4 py-2.5 border-b border-r border-slate-200 bg-white group-hover:bg-slate-50 transition-colors";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TOKEN = () => localStorage.getItem("bms_token") || "";
@@ -90,6 +95,8 @@ export default function Departments({ actionsRef, onChange }) {
   const [loading, setLoading]     = useState(true);
   const [importing, setImporting] = useState(false);
   const [search, setSearch]       = useState("");
+  const [page, setPage]           = useState(1);
+  const [per, setPer]             = useState(50);
   const [modal, setModal]         = useState(null);
   const [deleting, setDeleting]   = useState(null);
   const importRef = useRef(null);
@@ -144,6 +151,8 @@ export default function Departments({ actionsRef, onChange }) {
     d.code?.toLowerCase().includes(search.toLowerCase()) ||
     d.head?.toLowerCase().includes(search.toLowerCase())
   );
+  useEffect(() => { setPage(1); }, [search, per]);
+  const pageRows = pageOf(rows, page, per);
 
   /* ── Export Excel ── */
   const exportExcel = () => {
@@ -247,64 +256,66 @@ export default function Departments({ actionsRef, onChange }) {
         </div>
       )}
 
-      <div className="bg-white rounded border border-slate-200 overflow-hidden">
-        <div className="flex items-center px-5 py-3.5 border-b border-slate-100">
+      {/* Search on top, column names stick, rows scroll, pager stays at the bottom */}
+      <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden flex flex-col" style={{ height: "calc(100svh - 120px)", minHeight: 360 }}>
+        <div className="shrink-0 flex items-center px-4 py-3 border-b border-slate-200">
           <div className="relative">
             <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search departments…"
-              className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded bg-slate-50 w-52 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+              className="pl-8 pr-3 h-8 text-xs border border-slate-200 rounded-md bg-slate-50 w-60 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:bg-white" />
           </div>
           <input ref={importRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleImport} />
         </div>
 
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="text-[11px] uppercase tracking-wide text-slate-500" style={{ background: "rgb(243,243,245)" }}>
-              <th className="px-4 py-3 text-left font-semibold w-14">S.No</th>
-              <th className="px-4 py-3 text-left font-semibold w-32">Dept ID</th>
-              <th className="px-4 py-3 text-left font-semibold">Department Name</th>
-              <th className="px-4 py-3 text-left font-semibold">Head</th>
-              <th className="px-4 py-3 text-center font-semibold w-28">Status</th>
-              <th className="px-4 py-3 text-right font-semibold w-20">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {loading ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-xs">Loading…</td></tr>
-            ) : rows.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-xs">
-                {search ? "No departments match your search" : "No departments yet — add one above"}
-              </td></tr>
-            ) : rows.map((d, idx) => (
-              <tr key={d.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-4 py-3 text-slate-400 text-xs">{idx + 1}</td>
-                <td className="px-4 py-3">
-                  <span className="text-slate-500 text-[13px]">{d.dept_id || "—"}</span>
-                </td>
-                <td className="px-4 py-3 font-semibold text-slate-800">{d.name}</td>
-                <td className="px-4 py-3 text-slate-600">{d.head || "—"}</td>
-                <td className="px-4 py-3 text-center"><StatusBadge active={d.status === "active"} /></td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center justify-end gap-1">
-                    {canEdit && (
-                      <button onClick={() => setModal(d)}
-                        className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-                        <Edit2 size={13} />
-                      </button>
-                    )}
-                    {canDelete && (
-                      <button onClick={() => handleDelete(d.id)} disabled={deleting === d.id}
-                        className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                        {deleting === d.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                      </button>
-                    )}
-                  </div>
-                </td>
+        <div className="flex-1 min-h-0 overflow-auto">
+          <table className="w-full text-sm border-separate border-spacing-0">
+            <thead className="sticky top-0 z-10">
+              <tr className="text-[11px] uppercase tracking-wide text-slate-500">
+                <th className={`${TH} w-16 text-center`}>S.No</th>
+                <th className={`${TH} w-32`}>Dept ID</th>
+                <th className={TH}>Department Name</th>
+                <th className={TH}>Head</th>
+                <th className={`${TH} w-28 text-center`}>Status</th>
+                <th className={`${TH} w-24 text-center border-r-0`}>Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr><td colSpan={6} className="py-10"><BrandLoader compact /></td></tr>
+              ) : rows.length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400 text-xs border-b border-slate-200">
+                  {search ? "No departments match your search" : "No departments yet — add one above"}
+                </td></tr>
+              ) : pageRows.map((d, idx) => (
+                <tr key={d.id} className="group">
+                  <td className={`${TD} text-center text-slate-400 text-xs tabular-nums`}>{(page - 1) * per + idx + 1}</td>
+                  <td className={`${TD} text-slate-500 text-[13px] tabular-nums`}>{d.dept_id || "—"}</td>
+                  <td className={`${TD} font-semibold text-slate-800`}>{d.name}</td>
+                  <td className={`${TD} text-slate-600`}>{d.head || "—"}</td>
+                  <td className={`${TD} text-center`}><StatusBadge active={d.status === "active"} /></td>
+                  <td className={`${TD} border-r-0`}>
+                    <div className="flex items-center justify-center gap-1">
+                      {canEdit && (
+                        <button onClick={() => setModal(d)} title="Edit"
+                          className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                          <Edit2 size={13} />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button onClick={() => handleDelete(d.id)} disabled={deleting === d.id} title="Delete"
+                          className="p-1.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                          {deleting === d.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <Pager total={rows.length} page={page} per={per} onPage={setPage} onPer={setPer} />
       </div>
 
       {modal && (
