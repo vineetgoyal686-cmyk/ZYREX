@@ -271,7 +271,7 @@ function InfoBox({ label, value, span2, onAdd }) {
 }
 
 /* profile section card: title · "x of y filled" · pencil */
-function InfoCard({ title, fields, onEdit }) {
+function InfoCard({ title, fields, onEdit, onAdd }) {
   const filled = fields.filter(f => f.value).length;
   return (
     <div className="bg-white rounded-xl border border-slate-200">
@@ -281,7 +281,7 @@ function InfoCard({ title, fields, onEdit }) {
         {onEdit && <button type="button" onClick={onEdit} title="Edit" className="ml-auto p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Edit2 size={13} /></button>}
       </div>
       <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-4 p-5">
-        {fields.map(f => <InfoBox key={f.label} label={f.label} value={f.value} onAdd={onEdit} />)}
+        {fields.map(f => <InfoBox key={f.label} label={f.label} value={f.value} onAdd={onAdd} />)}
       </div>
     </div>
   );
@@ -293,10 +293,30 @@ function InfoCard({ title, fields, onEdit }) {
 const DETAIL_TABS = ["Overview", "Documents"];
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "";
 
-function EmployeeDetail({ emp, imgUrl, opts, emps = [], onOpenEmp, onBack, onEdit, onMove, onDelete }) {
+/* the employee a typed name points to — "Ravi Kant" = "Ravikant", "Dr. X" = "X",
+   and a one-letter slip (Reja / Raja) still finds them; active people first */
+const normName = (n) => String(n || "").toLowerCase().replace(/^(dr|mr|mrs|ms|er|ca)\.?\s+/, "").replace(/[^a-z]/g, "");
+function nameGap(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 9;
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+function findPerson(emps, name, selfId) {
+  const n = normName(name);
+  if (!n) return null;
+  const pool = emps.filter(e => e.id !== selfId).sort((x, y) => (x.status === "inactive") - (y.status === "inactive"));
+  return pool.find(e => normName(e.personName) === n)
+    || pool.find(e => nameGap(normName(e.personName), n) <= 2 && normName(e.personName)[0] === n[0])
+    || null;
+}
+
+function EmployeeDetail({ emp, imgUrl, opts, emps = [], onOpenEmp, onBack, onEdit, onFill, onMove, onDelete }) {
   const [tab, setTab] = useState("Overview");
   const place   = postedLabel(emp, opts);
-  const manager = emp.reportingTo && emps.find(e => e.personName?.toLowerCase() === emp.reportingTo.toLowerCase().trim());
+  const manager = findPerson(emps, emp.reportingTo, emp.id);
 
   const sections = [
     { title: "Personal", fields: [
@@ -351,34 +371,78 @@ function EmployeeDetail({ emp, imgUrl, opts, emps = [], onOpenEmp, onBack, onEdi
           </div>
         </div>
 
-        {/* header card */}
-        <div className="bg-white rounded-xl border border-slate-200 px-5 py-4 flex items-center gap-5 flex-wrap">
-          <PhotoAvatar name={emp.personName} imgUrl={imgUrl} size="xl" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-[20px] font-bold text-slate-800">{emp.personName}</h2>
-              <StatusBadge status={emp.status} />
-              {emp.category && <CategoryBadge category={emp.category} />}
-              {emp.staffType && <StaffTypeBadge type={emp.staffType} />}
+        {/* header card — soft colour wash, photo · name, facts as tinted tiles */}
+        <div className="relative overflow-hidden bg-white rounded-xl border border-slate-200 px-5 py-4 flex items-center gap-x-6 gap-y-4 flex-wrap">
+          <div className="pointer-events-none absolute inset-0"
+            style={{ background: "radial-gradient(600px 160px at 0% 0%, rgba(59,130,246,.10), transparent 70%), radial-gradient(500px 160px at 100% 100%, rgba(16,185,129,.08), transparent 70%)" }} />
+          <div className="relative flex items-center gap-4 min-w-0 pr-2">
+            <div className="rounded-xl ring-4 ring-white shadow-md">
+              <PhotoAvatar name={emp.personName} imgUrl={imgUrl} size="lg" />
             </div>
-            <p className="text-[13.5px] text-slate-500 mt-0.5">{[emp.designation, emp.department].filter(Boolean).join(" · ") || "—"}</p>
-            <div className="mt-2 flex items-center gap-x-5 gap-y-1 flex-wrap text-[12px] text-slate-500">
-              {emp.employeeId && <span className="flex items-center gap-1.5"><BadgeCheck size={13} className="text-slate-400" />ID: <b className="text-slate-700 font-semibold">{emp.employeeId}</b></span>}
-              {emp.joiningDate && <span className="flex items-center gap-1.5"><Calendar size={13} className="text-slate-400" />Joined <b className="text-slate-700 font-semibold">{fmtDate(emp.joiningDate)}</b></span>}
-              {place && <span className="flex items-center gap-1.5"><MapPin size={13} className="text-slate-400" /><b className="text-slate-700 font-semibold">{place}</b></span>}
+            <div className="min-w-0">
+              <h2 className="text-[19px] font-bold text-slate-800 leading-tight">{emp.personName}</h2>
+              <p className="mt-1 text-[12.5px] text-slate-500">{emp.designation || "—"}</p>
+              <span className={`mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${(STATUS[emp.status] || STATUS.active).cls}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${(STATUS[emp.status] || STATUS.active).dot}`} />{(STATUS[emp.status] || STATUS.active).label}
+              </span>
             </div>
           </div>
-          <div className="w-full sm:w-64 rounded-lg border border-slate-200 bg-slate-50/70 px-4 py-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[12px] font-semibold text-slate-700">Profile complete</span>
-              <span className={`text-[12px] font-bold ${pct === 100 ? "text-emerald-600" : "text-amber-600"}`}>{pct}%</span>
-            </div>
-            <div className="mt-2 h-1.5 rounded-full bg-slate-200 overflow-hidden">
-              <div className={`h-full rounded-full ${pct === 100 ? "bg-emerald-500" : "bg-amber-500"}`} style={{ width: `${pct}%` }} />
-            </div>
-            <p className="mt-1.5 text-[11px] text-slate-500">
-              {missing ? <>{missing} details missing{onEdit && <> · <button type="button" onClick={onEdit} className="font-semibold text-blue-600 hover:underline">Fill now</button></>}</> : "All details filled"}
-            </p>
+          <div className="relative flex-1 grid grid-cols-2 md:grid-cols-3 2xl:grid-cols-5 gap-2.5">
+            {[
+              { Icon: Users,      tint: "bg-violet-50 text-violet-600",   label: "Department",  value: emp.department },
+              { Icon: Briefcase,  tint: "bg-amber-50 text-amber-600",     label: "Category",    value: emp.category },
+              { Icon: BadgeCheck, tint: "bg-blue-50 text-blue-600",       label: "Employee ID", value: emp.employeeId },
+              { Icon: Calendar,   tint: "bg-emerald-50 text-emerald-600", label: "Joined",      value: fmtDate(emp.joiningDate) },
+              { Icon: MapPin,     tint: "bg-rose-50 text-rose-500",       label: "Posted at",   value: place },
+            ].map(({ Icon, tint, label, value }) => (
+              <div key={label} className="flex items-center gap-2.5 min-w-0 rounded-lg bg-white/80 border border-slate-100 px-3 py-2.5">
+                <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${tint}`}><Icon size={15} /></span>
+                <div className="min-w-0">
+                  <p className="text-[11px] text-slate-400">{label}</p>
+                  <p title={value || ""} className={`text-[13px] font-semibold truncate ${value ? "text-slate-800" : "text-slate-300"}`}>{value || "—"}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* profile completeness · tabs — same row, same height, still in the fixed top */}
+        <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4">
+          {/* completeness: a ring that fills up, colour by how far along */}
+          {(() => {
+            const c = pct === 100 ? "#10b981" : pct >= 70 ? "#3b82f6" : pct >= 40 ? "#f59e0b" : "#ef4444";
+            const r = 15, len = 2 * Math.PI * r;
+            return (
+              <div className="h-11 bg-white rounded-xl border border-slate-200 pl-1.5 pr-1.5 flex items-center gap-2.5">
+                <div className="relative w-9 h-9 shrink-0">
+                  <svg viewBox="0 0 36 36" className="w-9 h-9 -rotate-90">
+                    <circle cx="18" cy="18" r={r} fill="none" stroke="#eef2f7" strokeWidth="3.5" />
+                    <circle cx="18" cy="18" r={r} fill="none" stroke={c} strokeWidth="3.5" strokeLinecap="round"
+                      strokeDasharray={len} strokeDashoffset={len * (1 - pct / 100)} style={{ transition: "stroke-dashoffset .6s ease" }} />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-[9.5px] font-bold" style={{ color: c }}>{pct}%</span>
+                </div>
+                <div className="min-w-0 flex-1 leading-tight">
+                  <p className="text-[12px] font-semibold text-slate-800">{pct === 100 ? "Profile complete" : "Profile completion"}</p>
+                  <p className="text-[11px] text-slate-400">{missing ? `${missing} detail${missing > 1 ? "s" : ""} missing` : "All details filled ✓"}</p>
+                </div>
+                {missing > 0 && (onFill || onEdit) && (
+                  <button type="button" onClick={onFill || onEdit}
+                    className="shrink-0 h-8 px-3 rounded-lg text-[12px] font-semibold text-white shadow-sm hover:brightness-110 transition"
+                    style={{ background: "linear-gradient(135deg, #3b82f6, #6366f1)" }}>
+                    Fill now
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+          <div className="h-11 justify-self-start bg-white rounded-xl border border-slate-200 px-1 flex items-center gap-1">
+            {DETAIL_TABS.map(t => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`px-3.5 py-1.5 rounded-md text-[13px] font-medium outline-none transition-colors ${tab === t ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-800"}`}>
+                {t}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -437,16 +501,8 @@ function EmployeeDetail({ emp, imgUrl, opts, emps = [], onOpenEmp, onBack, onEdi
 
           {/* right: tabs + sections */}
           <div className="space-y-4 min-w-0">
-            <div className="inline-flex gap-1 p-1 bg-white rounded-lg border border-slate-200">
-              {DETAIL_TABS.map(t => (
-                <button key={t} onClick={() => setTab(t)}
-                  className={`px-3.5 py-1.5 rounded-md text-[13px] font-medium outline-none transition-colors ${tab === t ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:text-slate-800"}`}>
-                  {t}
-                </button>
-              ))}
-            </div>
             {tab === "Overview"
-              ? sections.map(x => <InfoCard key={x.title} title={x.title} fields={x.fields} onEdit={onEdit} />)
+              ? sections.map(x => <InfoCard key={x.title} title={x.title} fields={x.fields} onEdit={onEdit} onAdd={onFill || onEdit} />)
               : <div className="bg-white rounded-xl border border-slate-200 flex items-center justify-center h-40 text-slate-300 text-sm">{tab} — coming soon</div>}
           </div>
         </div>
@@ -479,7 +535,7 @@ function ListPick({ value, onChange, options, what, empty }) {
   );
 }
 
-function EmpModal({ form, setForm, editId, saving, onClose, onSave, allEmps, opts }) {
+function EmpModal({ form, setForm, editId, saving, onClose, onSave, allEmps, opts, onMissing }) {
   const orgId = useOrgId();
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
@@ -764,6 +820,8 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, allEmps, opt
         </div>
 
         <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-slate-100 shrink-0">
+          {/* came here from "Fill missing details" — go back to just those */}
+          {onMissing && <button onClick={onMissing} className="mr-auto text-[13px] font-medium text-blue-600 hover:underline">← Only missing details</button>}
           <button onClick={onClose} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>
           <button onClick={onSave} disabled={saving}
             className="px-5 py-2 text-sm font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2">
@@ -773,6 +831,81 @@ function EmpModal({ form, setForm, editId, saving, onClose, onSave, allEmps, opt
         </div>
       </div>
     </div>
+  );
+}
+
+/* "Fill now" — only the details this employee is missing, nothing else */
+const FILL_FIELDS = [
+  { key: "dateOfBirth",    label: "Date of Birth",   type: "date" },
+  { key: "gender",         label: "Gender",          options: ["Male", "Female", "Other"] },
+  { key: "maritalStatus",  label: "Marital Status",  options: ["Single", "Married"] },
+  { key: "nationality",    label: "Nationality",     placeholder: "e.g. Indian" },
+  { key: "email",          label: "Email",           type: "email", placeholder: "name@company.com" },
+  { key: "contactNumber",  label: "Mobile",          placeholder: "10-digit mobile" },
+  { key: "alternatePhone", label: "Alternate Phone", placeholder: "Optional" },
+  { key: "grade",          label: "Grade",           list: "grades" },
+  { key: "team",           label: "Team",            list: "teams" },
+  { key: "address",        label: "Address",         textarea: true, placeholder: "Residential address…" },
+];
+
+function FillMissingModal({ emp, form, setForm, saving, onClose, onSave, onFull }) {
+  const orgId = useOrgId();
+  // which ones were empty when it opened — so a field doesn't vanish while typing
+  const [keys] = useState(() => FILL_FIELDS.filter(f => !String(emp[f.key] || "").trim()).map(f => f.key));
+  const [lists, setLists] = useState({ grades: [], teams: [] });
+  useEffect(() => {
+    const h = { headers: { Authorization: `Bearer ${TOKEN()}` } };
+    if (keys.includes("grade")) fetch(scopedUrl(`${API}/api/organisation/grades`, orgId), h).then(r => r.json())
+      .then(d => setLists(l => ({ ...l, grades: (d.grades || []).filter(g => g.status === "active").sort((a, b) => (a.sort_order ?? 1) - (b.sort_order ?? 1)).map(g => [g.grade, g.grade + (descriptionsLabel(g) ? ` — ${descriptionsLabel(g)}` : "")]) }))).catch(() => {});
+    if (keys.includes("team")) fetch(scopedUrl(`${API}/api/teams`, orgId), h).then(r => r.json())
+      .then(d => setLists(l => ({ ...l, teams: (d.teams || []).filter(t => t.status !== "inactive").map(t => [t.name, t.name]) }))).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+  const fields = FILL_FIELDS.filter(f => keys.includes(f.key));
+
+  return createPortal(
+    <div className="fixed inset-0 z-[90] bg-black/40 flex items-center justify-center p-4" onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div>
+            <h3 className="text-[15px] font-bold text-slate-800">Fill missing details</h3>
+            <p className="text-[12px] text-slate-400 mt-0.5">{emp.personName} · {fields.length} missing</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100"><X size={16} /></button>
+        </div>
+        <div className="p-5 grid grid-cols-2 gap-4 overflow-y-auto">
+          {fields.length === 0 && <p className="col-span-2 text-sm text-slate-400 text-center py-6">Nothing missing — all details are filled.</p>}
+          {fields.map(f => {
+            const opts = f.options ? f.options.map(o => [o, o]) : f.list ? lists[f.list] : null;
+            return (
+              <div key={f.key} className={f.textarea ? "col-span-2" : ""}>
+                <label className={LBL}>{f.label}</label>
+                {f.textarea
+                  ? <textarea value={form[f.key] || ""} onChange={set(f.key)} rows={2} placeholder={f.placeholder} className={`${INP} resize-none`} />
+                  : opts
+                    ? <select value={form[f.key] || ""} onChange={set(f.key)} className={SEL}>
+                        <option value="">— Select —</option>
+                        {opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                    : <input type={f.type || "text"} value={form[f.key] || ""} onChange={set(f.key)} placeholder={f.placeholder} className={INP} />}
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-slate-100">
+          {/* switch to the whole form — what's typed here is kept */}
+          {onFull && <button onClick={onFull} className="mr-auto text-[13px] font-medium text-blue-600 hover:underline">See full form →</button>}
+          <button onClick={onClose} className="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Cancel</button>
+          {fields.length > 0 && (
+            <button onClick={onSave} disabled={saving}
+              className="px-5 py-2 text-sm font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2">
+              {saving && <Loader2 size={13} className="animate-spin" />} Save
+            </button>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
@@ -1084,8 +1217,12 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     setTimeout(() => setToast(null), 4000);
   };
 
-  const openAdd  = () => { setForm({ ...EMPTY_FORM, category }); setEditId(null); setModal(true); };
+  const [fillOnly, setFillOnly] = useState(false);   // modal shows only the missing details
+  const [fillBack, setFillBack] = useState(false);   // full form opened from it — offer the way back
+  const openAdd  = () => { setForm({ ...EMPTY_FORM, category }); setEditId(null); setFillOnly(false); setModal(true); };
+  const openFill = (emp) => { openEdit(emp); setFillOnly(true); };
   const openEdit = (emp) => {
+    setFillOnly(false); setFillBack(false);
     setForm({
       personName: emp.personName || "", employeeId: emp.employeeId || "",
       status: emp.status || "active",
@@ -1407,12 +1544,16 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
           opts={opts}
           onBack={() => setSelected(null)}
           onEdit={canEdit ? () => openEdit(selected) : undefined}
+          onFill={canEdit ? () => openFill(selected) : undefined}
           onMove={canEdit ? () => setMoveEmps([selected]) : undefined}
           onDelete={canDelete ? () => handleDelete(selected.id) : undefined}
         />
-        {modal && (
-          <EmpModal form={form} setForm={setForm} editId={editId} saving={saving}
-            onClose={() => setModal(false)} onSave={handleSave} allEmps={emps} opts={opts} />
+        {modal && (fillOnly
+          ? <FillMissingModal emp={selected} form={form} setForm={setForm} saving={saving}
+              onClose={() => setModal(false)} onSave={handleSave} onFull={() => { setFillOnly(false); setFillBack(true); }} />
+          : <EmpModal form={form} setForm={setForm} editId={editId} saving={saving}
+              onClose={() => setModal(false)} onSave={handleSave} allEmps={emps} opts={opts}
+              onMissing={fillBack ? () => { setFillOnly(true); setFillBack(false); } : undefined} />
         )}
         {moveModal}
         {toast && (
