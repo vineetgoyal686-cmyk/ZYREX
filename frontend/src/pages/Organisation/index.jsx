@@ -81,6 +81,7 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
   const [branchCount, setBranchCount] = useState(0);
   const [projectCount, setProjectCount] = useState(0);
   const [empView,  setEmpView]  = useState("card");
+  const [empDetail, setEmpDetail] = useState(false);   // an employee profile is open
   // the Employees tab puts its search + filters into the header through this
   const [toolbarSlot, setToolbarSlot] = useState(null);
 
@@ -151,7 +152,7 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
       case "sub_departments": return <SubDepts    actionsRef={actionsRef} onChange={d => setSubCount(d.length)} />;
       case "grades":          return <Grades      actionsRef={actionsRef} onChange={d => setLvlCount(d.length)} />;
       case "designations":    return <Designations actionsRef={actionsRef} />;
-      case "employees":       return <EmployeeList actionsRef={actionsRef} view={empView} onViewChange={setEmpView} toolbarSlot={toolbarSlot} />;
+      case "employees":       return <EmployeeList actionsRef={actionsRef} view={empView} onViewChange={setEmpView} toolbarSlot={toolbarSlot} onDetailChange={setEmpDetail} />;
       case "locations":       return <Locations   actionsRef={actionsRef} />;
       case "projects":        return <ManageProjects companyId={org.id} companyName={org.companyName || org.company_name}
                                 isGlobalAdmin={isGlobalAdmin} permissions={pmPerms} onProjectsUpdate={onProjectsUpdate} />;
@@ -257,7 +258,7 @@ function OrgDetail({ org, onBack, currentUser, fixedTab, allowedTabs, headerExtr
       <div className="min-w-0 flex-1 flex flex-col">
         {/* Per-tab header — one row: title · count, the tab's own search/filters,
             then view toggle, a "⋯" menu (export / bulk upload) and Add */}
-        {(() => {
+        {!(activeTab === "employees" && empDetail) && (() => {
           // Employees shows its numbers in the cards below instead
           const count = activeTab === "employees" ? null : badges[activeTab];
           const canExport = meta?.hasExport && (TAB_PERMS[activeTab]?.canExport ?? true);

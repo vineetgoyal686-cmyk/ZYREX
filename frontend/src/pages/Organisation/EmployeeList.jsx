@@ -130,7 +130,7 @@ function PhotoAvatar({ name, imgUrl, size = "xl" }) {
         <Avatar name={name} size={size} imgUrl={imgUrl} square />
       </button>
       {zoom && (
-        <div className="fixed inset-0 z-[100] bg-black/70 flex flex-col items-center justify-center gap-3 p-6" onClick={() => setZoom(false)}>
+        <div data-stop className="fixed inset-0 z-[100] bg-black/70 flex flex-col items-center justify-center gap-3 p-6" onClick={() => setZoom(false)}>
           <button type="button" onClick={() => setZoom(false)} title="Close" className="absolute top-4 right-4 p-2 rounded-full text-white/80 hover:text-white hover:bg-white/10"><X size={20} /></button>
           {imgUrl
             ? <img src={imgUrl} alt={name} onClick={e => e.stopPropagation()} className="max-h-[80vh] max-w-[90vw] rounded-lg shadow-2xl object-contain bg-white" />
@@ -172,7 +172,8 @@ function EmpCard({ emp, imgUrl, place, onOpen }) {
     </div>
   );
   return (
-    <div ref={ref} className="relative bg-white rounded-lg border border-slate-200 p-4 hover:border-blue-200 hover:shadow-sm transition-all">
+    <div ref={ref} onClick={e => { if (!e.target.closest("button, a, [data-stop]")) onOpen(); }}
+      className="relative bg-white rounded-lg border border-slate-200 p-4 cursor-pointer hover:border-blue-200 hover:shadow-sm transition-all">
       {/* photo · name · title · ⋯ */}
       <div className="flex items-center gap-3 pr-8">
         <PhotoAvatar name={emp.personName} imgUrl={imgUrl} size="lg" />
@@ -209,7 +210,7 @@ function EmpCard({ emp, imgUrl, place, onOpen }) {
       </div>
 
       {open && (
-        <div className="absolute z-30 right-3 top-11 w-max min-w-[340px] max-w-[90vw] bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden">
+        <div data-stop className="absolute z-30 right-3 top-11 w-max cursor-default min-w-[340px] max-w-[90vw] bg-white border border-slate-200 rounded-lg shadow-xl overflow-hidden">
           <div className="flex items-center gap-2.5 px-4 py-3 bg-slate-50 border-b border-slate-200">
             <Avatar name={emp.personName} size="sm" imgUrl={imgUrl} square />
             <p className="flex-1 min-w-0 text-[14px] font-semibold text-slate-800 truncate">{emp.personName}</p>
@@ -267,7 +268,7 @@ function InfoBox({ label, value, span2 }) {
 /* ═══════════════════════════════
    DETAIL VIEW
 ═══════════════════════════════ */
-const DETAIL_TABS = ["Overview", "Documents", "Notes", "Permissions"];
+const DETAIL_TABS = ["Overview", "Documents"];
 
 function EmployeeDetail({ emp, imgUrl, opts, onBack, onEdit, onMove, onDelete }) {
   const [tab, setTab] = useState("Overview");
@@ -967,7 +968,7 @@ function MoveModal({ emps, fromId, onClose, onMoved }) {
   );
 }
 
-export default function EmployeeList({ actionsRef, view = "card", onViewChange, onCountChange, toolbarSlot }) {
+export default function EmployeeList({ actionsRef, view = "card", onViewChange, onCountChange, toolbarSlot, onDetailChange }) {
   const { canEdit, canDelete } = useModulePermissions("employees");
   const orgId = useOrgId();
   const [emps,    setEmps]    = useState([]);
@@ -1180,6 +1181,10 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     <MoveModal emps={moveEmps} fromId={orgId} onClose={closeMove} onMoved={handleMoved} />
   );
 
+  // profile open → the page header above the list is hidden (index.jsx)
+  useEffect(() => { onDetailChange?.(!!selected); }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onDetailChange?.(false), []);              // eslint-disable-line react-hooks/exhaustive-deps
+
   /* ── Filter ── */
   const allDepts = [...new Set(emps.map(e => e.department).filter(Boolean))].sort();
 
@@ -1368,10 +1373,10 @@ export default function EmployeeList({ actionsRef, view = "card", onViewChange, 
     finally { setImporting(false); e.target.value = ""; }
   };
 
-  /* ── Detail screen ── */
+  /* ── Detail screen — takes the whole page; the list header is hidden (index.jsx) ── */
   if (selected) {
     return (
-      <div className="flex-1 overflow-hidden -mt-5 -mx-6 -mb-4" style={{ height: "calc(100vh - 56px)" }}>
+      <div className="flex-1 overflow-hidden -my-5 -mx-4 sm:-mx-5 lg:-mx-6" style={{ height: "100svh" }}>
         <EmployeeDetail
           emp={selected}
           imgUrl={selectedImgUrl}
