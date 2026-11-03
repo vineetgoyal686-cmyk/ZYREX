@@ -13,6 +13,7 @@ import MobileHeader from "./components/MobileHeader";
 import MobileBottomNav from "./components/MobileBottomNav";
 import { BackContext } from "./components/BackButton";
 import BrandLoader from "./components/BrandLoader";
+import { pollWhenVisible } from "./utils/pollWhenVisible";
 
 // ── Route ↔ Tab mapping (see utils/navConfig.js) ─────────────────────────────
 // Project pages carry the project as ?project=<code>.
@@ -527,13 +528,8 @@ function App() {
     // until a manual refresh/relogin. Re-poll periodically and whenever the
     // tab regains focus so permission changes land without either — this
     // also covers a global_admin flipping the service lock mid-session.
-    const interval = setInterval(() => { fetchUserPermissions(); checkServiceLock(); }, 3 * 60 * 1000);
-    const onFocus = () => { fetchUserPermissions(); checkServiceLock(); };
-    window.addEventListener("focus", onFocus);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("focus", onFocus);
-    };
+    // Hidden tabs don't poll; coming back to the tab re-checks (at most once a minute).
+    return pollWhenVisible(() => { fetchUserPermissions(); checkServiceLock(); }, 5 * 60 * 1000);
   }, [isLoggedIn]);
 
   // Many components (Sidebar counts, Dashboard, SSE setup, etc.) read

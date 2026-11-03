@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 const TICK_MS = 15000;      // how often we check activity and accrue seconds
-const FLUSH_MS = 30000;     // how often we send accumulated seconds to the backend
+const FLUSH_MS = 5 * 60 * 1000; // how often we send accumulated seconds (also sent on tab hide / close)
 const IDLE_LIMIT_MS = 5 * 60 * 1000; // stop counting after 5 min with no input
 
 // Tracks active (visible + focused + not-idle) time spent on the current

@@ -3,6 +3,43 @@ const { getOwnerMap, isControlled, isOwner } = require("./controlHelper");
 
 const BYPASS_ROLES = ["global_admin", "super_admin", "admin"];
 
+// Every guarded request used to run up to 4 queries (user, module, permission
+// row, access profiles). Short caches cut that: module ids hardly ever change;
+// users and their permissions are held 30s, so a permission change takes at
+// most 30s to apply.
+const SHORT_TTL  = 30 * 1000;
+const MODULE_TTL = 5 * 60 * 1000;
+const memo = new Map(); // key -> { value, at, ttl }
+const cached = async (key, ttl, load) => {
+  const hit = memo.get(key);
+  if (hit && Date.now() - hit.at < hit.ttl) return hit.value;
+  const value = await load();
+  memo.set(key, { value, at: Date.now(), ttl });
+  return value;
+};
+
+const getUser = (id) => cached(`user:${id}`, SHORT_TTL, async () =>
+  (await admin.from("users").select("id, role, is_active, access_profile_ids").eq("id", id).single()).data || null);
+
+const getModuleId = async (moduleKey) => {
+  const ids = await cached("modules", MODULE_TTL, async () => {
+    const { data } = await admin.from("modules").select("id, module_key");
+    return Object.fromEntries((data || []).map(m => [m.module_key, m.id]));
+  });
+  return ids[moduleKey];
+};
+
+// All of a user's own permission rows, by module id
+const getOwnPerms = (userId) => cached(`perms:${userId}`, SHORT_TTL, async () => {
+  const { data } = await admin.from("permissions").select("*").eq("user_id", userId);
+  return Object.fromEntries((data || []).map(p => [String(p.module_id), p]));
+});
+
+const getProfilePerms = (ids) => cached(`profiles:${[...ids].sort().join(",")}`, SHORT_TTL, async () => {
+  const { data } = await admin.from("designations").select("app_permissions").in("id", ids);
+  return (data || []).flatMap(d => d.app_permissions || []);
+});
+
 const decodeToken = (token) => {
   try {
     return JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
@@ -26,27 +63,18 @@ const checkPermission = async (user, moduleKey, permKey) => {
   const bypassAllowed = noBypass ? user.role === "global_admin" : BYPASS_ROLES.includes(user.role);
   if (bypassAllowed) return true;
 
-  const { data: mod } = await admin.from("modules").select("id").eq("module_key", moduleKey).maybeSingle();
-  if (!mod) return false;
+  const modId = await getModuleId(moduleKey);
+  if (modId == null) return false;
 
-  const { data: perm } = await admin
-    .from("permissions")
-    .select(permKey + ", user_id")
-    .eq("user_id", user.id)
-    .eq("module_id", mod.id)
-    .maybeSingle();
+  const perm = (await getOwnPerms(user.id))[String(modId)];
 
   // A saved per-user row fully decides the outcome for this module (even to
   // restrict below what the Access Profile grants); only fall back to the
   // profile when the user has never had this module explicitly set.
   let allowed = perm ? !!perm[permKey] : false;
   if (!perm && user.access_profile_ids?.length > 0) {
-    const { data: designations } = await admin
-      .from("designations")
-      .select("app_permissions")
-      .in("id", user.access_profile_ids);
-    const profilePerms = (designations || []).flatMap(d => d.app_permissions || []);
-    allowed = profilePerms.some(p => p.module_id === mod.id && !!p[permKey]);
+    const profilePerms = await getProfilePerms(user.access_profile_ids);
+    allowed = profilePerms.some(p => p.module_id === modId && !!p[permKey]);
   }
   return allowed;
 };
@@ -64,7 +92,7 @@ const requirePerm = (moduleKey, permKey) => async (req, res, next) => {
   if (!payload?.sub) return res.status(401).json({ error: "Invalid token" });
   if (payload.exp && payload.exp * 1000 < Date.now()) return res.status(401).json({ error: "Token expired" });
 
-  const { data: user } = await admin.from("users").select("id, role, is_active, access_profile_ids").eq("id", payload.sub).single();
+  const user = await getUser(payload.sub);
   if (!user || !user.is_active) return res.status(403).json({ error: "Account inactive" });
 
   const allowed = await checkPermission(user, moduleKey, permKey);
@@ -85,7 +113,7 @@ const requirePerm = (moduleKey, permKey) => async (req, res, next) => {
  * middleware). Looks the user up itself — call with just (userId, moduleKey, permKey).
  */
 const hasPerm = async (userId, moduleKey, permKey) => {
-  const { data: user } = await admin.from("users").select("id, role, is_active, access_profile_ids").eq("id", userId).single();
+  const user = await getUser(userId);
   if (!user || !user.is_active) return false;
   return checkPermission(user, moduleKey, permKey);
 };

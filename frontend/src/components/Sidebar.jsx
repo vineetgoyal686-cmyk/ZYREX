@@ -21,6 +21,7 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
+import { pollWhenVisible } from "../utils/pollWhenVisible";
 
 const cx = (...classes) => classes.filter(Boolean).join(" ");
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
@@ -149,7 +150,8 @@ export default React.memo(function Sidebar({
     };
 
     fetchCounts();
-    const interval = setInterval(fetchCounts, 30000);
+    // SSE below brings changes live; this poll only catches missed events.
+    const stopPoll = pollWhenVisible(fetchCounts, 3 * 60 * 1000);
 
     // SSE — debounced so rapid order_updated events don't fire multiple fetches
     let es;
@@ -170,7 +172,7 @@ export default React.memo(function Sidebar({
     };
     connectSSE();
 
-    return () => { alive = false; clearTimeout(sseDebounce); clearInterval(interval); if (es) es.close(); };
+    return () => { alive = false; clearTimeout(sseDebounce); stopPoll(); if (es) es.close(); };
   }, []);
 
   const isTabVisible = (tabId) => isTabVisibleFor(tabId, currentUser, userTabPermissions);

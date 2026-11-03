@@ -14,6 +14,7 @@ import { preloadOrderDetails, seedOrderDetails, getCachedOrderDetails, bustOrder
 import { normalizeOrderSite, getOrderSiteCode, siteCodeMatch } from "../../utils/orderSite";
 import { authFetch, getValidToken } from "../../utils/authFetch";
 import BrandLoader from "../../components/BrandLoader";
+import { pollWhenVisible } from "../../utils/pollWhenVisible";
 
 // Module-level master data cache — avoids re-fetching on every form open (TTL: 2 min)
 let _masterCache = null;
@@ -994,8 +995,7 @@ function OrderForm({ project, onCancel, editOrderId, onEditComplete }) {
 
   useEffect(() => {
     fetchOrders();
-    const interval = setInterval(fetchOrders, 30000); // Background sync every 30s
-    return () => clearInterval(interval);
+    return pollWhenVisible(fetchOrders, 2 * 60 * 1000); // background sync while the tab is visible
   }, []);
 
   // Body scroll lock for modals/drawers

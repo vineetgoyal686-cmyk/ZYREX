@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { authFetch } from "../utils/authFetch";
 import { useModulePermissions } from "../hooks/useModulePermissions";
+import { pollWhenVisible } from "../utils/pollWhenVisible";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -193,10 +194,10 @@ export default function Approvals() {
     };
     connectSSE();
 
-    // Fallback poll every 30s (catches missed SSE events)
-    const interval = setInterval(() => load(), 30000);
+    // Fallback poll (catches missed SSE events) — only while the tab is visible
+    const stopPoll = pollWhenVisible(() => load(), 3 * 60 * 1000);
     return () => {
-      clearInterval(interval);
+      stopPoll();
       if (es) es.close();
     };
   }, []);
