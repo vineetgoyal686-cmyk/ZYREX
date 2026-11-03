@@ -345,6 +345,7 @@ export default function PettyCashStaff({ scope }) {
   const [typeFilter, setTypeFilter]   = useState("");
   const [personFilter, setPersonFilter] = useState("");
   const [vendorFilter, setVendorFilter] = useState("");
+  const [billFilter, setBillFilter]     = useState(""); // Expenses tab only
   const [itemFilter, setItemFilter]     = useState(""); // Item-wise tab only
   const [dateRange, setDateRange]     = useState("all");
   const [customFrom, setCustomFrom]   = useState("");
@@ -439,13 +440,14 @@ export default function PettyCashStaff({ scope }) {
       if (typeFilter && e.entryType !== typeFilter) return false;
       if (personFilter && e.personId !== personFilter && e.fromPersonId !== personFilter) return false;
       if (vendorFilter && String(e.vendorName || "").trim().toLowerCase() !== vendorFilter.toLowerCase()) return false;
+      if (billFilter && subTab === "entries" && e.proofType !== billFilter) return false;
       if (dateRange !== "all" && customFrom && e.entryDate < customFrom) return false;
       if (dateRange !== "all" && customTo && e.entryDate > customTo) return false;
       if (!q || subTab === "items") return true;
       return [e.particular, e.vendorName, e.personName, e.fromPersonName, e.remarks, e.category, e.location, e.project]
         .some(v => String(v || "").toLowerCase().includes(q));
     });
-  }, [entries, subTab, search, typeFilter, personFilter, vendorFilter, dateRange, customFrom, customTo]);
+  }, [entries, subTab, search, typeFilter, personFilter, vendorFilter, billFilter, dateRange, customFrom, customTo]);
 
   // Item-wise: every item line across the filtered expenses, grouped by
   // name + unit (case-insensitive). Search matches the item name here.
@@ -1121,6 +1123,12 @@ export default function PettyCashStaff({ scope }) {
           )}
           {subTab === "entries" && (
             <ListFilter value={vendorFilter} options={scopeVendors} noun="vendor" icon={Store} onChange={v => { setVendorFilter(v); setPage(1); }} />
+          )}
+          {subTab === "entries" && (
+            <FilterSelect value={billFilter} onChange={e => { setBillFilter(e.target.value); setPage(1); }}>
+              <option value="">All bill types</option>
+              {PROOF_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </FilterSelect>
           )}
           {subTab === "items" && (
             <ListFilter value={itemFilter} options={itemNames} noun="item" icon={Package} onChange={v => { setItemFilter(v); setPage(1); }} />
