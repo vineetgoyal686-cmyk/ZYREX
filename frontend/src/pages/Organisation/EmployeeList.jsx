@@ -294,13 +294,13 @@ const DETAIL_TABS = ["Overview", "Documents"];
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "";
 
 /* small copy button — turns into a ✓ for a moment */
-function CopyBtn({ text, what = "" }) {
+function CopyBtn({ text, what = "", small }) {
   const [done, setDone] = useState(false);
   return (
     <button type="button" title={done ? "Copied" : `Copy ${what.toLowerCase()}`}
       onClick={() => { navigator.clipboard?.writeText(text); setDone(true); setTimeout(() => setDone(false), 1200); }}
-      className={`shrink-0 w-7 h-7 rounded-md border flex items-center justify-center transition-colors ${done ? "border-emerald-200 bg-emerald-50 text-emerald-600" : "border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50"}`}>
-      {done ? <Check size={13} /> : <Copy size={13} />}
+      className={`shrink-0 ${small ? "w-5 h-5 rounded" : "w-7 h-7 rounded-md"} border flex items-center justify-center transition-colors ${done ? "border-emerald-200 bg-emerald-50 text-emerald-600" : "border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50"}`}>
+      {done ? <Check size={small ? 11 : 13} /> : <Copy size={small ? 11 : 13} />}
     </button>
   );
 }
@@ -419,7 +419,7 @@ function EmployeeDetail({ emp, imgUrl, opts, emps = [], onOpenEmp, onBack, onEdi
         </div>
 
         {/* profile completeness · tabs — same row, same height, still in the fixed top */}
-        <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
           {/* completeness: a ring that fills up, colour by how far along */}
           {(() => {
             const c = pct === 100 ? "#10b981" : pct >= 70 ? "#3b82f6" : pct >= 40 ? "#f59e0b" : "#ef4444";
@@ -461,7 +461,7 @@ function EmployeeDetail({ emp, imgUrl, opts, emps = [], onOpenEmp, onBack, onEdi
       </div>
 
       <div className="px-4 sm:px-6 py-4">
-        <div className="grid grid-cols-1 lg:grid-cols-[260px_1fr] gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4 items-start">
           {/* left: quick contact + organisation */}
           <div className="space-y-4">
             <div className="bg-white rounded-xl border border-slate-200 p-4">
@@ -474,12 +474,12 @@ function EmployeeDetail({ emp, imgUrl, opts, emps = [], onOpenEmp, onBack, onEdi
                   <div key={label} className="flex items-center gap-3 min-w-0">
                     <span className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${tint}`}><Icon size={15} /></span>
                     <div className="min-w-0 flex-1">
-                      <p className="text-[11px] text-slate-400">{label}</p>
+                      {/* copy sits by the label, so the value gets the whole line */}
+                      <p className="flex items-center gap-1.5 text-[11px] text-slate-400">{label}{value && <CopyBtn text={value} what={label} small />}</p>
                       {value
-                        ? <a href={href} className={`block text-[13px] font-medium break-all leading-snug hover:underline ${label === "Email" ? "text-blue-600" : "text-slate-800"}`}>{value}</a>
+                        ? <a href={href} title={value} className={`block font-medium whitespace-nowrap overflow-hidden text-ellipsis hover:underline ${value.length > 26 ? "text-[12px]" : "text-[13px]"} ${label === "Email" ? "text-blue-600" : "text-slate-800"}`}>{value}</a>
                         : <p className="text-[13px] text-slate-300">—</p>}
                     </div>
-                    {value && <CopyBtn text={value} what={label} />}
                   </div>
                 ))}
               </div>
