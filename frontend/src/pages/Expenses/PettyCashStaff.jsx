@@ -481,13 +481,16 @@ export default function PettyCashStaff({ scope }) {
   const itemNames = useMemo(() => [...new Set(entries.flatMap(e => (e.items || []).map(it => it.name.trim())))].sort(), [entries]);
 
   const columns = subTab === "entries"
-    ? ["Date", "Vendor", "Expense", "Amount", "Paid By", "Bill Type", "Payment", "Remarks", "Doc", "Action"]
-    : ["Date", "Type", "From", "To", "Amount", "Remarks", "Doc", "Action"];
+    ? ["Date", "Vendor", "Expense", "Amount", "Paid By", "Bill Type", "Payment", "Doc", "Action"]
+    : ["Date", "Type", "From", "To", "Amount", "Doc", "Action"];
+  // Remarks only show in the View panel. The flex column has no set width
+  // and takes whatever space is left (its COL_W is just its minimum).
+  const flexCol = subTab === "entries" ? "Expense" : "To";
 
   // Date (+ Vendor on Expenses) stay pinned on the left and Attachments +
   // Action on the right; the columns between them scroll sideways.
   // The table uses a fixed layout so these widths are exact and the sticky
-  // offsets line up; Remarks has no width and takes whatever is left.
+  // offsets line up; the flex column takes whatever is left.
   // Sticky cells lose the collapsed borders, so their lines are drawn with
   // inset shadows instead.
   // Vendor fits the widest name in the current list on one line (padding 32
@@ -1187,7 +1190,7 @@ export default function PettyCashStaff({ scope }) {
             <thead className="text-slate-600">
               <tr>
                 {columns.map((h, i) => (
-                  <th key={i} style={{ ...pinStyle(h), ...(COL_W[h] && { width: COL_W[h] }) }}
+                  <th key={i} style={{ ...pinStyle(h), ...(COL_W[h] && h !== flexCol && { width: COL_W[h] }) }}
                     className={`sticky top-0 ${pinCls(h) ? `${pinCls(h)} z-20` : "z-10"} bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : h === "Doc" ? "text-center !px-2" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
@@ -1227,7 +1230,6 @@ export default function PettyCashStaff({ scope }) {
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold truncate text-emerald-700">{fmtAmount(e.amount)}</td>
                     </>
                   )}
-                  <td className="px-4 py-2.5 text-slate-500 truncate" title={e.remarks}>{e.remarks || "—"}</td>
                   <td style={pinStyle("Doc")} className={`${pinTd("Doc")} px-2 py-2.5 whitespace-nowrap text-center`}>
                     {docCount(e.documents) > 0 ? (
                       <button onClick={() => setDocsEntry(e)} title="View attachments"
