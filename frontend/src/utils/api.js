@@ -48,6 +48,10 @@ const isAuthCall = (url = "") => url.includes("/api/auth/login") || url.includes
 // is still sending the files and drops the connection, so the browser only
 // reports "Network Error" and the 401 handler below never sees a 401.
 api.interceptors.request.use(async (config) => {
+  // A call that brings its own token (Reset Password sends the token from
+  // the email link) keeps it: swapping in the signed-in user's token would
+  // change THEIR password when a reset link is opened in an admin's browser.
+  if (config.url?.includes("/api/auth/reset-password") && config.headers.Authorization) return config;
   let token = localStorage.getItem("bms_token");
   const exp = token ? tokenExpiry(token) : 0;
   if (token && exp && exp - Date.now() < 60_000 && !isAuthCall(config.url) && localStorage.getItem("bms_refresh_token")) {
