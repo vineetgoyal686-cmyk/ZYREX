@@ -411,7 +411,7 @@ router.get("/scopes", requireAnyView, async (req, res) => {
   }
 });
 
-/* Expense voucher numbers — <PREFIX>-<FY>-VH-<seq>, one series per project /
+/* Expense voucher numbers — <PREFIX>/(<FY>)/VH-<seq>, e.g. BVPL-WAV/(2026-27)/VH-001, one series per project /
    office and financial year (sql/petty_cash_voucher_series.sql). The number
    is only stored when the entry is saved; the next one is the highest used
    in that series + 1, so a voucher that's never saved doesn't use one up. */
@@ -421,7 +421,7 @@ const fyOf = (date) => {
   const start = m >= 4 ? y : y - 1;
   return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
 };
-const formatVoucherNo = (series, fy, seq) => `${series.prefix}-${fy}-VH-${String(seq).padStart(series.digits, "0")}`;
+const formatVoucherNo = (series, fy, seq) => `${series.prefix}/(${fy})/VH-${String(seq).padStart(series.digits, "0")}`;
 const VOUCHER_TAKEN = "This voucher number was just used by another entry — remove the voucher, create it again and save.";
 const PREFIX_RE = /^[A-Za-z0-9][A-Za-z0-9/-]{0,23}$/;
 

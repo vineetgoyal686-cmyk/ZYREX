@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { jsPDF } from "jspdf";
-import { X, Plus, Trash2, UploadCloud, Loader2, Printer, Download, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { X, Plus, Trash2, UploadCloud, Loader2, Printer, Download, ZoomIn, ZoomOut, Maximize2, ChevronDown } from "lucide-react";
 import api from "../../utils/api";
 import { fmtDate, apiError } from "./pettyCashConstants";
 import BrandLoader from "../../components/BrandLoader";
@@ -271,7 +271,7 @@ export default function VoucherModal({ entry, company, project, initial, onClose
     header: initial.header || voucherHeader(company, project),
     signs: Object.fromEntries(SIGN_SLOTS.map(s => [s.key, { userId: "", name: "", image: "", ...(initial.signs?.[s.key] || {}) }])),
   } : ({
-    // <prefix>-<FY>-VH-<n> comes from the server: the next number in the
+    // <prefix>/(<FY>)/VH-<n> comes from the server: the next number in the
     // project's / office's series for the entry date's FY. It's stored when
     // the entry is saved, so a voucher that's never saved uses none up.
     voucherNo: "", fy: "", seq: null,
@@ -687,8 +687,16 @@ export function PrintVouchersModal({ entries, skipped, onClose }) {
 }
 
 // ── Voucher numbering (format + month-wise renumber) ─────────────────────
-const padNo = (series, fy, seq) => `${series.prefix}-${fy}-VH-${String(seq).padStart(series.digits, "0")}`;
+const padNo = (series, fy, seq) => `${series.prefix}/(${fy})/VH-${String(seq).padStart(series.digits, "0")}`;
 const thisMonth = () => new Date().toISOString().slice(0, 7);
+
+// Native select with its own chevron, spaced like the inputs.
+const Select = ({ children, ...props }) => (
+  <div className="relative">
+    <select {...props} className={`${inp} appearance-none pr-9 disabled:bg-slate-50`}>{children}</select>
+    <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+  </div>
+);
 
 export function VoucherNumberingPanel({ company, projects, defaultProjectId, defaultMonth, canEdit, onChanged, onClose }) {
   const [projectId, setProjectId] = useState(defaultProjectId || projects[0]?.id || "");
@@ -771,7 +779,7 @@ export function VoucherNumberingPanel({ company, projects, defaultProjectId, def
   const card = "rounded-xl border border-slate-200 p-4 space-y-3";
   return (
     <div className="fixed inset-0 z-[60] bg-black/40" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="fixed top-0 right-0 h-full w-full max-w-[640px] bg-white shadow-2xl flex flex-col">
+      <div onClick={e => e.stopPropagation()} className="fixed top-0 right-0 h-full w-full max-w-[920px] bg-white shadow-2xl flex flex-col">
         <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-200 shrink-0">
           <div className="min-w-0 mr-auto">
             <h2 className="text-[15px] font-bold text-slate-900 leading-tight">Voucher Numbering</h2>
@@ -783,9 +791,9 @@ export function VoucherNumberingPanel({ company, projects, defaultProjectId, def
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
           <div>
             <label className={lbl}>Project / office</label>
-            <select value={projectId} onChange={e => setProjectId(e.target.value)} className={inp}>
+            <Select value={projectId} onChange={e => setProjectId(e.target.value)}>
               {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            </Select>
           </div>
 
           {msg.text && (
@@ -794,21 +802,23 @@ export function VoucherNumberingPanel({ company, projects, defaultProjectId, def
 
           <div className={card}>
             <p className="text-sm font-bold text-slate-800">Format</p>
-            <div className="grid grid-cols-[1fr_120px] gap-3">
+            <div className="grid grid-cols-[1fr_140px] gap-3">
               <div>
                 <label className={lbl}>Prefix</label>
-                <input value={form.prefix} onChange={e => setForm(f => ({ ...f, prefix: e.target.value.toUpperCase() }))} disabled={!canEdit} maxLength={24} className={inp} />
+                {/* Spaces become "-"; anything else not allowed in a voucher number is dropped. */}
+                <input value={form.prefix} onChange={e => setForm(f => ({ ...f, prefix: e.target.value.toUpperCase().replace(/\s+/g, "-").replace(/[^A-Z0-9/-]/g, "") }))} disabled={!canEdit} maxLength={24} className={inp} />
+                <p className="text-[11px] text-slate-400 mt-1">Letters, numbers, - and / only</p>
               </div>
               <div>
                 <label className={lbl}>Digits</label>
-                <select value={form.digits} onChange={e => setForm(f => ({ ...f, digits: Number(e.target.value) }))} disabled={!canEdit} className={inp}>
+                <Select value={form.digits} onChange={e => setForm(f => ({ ...f, digits: Number(e.target.value) }))} disabled={!canEdit}>
                   {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} ({"1".padStart(n, "0")})</option>)}
-                </select>
+                </Select>
               </div>
             </div>
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm text-slate-600">
-                Next voucher{next.fy ? ` (FY ${next.fy})` : ""}:{" "}
+                Next voucher{next.fy ? ` (FY ${next.fy}, from the entry date)` : ""}:{" "}
                 <span className="font-semibold text-slate-900">{next.fy ? padNo(previewSeries, next.fy, nextSeq) : "…"}</span>
               </p>
               {canEdit && (
@@ -856,7 +866,7 @@ export function VoucherNumberingPanel({ company, projects, defaultProjectId, def
                             return (
                               <tr key={r.id}>
                                 <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-700">{fmtDate(r.entryDate)}</td>
-                                <td className="px-2.5 py-1.5 text-slate-700 truncate max-w-[140px]">{r.paidTo}</td>
+                                <td className="px-2.5 py-1.5 text-slate-700 truncate max-w-[200px]">{r.paidTo}</td>
                                 <td className="px-2.5 py-1.5 text-right tabular-nums text-slate-700">{money(r.amount)}</td>
                                 <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-400">{r.voucherNo}</td>
                                 <td className={`px-2.5 py-1.5 whitespace-nowrap font-semibold ${newNo === r.voucherNo ? "text-slate-500" : "text-emerald-700"}`}>{newNo}</td>

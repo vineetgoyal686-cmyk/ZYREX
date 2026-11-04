@@ -1,5 +1,5 @@
 -- Petty Cash › Expense voucher numbers per project / office and financial
--- year: <PREFIX>-<FY>-VH-<seq>, e.g. BVPL-WAV-2026-27-VH-001.
+-- year: <PREFIX>/(<FY>)/VH-<seq>, e.g. BVPL-WAV/(2026-27)/VH-001.
 --
 -- * voucher_fy / voucher_seq on each entry hold the number; the next number
 --   is the highest seq used in that project / office and FY, plus one, so a
