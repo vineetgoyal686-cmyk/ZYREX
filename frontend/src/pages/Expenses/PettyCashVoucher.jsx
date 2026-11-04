@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { jsPDF } from "jspdf";
-import { X, Plus, Trash2, UploadCloud, Loader2, Printer } from "lucide-react";
+import { X, Plus, Trash2, UploadCloud, Loader2, Printer, Download } from "lucide-react";
 import api from "../../utils/api";
 import { fmtDate, apiError } from "./pettyCashConstants";
 import BrandLoader from "../../components/BrandLoader";
@@ -77,7 +77,40 @@ const imageSize = (dataUrl) => new Promise((resolve) => {
 // ── PDF ──────────────────────────────────────────────────────────────────
 async function buildVoucherPdf(v) {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a5" }); // 210 × 148
-  const L = 7, T = 7, W = 196, H = 134, R = L + W;
+  await drawVoucher(doc, v, 0);
+  return doc.output("blob");
+}
+
+// Blank voucher to fill by hand. "a5" = one per A5 landscape page; "a4x2" =
+// two on an A4 portrait page (each half is A5 landscape), with a cut line.
+export async function buildBlankVoucherPdf(header, layout, copies = 1) {
+  const two = layout === "a4x2";
+  const doc = two
+    ? new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" }) // 210 × 297
+    : new jsPDF({ orientation: "landscape", unit: "mm", format: "a5" });
+  const blank = {
+    header, voucherNo: "", date: "", paidTo: "", items: [], total: null, amountWords: "",
+    paymentMode: "", refNo: "", signs: {},
+  };
+  for (let p = 0; p < copies; p++) {
+    if (p) doc.addPage();
+    await drawVoucher(doc, blank, 0);
+    if (two) {
+      await drawVoucher(doc, blank, 148.5);
+      doc.setLineDashPattern([2, 1.5], 0);
+      doc.setLineWidth(0.2);
+      doc.setDrawColor(150);
+      doc.line(0, 148.5, 210, 148.5);
+      doc.setDrawColor(0);
+      doc.setLineDashPattern([], 0);
+    }
+  }
+  return doc.output("blob");
+}
+
+// Draws one voucher in a 210 × 148 box whose top edge is at `top` mm.
+async function drawVoucher(doc, v, top) {
+  const L = 7, T = top + 7, W = 196, H = 134, R = L + W;
   const inL = L + 7, inR = R - 7;
 
   const dotted = (x1, x2, y) => {
@@ -168,7 +201,7 @@ async function buildVoucherPdf(v) {
   doc.line(xs[3], y, xs[3], y + 6.5);
   doc.setFont("helvetica", "bold");
   doc.text("TOTAL", xs[3] - 1.5, y + 4.3, { align: "right" });
-  doc.text(money(v.total), xs[4] - 1.5, y + 4.3, { align: "right" });
+  if (v.total != null) doc.text(money(v.total), xs[4] - 1.5, y + 4.3, { align: "right" });
   y += 6.5;
 
   y += 7;
@@ -211,8 +244,6 @@ async function buildVoucherPdf(v) {
       doc.text(s.name, cx, lineY + 7.5, { align: "center" });
     }
   }
-
-  return doc.output("blob");
 }
 
 // ── Editor modal ─────────────────────────────────────────────────────────
@@ -452,6 +483,88 @@ export default function VoucherModal({ entry, company, project, initial, onClose
               {busy && <Loader2 size={14} className="animate-spin" />} Done — Add Voucher
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Blank voucher (print and fill by hand) ───────────────────────────────
+const BLANK_LAYOUTS = [
+  { key: "a5",   label: "1 per page", hint: "A5 landscape" },
+  { key: "a4x2", label: "2 per page", hint: "A4 — cut in half" },
+];
+
+export function BlankVoucherModal({ company, project, onClose }) {
+  const [layout, setLayout] = useState("a4x2");
+  const [copies, setCopies] = useState(1);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const previewRef = useRef("");
+  const header = useMemo(() => voucherHeader(company, project), [company, project]);
+  const pages = Math.min(50, Math.max(1, Number(copies) || 1));
+
+  useEffect(() => {
+    let alive = true;
+    buildBlankVoucherPdf(header, layout, pages).then(blob => {
+      if (!alive) return;
+      const url = URL.createObjectURL(blob);
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+      previewRef.current = url;
+      setPreviewUrl(url);
+    });
+    return () => { alive = false; };
+  }, [header, layout, pages]);
+  useEffect(() => () => { if (previewRef.current) URL.revokeObjectURL(previewRef.current); }, []);
+
+  const download = () => {
+    const a = document.createElement("a");
+    a.href = previewUrl;
+    a.download = `Blank_Voucher_${String(company?.name || "").replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf`;
+    a.click();
+  };
+  const print = () => {
+    const w = window.open(previewUrl, "_blank");
+    if (w) w.addEventListener("load", () => w.print());
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[88vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-3.5 border-b border-slate-100 shrink-0">
+          <h2 className="text-base font-bold text-slate-900">Blank Expense Voucher — {company?.name}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+        <div className="flex flex-wrap items-end gap-4 px-6 py-3 border-b border-slate-100 shrink-0">
+          <div>
+            <label className={lbl}>Layout</label>
+            <div className="flex gap-1 p-1 rounded-lg bg-slate-100">
+              {BLANK_LAYOUTS.map(l => (
+                <button key={l.key} type="button" onClick={() => setLayout(l.key)}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium ${layout === l.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                  {l.label} <span className="text-xs font-normal text-slate-400">· {l.hint}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={lbl}>Pages</label>
+            <input type="number" min="1" max="50" value={copies} onChange={e => setCopies(e.target.value)} className={`${inp} w-24`} />
+          </div>
+          <p className="text-xs text-slate-500 pb-2">{pages * (layout === "a4x2" ? 2 : 1)} voucher{pages * (layout === "a4x2" ? 2 : 1) > 1 ? "s" : ""}</p>
+        </div>
+        <div className="flex-1 min-h-0 bg-slate-100 flex flex-col">
+          {previewUrl
+            ? <iframe title="Blank voucher preview" src={`${previewUrl}#toolbar=0&view=FitH`} className="flex-1 w-full" />
+            : <div className="flex-1 flex items-center justify-center text-slate-400"><BrandLoader /></div>}
+        </div>
+        <div className="flex items-center justify-end gap-2 px-6 py-3.5 border-t border-slate-100 bg-slate-50 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Close</button>
+          <button onClick={download} disabled={!previewUrl} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+            <Download size={15} /> Download
+          </button>
+          <button onClick={print} disabled={!previewUrl} className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40">
+            <Printer size={15} /> Print
+          </button>
         </div>
       </div>
     </div>

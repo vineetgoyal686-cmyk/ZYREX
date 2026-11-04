@@ -10,7 +10,7 @@ import { useModulePermissions } from "../../hooks/useModulePermissions";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import LogPanel from "../../components/LogPanel";
 import Pagination from "./Pagination";
-import VoucherModal from "./PettyCashVoucher";
+import VoucherModal, { BlankVoucherModal } from "./PettyCashVoucher";
 import { logAudit } from "../../utils/auditLog";
 import {
   CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, docSectionsFor, docCount, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
@@ -369,6 +369,7 @@ export default function PettyCashStaff({ scope }) {
   const [viewPerson, setViewPerson] = useState(null); // a balances.list row
   const [viewItem, setViewItem]     = useState(null); // an itemSummary row
   const [voucherOpen, setVoucherOpen] = useState(false);
+  const [blankVoucherOpen, setBlankVoucherOpen] = useState(false);
   // The voucher made for the entry in the form: { voucherNo, data, dirty }.
   // data is loaded on demand for saved entries; dirty means it must be sent
   // on save (data null + dirty = the voucher was removed).
@@ -1007,8 +1008,7 @@ export default function PettyCashStaff({ scope }) {
               )}
             </div>
           )}
-          {((canBulk && TEMPLATES[subTab]) || canExport) && (
-            <div className="relative">
+          <div className="relative">
               <button onClick={() => setMoreMenuOpen(o => !o)} className="h-9 px-3 flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-600 hover:bg-slate-50">
                 More <ChevronDown size={14} />
               </button>
@@ -1031,12 +1031,14 @@ export default function PettyCashStaff({ scope }) {
                         <FileSpreadsheet size={14} className="text-slate-400" /> Export
                       </button>
                     )}
+                    <button onClick={() => { setMoreMenuOpen(false); setBlankVoucherOpen(true); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                      <FileText size={14} className="text-slate-400" /> Blank Voucher
+                    </button>
                   </div>
                 </>
               )}
               {canBulk && <input ref={bulkInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={e => handleBulkFile(e.target.files?.[0])} />}
             </div>
-          )}
           {canAdd && (
             <div className="relative">
               <button onClick={() => setAddMenuOpen(o => !o)} className="h-9 px-3.5 flex items-center gap-1 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700">
@@ -1450,6 +1452,10 @@ export default function PettyCashStaff({ scope }) {
             showToast(`"${person.name}" added`);
           }}
         />
+      )}
+
+      {blankVoucherOpen && (
+        <BlankVoucherModal company={scope.company} project={scope.project} onClose={() => setBlankVoucherOpen(false)} />
       )}
 
       {voucherOpen && formOpen && (
