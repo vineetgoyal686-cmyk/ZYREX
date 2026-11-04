@@ -3,14 +3,14 @@ import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
   ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye, FilePlus2, Package,
-  User, Tag, CreditCard, Store, Check, ArrowLeft, ArrowDownLeft, ArrowUpRight, Wallet, Briefcase, MapPin, CalendarDays, FileText,
+  User, Tag, CreditCard, Store, Check, ArrowLeft, ArrowDownLeft, ArrowUpRight, Wallet, Briefcase, MapPin, CalendarDays, FileText, Printer,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import LogPanel from "../../components/LogPanel";
 import Pagination from "./Pagination";
-import VoucherModal, { BlankVoucherModal } from "./PettyCashVoucher";
+import VoucherModal, { BlankVoucherModal, PrintVouchersModal } from "./PettyCashVoucher";
 import { logAudit } from "../../utils/auditLog";
 import {
   CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, docSectionsFor, docCount, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
@@ -370,6 +370,7 @@ export default function PettyCashStaff({ scope }) {
   const [viewItem, setViewItem]     = useState(null); // an itemSummary row
   const [voucherOpen, setVoucherOpen] = useState(false);
   const [blankVoucherOpen, setBlankVoucherOpen] = useState(false);
+  const [printVouchers, setPrintVouchers] = useState(null); // { entries, skipped }
   // The voucher made for the entry in the form: { voucherNo, data, dirty }.
   // data is loaded on demand for saved entries; dirty means it must be sent
   // on save (data null + dirty = the voucher was removed).
@@ -1031,6 +1032,17 @@ export default function PettyCashStaff({ scope }) {
                         <FileSpreadsheet size={14} className="text-slate-400" /> Export
                       </button>
                     )}
+                    {subTab === "entries" && (
+                      <button onClick={() => {
+                        setMoreMenuOpen(false);
+                        setPrintVouchers({
+                          entries: filtered.filter(e => e.voucherNo),
+                          skipped: filtered.filter(e => !e.voucherNo && e.proofType === "voucher").length,
+                        });
+                      }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                        <Printer size={14} className="text-slate-400" /> Print Vouchers
+                      </button>
+                    )}
                     <button onClick={() => { setMoreMenuOpen(false); setBlankVoucherOpen(true); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
                       <FileText size={14} className="text-slate-400" /> Blank Voucher
                     </button>
@@ -1452,6 +1464,10 @@ export default function PettyCashStaff({ scope }) {
             showToast(`"${person.name}" added`);
           }}
         />
+      )}
+
+      {printVouchers && (
+        <PrintVouchersModal entries={printVouchers.entries} skipped={printVouchers.skipped} onClose={() => setPrintVouchers(null)} />
       )}
 
       {blankVoucherOpen && (

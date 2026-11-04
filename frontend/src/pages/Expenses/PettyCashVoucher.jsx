@@ -81,22 +81,19 @@ async function buildVoucherPdf(v) {
   return doc.output("blob");
 }
 
-// Blank voucher to fill by hand. "a5" = one per A5 landscape page; "a4x2" =
+// Several vouchers in one PDF. "a5" = one per A5 landscape page; "a4x2" =
 // two on an A4 portrait page (each half is A5 landscape), with a cut line.
-export async function buildBlankVoucherPdf(header, layout, copies = 1) {
+async function buildVouchersPdf(vouchers, layout) {
   const two = layout === "a4x2";
   const doc = two
     ? new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" }) // 210 × 297
     : new jsPDF({ orientation: "landscape", unit: "mm", format: "a5" });
-  const blank = {
-    header, voucherNo: "", date: "", paidTo: "", items: [], total: null, amountWords: "",
-    paymentMode: "", refNo: "", signs: {},
-  };
-  for (let p = 0; p < copies; p++) {
-    if (p) doc.addPage();
-    await drawVoucher(doc, blank, 0);
-    if (two) {
-      await drawVoucher(doc, blank, 148.5);
+  const perPage = two ? 2 : 1;
+  for (let i = 0; i < vouchers.length; i++) {
+    const slot = i % perPage;
+    if (i && !slot) doc.addPage();
+    await drawVoucher(doc, vouchers[i], slot * 148.5);
+    if (two && slot) {
       doc.setLineDashPattern([2, 1.5], 0);
       doc.setLineWidth(0.2);
       doc.setDrawColor(150);
@@ -106,6 +103,15 @@ export async function buildBlankVoucherPdf(header, layout, copies = 1) {
     }
   }
   return doc.output("blob");
+}
+
+// Blank voucher to fill by hand — `pages` pages of the chosen layout.
+export function buildBlankVoucherPdf(header, layout, pages = 1) {
+  const blank = {
+    header, voucherNo: "", date: "", paidTo: "", items: [], total: null, amountWords: "",
+    paymentMode: "", refNo: "", signs: {},
+  };
+  return buildVouchersPdf(Array(pages * (layout === "a4x2" ? 2 : 1)).fill(blank), layout);
 }
 
 // Draws one voucher in a 210 × 148 box whose top edge is at `top` mm.
@@ -185,7 +191,10 @@ async function drawVoucher(doc, v, top) {
   const rows = [...v.items];
   while (rows.length < 6) rows.push({ details: "", category: "", amount: "" });
   rows.forEach((it, i) => {
-    const lines = Math.max(1, doc.splitTextToSize(String(it.details || ""), cols[1].w - 3).length);
+    // Tallest wrapped cell sets the row height (details or category).
+    const lines = Math.max(1,
+      doc.splitTextToSize(String(it.details || ""), cols[1].w - 3).length,
+      doc.splitTextToSize(String(it.category || ""), cols[2].w - 3).length);
     const h = Math.max(6, 2.4 + lines * 3.6);
     rowBox(y, h);
     cellText(String(i + 1), 0, y, h);
@@ -563,6 +572,131 @@ export function BlankVoucherModal({ company, project, onClose }) {
             <Download size={15} /> Download
           </button>
           <button onClick={print} disabled={!previewUrl} className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40">
+            <Printer size={15} /> Print
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Print saved vouchers (the filtered entries, in one PDF) ──────────────
+// `entries` are the filtered entries that have a Create-Voucher voucher;
+// `skipped` counts Voucher-type entries whose voucher was only uploaded.
+export function PrintVouchersModal({ entries, skipped, onClose }) {
+  const [layout, setLayout] = useState("a4x2");
+  const [vouchers, setVouchers] = useState(null);
+  const [missing, setMissing] = useState(0);
+  const [error, setError] = useState("");
+  const [previewUrl, setPreviewUrl] = useState("");
+  const previewRef = useRef("");
+
+  // Load each entry's saved details, then the profile signatures (not stored
+  // with the voucher) — fetched once per user.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const sorted = [...entries].sort((a, b) => String(a.entryDate).localeCompare(String(b.entryDate)) || String(a.voucherNo).localeCompare(String(b.voucherNo)));
+        const details = [];
+        for (let i = 0; i < sorted.length; i += 6) {
+          const batch = await Promise.all(sorted.slice(i, i + 6).map(e =>
+            api.get(`/api/petty-cash/entries/${e.id}/voucher`).then(r => r.data.voucher).catch(() => null)));
+          details.push(...batch);
+        }
+        const signCache = {};
+        const signature = (userId) => (signCache[userId] ||= api.get(`/api/petty-cash/users/${userId}/signature`)
+          .then(({ data }) => (data.signatureUrl ? fetch(data.signatureUrl).then(r => r.blob()).then(blobToDataUrl) : ""))
+          .catch(() => ""));
+        const list = [];
+        for (const d of details.filter(Boolean)) {
+          const signs = {};
+          for (const s of SIGN_SLOTS) {
+            const sign = d.signs?.[s.key] || {};
+            signs[s.key] = { ...sign, image: sign.image || (sign.userId ? await signature(sign.userId) : "") };
+          }
+          const total = (d.items || []).reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+          list.push({ ...d, items: d.items || [], signs, total, amountWords: amountInWords(total) });
+        }
+        if (!alive) return;
+        setMissing(details.length - list.length);
+        setVouchers(list);
+      } catch (err) { if (alive) setError(apiError(err, "Could not load vouchers")); }
+    })();
+    return () => { alive = false; };
+  }, [entries]);
+
+  useEffect(() => {
+    if (!vouchers?.length) return;
+    let alive = true;
+    buildVouchersPdf(vouchers, layout).then(blob => {
+      if (!alive) return;
+      const url = URL.createObjectURL(blob);
+      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
+      previewRef.current = url;
+      setPreviewUrl(url);
+    });
+    return () => { alive = false; };
+  }, [vouchers, layout]);
+  useEffect(() => () => { if (previewRef.current) URL.revokeObjectURL(previewRef.current); }, []);
+
+  const download = () => {
+    const a = document.createElement("a");
+    a.href = previewUrl;
+    a.download = "Vouchers.pdf";
+    a.click();
+  };
+  const print = () => {
+    const w = window.open(previewUrl, "_blank");
+    if (w) w.addEventListener("load", () => w.print());
+  };
+
+  const count = vouchers?.length || 0;
+  const pages = Math.ceil(count / (layout === "a4x2" ? 2 : 1));
+  const notes = [
+    skipped ? `${skipped} Voucher entr${skipped > 1 ? "ies" : "y"} without a system-made voucher (uploaded only) left out` : "",
+    missing ? `${missing} voucher${missing > 1 ? "s" : ""} had no saved details and were left out` : "",
+  ].filter(Boolean);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[88vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-3.5 border-b border-slate-100 shrink-0">
+          <h2 className="text-base font-bold text-slate-900">Print Vouchers</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+        <div className="flex flex-wrap items-end gap-4 px-6 py-3 border-b border-slate-100 shrink-0">
+          <div>
+            <label className={lbl}>Layout</label>
+            <div className="flex gap-1 p-1 rounded-lg bg-slate-100">
+              {BLANK_LAYOUTS.map(l => (
+                <button key={l.key} type="button" onClick={() => setLayout(l.key)}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium ${layout === l.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                  {l.label} <span className="text-xs font-normal text-slate-400">· {l.hint}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="pb-1.5">
+            {vouchers && <p className="text-sm font-semibold text-slate-800">{count} voucher{count === 1 ? "" : "s"} · {pages} page{pages === 1 ? "" : "s"}</p>}
+            {notes.map(n => <p key={n} className="text-xs text-amber-600">{n}</p>)}
+          </div>
+        </div>
+        <div className="flex-1 min-h-0 bg-slate-100 flex flex-col">
+          {error
+            ? <div className="flex-1 flex items-center justify-center text-sm text-red-600">{error}</div>
+            : vouchers && !count
+              ? <div className="flex-1 flex items-center justify-center text-sm text-slate-500">No vouchers made with Create Voucher in the current filter.</div>
+              : previewUrl
+                ? <iframe title="Vouchers preview" src={`${previewUrl}#toolbar=0&view=FitH`} className="flex-1 w-full" />
+                : <div className="flex-1 flex items-center justify-center text-slate-400"><BrandLoader /></div>}
+        </div>
+        <div className="flex items-center justify-end gap-2 px-6 py-3.5 border-t border-slate-100 bg-slate-50 shrink-0">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Close</button>
+          <button onClick={download} disabled={!previewUrl || !count} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+            <Download size={15} /> Download
+          </button>
+          <button onClick={print} disabled={!previewUrl || !count} className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40">
             <Printer size={15} /> Print
           </button>
         </div>
