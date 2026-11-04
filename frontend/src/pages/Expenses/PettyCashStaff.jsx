@@ -11,6 +11,7 @@ import DateRangeFilter from "../../components/DateRangeFilter";
 import LogPanel from "../../components/LogPanel";
 import Pagination from "./Pagination";
 import VoucherModal, { BlankVoucherModal, PrintVouchersModal, VoucherNumberingPanel } from "./PettyCashVoucher";
+import { PrintBillsPanel } from "./PettyCashBills";
 import { logAudit } from "../../utils/auditLog";
 import {
   CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, docSectionsFor, docCount, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
@@ -371,6 +372,7 @@ export default function PettyCashStaff({ scope }) {
   const [voucherOpen, setVoucherOpen] = useState(false);
   const [blankVoucherOpen, setBlankVoucherOpen] = useState(false);
   const [numberingOpen, setNumberingOpen] = useState(false);
+  const [printBills, setPrintBills] = useState(null); // { entries, missing }
   const [printVouchers, setPrintVouchers] = useState(null); // { entries, skipped }
   // The voucher made for the entry in the form: { voucherNo, data, dirty }.
   // data is loaded on demand for saved entries; dirty means it must be sent
@@ -1044,6 +1046,18 @@ export default function PettyCashStaff({ scope }) {
                         <Printer size={14} className="text-slate-400" /> Print Vouchers
                       </button>
                     )}
+                    {subTab === "entries" && (
+                      <button onClick={() => {
+                        setMoreMenuOpen(false);
+                        const expenses = filtered.filter(e => e.entryType === "expense");
+                        setPrintBills({
+                          entries: expenses.filter(e => e.documents?.bill?.length),
+                          missing: expenses.filter(e => !e.documents?.bill?.length && e.proofType !== "voucher"),
+                        });
+                      }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                        <Printer size={14} className="text-slate-400" /> Print Bills
+                      </button>
+                    )}
                     {subTab === "entries" && scope.projects.length > 0 && (
                       <button onClick={() => { setMoreMenuOpen(false); setNumberingOpen(true); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
                         <ListOrdered size={14} className="text-slate-400" /> Voucher Numbering
@@ -1478,6 +1492,15 @@ export default function PettyCashStaff({ scope }) {
           skipped={printVouchers.skipped}
           onOpenEntry={(e) => { setPrintVouchers(null); if (canEdit) openEdit(e); else setViewEntry(e); }}
           onClose={() => setPrintVouchers(null)}
+        />
+      )}
+
+      {printBills && (
+        <PrintBillsPanel
+          entries={printBills.entries}
+          missing={printBills.missing}
+          onOpenEntry={(e) => { setPrintBills(null); if (canEdit) openEdit(e); else setViewEntry(e); }}
+          onClose={() => setPrintBills(null)}
         />
       )}
 

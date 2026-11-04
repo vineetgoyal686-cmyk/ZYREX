@@ -529,7 +529,8 @@ function usePdfUrl(build, deps) {
 }
 
 // Right-side panel: one header row with every control, the PDF below it.
-function PdfPanel({ title, subtitle, notes = [], layout, setLayout, extra, url, fileName, body, onClose }) {
+// The layout toggle shows only when setLayout is given.
+export function PdfPanel({ title, subtitle, notes = [], layout, setLayout, extra, url, fileName, body, onClose }) {
   const [zoom, setZoom] = useState("fit");
   const zoomIdx = zoom === "fit" ? -1 : ZOOMS.indexOf(zoom);
   const zoomOut = () => setZoom(zoom === "fit" ? 75 : ZOOMS[Math.max(0, zoomIdx - 1)]);
@@ -555,14 +556,14 @@ function PdfPanel({ title, subtitle, notes = [], layout, setLayout, extra, url, 
             {subtitle && <p className="text-xs text-slate-500 leading-tight">{subtitle}</p>}
           </div>
           {extra}
-          <div className="flex p-0.5 rounded-lg bg-slate-100">
+          {setLayout && <div className="flex p-0.5 rounded-lg bg-slate-100">
             {BLANK_LAYOUTS.map(l => (
               <button key={l.key} type="button" title={l.hint} onClick={() => setLayout(l.key)}
                 className={`h-8 px-2.5 rounded-md text-xs font-semibold ${layout === l.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
                 {l.label}
               </button>
             ))}
-          </div>
+          </div>}
           <div className="flex items-center p-0.5 rounded-lg bg-slate-100">
             <button type="button" title="Zoom out" onClick={zoomOut} disabled={zoomIdx === 0} className={iconBtn}><ZoomOut size={15} /></button>
             <span className="w-11 text-center text-xs font-semibold text-slate-700 tabular-nums">{zoom === "fit" ? "Fit" : `${zoom}%`}</span>
@@ -637,6 +638,23 @@ async function printableVouchers(details) {
   return list;
 }
 
+// Entries listed in a panel note, each opening the entry.
+export function EntryChips({ entries, onOpen }) {
+  return (
+    <div className="mt-1 flex flex-wrap gap-1.5">
+      {entries.map(e => (
+        <button key={e.id} type="button" onClick={() => onOpen?.(e)}
+          className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white border border-amber-200 text-slate-700 hover:border-amber-400 hover:bg-amber-100">
+          <span className="font-semibold">{fmtDate(e.entryDate)}</span>
+          <span className="max-w-[160px] truncate">{e.vendorName || e.particular}</span>
+          <span className="tabular-nums">₹ {money(e.amount)}</span>
+          <span className="text-blue-600 font-semibold">Open</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // `entries` are the filtered entries that have a Create-Voucher voucher;
 // `skipped` lists Voucher-type entries whose voucher was only uploaded;
 // each can be opened (onOpenEntry) to create its voucher.
@@ -676,17 +694,7 @@ export function PrintVouchersModal({ entries, skipped = [], onOpenEntry, onClose
     skipped.length > 0 && (
       <>
         <p className="font-medium">{skipped.length} Voucher entr{skipped.length > 1 ? "ies" : "y"} without a system-made voucher left out. Open {skipped.length > 1 ? "each" : "it"} and click Create Voucher:</p>
-        <div className="mt-1 flex flex-wrap gap-1.5">
-          {skipped.map(e => (
-            <button key={e.id} type="button" onClick={() => onOpenEntry?.(e)}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white border border-amber-200 text-slate-700 hover:border-amber-400 hover:bg-amber-100">
-              <span className="font-semibold">{fmtDate(e.entryDate)}</span>
-              <span className="max-w-[160px] truncate">{e.vendorName || e.particular}</span>
-              <span className="tabular-nums">₹ {money(e.amount)}</span>
-              <span className="text-blue-600 font-semibold">Open</span>
-            </button>
-          ))}
-        </div>
+        <EntryChips entries={skipped} onOpen={onOpenEntry} />
       </>
     ),
     missing ? `${missing} voucher${missing > 1 ? "s" : ""} had no saved details and were left out` : "",
