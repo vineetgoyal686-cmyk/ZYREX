@@ -1038,7 +1038,7 @@ export default function PettyCashStaff({ scope }) {
                         setMoreMenuOpen(false);
                         setPrintVouchers({
                           entries: filtered.filter(e => e.voucherNo),
-                          skipped: filtered.filter(e => !e.voucherNo && e.proofType === "voucher").length,
+                          skipped: filtered.filter(e => !e.voucherNo && e.proofType === "voucher"),
                         });
                       }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
                         <Printer size={14} className="text-slate-400" /> Print Vouchers
@@ -1473,7 +1473,12 @@ export default function PettyCashStaff({ scope }) {
       )}
 
       {printVouchers && (
-        <PrintVouchersModal entries={printVouchers.entries} skipped={printVouchers.skipped} onClose={() => setPrintVouchers(null)} />
+        <PrintVouchersModal
+          entries={printVouchers.entries}
+          skipped={printVouchers.skipped}
+          onOpenEntry={(e) => { setPrintVouchers(null); if (canEdit) openEdit(e); else setViewEntry(e); }}
+          onClose={() => setPrintVouchers(null)}
+        />
       )}
 
       {numberingOpen && (

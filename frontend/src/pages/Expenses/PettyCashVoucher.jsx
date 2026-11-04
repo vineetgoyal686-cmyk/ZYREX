@@ -578,7 +578,9 @@ function PdfPanel({ title, subtitle, notes = [], layout, setLayout, extra, url, 
           <button type="button" title="Close" onClick={onClose} className="h-9 w-9 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
         {notes.length > 0 && (
-          <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-100 text-xs text-amber-700 shrink-0">{notes.join(" · ")}</div>
+          <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-100 text-xs text-amber-700 shrink-0 max-h-40 overflow-y-auto space-y-1">
+            {notes.map((n, i) => <div key={i}>{n}</div>)}
+          </div>
         )}
         <div className="flex-1 min-h-0 bg-slate-200 flex flex-col">
           {body || (url
@@ -636,8 +638,9 @@ async function printableVouchers(details) {
 }
 
 // `entries` are the filtered entries that have a Create-Voucher voucher;
-// `skipped` counts Voucher-type entries whose voucher was only uploaded.
-export function PrintVouchersModal({ entries, skipped, onClose }) {
+// `skipped` lists Voucher-type entries whose voucher was only uploaded;
+// each can be opened (onOpenEntry) to create its voucher.
+export function PrintVouchersModal({ entries, skipped = [], onOpenEntry, onClose }) {
   const [layout, setLayout] = useState("a4x2");
   const [vouchers, setVouchers] = useState(null);
   const [missing, setMissing] = useState(0);
@@ -670,7 +673,22 @@ export function PrintVouchersModal({ entries, skipped, onClose }) {
   const count = vouchers?.length || 0;
   const pages = Math.ceil(count / (layout === "a4x2" ? 2 : 1));
   const notes = [
-    skipped ? `${skipped} Voucher entr${skipped > 1 ? "ies" : "y"} without a system-made voucher (uploaded only) left out` : "",
+    skipped.length > 0 && (
+      <>
+        <p className="font-medium">{skipped.length} Voucher entr{skipped.length > 1 ? "ies" : "y"} without a system-made voucher left out. Open {skipped.length > 1 ? "each" : "it"} and click Create Voucher:</p>
+        <div className="mt-1 flex flex-wrap gap-1.5">
+          {skipped.map(e => (
+            <button key={e.id} type="button" onClick={() => onOpenEntry?.(e)}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white border border-amber-200 text-slate-700 hover:border-amber-400 hover:bg-amber-100">
+              <span className="font-semibold">{fmtDate(e.entryDate)}</span>
+              <span className="max-w-[160px] truncate">{e.vendorName || e.particular}</span>
+              <span className="tabular-nums">₹ {money(e.amount)}</span>
+              <span className="text-blue-600 font-semibold">Open</span>
+            </button>
+          ))}
+        </div>
+      </>
+    ),
     missing ? `${missing} voucher${missing > 1 ? "s" : ""} had no saved details and were left out` : "",
   ].filter(Boolean);
   const message = error ? <span className="text-red-600">{error}</span>
