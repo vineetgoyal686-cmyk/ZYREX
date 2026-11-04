@@ -1617,6 +1617,22 @@ export default function PettyCashStaff({ scope }) {
 const emptyDocs = () => Object.fromEntries(DOC_SECTIONS.map(s => [s.key, []]));
 
 // Saved attachments grouped by section; empty sections are skipped.
+// Saves an attachment under its original name. Signed storage URLs are on
+// another origin (a plain download link would just open them), so the file
+// is fetched first; if that fails it opens in a new tab instead.
+const docFileName = (url) => decodeURIComponent(String(url).split("?")[0].split("/").pop() || "file").replace(/^\d+_\d+_/, "");
+async function downloadDoc(url) {
+  try {
+    const blob = await fetch(url).then(r => { if (!r.ok) throw new Error(); return r.blob(); });
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = docFileName(url);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
+  } catch { window.open(url, "_blank"); }
+}
+
 function DocSectionsList({ documents }) {
   const filled = DOC_SECTIONS.filter(s => documents?.[s.key]?.length);
   if (!filled.length) return <p className="text-sm text-slate-400">No attachments</p>;
@@ -1627,10 +1643,15 @@ function DocSectionsList({ documents }) {
           <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">{s.label}</p>
           <div className="space-y-1">
             {documents[s.key].map((url, i) => (
-              <a key={i} href={url} target="_blank" rel="noreferrer"
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-50 text-sm text-blue-600 hover:bg-slate-100">
-                <Paperclip size={13} /> {s.label} {i + 1}
-              </a>
+              <div key={i} className="flex items-center gap-1 rounded-lg bg-slate-50 hover:bg-slate-100">
+                <a href={url} target="_blank" rel="noreferrer" className="flex-1 min-w-0 flex items-center gap-2 px-3 py-1.5 text-sm text-blue-600">
+                  <Paperclip size={13} /> {s.label} {i + 1}
+                </a>
+                <button type="button" title="Download" onClick={() => downloadDoc(url)}
+                  className="mr-1 p-1.5 rounded-md text-slate-500 hover:text-slate-900 hover:bg-white">
+                  <Download size={14} />
+                </button>
+              </div>
             ))}
           </div>
         </div>
