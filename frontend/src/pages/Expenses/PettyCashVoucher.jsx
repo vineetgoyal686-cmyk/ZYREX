@@ -188,14 +188,17 @@ async function drawVoucher(doc, v, top) {
   y += 6.5;
 
   doc.setFont("helvetica", "normal");
+  // Tallest wrapped cell sets the row height (details or category).
+  const rowH = (it) => Math.max(6, 2.4 + 3.6 * Math.max(1,
+    doc.splitTextToSize(String(it.details || ""), cols[1].w - 3).length,
+    doc.splitTextToSize(String(it.category || ""), cols[2].w - 3).length));
+  // Empty rows fill the table to six plain rows' height (36 mm), so wrapped
+  // lines don't push the footer into the signatures.
   const rows = [...v.items];
-  while (rows.length < 6) rows.push({ details: "", category: "", amount: "" });
+  let used = rows.reduce((s, it) => s + rowH(it), 0);
+  while (used + 6 <= 36.01) { rows.push({ details: "", category: "", amount: "" }); used += 6; }
   rows.forEach((it, i) => {
-    // Tallest wrapped cell sets the row height (details or category).
-    const lines = Math.max(1,
-      doc.splitTextToSize(String(it.details || ""), cols[1].w - 3).length,
-      doc.splitTextToSize(String(it.category || ""), cols[2].w - 3).length);
-    const h = Math.max(6, 2.4 + lines * 3.6);
+    const h = rowH(it);
     rowBox(y, h);
     cellText(String(i + 1), 0, y, h);
     cellText(it.details, 1, y, h);
@@ -213,12 +216,12 @@ async function drawVoucher(doc, v, top) {
   if (v.total != null) doc.text(money(v.total), xs[4] - 1.5, y + 4.3, { align: "right" });
   y += 6.5;
 
-  y += 7;
+  y += 6;
   doc.setFont("helvetica", "bold"); doc.setFontSize(9);
   doc.text("Only", inR, y, { align: "right" });
   field("Amount in Words: Rupees", v.amountWords, inL, inR - doc.getTextWidth("Only") - 2, y);
 
-  y += 7;
+  y += 6.5;
   doc.setFont("helvetica", "bold");
   doc.text("Payment Mode:", inL, y);
   let bx = inL + doc.getTextWidth("Payment Mode:") + 3;
@@ -239,7 +242,7 @@ async function drawVoucher(doc, v, top) {
     const x1 = inL + i * slotW + 4, x2 = inL + (i + 1) * slotW - 4, cx = (x1 + x2) / 2;
     if (s.image) {
       const { w, h } = await imageSize(s.image);
-      const maxW = x2 - x1 - 10, maxH = 12;
+      const maxW = x2 - x1 - 10, maxH = 11;
       const scale = Math.min(maxW / w, maxH / h);
       const iw = w * scale, ih = h * scale;
       try { doc.addImage(s.image, cx - iw / 2, lineY - ih - 0.8, iw, ih); } catch { /* unreadable image — leave blank */ }
