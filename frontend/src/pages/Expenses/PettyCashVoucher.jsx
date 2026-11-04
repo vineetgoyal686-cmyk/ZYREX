@@ -537,13 +537,13 @@ export function BlankVoucherModal({ company, project, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[88vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[60] bg-black/40" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="fixed top-0 right-0 h-full w-full max-w-[760px] bg-white shadow-2xl flex flex-col">
         <div className="flex items-center justify-between px-6 py-3.5 border-b border-slate-100 shrink-0">
           <h2 className="text-base font-bold text-slate-900">Blank Expense Voucher — {company?.name}</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
-        <div className="flex flex-wrap items-end gap-4 px-6 py-3 border-b border-slate-100 shrink-0">
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-2 px-5 py-2.5 border-b border-slate-100 shrink-0">
           <div>
             <label className={lbl}>Layout</label>
             <div className="flex gap-1 p-1 rounded-lg bg-slate-100">
@@ -563,7 +563,7 @@ export function BlankVoucherModal({ company, project, onClose }) {
         </div>
         <div className="flex-1 min-h-0 bg-slate-100 flex flex-col">
           {previewUrl
-            ? <iframe title="Blank voucher preview" src={`${previewUrl}#toolbar=0&view=FitH`} className="flex-1 w-full" />
+            ? <iframe title="Blank voucher preview" src={`${previewUrl}#toolbar=0&view=Fit`} className="flex-1 w-full" />
             : <div className="flex-1 flex items-center justify-center text-slate-400"><BrandLoader /></div>}
         </div>
         <div className="flex items-center justify-end gap-2 px-6 py-3.5 border-t border-slate-100 bg-slate-50 shrink-0">
@@ -659,13 +659,13 @@ export function PrintVouchersModal({ entries, skipped, onClose }) {
   ].filter(Boolean);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 bg-black/50 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl h-[88vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-[60] bg-black/40" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="fixed top-0 right-0 h-full w-full max-w-[760px] bg-white shadow-2xl flex flex-col">
         <div className="flex items-center justify-between px-6 py-3.5 border-b border-slate-100 shrink-0">
           <h2 className="text-base font-bold text-slate-900">Print Vouchers</h2>
           <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
-        <div className="flex flex-wrap items-end gap-4 px-6 py-3 border-b border-slate-100 shrink-0">
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-2 px-5 py-2.5 border-b border-slate-100 shrink-0">
           <div>
             <label className={lbl}>Layout</label>
             <div className="flex gap-1 p-1 rounded-lg bg-slate-100">
@@ -688,7 +688,7 @@ export function PrintVouchersModal({ entries, skipped, onClose }) {
             : vouchers && !count
               ? <div className="flex-1 flex items-center justify-center text-sm text-slate-500">No vouchers made with Create Voucher in the current filter.</div>
               : previewUrl
-                ? <iframe title="Vouchers preview" src={`${previewUrl}#toolbar=0&view=FitH`} className="flex-1 w-full" />
+                ? <iframe title="Vouchers preview" src={`${previewUrl}#toolbar=0&view=Fit`} className="flex-1 w-full" />
                 : <div className="flex-1 flex items-center justify-center text-slate-400"><BrandLoader /></div>}
         </div>
         <div className="flex items-center justify-end gap-2 px-6 py-3.5 border-t border-slate-100 bg-slate-50 shrink-0">
