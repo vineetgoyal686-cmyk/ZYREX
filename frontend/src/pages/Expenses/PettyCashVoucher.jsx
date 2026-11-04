@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { jsPDF } from "jspdf";
-import { X, Plus, Trash2, UploadCloud, Loader2, Printer, Download } from "lucide-react";
+import { X, Plus, Trash2, UploadCloud, Loader2, Printer, Download, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import api from "../../utils/api";
 import { fmtDate, apiError } from "./pettyCashConstants";
 import BrandLoader from "../../components/BrandLoader";
@@ -106,7 +106,7 @@ async function buildVouchersPdf(vouchers, layout) {
 }
 
 // Blank voucher to fill by hand — `pages` pages of the chosen layout.
-export function buildBlankVoucherPdf(header, layout, pages = 1) {
+function buildBlankVoucherPdf(header, layout, pages = 1) {
   const blank = {
     header, voucherNo: "", date: "", paidTo: "", items: [], total: null, amountWords: "",
     paymentMode: "", refNo: "", signs: {},
@@ -498,89 +498,122 @@ export default function VoucherModal({ entry, company, project, initial, onClose
   );
 }
 
-// ── Blank voucher (print and fill by hand) ───────────────────────────────
+// ── Print panels (blank vouchers / saved vouchers) ───────────────────────
 const BLANK_LAYOUTS = [
-  { key: "a5",   label: "1 per page", hint: "A5 landscape" },
-  { key: "a4x2", label: "2 per page", hint: "A4 — cut in half" },
+  { key: "a5",   label: "1 / page", hint: "A5 landscape" },
+  { key: "a4x2", label: "2 / page", hint: "A4, two halves with a cut line" },
 ];
+const ZOOMS = [50, 75, 100, 125, 150, 200];
 
-export function BlankVoucherModal({ company, project, onClose }) {
-  const [layout, setLayout] = useState("a4x2");
-  const [copies, setCopies] = useState(1);
-  const [previewUrl, setPreviewUrl] = useState("");
-  const previewRef = useRef("");
-  const header = useMemo(() => voucherHeader(company, project), [company, project]);
-  const pages = Math.min(50, Math.max(1, Number(copies) || 1));
-
+// Object URL for the latest PDF `build` returns (null = nothing to build);
+// the previous URL is revoked.
+function usePdfUrl(build, deps) {
+  const [url, setUrl] = useState("");
+  const ref = useRef("");
   useEffect(() => {
+    const p = build();
+    if (!p) return;
     let alive = true;
-    buildBlankVoucherPdf(header, layout, pages).then(blob => {
+    p.then(blob => {
       if (!alive) return;
-      const url = URL.createObjectURL(blob);
-      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
-      previewRef.current = url;
-      setPreviewUrl(url);
+      const next = URL.createObjectURL(blob);
+      if (ref.current) URL.revokeObjectURL(ref.current);
+      ref.current = next;
+      setUrl(next);
     });
     return () => { alive = false; };
-  }, [header, layout, pages]);
-  useEffect(() => () => { if (previewRef.current) URL.revokeObjectURL(previewRef.current); }, []);
+  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { if (ref.current) URL.revokeObjectURL(ref.current); }, []);
+  return url;
+}
 
+// Right-side panel: one header row with every control, the PDF below it.
+function PdfPanel({ title, subtitle, notes = [], layout, setLayout, extra, url, fileName, body, onClose }) {
+  const [zoom, setZoom] = useState("fit");
+  const zoomIdx = zoom === "fit" ? -1 : ZOOMS.indexOf(zoom);
+  const zoomOut = () => setZoom(zoom === "fit" ? 75 : ZOOMS[Math.max(0, zoomIdx - 1)]);
+  const zoomIn = () => setZoom(zoom === "fit" ? 100 : ZOOMS[Math.min(ZOOMS.length - 1, zoomIdx + 1)]);
   const download = () => {
     const a = document.createElement("a");
-    a.href = previewUrl;
-    a.download = `Blank_Voucher_${String(company?.name || "").replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf`;
+    a.href = url;
+    a.download = fileName;
     a.click();
   };
   const print = () => {
-    const w = window.open(previewUrl, "_blank");
+    const w = window.open(url, "_blank");
     if (w) w.addEventListener("load", () => w.print());
   };
+  const iconBtn = "h-8 w-8 flex items-center justify-center rounded-md text-slate-600 hover:bg-white hover:shadow-sm disabled:opacity-40";
 
   return (
     <div className="fixed inset-0 z-[60] bg-black/40" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="fixed top-0 right-0 h-full w-full max-w-[760px] bg-white shadow-2xl flex flex-col">
-        <div className="flex items-center justify-between px-6 py-3.5 border-b border-slate-100 shrink-0">
-          <h2 className="text-base font-bold text-slate-900">Blank Expense Voucher — {company?.name}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
-        </div>
-        <div className="flex flex-wrap items-end gap-x-4 gap-y-2 px-5 py-2.5 border-b border-slate-100 shrink-0">
-          <div>
-            <label className={lbl}>Layout</label>
-            <div className="flex gap-1 p-1 rounded-lg bg-slate-100">
-              {BLANK_LAYOUTS.map(l => (
-                <button key={l.key} type="button" onClick={() => setLayout(l.key)}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium ${layout === l.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-                  {l.label} <span className="text-xs font-normal text-slate-400">· {l.hint}</span>
-                </button>
-              ))}
-            </div>
+      <div onClick={e => e.stopPropagation()} className="fixed top-0 right-0 h-full w-full max-w-[900px] bg-white shadow-2xl flex flex-col">
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-slate-200 shrink-0">
+          <div className="min-w-0 mr-auto">
+            <h2 className="text-[15px] font-bold text-slate-900 leading-tight truncate">{title}</h2>
+            {subtitle && <p className="text-xs text-slate-500 leading-tight">{subtitle}</p>}
           </div>
-          <div>
-            <label className={lbl}>Pages</label>
-            <input type="number" min="1" max="50" value={copies} onChange={e => setCopies(e.target.value)} className={`${inp} w-24`} />
+          {extra}
+          <div className="flex p-0.5 rounded-lg bg-slate-100">
+            {BLANK_LAYOUTS.map(l => (
+              <button key={l.key} type="button" title={l.hint} onClick={() => setLayout(l.key)}
+                className={`h-8 px-2.5 rounded-md text-xs font-semibold ${layout === l.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                {l.label}
+              </button>
+            ))}
           </div>
-          <p className="text-xs text-slate-500 pb-2">{pages * (layout === "a4x2" ? 2 : 1)} voucher{pages * (layout === "a4x2" ? 2 : 1) > 1 ? "s" : ""}</p>
-        </div>
-        <div className="flex-1 min-h-0 bg-slate-100 flex flex-col">
-          {previewUrl
-            ? <iframe title="Blank voucher preview" src={`${previewUrl}#toolbar=0&view=Fit`} className="flex-1 w-full" />
-            : <div className="flex-1 flex items-center justify-center text-slate-400"><BrandLoader /></div>}
-        </div>
-        <div className="flex items-center justify-end gap-2 px-6 py-3.5 border-t border-slate-100 bg-slate-50 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Close</button>
-          <button onClick={download} disabled={!previewUrl} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40">
-            <Download size={15} /> Download
+          <div className="flex items-center p-0.5 rounded-lg bg-slate-100">
+            <button type="button" title="Zoom out" onClick={zoomOut} disabled={zoomIdx === 0} className={iconBtn}><ZoomOut size={15} /></button>
+            <span className="w-11 text-center text-xs font-semibold text-slate-700 tabular-nums">{zoom === "fit" ? "Fit" : `${zoom}%`}</span>
+            <button type="button" title="Zoom in" onClick={zoomIn} disabled={zoomIdx === ZOOMS.length - 1} className={iconBtn}><ZoomIn size={15} /></button>
+            <button type="button" title="Fit whole page" onClick={() => setZoom("fit")} className={iconBtn}><Maximize2 size={14} /></button>
+          </div>
+          <button type="button" title="Download PDF" onClick={download} disabled={!url} className="h-9 w-9 flex items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40">
+            <Download size={16} />
           </button>
-          <button onClick={print} disabled={!previewUrl} className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40">
+          <button type="button" onClick={print} disabled={!url} className="h-9 px-3.5 flex items-center gap-1.5 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 disabled:opacity-40">
             <Printer size={15} /> Print
           </button>
+          <button type="button" title="Close" onClick={onClose} className="h-9 w-9 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+        {notes.length > 0 && (
+          <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-100 text-xs text-amber-700 shrink-0">{notes.join(" · ")}</div>
+        )}
+        <div className="flex-1 min-h-0 bg-slate-200 flex flex-col">
+          {body || (url
+            ? <iframe key={`${url}|${zoom}`} title={title} src={`${url}#toolbar=0&navpanes=0&${zoom === "fit" ? "view=Fit" : `zoom=${zoom}`}`} className="flex-1 w-full" />
+            : <div className="flex-1 flex items-center justify-center text-slate-400"><BrandLoader /></div>)}
         </div>
       </div>
     </div>
   );
 }
 
-// ── Print saved vouchers (the filtered entries, in one PDF) ──────────────
+export function BlankVoucherModal({ company, project, onClose }) {
+  const [layout, setLayout] = useState("a4x2");
+  const [copies, setCopies] = useState(1);
+  const header = useMemo(() => voucherHeader(company, project), [company, project]);
+  const pages = Math.min(50, Math.max(1, Number(copies) || 1));
+  const url = usePdfUrl(() => buildBlankVoucherPdf(header, layout, pages), [header, layout, pages]);
+  const count = pages * (layout === "a4x2" ? 2 : 1);
+
+  return (
+    <PdfPanel
+      title="Blank Voucher"
+      subtitle={`${company?.name || ""} · ${count} voucher${count > 1 ? "s" : ""}`}
+      layout={layout} setLayout={setLayout} url={url} onClose={onClose}
+      fileName={`Blank_Voucher_${String(company?.name || "").replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf`}
+      extra={(
+        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+          Pages
+          <input type="number" min="1" max="50" value={copies} onChange={e => setCopies(e.target.value)}
+            className="h-8 w-14 border border-slate-300 rounded-md px-2 text-sm text-slate-900 outline-none focus:border-slate-500" />
+        </label>
+      )}
+    />
+  );
+}
+
 // `entries` are the filtered entries that have a Create-Voucher voucher;
 // `skipped` counts Voucher-type entries whose voucher was only uploaded.
 export function PrintVouchersModal({ entries, skipped, onClose }) {
@@ -588,8 +621,6 @@ export function PrintVouchersModal({ entries, skipped, onClose }) {
   const [vouchers, setVouchers] = useState(null);
   const [missing, setMissing] = useState(0);
   const [error, setError] = useState("");
-  const [previewUrl, setPreviewUrl] = useState("");
-  const previewRef = useRef("");
 
   // Load each entry's saved details, then the profile signatures (not stored
   // with the voucher) — fetched once per user.
@@ -626,30 +657,7 @@ export function PrintVouchersModal({ entries, skipped, onClose }) {
     return () => { alive = false; };
   }, [entries]);
 
-  useEffect(() => {
-    if (!vouchers?.length) return;
-    let alive = true;
-    buildVouchersPdf(vouchers, layout).then(blob => {
-      if (!alive) return;
-      const url = URL.createObjectURL(blob);
-      if (previewRef.current) URL.revokeObjectURL(previewRef.current);
-      previewRef.current = url;
-      setPreviewUrl(url);
-    });
-    return () => { alive = false; };
-  }, [vouchers, layout]);
-  useEffect(() => () => { if (previewRef.current) URL.revokeObjectURL(previewRef.current); }, []);
-
-  const download = () => {
-    const a = document.createElement("a");
-    a.href = previewUrl;
-    a.download = "Vouchers.pdf";
-    a.click();
-  };
-  const print = () => {
-    const w = window.open(previewUrl, "_blank");
-    if (w) w.addEventListener("load", () => w.print());
-  };
+  const url = usePdfUrl(() => (vouchers?.length ? buildVouchersPdf(vouchers, layout) : null), [vouchers, layout]);
 
   const count = vouchers?.length || 0;
   const pages = Math.ceil(count / (layout === "a4x2" ? 2 : 1));
@@ -657,50 +665,15 @@ export function PrintVouchersModal({ entries, skipped, onClose }) {
     skipped ? `${skipped} Voucher entr${skipped > 1 ? "ies" : "y"} without a system-made voucher (uploaded only) left out` : "",
     missing ? `${missing} voucher${missing > 1 ? "s" : ""} had no saved details and were left out` : "",
   ].filter(Boolean);
+  const message = error ? <span className="text-red-600">{error}</span>
+    : vouchers && !count ? "No vouchers made with Create Voucher in the current filter." : "";
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/40" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="fixed top-0 right-0 h-full w-full max-w-[760px] bg-white shadow-2xl flex flex-col">
-        <div className="flex items-center justify-between px-6 py-3.5 border-b border-slate-100 shrink-0">
-          <h2 className="text-base font-bold text-slate-900">Print Vouchers</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
-        </div>
-        <div className="flex flex-wrap items-end gap-x-4 gap-y-2 px-5 py-2.5 border-b border-slate-100 shrink-0">
-          <div>
-            <label className={lbl}>Layout</label>
-            <div className="flex gap-1 p-1 rounded-lg bg-slate-100">
-              {BLANK_LAYOUTS.map(l => (
-                <button key={l.key} type="button" onClick={() => setLayout(l.key)}
-                  className={`px-3 py-1.5 rounded-md text-sm font-medium ${layout === l.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
-                  {l.label} <span className="text-xs font-normal text-slate-400">· {l.hint}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="pb-1.5">
-            {vouchers && <p className="text-sm font-semibold text-slate-800">{count} voucher{count === 1 ? "" : "s"} · {pages} page{pages === 1 ? "" : "s"}</p>}
-            {notes.map(n => <p key={n} className="text-xs text-amber-600">{n}</p>)}
-          </div>
-        </div>
-        <div className="flex-1 min-h-0 bg-slate-100 flex flex-col">
-          {error
-            ? <div className="flex-1 flex items-center justify-center text-sm text-red-600">{error}</div>
-            : vouchers && !count
-              ? <div className="flex-1 flex items-center justify-center text-sm text-slate-500">No vouchers made with Create Voucher in the current filter.</div>
-              : previewUrl
-                ? <iframe title="Vouchers preview" src={`${previewUrl}#toolbar=0&view=Fit`} className="flex-1 w-full" />
-                : <div className="flex-1 flex items-center justify-center text-slate-400"><BrandLoader /></div>}
-        </div>
-        <div className="flex items-center justify-end gap-2 px-6 py-3.5 border-t border-slate-100 bg-slate-50 shrink-0">
-          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Close</button>
-          <button onClick={download} disabled={!previewUrl || !count} className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40">
-            <Download size={15} /> Download
-          </button>
-          <button onClick={print} disabled={!previewUrl || !count} className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-40">
-            <Printer size={15} /> Print
-          </button>
-        </div>
-      </div>
-    </div>
+    <PdfPanel
+      title="Print Vouchers"
+      subtitle={vouchers ? `${count} voucher${count === 1 ? "" : "s"} · ${pages} page${pages === 1 ? "" : "s"}` : "Loading…"}
+      notes={notes} layout={layout} setLayout={setLayout} url={count ? url : ""} fileName="Vouchers.pdf" onClose={onClose}
+      body={message && <div className="flex-1 flex items-center justify-center text-sm text-slate-500">{message}</div>}
+    />
   );
 }
