@@ -271,9 +271,10 @@ export default function VoucherModal({ entry, company, project, initial, onClose
     header: initial.header || voucherHeader(company, project),
     signs: Object.fromEntries(SIGN_SLOTS.map(s => [s.key, { userId: "", name: "", image: "", ...(initial.signs?.[s.key] || {}) }])),
   } : ({
-    // BVPL-VH-<n> comes from the server: the preview shows the next number,
-    // and it is only taken (used up) when Done is clicked.
-    voucherNo: "",
+    // <prefix>-<FY>-VH-<n> comes from the server: the next number in the
+    // project's / office's series for the entry date's FY. It's stored when
+    // the entry is saved, so a voucher that's never saved uses none up.
+    voucherNo: "", fy: "", seq: null,
     header: voucherHeader(company, project),
     date: entry.entryDate || "",
     paidTo: String(entry.vendorName || "").trim(), // the payee — starts as the entry's vendor, editable
@@ -299,8 +300,9 @@ export default function VoucherModal({ entry, company, project, initial, onClose
       });
       return;
     }
-    api.get("/api/petty-cash/voucher-no", { params: { company_id: company?.id } })
-      .then(({ data }) => setV(p => ({ ...p, voucherNo: p.voucherNo || data.voucherNo })))
+    if (!project?.id) return setError("Pick the project / office on the entry first — the voucher number depends on it");
+    api.get("/api/petty-cash/voucher-no", { params: { company_id: company?.id, project_id: project.id, date: entry.entryDate } })
+      .then(({ data }) => setV(p => ({ ...p, voucherNo: data.voucherNo, fy: data.fy, seq: data.seq })))
       .catch(err => setError(apiError(err, "Could not load voucher number")));
   }, []);
 
@@ -357,20 +359,16 @@ export default function VoucherModal({ entry, company, project, initial, onClose
   const done = async () => {
     if (!v.paidTo.trim()) return setError("Paid To is required");
     if (!v.items.some(it => String(it.details).trim() && Number(it.amount) > 0)) return setError("Add at least one expense line with an amount");
+    if (!v.voucherNo) return setError("The voucher number hasn't loaded yet");
     setBusy(true);
     try {
-      let voucherNo = v.voucherNo;
-      if (!editing) {
-        const { data } = await api.post("/api/petty-cash/voucher-no", { companyId: company?.id });
-        voucherNo = data.voucherNo;
-        setV(p => ({ ...p, voucherNo }));
-      }
-      const blob = await buildVoucherPdf({ ...voucherData, voucherNo });
+      const voucherNo = v.voucherNo;
+      const blob = await buildVoucherPdf(voucherData);
       const safeNo = voucherNo.replace(/[^a-zA-Z0-9._-]/g, "_");
       // Saved with the entry so the voucher can be reopened. Profile
       // signatures are re-fetched on edit, so only uploaded images are kept.
       const details = {
-        voucherNo, header: v.header, date: v.date, paidTo: v.paidTo, items: v.items, paymentMode: v.paymentMode, refNo: v.refNo,
+        voucherNo, fy: v.fy, seq: v.seq, header: v.header, date: v.date, paidTo: v.paidTo, items: v.items, paymentMode: v.paymentMode, refNo: v.refNo,
         signs: Object.fromEntries(SIGN_SLOTS.map(s => {
           const sign = v.signs[s.key];
           return [s.key, { userId: sign.userId, name: sign.name, image: sign.userId ? "" : sign.image }];
@@ -617,6 +615,26 @@ export function BlankVoucherModal({ company, project, onClose }) {
   );
 }
 
+// Saved voucher details → ready to draw: totals, amount in words, and the
+// profile signatures (not stored with the voucher), fetched once per user.
+async function printableVouchers(details) {
+  const cache = {};
+  const signature = (userId) => (cache[userId] ||= api.get(`/api/petty-cash/users/${userId}/signature`)
+    .then(({ data }) => (data.signatureUrl ? fetch(data.signatureUrl).then(r => r.blob()).then(blobToDataUrl) : ""))
+    .catch(() => ""));
+  const list = [];
+  for (const d of details) {
+    const signs = {};
+    for (const s of SIGN_SLOTS) {
+      const sign = d.signs?.[s.key] || {};
+      signs[s.key] = { ...sign, image: sign.image || (sign.userId ? await signature(sign.userId) : "") };
+    }
+    const total = (d.items || []).reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
+    list.push({ ...d, items: d.items || [], signs, total, amountWords: amountInWords(total) });
+  }
+  return list;
+}
+
 // `entries` are the filtered entries that have a Create-Voucher voucher;
 // `skipped` counts Voucher-type entries whose voucher was only uploaded.
 export function PrintVouchersModal({ entries, skipped, onClose }) {
@@ -638,20 +656,7 @@ export function PrintVouchersModal({ entries, skipped, onClose }) {
             api.get(`/api/petty-cash/entries/${e.id}/voucher`).then(r => r.data.voucher).catch(() => null)));
           details.push(...batch);
         }
-        const signCache = {};
-        const signature = (userId) => (signCache[userId] ||= api.get(`/api/petty-cash/users/${userId}/signature`)
-          .then(({ data }) => (data.signatureUrl ? fetch(data.signatureUrl).then(r => r.blob()).then(blobToDataUrl) : ""))
-          .catch(() => ""));
-        const list = [];
-        for (const d of details.filter(Boolean)) {
-          const signs = {};
-          for (const s of SIGN_SLOTS) {
-            const sign = d.signs?.[s.key] || {};
-            signs[s.key] = { ...sign, image: sign.image || (sign.userId ? await signature(sign.userId) : "") };
-          }
-          const total = (d.items || []).reduce((sum, it) => sum + (Number(it.amount) || 0), 0);
-          list.push({ ...d, items: d.items || [], signs, total, amountWords: amountInWords(total) });
-        }
+        const list = await printableVouchers(details.filter(Boolean));
         if (!alive) return;
         setMissing(details.length - list.length);
         setVouchers(list);
@@ -678,5 +683,204 @@ export function PrintVouchersModal({ entries, skipped, onClose }) {
       notes={notes} layout={layout} setLayout={setLayout} url={count ? url : ""} fileName="Vouchers.pdf" onClose={onClose}
       body={message && <div className="flex-1 flex items-center justify-center text-sm text-slate-500">{message}</div>}
     />
+  );
+}
+
+// ── Voucher numbering (format + month-wise renumber) ─────────────────────
+const padNo = (series, fy, seq) => `${series.prefix}-${fy}-VH-${String(seq).padStart(series.digits, "0")}`;
+const thisMonth = () => new Date().toISOString().slice(0, 7);
+
+export function VoucherNumberingPanel({ company, projects, defaultProjectId, defaultMonth, canEdit, onChanged, onClose }) {
+  const [projectId, setProjectId] = useState(defaultProjectId || projects[0]?.id || "");
+  const [series, setSeries] = useState(null);   // saved { prefix, digits, isDefault }
+  const [form, setForm] = useState({ prefix: "", digits: 3 });
+  const [next, setNext] = useState({ fy: "", no: "" });
+  const [month, setMonth] = useState(defaultMonth || thisMonth());
+  const [plan, setPlan] = useState(null);       // { fy, series, suggestedStart, vouchers }
+  const [start, setStart] = useState("");
+  const [busy, setBusy] = useState("");
+  const [msg, setMsg] = useState({ type: "", text: "" });
+
+  const loadSeries = async () => {
+    if (!projectId) return;
+    try {
+      const { data } = await api.get("/api/petty-cash/voucher-series", { params: { company_id: company.id, project_id: projectId } });
+      setSeries(data.series);
+      setForm({ prefix: data.series.prefix, digits: data.series.digits });
+      setNext({ fy: data.fy, no: data.next });
+    } catch (err) { setMsg({ type: "error", text: apiError(err, "Could not load the format") }); }
+  };
+  const loadPlan = async () => {
+    if (!projectId || !month) return;
+    setPlan(null);
+    try {
+      const { data } = await api.get("/api/petty-cash/voucher-renumber", { params: { company_id: company.id, project_id: projectId, month } });
+      setPlan(data);
+      setStart(String(data.suggestedStart));
+    } catch (err) { setMsg({ type: "error", text: apiError(err, "Could not load the month's vouchers") }); }
+  };
+  useEffect(() => { setMsg({ type: "", text: "" }); loadSeries(); }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadPlan(); }, [projectId, month]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const formDirty = !!series && (form.prefix.trim().toUpperCase() !== series.prefix || Number(form.digits) !== series.digits);
+  const previewSeries = { prefix: form.prefix.trim().toUpperCase() || "…", digits: Number(form.digits) || 3 };
+  const nextSeq = Number(String(next.no).split("-").pop()) || 1;
+
+  const saveFormat = async () => {
+    setBusy("format");
+    setMsg({ type: "", text: "" });
+    try {
+      await api.put("/api/petty-cash/voucher-series", { companyId: company.id, projectId, prefix: form.prefix, digits: Number(form.digits) });
+      await Promise.all([loadSeries(), loadPlan()]);
+      setMsg({ type: "ok", text: "Format saved. New vouchers use it; renumber a month to update its old vouchers." });
+    } catch (err) { setMsg({ type: "error", text: apiError(err, "Could not save the format") }); }
+    setBusy("");
+  };
+
+  const startNo = Number(start);
+  const startOk = Number.isInteger(startNo) && startNo >= 1;
+  const count = plan?.vouchers.length || 0;
+  const renumber = async () => {
+    if (!startOk || !count) return;
+    if (!window.confirm(`Renumber ${count} voucher${count > 1 ? "s" : ""} of ${month} starting at ${padNo(plan.series, plan.fy, startNo)}?`)) return;
+    setBusy("renumber");
+    setMsg({ type: "", text: "" });
+    try {
+      const { data } = await api.post("/api/petty-cash/voucher-renumber", { companyId: company.id, projectId, month, start: startNo });
+      // The attached PDFs still show the old numbers, so rebuild each one.
+      const list = await printableVouchers(data.renumbered.map(r => r.voucher));
+      let failed = 0;
+      for (let i = 0; i < list.length; i++) {
+        setBusy(`pdf ${i + 1}/${list.length}`);
+        try {
+          const fd = new FormData();
+          fd.append("pdf", new File([await buildVoucherPdf(list[i])], "voucher.pdf", { type: "application/pdf" }));
+          fd.append("oldNo", data.renumbered[i].oldNo);
+          await api.post(`/api/petty-cash/entries/${data.renumbered[i].id}/voucher-pdf`, fd);
+        } catch { failed++; }
+      }
+      await Promise.all([loadSeries(), loadPlan()]);
+      onChanged?.();
+      setMsg(failed
+        ? { type: "error", text: `Renumbered, but ${failed} PDF${failed > 1 ? "s" : ""} could not be updated. Run Renumber again for this month.` }
+        : { type: "ok", text: `${list.length} voucher${list.length > 1 ? "s" : ""} renumbered and their PDFs updated.` });
+    } catch (err) { setMsg({ type: "error", text: apiError(err, "Could not renumber") }); }
+    setBusy("");
+  };
+
+  const card = "rounded-xl border border-slate-200 p-4 space-y-3";
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/40" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="fixed top-0 right-0 h-full w-full max-w-[640px] bg-white shadow-2xl flex flex-col">
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-200 shrink-0">
+          <div className="min-w-0 mr-auto">
+            <h2 className="text-[15px] font-bold text-slate-900 leading-tight">Voucher Numbering</h2>
+            <p className="text-xs text-slate-500 leading-tight">{company?.name} · one series per project / office and financial year</p>
+          </div>
+          <button type="button" title="Close" onClick={onClose} className="h-9 w-9 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          <div>
+            <label className={lbl}>Project / office</label>
+            <select value={projectId} onChange={e => setProjectId(e.target.value)} className={inp}>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+
+          {msg.text && (
+            <p className={`text-sm font-medium rounded-lg px-3 py-2 ${msg.type === "error" ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{msg.text}</p>
+          )}
+
+          <div className={card}>
+            <p className="text-sm font-bold text-slate-800">Format</p>
+            <div className="grid grid-cols-[1fr_120px] gap-3">
+              <div>
+                <label className={lbl}>Prefix</label>
+                <input value={form.prefix} onChange={e => setForm(f => ({ ...f, prefix: e.target.value.toUpperCase() }))} disabled={!canEdit} maxLength={24} className={inp} />
+              </div>
+              <div>
+                <label className={lbl}>Digits</label>
+                <select value={form.digits} onChange={e => setForm(f => ({ ...f, digits: Number(e.target.value) }))} disabled={!canEdit} className={inp}>
+                  {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n} ({"1".padStart(n, "0")})</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm text-slate-600">
+                Next voucher{next.fy ? ` (FY ${next.fy})` : ""}:{" "}
+                <span className="font-semibold text-slate-900">{next.fy ? padNo(previewSeries, next.fy, nextSeq) : "…"}</span>
+              </p>
+              {canEdit && (
+                <button onClick={saveFormat} disabled={!formDirty || !!busy} className="h-9 px-4 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 disabled:opacity-40 flex items-center gap-1.5">
+                  {busy === "format" && <Loader2 size={14} className="animate-spin" />} Save format
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-slate-500">The FY comes from the entry date (April to March), and numbers start again at 1 each April. A new voucher takes the last number used + 1 when its entry is saved.</p>
+          </div>
+
+          <div className={card}>
+            <p className="text-sm font-bold text-slate-800">Renumber a month</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={lbl}>Month</label>
+                <input type="month" value={month} onChange={e => setMonth(e.target.value)} className={inp} />
+              </div>
+              <div>
+                <label className={lbl}>Start from</label>
+                <input type="number" min="1" value={start} onChange={e => setStart(e.target.value)} disabled={!canEdit} className={inp} />
+              </div>
+            </div>
+            {plan && <p className="text-xs text-slate-500">Suggested start {plan.suggestedStart}: the last number used before this month in FY {plan.fy}, + 1.</p>}
+            {formDirty && <p className="text-xs text-amber-600">Save the format first. Renumbering uses the saved one.</p>}
+
+            {!plan ? <div className="py-6 flex justify-center text-slate-400"><BrandLoader /></div>
+              : !count ? <p className="text-sm text-slate-500 py-2">No vouchers made with Create Voucher in this month.</p>
+                : (
+                  <div className="rounded-lg border border-slate-200 overflow-hidden">
+                    <div className="max-h-[42vh] overflow-y-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50 text-slate-500 sticky top-0">
+                          <tr>
+                            <th className="text-left font-semibold px-2.5 py-2">Date</th>
+                            <th className="text-left font-semibold px-2.5 py-2">Paid To</th>
+                            <th className="text-right font-semibold px-2.5 py-2">Amount</th>
+                            <th className="text-left font-semibold px-2.5 py-2">Now</th>
+                            <th className="text-left font-semibold px-2.5 py-2">New</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {plan.vouchers.map((r, i) => {
+                            const newNo = startOk ? padNo(plan.series, plan.fy, startNo + i) : "";
+                            return (
+                              <tr key={r.id}>
+                                <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-700">{fmtDate(r.entryDate)}</td>
+                                <td className="px-2.5 py-1.5 text-slate-700 truncate max-w-[140px]">{r.paidTo}</td>
+                                <td className="px-2.5 py-1.5 text-right tabular-nums text-slate-700">{money(r.amount)}</td>
+                                <td className="px-2.5 py-1.5 whitespace-nowrap text-slate-400">{r.voucherNo}</td>
+                                <td className={`px-2.5 py-1.5 whitespace-nowrap font-semibold ${newNo === r.voucherNo ? "text-slate-500" : "text-emerald-700"}`}>{newNo}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+            {canEdit && count > 0 && (
+              <div className="flex justify-end">
+                <button onClick={renumber} disabled={!startOk || formDirty || !!busy} className="h-9 px-4 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-700 disabled:opacity-40 flex items-center gap-1.5">
+                  {busy === "renumber" || busy.startsWith("pdf")
+                    ? <><Loader2 size={14} className="animate-spin" /> {busy === "renumber" ? "Renumbering…" : `Updating PDFs ${busy.slice(4)}`}</>
+                    : `Renumber ${count} voucher${count > 1 ? "s" : ""}`}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

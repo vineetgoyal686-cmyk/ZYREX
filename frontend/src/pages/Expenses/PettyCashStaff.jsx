@@ -3,14 +3,14 @@ import * as XLSX from "xlsx";
 import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
   ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye, FilePlus2, Package,
-  User, Tag, CreditCard, Store, Check, ArrowLeft, ArrowDownLeft, ArrowUpRight, Wallet, Briefcase, MapPin, CalendarDays, FileText, Printer,
+  User, Tag, CreditCard, Store, Check, ArrowLeft, ArrowDownLeft, ArrowUpRight, Wallet, Briefcase, MapPin, CalendarDays, FileText, Printer, ListOrdered,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import LogPanel from "../../components/LogPanel";
 import Pagination from "./Pagination";
-import VoucherModal, { BlankVoucherModal, PrintVouchersModal } from "./PettyCashVoucher";
+import VoucherModal, { BlankVoucherModal, PrintVouchersModal, VoucherNumberingPanel } from "./PettyCashVoucher";
 import { logAudit } from "../../utils/auditLog";
 import {
   CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, docSectionsFor, docCount, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
@@ -370,6 +370,7 @@ export default function PettyCashStaff({ scope }) {
   const [viewItem, setViewItem]     = useState(null); // an itemSummary row
   const [voucherOpen, setVoucherOpen] = useState(false);
   const [blankVoucherOpen, setBlankVoucherOpen] = useState(false);
+  const [numberingOpen, setNumberingOpen] = useState(false);
   const [printVouchers, setPrintVouchers] = useState(null); // { entries, skipped }
   // The voucher made for the entry in the form: { voucherNo, data, dirty }.
   // data is loaded on demand for saved entries; dirty means it must be sent
@@ -1043,6 +1044,11 @@ export default function PettyCashStaff({ scope }) {
                         <Printer size={14} className="text-slate-400" /> Print Vouchers
                       </button>
                     )}
+                    {subTab === "entries" && scope.projects.length > 0 && (
+                      <button onClick={() => { setMoreMenuOpen(false); setNumberingOpen(true); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                        <ListOrdered size={14} className="text-slate-400" /> Voucher Numbering
+                      </button>
+                    )}
                     <button onClick={() => { setMoreMenuOpen(false); setBlankVoucherOpen(true); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
                       <FileText size={14} className="text-slate-400" /> Blank Voucher
                     </button>
@@ -1468,6 +1474,18 @@ export default function PettyCashStaff({ scope }) {
 
       {printVouchers && (
         <PrintVouchersModal entries={printVouchers.entries} skipped={printVouchers.skipped} onClose={() => setPrintVouchers(null)} />
+      )}
+
+      {numberingOpen && (
+        <VoucherNumberingPanel
+          company={scope.company}
+          projects={scope.projects}
+          defaultProjectId={defaultProjectId}
+          defaultMonth={dateRange !== "all" && customFrom ? customFrom.slice(0, 7) : ""}
+          canEdit={canEdit}
+          onChanged={fetchEntries}
+          onClose={() => setNumberingOpen(false)}
+        />
       )}
 
       {blankVoucherOpen && (

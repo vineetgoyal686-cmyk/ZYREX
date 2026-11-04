@@ -411,33 +411,224 @@ router.get("/scopes", requireAnyView, async (req, res) => {
   }
 });
 
-/* Expense voucher numbers — <COMPANY_CODE>-VH-<n>, one counter per entity
-   (sql/petty_cash_scope.sql). GET only shows the next number for the
-   preview; POST takes it, and is called when the voucher is created. */
-const voucherNoFor = async (companyId, fn) => {
-  if (!UUID_RE.test(String(companyId || ""))) throw Object.assign(new Error("Entity is required"), { status: 400 });
-  const [{ data: company, error: cErr }, { data: n, error }] = await Promise.all([
-    supabase.schema("organisation").from("companies").select("company_code").eq("id", companyId).maybeSingle(),
-    supabase.rpc(fn, { p_company: companyId }),
-  ]);
-  if (cErr) throw cErr;
-  if (error) throw error;
-  return `${company?.company_code || "PC"}-VH-${n}`;
+/* Expense voucher numbers — <PREFIX>-<FY>-VH-<seq>, one series per project /
+   office and financial year (sql/petty_cash_voucher_series.sql). The number
+   is only stored when the entry is saved; the next one is the highest used
+   in that series + 1, so a voucher that's never saved doesn't use one up. */
+const fyOf = (date) => {
+  const [y, m] = String(date || "").split("-").map(Number);
+  if (!y || !m) return "";
+  const start = m >= 4 ? y : y - 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, "0")}`;
 };
+const formatVoucherNo = (series, fy, seq) => `${series.prefix}-${fy}-VH-${String(seq).padStart(series.digits, "0")}`;
+const VOUCHER_TAKEN = "This voucher number was just used by another entry — remove the voucher, create it again and save.";
+const PREFIX_RE = /^[A-Za-z0-9][A-Za-z0-9/-]{0,23}$/;
+
+// The project's / office's saved prefix + digits, or the default
+// <company code>-<project / office code>, 3 digits.
+const loadSeries = async (scope) => {
+  const { data: saved, error } = await supabase.from("petty_cash_voucher_series")
+    .select("prefix, digits").eq("scope_id", scope.id).maybeSingle();
+  if (error) throw error;
+  if (saved) return { prefix: saved.prefix, digits: saved.digits, isDefault: false };
+  const [{ data: company }, { data: place }] = await Promise.all([
+    supabase.schema("organisation").from("companies").select("company_code").eq("id", scope.company_id).maybeSingle(),
+    scope.kind === "project"
+      ? supabase.from("projects").select("code:project_code").eq("id", scope.id).maybeSingle()
+      : supabase.schema("organisation").from("branches").select("code").eq("id", scope.id).maybeSingle(),
+  ]);
+  const prefix = [company?.company_code, place?.code].map(s => String(s || "").trim().replace(/[^A-Za-z0-9/-]/g, ""))
+    .filter(Boolean).join("-").toUpperCase() || "PC";
+  return { prefix, digits: 3, isDefault: true };
+};
+
+const scopeCol = (scope) => (scope.kind === "project" ? "project_id" : "branch_id");
+
+// Highest seq used in the series (optionally only entries dated before `before`).
+const maxSeq = async (scope, fy, before) => {
+  let q = supabase.from("petty_cash_entries").select("voucher_seq")
+    .eq(scopeCol(scope), scope.id).eq("voucher_fy", fy).not("voucher_seq", "is", null).is("deleted_at", null)
+    .order("voucher_seq", { ascending: false }).limit(1);
+  if (before) q = q.lt("entry_date", before);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data?.[0]?.voucher_seq || 0;
+};
+
+// voucher_fy / voucher_seq for a saved entry from its voucher details.
+// Vouchers made before series numbering (no seq) keep no seq.
+const voucherSeqCols = (v, entryDate) => {
+  if (!v || !Number.isInteger(v.seq)) return { voucher_fy: null, voucher_seq: null };
+  const fy = fyOf(entryDate);
+  if (v.fy && v.fy !== fy) throw new Error(`This voucher was numbered for FY ${v.fy}, but the entry date is in FY ${fy} — remove the voucher and create it again.`);
+  return { voucher_fy: fy, voucher_seq: v.seq };
+};
+
+/* GET /api/petty-cash/voucher-no?company_id=&project_id=&date= — the number
+   a new voucher would get (shown on the voucher; stored on save) */
 router.get("/voucher-no", requirePerm("petty_cash_staff", "can_view"), async (req, res) => {
   try {
-    res.json({ voucherNo: await voucherNoFor(req.query.company_id, "peek_petty_cash_voucher_no") });
+    let scope;
+    try { scope = await loadProject(req.query.company_id, req.query.project_id, req); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
+    const fy = fyOf(req.query.date);
+    if (!fy) return res.status(400).json({ error: "Pick the entry date first" });
+    const [series, max] = await Promise.all([loadSeries(scope), maxSeq(scope, fy)]);
+    res.json({ voucherNo: formatVoucherNo(series, fy, max + 1), fy, seq: max + 1 });
   } catch (err) {
     console.error("Petty cash voucher no peek error:", err.message);
     res.status(err.status || 500).json({ error: err.message });
   }
 });
-router.post("/voucher-no", requirePerm("petty_cash_staff", "can_view"), async (req, res) => {
+
+/* GET /api/petty-cash/voucher-series?company_id=&project_id= — prefix and
+   digits, plus the next number in the current FY */
+router.get("/voucher-series", requirePerm("petty_cash_staff", "can_view"), async (req, res) => {
   try {
-    res.json({ voucherNo: await voucherNoFor(req.body?.companyId, "next_petty_cash_voucher_no") });
+    let scope;
+    try { scope = await loadProject(req.query.company_id, req.query.project_id, req); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
+    const fy = fyOf(new Date().toISOString().slice(0, 10));
+    const [series, max] = await Promise.all([loadSeries(scope), maxSeq(scope, fy)]);
+    res.json({ series, fy, next: formatVoucherNo(series, fy, max + 1) });
   } catch (err) {
-    console.error("Petty cash voucher no error:", err.message);
+    console.error("Petty cash voucher series read error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* PUT /api/petty-cash/voucher-series — { companyId, projectId, prefix, digits }.
+   New vouchers use it; old ones change only when their month is renumbered. */
+router.put("/voucher-series", requirePerm("petty_cash_staff", "can_edit"), async (req, res) => {
+  try {
+    let scope;
+    try { scope = await loadProject(req.body?.companyId, req.body?.projectId, req); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
+    const prefix = String(req.body?.prefix || "").trim().toUpperCase();
+    const digits = Number(req.body?.digits);
+    if (!PREFIX_RE.test(prefix)) return res.status(400).json({ error: "Prefix: letters, numbers, - or / only (up to 24)" });
+    if (!Number.isInteger(digits) || digits < 1 || digits > 6) return res.status(400).json({ error: "Digits must be 1 to 6" });
+    const { error } = await supabase.from("petty_cash_voucher_series").upsert({
+      scope_id: scope.id, company_id: scope.company_id, prefix, digits,
+      updated_at: new Date().toISOString(), updated_by_name: req.body?.updatedByName || "",
+    });
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Petty cash voucher series save error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Vouchers of one project / office dated in `month` (YYYY-MM), in date order.
+const monthVouchers = async (scope, month) => {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(month || ""))) throw Object.assign(new Error("Pick a month"), { status: 400 });
+  const [y, m] = month.split("-").map(Number);
+  const from = `${month}-01`;
+  const to = m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
+  const { data, error } = await supabase.from("petty_cash_entries")
+    .select("id, entry_date, amount, vendor_name, voucher_data, voucher_docs, created_at")
+    .eq(scopeCol(scope), scope.id).eq("entry_type", "expense").not("voucher_data", "is", null).is("deleted_at", null)
+    .gte("entry_date", from).lt("entry_date", to)
+    .order("entry_date").order("created_at").order("id");
+  if (error) throw error;
+  return { from, fy: fyOf(from), rows: (data || []).filter(r => r.voucher_data?.voucherNo) };
+};
+
+/* GET /api/petty-cash/voucher-renumber?company_id=&project_id=&month= — the
+   month's vouchers and the suggested start (last number before it + 1) */
+router.get("/voucher-renumber", requirePerm("petty_cash_staff", "can_view"), async (req, res) => {
+  try {
+    let scope;
+    try { scope = await loadProject(req.query.company_id, req.query.project_id, req); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
+    const { from, fy, rows } = await monthVouchers(scope, req.query.month);
+    const [series, before] = await Promise.all([loadSeries(scope), maxSeq(scope, fy, from)]);
+    res.json({
+      fy, series, suggestedStart: before + 1,
+      vouchers: rows.map(r => ({
+        id: r.id, entryDate: r.entry_date, amount: Number(r.amount) || 0,
+        paidTo: r.voucher_data.paidTo || r.vendor_name || "", voucherNo: r.voucher_data.voucherNo,
+      })),
+    });
+  } catch (err) {
+    console.error("Petty cash renumber preview error:", err.message);
     res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+/* POST /api/petty-cash/voucher-renumber — { companyId, projectId, month, start }.
+   Numbers the month's vouchers start, start+1 … in date order. Returns each
+   entry's old number and new details; the client then rebuilds each PDF
+   (POST /entries/:id/voucher-pdf). */
+router.post("/voucher-renumber", requirePerm("petty_cash_staff", "can_edit"), async (req, res) => {
+  try {
+    let scope;
+    try { scope = await loadProject(req.body?.companyId, req.body?.projectId, req); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
+    const start = Number(req.body?.start);
+    if (!Number.isInteger(start) || start < 1) return res.status(400).json({ error: "Start number must be 1 or more" });
+    const { fy, rows } = await monthVouchers(scope, req.body?.month);
+    if (!rows.length) return res.status(400).json({ error: "No vouchers in this month" });
+    const end = start + rows.length - 1;
+
+    // The new range mustn't hit numbers other months of this FY already use.
+    const { data: clash, error: cErr } = await supabase.from("petty_cash_entries")
+      .select("entry_date, voucher_data").eq(scopeCol(scope), scope.id).eq("voucher_fy", fy).is("deleted_at", null)
+      .gte("voucher_seq", start).lte("voucher_seq", end).not("id", "in", `(${rows.map(r => r.id).join(",")})`)
+      .order("voucher_seq").limit(1);
+    if (cErr) throw cErr;
+    if (clash?.length) {
+      return res.status(400).json({ error: `Numbers ${start}–${end} overlap ${clash[0].voucher_data?.voucherNo || "a voucher"} (${clash[0].entry_date}). Pick another start, or renumber that month first.` });
+    }
+
+    const series = await loadSeries(scope);
+    // Clear first so swapping numbers within the month can't trip the unique index.
+    const { error: clearErr } = await supabase.from("petty_cash_entries")
+      .update({ voucher_seq: null }).in("id", rows.map(r => r.id));
+    if (clearErr) throw clearErr;
+    const out = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const seq = start + i;
+      const voucher = { ...r.voucher_data, voucherNo: formatVoucherNo(series, fy, seq), fy, seq };
+      const { error } = await supabase.from("petty_cash_entries")
+        .update({ voucher_fy: fy, voucher_seq: seq, voucher_data: voucher, updated_at: new Date().toISOString() })
+        .eq("id", r.id);
+      if (error) throw error;
+      out.push({ id: r.id, oldNo: r.voucher_data.voucherNo, voucher });
+    }
+    res.json({ renumbered: out });
+  } catch (err) {
+    console.error("Petty cash renumber error:", err.message);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+/* POST /api/petty-cash/entries/:id/voucher-pdf — multipart "pdf" + oldNo:
+   replaces the entry's Voucher_<oldNo>.pdf attachment (or adds it). */
+router.post("/entries/:id/voucher-pdf", requirePerm("petty_cash_staff", "can_edit"), upload.single("pdf"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "PDF is required" });
+    const { data: row, error } = await supabase.from("petty_cash_entries")
+      .select("id, voucher_docs, voucher_data").eq("id", req.params.id).is("deleted_at", null).maybeSingle();
+    if (error) throw error;
+    if (!row) return res.status(404).json({ error: "Entry not found" });
+    const safe = (no) => String(no || "").replace(/[^a-zA-Z0-9._-]/g, "_");
+    const name = `Voucher_${safe(row.voucher_data?.voucherNo)}.pdf`;
+    const path = `entries/${row.id}/voucher/${Date.now()}_0_${name}`;
+    await uploadStorageFile(supabase, BUCKET, path, req.file.buffer, "application/pdf");
+    const oldName = `Voucher_${safe(req.body?.oldNo)}.pdf`;
+    const docs = [...(row.voucher_docs || [])];
+    const idx = req.body?.oldNo ? docs.findIndex(p => String(p).endsWith(oldName)) : -1;
+    if (idx >= 0) docs[idx] = path; else docs.push(path);
+    const { error: uErr } = await supabase.from("petty_cash_entries").update({ voucher_docs: docs }).eq("id", row.id);
+    if (uErr) throw uErr;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Petty cash voucher pdf error:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -469,7 +660,7 @@ router.post("/entries", requirePerm("petty_cash_staff", "can_add"), upload.any()
     try {
       row = buildRow(req.body);
       const voucherData = parseVoucherData(req.body, row.entry_type);
-      if (voucherData !== undefined) row.voucher_data = voucherData;
+      if (voucherData !== undefined) Object.assign(row, { voucher_data: voucherData }, voucherSeqCols(voucherData, row.entry_date));
       applyScope(row, await loadProject(req.body.companyId, req.body.projectId, req));
     } catch (e) { return res.status(400).json({ error: e.message }); }
 
@@ -478,6 +669,7 @@ router.post("/entries", requirePerm("petty_cash_staff", "can_add"), upload.any()
       .insert({ ...row, created_by_id: req._authUserId || null, created_by_name: req.body.createdByName || "" })
       .select("*")
       .single();
+    if (insertError?.code === "23505") return res.status(409).json({ error: VOUCHER_TAKEN });
     if (insertError) throw insertError;
 
     const uploaded = await uploadDocs(req.files, `entries/${created.id}`);
@@ -505,7 +697,7 @@ router.put("/entries/:id", requirePerm("petty_cash_staff", "can_edit"), upload.a
     try {
       row = buildRow(req.body);
       const voucherData = parseVoucherData(req.body, row.entry_type);
-      if (voucherData !== undefined) row.voucher_data = voucherData;
+      if (voucherData !== undefined) Object.assign(row, { voucher_data: voucherData }, voucherSeqCols(voucherData, row.entry_date));
       applyScope(row, await loadProject(req.body.companyId, req.body.projectId, req));
     } catch (e) { return res.status(400).json({ error: e.message }); }
 
@@ -520,6 +712,7 @@ router.put("/entries/:id", requirePerm("petty_cash_staff", "can_edit"), upload.a
       .is("deleted_at", null)
       .select("*")
       .single();
+    if (error?.code === "23505") return res.status(409).json({ error: VOUCHER_TAKEN });
     if (error) throw error;
 
     await rememberLocation(row.location);
