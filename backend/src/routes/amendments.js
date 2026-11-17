@@ -10,6 +10,7 @@ const { requireAuth } = require("../middleware/auth");
 const { notifyOrderAction, getHandlerUsers, getUserRecipient, resolveOrderForEmail } = require("../utils/orderNotifications");
 const { broadcast } = require("../sse");
 const { hasPerm } = require("../helpers/permHelper");
+const { isHandlerFor, isHandlerAnywhere, orderCompanyId } = require("../utils/requestHandlers");
 const cache = require("../helpers/cacheHelper");
 const ORDERS_CACHE_KEY = "orders_list";
 
@@ -47,12 +48,13 @@ const nextAmendNumber = async (admin, currentNumber) => {
 };
 
 // True if the user can approve/reject amendment requests.
-// Global admin always passes; everyone else must be listed as an amend request handler.
-const canManageAmend = async (admin, userId, role) => {
+// Global admin always passes; everyone else must be listed as an amend request handler —
+// for the order's company when companyId is given (Default if it has none), else for any company.
+const canManageAmend = async (admin, userId, role, companyId) => {
   if (role === "global_admin") return true;
-  const { data } = await admin.from("request_handlers")
-    .select("users").eq("module_key", "order").eq("action_key", "amend");
-  return (data || []).flatMap(r => r.users || []).some(u => String(u.id) === String(userId));
+  return companyId === undefined
+    ? isHandlerAnywhere(userId, "order", "amend")
+    : isHandlerFor(userId, "order", "amend", companyId);
 };
 
 // True if the user is allowed to REQUEST an amendment.
@@ -127,7 +129,7 @@ router.post("/request", requireAuth, async (req, res) => {
     // Notify whoever handles amend requests (TO) + the order creator (CC)
     try {
       const [toUsers, emailOrder] = await Promise.all([
-        getHandlerUsers("amend"),
+        getHandlerUsers("amend", order_id),
         resolveOrderForEmail(order_id),
       ]);
       if (emailOrder) {
@@ -251,16 +253,17 @@ router.post("/action", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "request_id and a valid action are required" });
   }
 
-  // Permission gate
-  const allowed = await canManageAmend(admin, req.user.id, req.user.role);
-  if (!allowed) {
-    return res.status(403).json({ error: "You do not have permission to approve or reject amendment requests." });
-  }
-
   try {
     const { data: request, error: rErr } = await admin
       .from("order_amendments").select("*").eq("id", request_id).single();
     if (rErr || !request) return res.status(404).json({ error: "Request not found" });
+
+    // Permission gate — amend handler for this order's company
+    const allowed = await canManageAmend(admin, req.user.id, req.user.role, await orderCompanyId(request.original_order_id));
+    if (!allowed) {
+      return res.status(403).json({ error: "You do not have permission to approve or reject amendment requests." });
+    }
+
     if (request.status !== "Pending") {
       return res.status(400).json({ error: `This request is already ${request.status}` });
     }
@@ -606,7 +609,7 @@ router.post("/cancel", requireAuth, async (req, res) => {
 
       try {
         const [toUsers, emailOrder] = await Promise.all([
-          getHandlerUsers("amend"),
+          getHandlerUsers("amend", pendingRow.original_order_id),
           resolveOrderForEmail(pendingRow.original_order_id),
         ]);
         if (emailOrder) {

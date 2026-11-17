@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { ArrowLeft, Search, Building2, User, Landmark, MapPin, Receipt, ShieldQuestion, FileText, CheckCircle2, Phone, Mail, FileDown, Download, Eye, X, Upload, Trash2, FileCheck, Lock, ShoppingCart, Package, GitMerge, Calendar, Undo2, Folder, Plus, Clock, Pencil, ChevronDown, FileSpreadsheet, Image as ImageIcon, File as FileIcon } from "lucide-react";
 import { getCachedOrderDetails, preloadOrderDetails, seedOrderDetails, bustOrderCache } from "./orderDetailsCache";
 import { normalizeOrderSite } from "../../utils/orderSite";
+import { handlerUsersFor, isHandlerOf } from "../../utils/requestHandlers";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -315,7 +316,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
       const res = await fetch(`${API}/api/request-handlers`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const d = await res.json();
-        setHandlers(d.config || {});
+        setHandlers(d || {});
       }
     } catch { }
   };
@@ -1056,8 +1057,9 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
     { key: "rejected", label: "Reject", color: "rose", needsComment: true },
   ];
 
-  const inHandlers = (actionKey) =>
-    (handlers.order?.[actionKey]?.users || []).some(u => String(u.id) === String(thisUser.id));
+  // Handlers of this order's company (Default handlers when the company has none)
+  const orderCompanyId = order.company_id || order.companies?.id || null;
+  const inHandlers = (actionKey) => isHandlerOf(handlers, thisUser.id, "order", actionKey, orderCompanyId);
   const isIssueHandler  = isGlobalAdmin || inHandlers("issue");
   const isRecallHandler = isGlobalAdmin || inHandlers("recall");
   const isAmendHandler  = isGlobalAdmin || inHandlers("amend");
@@ -1065,7 +1067,7 @@ const ViewOrder = ({ orderId, onBack, onEdit, currentUser = {}, initialOrder = n
 
   // Designated issue signatories for this order (configured in Setup → Request Handlers).
   // Global Admin uses this list to issue "as" the real signatory when they're unavailable.
-  const issueHandlerUsers = handlers.order?.issue?.users || [];
+  const issueHandlerUsers = handlerUsersFor(handlers, "order", "issue", orderCompanyId);
   const openIssueFlow = () => {
     const designated = issueHandlerUsers.filter(u => String(u.id) !== String(thisUser.id));
     if (isGlobalAdmin && designated.length > 0) {

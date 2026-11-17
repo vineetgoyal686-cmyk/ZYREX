@@ -1,5 +1,6 @@
 const admin = require("../helpers/supabaseHelper");
 const { sendTemplateEmail } = require("./mailer");
+const { resolveHandlers, orderCompanyId } = require("./requestHandlers");
 
 const escapeHtml = (s) => String(s)
   .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
@@ -147,11 +148,10 @@ async function notifyOrderAction({ eventKey, toUsers = [], order, actor, reason,
   }
 }
 
-/** Resolve the configured handler(s) for an order action into {id,email,name} rows. */
-async function getHandlerUsers(actionKey) {
-  const { data } = await admin.from("request_handlers")
-    .select("users").eq("module_key", "order").eq("action_key", actionKey).maybeSingle();
-  const userRows = data?.users || [];
+/** Resolve the configured handler(s) for an order action into {id,email,name} rows.
+    Uses the order's company handlers when set, else the Default handlers. */
+async function getHandlerUsers(actionKey, orderId) {
+  const userRows = await resolveHandlers("order", actionKey, await orderCompanyId(orderId));
   if (!userRows.length) return [];
   const { data: users } = await admin.from("users").select("id, email, name").in("id", userRows.map(u => u.id));
   return (users || []).filter(u => u.email);

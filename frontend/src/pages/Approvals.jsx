@@ -8,6 +8,7 @@ import {
 import { authFetch } from "../utils/authFetch";
 import { useModulePermissions } from "../hooks/useModulePermissions";
 import { pollWhenVisible } from "../utils/pollWhenVisible";
+import { handlerUsersFor, isHandlerOf } from "../utils/requestHandlers";
 
 const API = import.meta.env.VITE_API_URL || "http://127.0.0.1:3000";
 
@@ -54,8 +55,8 @@ export default function Approvals() {
   const [search, setSearch] = useState("");
   const [canManageAmend, setCanManageAmend] = useState(false);
   const [canManageActionRequests, setCanManageActionRequests] = useState(false);
-  const [isIssueHandler, setIsIssueHandler] = useState(false);
-  const [issueHandlerUsers, setIssueHandlerUsers] = useState([]);
+  // Request handlers (Default + per company) — each order is checked against its own company's handlers
+  const [handlersPayload, setHandlersPayload] = useState({});
   const [signAsModal, setSignAsModal] = useState({ open: false, orderId: null, selectedId: "" });
   const [actionRequests, setActionRequests] = useState([]);
   const [arActionLoading, setArActionLoading] = useState(null);
@@ -137,9 +138,6 @@ export default function Approvals() {
       const caps = !!capData.canManage;
       const ars  = arData.requests || [];
 
-      const issueUsers = (handlersData.config?.order?.issue?.users || []);
-      const issueHandlerFlag = isGlobalAdmin || issueUsers.some(u => String(u.id) === String(currentUser.id));
-
       const pas = pendingApprovalsData.requests || [];
       setOrders(ords);
       setIntakes(ints);
@@ -150,8 +148,7 @@ export default function Approvals() {
       // orders here; Intake › comparisons go to the Intake tab
       setPendingApprovals(pas.filter(r => r.module === "order"));
       setComparisonApprovals(pas.filter(r => r.module === "comparison"));
-      setIsIssueHandler(issueHandlerFlag);
-      setIssueHandlerUsers(issueUsers);
+      setHandlersPayload(handlersData || {});
       
       // 2. Update Cache for next time
       localStorage.setItem("last_approvals_data", JSON.stringify({
@@ -267,8 +264,14 @@ export default function Approvals() {
 
   // Global Admin emergency override — "sign as" picker before issuing on behalf of the
   // designated issue handler when they're unavailable.
+  const orderCompanyOf = (orderId) => orders.find(o => o.id === orderId)?.company_id || null;
+  const issueUsersFor = (orderId) => handlerUsersFor(handlersPayload, "order", "issue", orderCompanyOf(orderId));
+  const isHandlerForOrder = (actionKey, companyId) =>
+    isGlobalAdmin || isHandlerOf(handlersPayload, currentUser.id, "order", actionKey, companyId || null);
+  const canIssueOrder = (o) => isHandlerForOrder("issue", o.company_id);
+
   const openIssueFlow = (orderId) => {
-    const designated = issueHandlerUsers.filter(u => String(u.id) !== String(currentUser.id));
+    const designated = issueUsersFor(orderId).filter(u => String(u.id) !== String(currentUser.id));
     if (isGlobalAdmin && designated.length > 0) {
       setSignAsModal({ open: true, orderId, selectedId: String(designated[0].id) });
       return;
@@ -654,7 +657,7 @@ export default function Approvals() {
                             <td className="px-5 py-4 border-r border-slate-100 text-slate-600 font-bold text-[11px] whitespace-nowrap">{o.made_by || o.snapshot?.madeBy || "—"}</td>
                             <td className="px-5 py-4 border-r border-slate-100 text-slate-800 font-black text-[12px] whitespace-nowrap">Rs {money(o.totals?.grandTotal || 0)}</td>
                             <td className="px-5 py-4">
-                              {(isIssueHandler && canOrderAct) ? (
+                              {(canIssueOrder(o) && canOrderAct) ? (
                                 <div className="flex items-center justify-center gap-1.5">
                                   <button disabled={actionLoading === o.id} onClick={() => openIssueFlow(o.id)} title="Issue Order"
                                     className="h-8 w-8 rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 shadow-sm flex items-center justify-center transition-all"><CircleCheck size={18} /></button>
@@ -706,7 +709,7 @@ export default function Approvals() {
                         </span>
                         <span className="shrink-0">Project {siteCode}</span>
                       </div>
-                      {(isIssueHandler && canOrderAct) && (
+                      {(canIssueOrder(o) && canOrderAct) && (
                         <div className="flex border-t border-slate-100 mt-auto">
                           <button disabled={actionLoading === o.id} onClick={() => { setCommentModal({ open: true, orderId: o.id, action: "Reverted" }); setCommentText(""); }}
                             className="flex-1 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">Revert</button>
@@ -783,7 +786,7 @@ export default function Approvals() {
                           <span className="shrink-0">Project {siteCode}</span>
                         </div>
                         <div className="flex border-t border-slate-100 mt-auto">
-                          {(canManageActionRequests && canOrderAct) ? (
+                          {(canManageActionRequests && isHandlerForOrder(ar.request_type, ord.company_id) && canOrderAct) ? (
                             <>
                               <button disabled={arActionLoading === ar.id}
                                 onClick={() => setArCommentModal({ open: true, requestId: ar.id, action: "Rejected" })}
@@ -880,7 +883,7 @@ export default function Approvals() {
                                 {req.attachment_url && (
                                   <a href={req.attachment_url} target="_blank" rel="noreferrer" title="View Attachment" className="h-8 w-8 flex items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all shadow-sm"><FileText size={16} /></a>
                                 )}
-                                {(canManageAmend && canOrderAct) ? (
+                                {(canManageAmend && isHandlerForOrder("amend", req.original_order?.company_id) && canOrderAct) ? (
                                   <>
                                     <button disabled={actionLoading === req.id} onClick={() => handleAmendAction(req.id, "Approved")} title="Approve" className="h-8 w-8 rounded-md bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-40 shadow-sm transition-all flex items-center justify-center"><CircleCheck size={18} /></button>
                                     <button disabled={actionLoading === req.id} onClick={() => setAmendCommentModal({ open: true, requestId: req.id, action: "Rejected" })} title="Reject" className="h-8 w-8 rounded-md bg-rose-500 text-white hover:bg-rose-600 disabled:opacity-40 shadow-sm transition-all flex items-center justify-center"><CircleX size={18} /></button>
@@ -951,7 +954,7 @@ export default function Approvals() {
                             <a href={req.attachment_url} target="_blank" rel="noreferrer" title="View Attachment"
                               className="flex items-center justify-center px-4 text-slate-500 hover:bg-slate-50 border-r border-slate-100 transition-all"><FileText size={15} /></a>
                           )}
-                          {(canManageAmend && canOrderAct) ? (
+                          {(canManageAmend && isHandlerForOrder("amend", req.original_order?.company_id) && canOrderAct) ? (
                             <>
                               <button disabled={actionLoading === req.id} onClick={() => setAmendCommentModal({ open: true, requestId: req.id, action: "Rejected" })}
                                 className="flex-1 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 transition-all disabled:opacity-40">Reject</button>
@@ -1120,7 +1123,7 @@ export default function Approvals() {
                 Aap Global Admin ke roop me issue kar rahe hain. Jiska naam/signature document par aana chahiye use select karein — emergency me kisi aur ki taraf se bhi issue kar sakte hain.
               </p>
               <div className="space-y-2">
-                {issueHandlerUsers.map(u => (
+                {issueUsersFor(signAsModal.orderId).map(u => (
                   <label key={u.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all ${String(signAsModal.selectedId) === String(u.id) ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'}`}>
                     <input type="radio" name="signAs" checked={String(signAsModal.selectedId) === String(u.id)}
                       onChange={() => setSignAsModal(m => ({ ...m, selectedId: String(u.id) }))} className="accent-emerald-600" />
@@ -1128,7 +1131,7 @@ export default function Approvals() {
                     {String(u.id) === String(currentUser.id) && <span className="text-[10px] text-slate-400 font-bold uppercase">(Myself)</span>}
                   </label>
                 ))}
-                {!issueHandlerUsers.some(u => String(u.id) === String(currentUser.id)) && (
+                {!issueUsersFor(signAsModal.orderId).some(u => String(u.id) === String(currentUser.id)) && (
                   <label className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all ${String(signAsModal.selectedId) === String(currentUser.id) ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'}`}>
                     <input type="radio" name="signAs" checked={String(signAsModal.selectedId) === String(currentUser.id)}
                       onChange={() => setSignAsModal(m => ({ ...m, selectedId: String(currentUser.id) }))} className="accent-emerald-600" />

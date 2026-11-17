@@ -340,7 +340,7 @@ router.post("/submit", requireAuth, async (req, res) => {
 
         try {
           const [toUsers, emailOrder] = await Promise.all([
-            getHandlerUsers("issue"),
+            getHandlerUsers("issue", document_id),
             resolveOrderForEmail(document_id),
           ]);
           if (emailOrder) {
@@ -480,7 +480,7 @@ router.post("/action", requireAuth, async (req, res) => {
           const emailOrder = await resolveOrderForEmail(request.document_id);
           if (emailOrder) {
             if (docStatus === "Pending Issue") {
-              const toUsers = await getHandlerUsers("issue");
+              const toUsers = await getHandlerUsers("issue", request.document_id);
               await notifyOrderAction({ eventKey: "issue_ready", toUsers, order: emailOrder, actor: { name: userName, designation: userDesignation, email: userEmail } });
             } else {
               const nextLevel = levels[newLevel - 1];

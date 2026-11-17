@@ -26,12 +26,19 @@ router.get("/my-powers", requireAuth, async (req, res) => {
      super_admin gets a power only if explicitly listed as a handler (same as regular users).
      This ensures "Issue Order" (Single handler = Shailesh) doesn't appear for a super_admin
      who was never added as that handler. */
+  /* Handlers are set per company (plus a Default), so one action can have several rows —
+     the power is listed once if the user handles it for any company. */
   const { data: handlers } = await admin.from("request_handlers").select("*");
+  const seen = new Set();
   for (const h of (handlers || [])) {
     if (h.module_key !== "order") continue;
     if (!ACTION_LABELS[h.action_key] || h.action_key === "approval") continue;
+    if (seen.has(h.action_key)) continue;
     const inList = isGlobalAdmin || (h.users || []).some(u => String(u.id) === userId);
-    if (inList) powers.push({ key: h.action_key, label: ACTION_LABELS[h.action_key] });
+    if (inList) {
+      seen.add(h.action_key);
+      powers.push({ key: h.action_key, label: ACTION_LABELS[h.action_key] });
+    }
   }
 
   /* Check if user is approver in any active flow.

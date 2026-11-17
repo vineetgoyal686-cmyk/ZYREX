@@ -17,6 +17,7 @@ const {
 const { addClient, removeClient, broadcast } = require("../sse");
 const { requirePerm } = require("../helpers/permHelper");
 const { notifyOrderAction, getHandlerUsers, getUserRecipient, resolveOrderForEmail } = require("../utils/orderNotifications");
+const { isHandlerFor } = require("../utils/requestHandlers");
 
 // SSE endpoint — frontend subscribes here for instant order updates
 router.get("/events", (req, res) => {
@@ -2293,7 +2294,7 @@ router.put("/:id", requirePerm("order", "can_edit"), upload.fields([
     if (mainData.status === "Pending Issue" && statusBeforeUpdate !== "Pending Issue") {
       try {
         const [toUsers, emailOrder] = await Promise.all([
-          getHandlerUsers("issue"),
+          getHandlerUsers("issue", req.params.id),
           resolveOrderForEmail(req.params.id),
         ]);
         if (emailOrder) {
@@ -3381,16 +3382,14 @@ router.post("/:id/issue-action", async (req, res) => {
       .select("name, role, designation, profile_permissions, email").eq("id", userId).single();
     const isGlobalAdmin = user?.role === "global_admin";
 
-    if (!isGlobalAdmin) {
-      const { data: handler } = await supabase.from("request_handlers")
-        .select("users").eq("module_key", "order").eq("action_key", "issue").maybeSingle();
-      const isHandler = (handler?.users || []).some(u => String(u.id) === String(userId));
-      if (!isHandler) return res.status(403).json({ error: "You are not the designated issue handler" });
-    }
-
     const { data: order } = await supabase.schema("procurement").from("purchase_orders")
-      .select("status, snapshot, totals, order_number, order_type, site_id, vendor_id")
+      .select("status, snapshot, totals, order_number, order_type, site_id, vendor_id, company_id")
       .eq("id", req.params.id).single();
+
+    // Issue handler for this order's company (Default handlers when the company has none)
+    if (!isGlobalAdmin && !(await isHandlerFor(userId, "order", "issue", order?.company_id || null))) {
+      return res.status(403).json({ error: "You are not the designated issue handler" });
+    }
     if (!order || !["Pending Issue", "To Issue"].includes(order.status)) {
       return res.status(400).json({ error: "Order is not in Pending Issue state" });
     }

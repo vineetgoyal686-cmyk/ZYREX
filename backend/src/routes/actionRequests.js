@@ -3,6 +3,7 @@ const router = express.Router();
 const supabaseClient = require("../helpers/supabaseHelper");
 const { broadcast } = require("../sse");
 const { requirePerm, hasPerm } = require("../helpers/permHelper");
+const { isHandlerFor, isHandlerAnywhere, orderCompanyId } = require("../utils/requestHandlers");
 const { notifyOrderAction, getHandlerUsers, getUserRecipient, resolveOrderForEmail } = require("../utils/orderNotifications");
 
 const extractUserId = (token) => {
@@ -12,12 +13,13 @@ const extractUserId = (token) => {
   } catch { return null; }
 };
 
-// Check if userId is listed in request_handlers for given module+action
-const isHandlerUser = async (admin, userId, moduleKey, actionKey) => {
-  const { data } = await admin.from("request_handlers")
-    .select("users").eq("module_key", moduleKey).eq("action_key", actionKey);
-  return (data || []).flatMap(r => r.users || []).some(u => String(u.id) === String(userId));
-};
+// Check if userId is a request handler for module+action.
+// companyId given (null = order with no company) → handler for that company, Default when it has none.
+// companyId omitted → handler for any company.
+const isHandlerUser = (admin, userId, moduleKey, actionKey, companyId) =>
+  companyId === undefined
+    ? isHandlerAnywhere(userId, moduleKey, actionKey)
+    : isHandlerFor(userId, moduleKey, actionKey, companyId);
 
 const requireAuth = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
@@ -94,7 +96,7 @@ router.post("/", requireAuth, async (req, res) => {
 
     try {
       const [toUsers, emailOrder] = await Promise.all([
-        getHandlerUsers(request_type),
+        getHandlerUsers(request_type, order_id),
         resolveOrderForEmail(order_id),
       ]);
       if (emailOrder) {
@@ -235,7 +237,7 @@ router.post("/direct-amend", requireAuth, async (req, res) => {
     const { data: user } = await admin.from("users").select("name, role, designation, email").eq("id", userId).single();
     const isGlobalAdmin = user?.role === "global_admin";
 
-    const hasRecallPerm = isGlobalAdmin || await isHandlerUser(admin, userId, "order", "recall");
+    const hasRecallPerm = isGlobalAdmin || await isHandlerUser(admin, userId, "order", "recall", await orderCompanyId(order_id));
 
     if (!hasRecallPerm) {
       return res.status(403).json({ error: "You do not have permission to directly amend this order" });
@@ -343,7 +345,7 @@ router.post("/withdraw-direct-action", requireAuth, async (req, res) => {
     const { data: user } = await admin.from("users").select("name, role, designation, email").eq("id", userId).single();
     const { data: order, error: orderErr } = await admin.schema("procurement")
       .from("purchase_orders")
-      .select("id, status, snapshot, created_by_id")
+      .select("id, status, snapshot, created_by_id, company_id")
       .eq("id", order_id)
       .single();
     if (orderErr) throw orderErr;
@@ -357,7 +359,7 @@ router.post("/withdraw-direct-action", requireAuth, async (req, res) => {
     const isGlobalAdmin = user?.role === "global_admin";
     const isCreator = String(order.created_by_id || "") === String(userId);
     const actionKey = action_type === "recall" ? "recall" : "cancel";
-    const hasPerm = isGlobalAdmin || isCreator || await isHandlerUser(admin, userId, "order", actionKey);
+    const hasPerm = isGlobalAdmin || isCreator || await isHandlerUser(admin, userId, "order", actionKey, order.company_id || null);
     if (!hasPerm) {
       return res.status(403).json({ error: "You do not have permission to withdraw this action." });
     }
@@ -430,7 +432,7 @@ router.post("/:id/action", requireAuth, async (req, res) => {
 
       try {
         const [toUsers, emailOrder] = await Promise.all([
-          getHandlerUsers(request.request_type),
+          getHandlerUsers(request.request_type, request.order_id),
           resolveOrderForEmail(request.order_id),
         ]);
         if (emailOrder) {
@@ -452,7 +454,7 @@ router.post("/:id/action", requireAuth, async (req, res) => {
 
     if (!isGlobalAdmin) {
       const actionKey = request.request_type === "recall" ? "recall" : "cancel";
-      const hasPerm = await isHandlerUser(admin, userId, "order", actionKey);
+      const hasPerm = await isHandlerUser(admin, userId, "order", actionKey, await orderCompanyId(request.order_id));
       if (!hasPerm) {
         return res.status(403).json({ error: "You do not have permission to action this request" });
       }
