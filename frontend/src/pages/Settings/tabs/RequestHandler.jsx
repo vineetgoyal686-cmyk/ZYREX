@@ -151,7 +151,7 @@ export default function RequestHandler({ showToast, currentUser }) {
   };
 
   const activeModule = MODULES.find(m => m.key === activeTab);
-  const companyName = (c) => c.company_name || c.company_code || "Company";
+  const companyName = (c) => c.companyName || c.company_name || c.companyCode || c.company_code || "Company";
 
   return (
     <div className="bg-white rounded-none shadow-sm border border-slate-100">
