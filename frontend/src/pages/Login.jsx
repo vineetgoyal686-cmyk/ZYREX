@@ -249,8 +249,8 @@ const Login = ({ onLogin }) => {
               {forgotSent ? (
                 <div className="rounded-xl border border-green-200 bg-green-50 p-5 text-center">
                   <Mail size={28} className="mx-auto mb-2 text-green-500" />
-                  <p className="text-sm font-semibold text-green-700">Reset link sent!</p>
-                  <p className="text-xs text-green-600 mt-1">Check your inbox to reset your password.</p>
+                  <p className="text-sm font-semibold text-green-700">Check your inbox</p>
+                  <p className="text-xs text-green-600 mt-1">If an account exists for this email, you'll receive a reset link in a few minutes. Don't forget to check spam.</p>
                 </div>
               ) : (
                 <form onSubmit={handleForgot} className="space-y-4">
