@@ -206,6 +206,19 @@ function AppLayout({
       );
     }
 
+    // A page the user may not open (e.g. /dashboard right after login without
+    // Dashboard) → their first page that is allowed, else a no-access note
+    if (!isTabVisible(activeTab, currentUser, userTabPermissions)) {
+      const home = ["global_dashboard", "approvals", ...Object.keys(TABS)]
+        .find(t => t !== activeTab && !t.startsWith("create__") && isTabVisible(t, currentUser, userTabPermissions));
+      if (home) return <Navigate to={buildPath(home, null)} replace />;
+      return (
+        <div className="flex min-h-full items-center justify-center p-10">
+          <p className="text-slate-400 font-bold uppercase tracking-[0.2em] text-sm">You don't have access to this area</p>
+        </div>
+      );
+    }
+
     // HRMS / Branch tabs used to be reachable only through the Organisation
     // page's own (permission-filtered) menu; now that each has a URL, check here
     const orgTab = TABS[activeTab]?.orgTab;

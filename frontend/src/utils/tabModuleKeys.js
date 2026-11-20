@@ -33,4 +33,6 @@ export const TAB_MODULE_KEY = {
   operations__staff_attendance: "staff_attendance",
   finance__expense_book: "expense_book",
   finance__salary: "salary",
+  inventory: "inventory",
+  historical_data: "historical_data",
 };

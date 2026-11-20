@@ -158,6 +158,8 @@ export const MODULE_PERM_CONFIG = {
   government_laws:         ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export", "can_log"],
   annexure:                ["can_view", "can_add", "can_edit", "can_delete", "can_bulk_upload", "can_export", "can_log"],
   historical_data:         ["can_view", "can_edit", "can_delete"],
+  inventory:               ["can_view"],
+  hr_letters:              ["can_view"],
   master_data_vendor:      ["can_view", "can_export"],
   master_data_intakes:     ["can_view", "can_export"],
   master_data_orders_tab:  ["can_view", "can_add", "can_bulk_upload", "can_export",
@@ -194,6 +196,7 @@ export const MODULE_BUILT_STATUS = {
   term_condition: true, payment_terms: true, government_laws: true,
   bills_docs: true, payment_request: true, expense_book: true,
   staff_attendance: true, salary: true,
+  inventory: true, hr_letters: true,
 };
 
 /*
@@ -231,6 +234,9 @@ export const PERMISSION_LAYOUT = [
       { key: "annexure",        label: "Annexure" },
     ] },
   ] },
+  { section: "Inventory", rows: [
+    { key: "inventory", label: "Inventory" },
+  ] },
   { section: "Finance", rows: [
     { group: "Petty Cash", rows: [
       { key: "petty_cash_staff",    label: "Staff" },
@@ -247,6 +253,7 @@ export const PERMISSION_LAYOUT = [
   { section: "HRMS", rows: [
     { key: "employees",        label: "Employees" },
     { key: "staff_attendance", label: "Attendance" },
+    { key: "hr_letters",       label: "HR Letters" },
     { key: "org_chart",        label: "Org Chart" },
     { group: "Documents", rows: [
       { key: "policy", label: "Policy" },

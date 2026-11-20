@@ -15,8 +15,11 @@ const ORG_TAB_MODULE = {
   employees: "employees", departments: "departments",
   sub_departments: "teams", grades: "grades", designations: "designations",
   org_chart: "org_chart", policy: "policy", sop: "sop",
-  locations: "locations",
+  locations: "locations", hr_letters: "hr_letters",
 };
+
+// Settings › Organisation holds these lists — it shows if any one is granted
+const ORGANISATION_KEYS = ["company_list", "locations", "departments", "teams", "designations", "grades"];
 
 /*
  * Same rules the old Sidebar used, per tab. `perms` is App's
@@ -28,13 +31,14 @@ function baseVisible(tabId, user, perms) {
   const isSuperOrGlobal = isGlobalAdmin || role === "super_admin";
   const map = perms?.map || {};
 
-  if (tabId === "inventory") return true;
-
   // Settings / Profile sections follow the Settings page's own rules
   const t = TABS[tabId];
   if (t?.settings) return !!settingsAccess(user)[t.settings];
-  // Company list was reachable by everyone (Organisation tab had no module)
-  if (tabId === "settings__company") return true;
+  // Organisation: shown if any of its lists (or Projects) is granted
+  if (tabId === "settings__company") {
+    if (isSuperOrGlobal) return true;
+    return ORGANISATION_KEYS.some(k => map[k]?.can_view === true) || !!user?.profile_permissions?.manage_project?.view;
+  }
 
   // Treasury is executive-only: only global_admin
   // bypasses, everyone else needs it granted. Loans & EMI and Masters ride
@@ -47,7 +51,7 @@ function baseVisible(tabId, user, perms) {
   // HRMS / Branch: hidden unless granted (super/global bypass unless controlled)
   if (t?.orgTab) {
     const key = ORG_TAB_MODULE[t.orgTab];
-    if (!key) return true; // HR Letters (offer / appointment) has no permission of its own
+    if (!key) return false;
     const p = map[key] || {};
     if (isGlobalAdmin) return true;
     if (role === "super_admin" && !p.controlled) return true;
@@ -63,8 +67,9 @@ function baseVisible(tabId, user, perms) {
   if (!perms) return false;
   // Inbox, Petty Cash and Material Catalog: visible if any of their modules is granted
   if (TAB_GROUP_KEYS[tabId]) return TAB_GROUP_KEYS[tabId].some(k => map[k]?.can_view === true);
-  // Expenses tabs, ZyAI and Salary are hidden unless explicitly granted
-  if (tabId.startsWith("expenses__") || tabId === "zyhawk_ai" || tabId === "finance__salary") return map[TAB_MODULE_KEY[tabId]]?.can_view === true;
+  // Expenses tabs, ZyAI, Salary, Inventory and Archive are hidden unless explicitly granted
+  if (tabId.startsWith("expenses__") || ["zyhawk_ai", "finance__salary", "inventory", "historical_data"].includes(tabId))
+    return map[TAB_MODULE_KEY[tabId]]?.can_view === true;
   const moduleKey = TAB_MODULE_KEY[tabId];
   if (!moduleKey) return true;
   const perm = map[moduleKey];
