@@ -2,8 +2,8 @@ const express = require("express");
 const router  = express.Router();
 const admin = require("../helpers/supabaseHelper");
 const getAdminClient = () => admin;
-const { requireAuth } = require("../middleware/auth");
-const { lockedModuleIds } = require("../helpers/controlHelper");
+const { requireAuth, bustUserCache } = require("../middleware/auth");
+const { lockedModuleIds, clearOwnPerms, settingsPermsFromProfiles } = require("../helpers/controlHelper");
 
 // Drop the Control Center tabs this caller doesn't own from a template's
 // permission list — they can't put them into a profile or push them to users.
@@ -97,82 +97,36 @@ router.delete("/:id", requireAuth, requireGlobalOrSuper, async (req, res) => {
   res.json({ success: true });
 });
 
-/* POST /api/designations/:id/sync — re-apply template to every user already on it */
+/* POST /api/designations/:id/sync — reset every user on this profile back to
+   it. Users follow their Access Profiles live (no copies), so this is only
+   needed to undo per-user changes: it drops their own permission rows
+   (each user then gets exactly their profiles' permissions) and resets their
+   Settings permissions from their profiles. */
 router.post("/:id/sync", requireAuth, requireGlobalOrSuper, async (req, res) => {
   const admin = getAdminClient();
-  const { data: tpl, error: tplErr } = await admin.from("designations").select("*").eq("id", req.params.id).single();
+  const { data: tpl, error: tplErr } = await admin.from("designations").select("id").eq("id", req.params.id).single();
   if (tplErr || !tpl) return res.status(404).json({ error: "Designation not found" });
 
-  // Find all users currently assigned this template
-  const { data: users, error: usersErr } = await admin
-    .from("users").select("id, profile_permissions").eq("designation_id", req.params.id);
+  const { data: all, error: usersErr } = await admin
+    .from("users").select("id, designation_id, access_profile_ids, profile_permissions");
   if (usersErr) return res.status(500).json({ error: usersErr.message });
-  if (!users || users.length === 0) return res.json({ success: true, synced: 0 });
+  const users = (all || []).filter(u =>
+    (u.access_profile_ids || []).map(String).includes(String(tpl.id)) || String(u.designation_id) === String(tpl.id));
+  if (!users.length) return res.json({ success: true, synced: 0 });
 
-  const userIds = users.map(u => u.id);
-  const tplPerms = withoutLocked(tpl.app_permissions, await lockedModuleIds(req.user));
+  try { await clearOwnPerms(req.user, users.map(u => u.id)); }
+  catch (err) { return res.status(500).json({ error: err.message }); }
 
-  // Build permission rows for every (user, module) pair
-  const rows = [];
-  userIds.forEach(uid => {
-    tplPerms.forEach(p => {
-      rows.push({
-        user_id:               uid,
-        module_id:             p.module_id,
-        can_view:              p.can_view              || false,
-        can_add:               p.can_add               || false,
-        can_edit:              p.can_edit              || false,
-        can_delete:            p.can_delete            || false,
-        can_bulk_upload:       p.can_bulk_upload       || false,
-        can_export:            p.can_export            || false,
-        can_download_document: p.can_download_document || false,
-        can_issue:             p.can_issue             || false,
-        can_recall:            p.can_recall            || false,
-        can_reject:            p.can_reject            || false,
-        can_revert:            p.can_revert            || false,
-        can_cancel:            p.can_cancel            || false,
-        can_manage_amend:      p.can_manage_amend      || false,
-        can_log:               p.can_log               || false,
-        can_manage_columns:    p.can_manage_columns    || false,
-        can_trash:             p.can_trash             || false,
-        can_trash_view:        p.can_trash_view        || false,
-        can_trash_log:         p.can_trash_log         || false,
-        can_trash_restore:     p.can_trash_restore     || false,
-        can_trash_delete:      p.can_trash_delete      || false,
-        can_take_action:       p.can_take_action       || false,
-        can_submit:            p.can_submit            || false,
-        can_approve:           p.can_approve           || false,
-        can_request:           p.can_request           || false,
-        can_withdraw:          p.can_withdraw          || false,
-        order_overview_aging:  p.order_overview_aging  || false,
-        order_intake:          p.order_intake          || false,
-        order_payment:         p.order_payment         || false,
-        scope:                 p.scope                 || null,
-      });
-    });
-  });
-
-  if (rows.length) {
-    const { error: upErr } = await admin.from("permissions").upsert(rows, { onConflict: "user_id,module_id" });
-    if (upErr) return res.status(500).json({ error: upErr.message });
-  }
-
-  // Sync profile_permissions on each user too — preserve each user's personal
-  // ui data (signature, cover image, etc.) and allowed_projects, since those
-  // live in the same JSON column but aren't part of the designation template.
-  const profResults = await Promise.all(users.map(u => {
-    const existing = u.profile_permissions || {};
-    const merged = {
-      ...(tpl.profile_permissions || {}),
-      ...(existing.ui !== undefined ? { ui: existing.ui } : {}),
-      ...(existing.allowed_projects !== undefined ? { allowed_projects: existing.allowed_projects } : {}),
-    };
+  const profResults = await Promise.all(users.map(async u => {
+    const ids = (u.access_profile_ids || []).length ? u.access_profile_ids : [u.designation_id];
+    const merged = await settingsPermsFromProfiles(u.profile_permissions, ids);
     return admin.from("users").update({ profile_permissions: merged }).eq("id", u.id);
   }));
   const profErr = profResults.find(r => r.error)?.error;
   if (profErr) return res.status(500).json({ error: profErr.message });
 
-  res.json({ success: true, synced: userIds.length });
+  users.forEach(u => bustUserCache(u.id));
+  res.json({ success: true, synced: users.length });
 });
 
 /* POST /api/designations/:id/apply/:userId — copy template perms onto a user */

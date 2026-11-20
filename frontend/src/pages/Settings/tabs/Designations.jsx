@@ -147,10 +147,12 @@ export default function Designations({ showToast, designations, designationsLoad
   };
 
   const syncDesignation = async (d) => {
-    if (!confirm(`Re-apply "${d.name}" template to ALL users currently assigned this designation? This will overwrite their custom permissions.`)) return;
+    if (!confirm(`Reset every user on "${d.name}" back to this profile?
+
+Changes to this profile already apply to its users automatically. Use this only to remove permissions given to individual users — they will get exactly the profile's permissions.`)) return;
     try {
       const { data } = await api.post(`/api/designations/${d.id}/sync`);
-      showToast(`Synced ${data.synced} ${data.synced === 1 ? "user" : "users"}`);
+      showToast(`Reset ${data.synced} ${data.synced === 1 ? "user" : "users"} to the profile`);
     } catch (err) {
       showToast(err.response?.data?.error || "Sync failed", "error");
     }
@@ -216,7 +218,7 @@ export default function Designations({ showToast, designations, designationsLoad
                           <div className="flex items-center justify-end gap-1.5 flex-wrap">
                             <button type="button" title="View" onClick={() => openEdit(d, true)} className={actBtn}><Eye size={15} strokeWidth={2} /></button>
                             <button type="button" title="Edit" onClick={() => openEdit(d, false)} className={actBtn}><Pencil size={15} strokeWidth={2} /></button>
-                            <button type="button" title="Sync to assigned users" onClick={() => syncDesignation(d)} className={`${actBtn} hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50/80`}><RefreshCw size={15} strokeWidth={2} /></button>
+                            <button type="button" title="Reset users to this profile" onClick={() => syncDesignation(d)} className={`${actBtn} hover:text-emerald-600 hover:border-emerald-200 hover:bg-emerald-50/80`}><RefreshCw size={15} strokeWidth={2} /></button>
                             <button type="button" title="Delete" onClick={() => deleteDesignation(d.id)} className={`${actBtn} hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50/80`}><Trash2 size={15} strokeWidth={2} /></button>
                           </div>
                         </td>

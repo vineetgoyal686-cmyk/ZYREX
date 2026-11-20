@@ -65,6 +65,9 @@ export default function UserManagement({
   const [editingAllowedProjects, setEditingAllowedProjects] = useState([]);
   const [allProjects,          setAllProjects]          = useState([]);
   const [permAccessProfileIds, setPermAccessProfileIds] = useState([]);
+  // Access Profile changed / "Reset to profile" pressed — on save the user's
+  // own rows are dropped, so they get exactly the profile's permissions
+  const [resetToProfile,       setResetToProfile]       = useState(false);
   const [liveRoleDefaults,     setLiveRoleDefaults]     = useState(ROLE_DEFAULT_PERMS);
 
   /* Role-level defaults are editable via Settings > Roles — fetch the live
@@ -87,6 +90,9 @@ export default function UserManagement({
   const [newUserSignature,      setNewUserSignature]      = useState(null);
   const [newUserSigLoading,     setNewUserSigLoading]     = useState(false);
   const [allPermsSelected,      setAllPermsSelected]      = useState(false);
+  // Modules changed by hand in Add User — only these are saved on the user;
+  // the rest keep following the Access Profile
+  const [newUserTouched,        setNewUserTouched]        = useState(() => new Set());
   const newUserSigRef = useRef();
 
   /* Edit member */
@@ -151,6 +157,7 @@ export default function UserManagement({
   };
 
   const applyAccessProfiles = (profileIds) => {
+    setNewUserTouched(new Set());
     const profiles = designations.filter(d => profileIds.includes(d.id));
     if (!profiles.length) {
       setNewUserProfilePerms(DEFAULT_PROFILE_PERMS);
@@ -190,7 +197,8 @@ export default function UserManagement({
     }));
   };
 
-  const updateNewUserModule = (modId, key, val) =>
+  const updateNewUserModule = (modId, key, val) => {
+    setNewUserTouched(prev => (prev.has(modId) ? prev : new Set(prev).add(modId)));
     setNewUserModules(prev => prev.map(m => {
       if (m.module_id !== modId) return m;
       const updated = { ...m, [key]: val };
@@ -200,9 +208,11 @@ export default function UserManagement({
       }
       return updated;
     }));
+  };
 
   const handleAllPerms = (checked) => {
     setAllPermsSelected(checked);
+    setNewUserTouched(new Set(newUserModules.map(m => m.module_id)));
     setNewUserModules(prev => prev.map(m => {
       const keys = getModulePermKeysFull(m);
       return { ...m, ...Object.fromEntries(keys.map(k => [k, checked])) };
@@ -237,13 +247,17 @@ export default function UserManagement({
       const userId = data.user?.id;
       const newMember = data.user;
 
-      const hasPerms = userId && newUserModules.some(m =>
-        MODULE_PERM_KEYS.some(k => m[k.key]) || GLOBAL_DASHBOARD_ORDER_KEYS.some(k => m[k])
-      );
+      // With an Access Profile, only the modules changed by hand are saved
+      // on the user — the rest follow the profile live. Without one, every
+      // module set here is the user's own.
+      const ownModules = newUserAccessProfileIds.length
+        ? newUserModules.filter(m => newUserTouched.has(m.module_id))
+        : newUserModules.filter(m => MODULE_PERM_KEYS.some(k => m[k.key]) || GLOBAL_DASHBOARD_ORDER_KEYS.some(k => m[k]));
+      const hasPerms = userId && ownModules.length > 0;
 
       // Run permissions + signature in parallel instead of sequentially
       await Promise.all([
-        hasPerms ? api.put(`/api/users/${userId}/permissions`, { permissions: newUserModules }) : Promise.resolve(),
+        hasPerms ? api.put(`/api/users/${userId}/permissions`, { permissions: ownModules }) : Promise.resolve(),
         (userId && newUserSignature) ? api.post(`/api/users/${userId}/signature`, { signature: newUserSignature }).catch(() => {}) : Promise.resolve(),
       ]);
 
@@ -258,6 +272,7 @@ export default function UserManagement({
       setNewUserAllowedProjects([]);
       setNewUserSignature(null);
       setAllPermsSelected(false);
+      setNewUserTouched(new Set());
       setNewUserModules(prev => prev.map(m => {
         const cleared = {
           can_view: false, can_add: false, can_edit: false, can_delete: false, can_trash: false, can_trash_view: false, can_trash_log: false, can_trash_restore: false, can_trash_delete: false, can_bulk_upload: false, can_export: false, can_log: false, can_download_document: false, can_take_action: false, can_submit: false, can_approve: false, can_issue: false, can_recall: false, can_reject: false, can_revert: false, can_request: false, can_withdraw: false, can_cancel: false, can_manage_amend: false,
@@ -350,6 +365,7 @@ export default function UserManagement({
     setEditingAllowedProjects([]);
     setPickedTemplate(null);
     setPermAccessProfileIds(member.access_profile_ids || []);
+    setResetToProfile(false);
     try {
       const { data } = await api.get(`/api/users/${member.id}/permissions`);
       const list = data.permissions || [];
@@ -371,6 +387,35 @@ export default function UserManagement({
       setEditingProfilePerms(merged);
     } catch { showToast("Failed to load permissions", "error"); }
     finally { setPermLoading(false); }
+  };
+
+  // Show what these Access Profiles give (any profile on → on), as the user
+  // will have it once saved; per-user changes made so far are dropped
+  const applyPermProfiles = (ids) => {
+    const profiles = designations.filter(d => ids.includes(d.id));
+    const stored = profiles.flatMap(d => d.app_permissions || []);
+    setPermAccessProfileIds(ids);
+    setResetToProfile(true);
+    setTouchedModuleIds(new Set());
+    setPermissions(prev => prev.map(p => {
+      const matches = stored.filter(s => String(s.module_id) === String(p.module_id));
+      const out = { ...p };
+      Object.keys(p).forEach(k => {
+        if (typeof p[k] === "boolean" && k !== "controlled" && k !== "is_owner") out[k] = matches.some(x => !!x[k]);
+      });
+      const scopes = matches.map(x => x.scope).filter(Boolean);
+      out.scope = !scopes.length ? null
+        : scopes.some(sc => sc.all) ? { all: true }
+        : { projects: [...new Set(scopes.flatMap(sc => sc.projects || []))] };
+      return out;
+    }));
+    setEditingProfilePerms(prev => {
+      const next = { ...prev };
+      PROFILE_SECTIONS.forEach(sec => {
+        next[sec.key] = Object.fromEntries(sec.keys.map(({ k }) => [k, profiles.some(d => !!d.profile_permissions?.[sec.key]?.[k])]));
+      });
+      return next;
+    });
   };
 
   const closePermsPanel = () => {
@@ -406,8 +451,13 @@ export default function UserManagement({
         profile_permissions: { ...editingProfilePerms, allowed_projects: editingAllowedProjects },
         access_profile_ids: permAccessProfileIds,
         designation_id: permAccessProfileIds[0] || null,
+        ...(resetToProfile ? { reset_to_profile: true } : {}),
         ...designationPatch,
       });
+      setResetToProfile(false);
+      setTouchedModuleIds(new Set());
+      setMembers(prev => prev.map(m => m.id === permUser.id ? { ...m, access_profile_ids: permAccessProfileIds } : m));
+      setPermUser(prev => prev ? { ...prev, access_profile_ids: permAccessProfileIds } : prev);
       if (permUser.id === currentUser.id) {
         // Use the full (merged) permissions list for the local cache, not just
         // the touched subset — untouched modules still resolve via the profile.
@@ -527,7 +577,7 @@ export default function UserManagement({
                             const ids = permAccessProfileIds.includes(d.id)
                               ? permAccessProfileIds.filter(x => x !== d.id)
                               : [...permAccessProfileIds, d.id];
-                            setPermAccessProfileIds(ids);
+                            applyPermProfiles(ids);
                           }}
                         />
                         {permAccessProfileIds.length > 0 && (
@@ -537,7 +587,7 @@ export default function UserManagement({
                               return d ? (
                                 <span key={id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm bg-violet-100 text-violet-700 text-[11px] font-bold border border-violet-200">
                                   {d.name}
-                                  <button type="button" onClick={() => setPermAccessProfileIds(prev => prev.filter(x => x !== id))}
+                                  <button type="button" onClick={() => applyPermProfiles(permAccessProfileIds.filter(x => x !== id))}
                                     className="hover:text-rose-500 transition-colors text-[14px] leading-none ml-0.5">×</button>
                                 </span>
                               ) : null;
@@ -547,6 +597,21 @@ export default function UserManagement({
                       </div>
                     ) : (
                       <p className="text-[12px] text-slate-400 italic">No access profiles created yet.</p>
+                    )}
+                    {designations.length > 0 && (
+                      <div className="flex-1 min-w-[240px] pt-1">
+                        {resetToProfile ? (
+                          <p className="text-[12px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                            Showing the profile's permissions. Save to apply — changes made only for this user will be removed.
+                          </p>
+                        ) : permAccessProfileIds.length > 0 && (
+                          <button type="button" onClick={() => applyPermProfiles(permAccessProfileIds)}
+                            className="text-[12px] font-semibold text-violet-600 hover:text-violet-800 border border-violet-200 hover:bg-violet-50 rounded-md px-3 py-1.5 transition">
+                            Reset to profile
+                          </button>
+                        )}
+                        <p className="text-[11px] text-slate-400 mt-1.5">Permissions follow the Access Profile. Only what you change here is kept for this user.</p>
+                      </div>
                     )}
                   </div>
                 </div>

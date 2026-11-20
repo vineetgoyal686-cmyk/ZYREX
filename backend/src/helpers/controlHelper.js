@@ -111,7 +111,54 @@ const freezeLockedForProfileChange = async (caller, targetId, oldProfileIds = []
   await admin.from("permissions").upsert(rows, { onConflict: "user_id,module_id" });
 };
 
+/*
+ * Puts users back on their Access Profiles: deletes their own permission
+ * rows, so every module falls back to the profile(s) again (see
+ * permHelper.checkPermission). Rows for Control Center tabs the caller
+ * doesn't own are kept — only their owners may change those.
+ */
+const clearOwnPerms = async (caller, userIds = []) => {
+  if (!userIds.length) return;
+  const locked = await lockedModuleIds(caller);
+  let del = admin.from("permissions").delete().in("user_id", userIds);
+  if (locked.size) del = del.not("module_id", "in", `(${[...locked.keys()].join(",")})`);
+  const { error } = await del;
+  if (error) throw error;
+};
+
+/*
+ * Settings-page permissions (users.profile_permissions sections such as
+ * manage_user: {view, edit, …}) a user gets from these Access Profiles:
+ * a key is on when any of the profiles has it on. Everything else stored in
+ * that column (ui, allowed_projects, other flags) is kept as it is.
+ */
+const isSection = (v) => v && typeof v === "object" && !Array.isArray(v)
+  && Object.keys(v).length > 0 && Object.values(v).every(x => typeof x === "boolean");
+
+const settingsPermsFromProfiles = async (existing = {}, profileIds = []) => {
+  let profiles = [];
+  if (profileIds.length) {
+    const { data } = await admin.from("designations").select("profile_permissions").in("id", profileIds);
+    profiles = (data || []).map(d => d.profile_permissions || {});
+  }
+  const out = { ...(existing || {}) };
+  const keys = new Set([
+    ...Object.keys(out).filter(k => k !== "ui" && isSection(out[k])),
+    ...profiles.flatMap(pp => Object.keys(pp).filter(k => k !== "ui" && isSection(pp[k]))),
+  ]);
+  keys.forEach(sec => {
+    const merged = {};
+    Object.keys(out[sec] || {}).forEach(k => { merged[k] = false; });
+    profiles.forEach(pp => Object.entries(pp[sec] || {}).forEach(([k, v]) => { merged[k] = !!merged[k] || !!v; }));
+    out[sec] = merged;
+  });
+  return out;
+};
+
+const sameIds = (a = [], b = []) => a.length === b.length && a.every(id => b.includes(id));
+
 module.exports = {
   PERM_COLUMNS, getOwnerMap, bustOwnerCache, isControlled, isOwner, canGrant,
   lockedModuleIds, applyOwnership, freezeLockedForProfileChange,
+  clearOwnPerms, settingsPermsFromProfiles, sameIds,
 };

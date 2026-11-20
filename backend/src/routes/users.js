@@ -5,7 +5,7 @@ const admin = require("../helpers/supabaseHelper");
 const { sendTemplateEmail } = require("../utils/mailer");
 const getAdminClient = () => admin;
 const { requireAuth, bustUserCache } = require("../middleware/auth");
-const { getOwnerMap, applyOwnership, lockedModuleIds, freezeLockedForProfileChange } = require("../helpers/controlHelper");
+const { getOwnerMap, applyOwnership, lockedModuleIds, freezeLockedForProfileChange, clearOwnPerms, settingsPermsFromProfiles, sameIds } = require("../helpers/controlHelper");
 
 const requireAdminOrAbove = (req, res, next) => {
   if (!["global_admin", "super_admin", "admin"].includes(req.user.role))
@@ -323,8 +323,19 @@ router.put("/:id", requireAuth, requireAdminOrAbove, async (req, res) => {
     }
   }
 
-  if (updates.access_profile_ids)
-    await freezeLockedForProfileChange(req.user, id, targetUser.access_profile_ids || [], updates.access_profile_ids);
+  if (updates.access_profile_ids) {
+    const oldIds = targetUser.access_profile_ids || [];
+    await freezeLockedForProfileChange(req.user, id, oldIds, updates.access_profile_ids);
+    // New Access Profile = the user now gets exactly that profile's
+    // permissions: drop their own rows (left over from the old profile) and
+    // take the new profiles' Settings permissions
+    if (!sameIds(oldIds, updates.access_profile_ids) && !reset_permissions) {
+      try { await clearOwnPerms(req.user, [id]); }
+      catch (err) { return res.status(500).json({ error: err.message }); }
+      if (profile_permissions === undefined)
+        updates.profile_permissions = await settingsPermsFromProfiles(targetUser.profile_permissions, updates.access_profile_ids);
+    }
+  }
 
   const { data, error } = await admin.from("users").update(updates).eq("id", id).select().single();
   if (error) return res.status(500).json({ error: error.message });
@@ -432,7 +443,10 @@ router.get("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
 /* PUT /api/users/:id/permissions */
 router.put("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res) => {
   const { id } = req.params;
-  const { permissions, profile_permissions, designation, designation_id, access_profile_ids } = req.body;
+  // reset_to_profile: the Access Profile was changed (or "Reset to profile"
+  // pressed) — drop the user's own rows first, so only the modules sent in
+  // `permissions` (the ones changed by hand) stay set apart from the profile
+  const { permissions, profile_permissions, designation, designation_id, access_profile_ids, reset_to_profile } = req.body;
 
   if (permissions && !Array.isArray(permissions))
     return res.status(400).json({ error: "permissions must be an array" });
@@ -445,6 +459,11 @@ router.put("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
   if (access_profile_ids !== undefined) {
     const { data: before } = await admin.from("users").select("access_profile_ids").eq("id", id).single();
     await freezeLockedForProfileChange(req.user, id, before?.access_profile_ids || [], access_profile_ids || []);
+  }
+
+  if (reset_to_profile) {
+    try { await clearOwnPerms(req.user, [id]); }
+    catch (err) { return res.status(500).json({ error: err.message }); }
   }
 
   if (permissions) {
@@ -518,6 +537,7 @@ router.put("/:id/permissions", requireAuth, requireAdminOrAbove, async (req, res
     if (profError) return res.status(500).json({ error: profError.message });
   }
 
+  bustUserCache(id);
   res.json({ success: true });
 });
 
