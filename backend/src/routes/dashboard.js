@@ -2,6 +2,8 @@ const express  = require("express");
 const router   = express.Router();
 const supabase = require("../helpers/supabaseHelper");
 const { requireAuth } = require("../middleware/auth");
+const { requirePerm } = require("../helpers/permHelper");
+const { projectScope, userIdFrom } = require("../helpers/projectScope");
 
 // In-memory cache for global stats (expensive query), proactively warmed
 // so the first request after server start doesn't pay the full cost.
@@ -31,9 +33,13 @@ function refreshGlobalStatsInBackground() {
 // backend/sql/global_dashboard_stats_function.sql. This keeps the endpoint
 // fast regardless of table size: only the small aggregated JSON crosses the
 // network, instead of every order row.
-async function computeGlobalStats() {
+// siteIds: null = every order (the shared cache); else the lower-cased
+// project / office ids + codes a user's Dashboard permission is limited to
+async function computeGlobalStats(siteIds = null) {
     const [statsRes, vR, pR, cR, coR, iR, uR, clR] = await Promise.all([
-      supabase.schema("procurement").rpc("get_global_dashboard_stats"),
+      siteIds
+        ? supabase.schema("procurement").rpc("get_global_dashboard_stats", { p_site_ids: siteIds })
+        : supabase.schema("procurement").rpc("get_global_dashboard_stats"),
       supabase.schema("procurement").from("vendors").select("id", { count: "exact", head: true }),
       supabase.from("projects").select("id", { count: "exact", head: true }).neq("is_active", false),
       supabase.schema("organisation").from("companies").select("id", { count: "exact", head: true }),
@@ -74,14 +80,35 @@ async function computeGlobalStats() {
       userOrderData:      stats.userOrderData,
       agingOrders:        stats.agingOrders,
     };
+    if (siteIds) {
+      // Only the sites this user may see
+      result.counts.sites = (stats.siteSpend || []).length;
+      return result;
+    }
     globalStatsCache = result;
     globalStatsCacheAt = Date.now();
     return result;
 }
 
+// Users limited to some projects: their own small cache, per set of sites
+const scopedCache = new Map(); // key -> { result, at }
+async function scopedStats(siteIds, force) {
+  const key = [...siteIds].sort().join(",");
+  const hit = scopedCache.get(key);
+  if (!force && hit && Date.now() - hit.at < CACHE_TTL) return hit.result;
+  const result = await computeGlobalStats(siteIds);
+  if (scopedCache.size > 200) scopedCache.clear();
+  scopedCache.set(key, { result, at: Date.now() });
+  return result;
+}
+
 /* GET /api/dashboard/global-stats */
-router.get("/global-stats", requireAuth, async (req, res) => {
+router.get("/global-stats", requireAuth, requirePerm("global_dashboard", "can_view"), async (req, res) => {
   try {
+    // "Choose projects" on the Dashboard permission; no scope = every project
+    const scope = await projectScope(userIdFrom(req), "global_dashboard", null, { legacy: false });
+    if (scope) return res.json(await scopedStats([...scope], req.query.force === "1"));
+
     if (req.query.force === "1") {
       const result = await recomputeGlobalStats();
       return res.json(result);
