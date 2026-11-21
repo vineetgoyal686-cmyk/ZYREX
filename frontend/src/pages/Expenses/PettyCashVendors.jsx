@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx";
-import { Search, Pencil, X, Loader2, Store, GitMerge, Plus, Trash2, FileSpreadsheet, UploadCloud, Download, ChevronDown } from "lucide-react";
+import { Search, Pencil, X, Loader2, Store, GitMerge, Plus, Trash2, FileSpreadsheet, UploadCloud, Download, ChevronDown, IndianRupee, Receipt, Clock3 } from "lucide-react";
 import api from "../../utils/api";
 import Pagination from "./Pagination";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -148,14 +148,23 @@ export default function PettyCashVendors({ scope }) {
 
   return (
     <div className="p-4 sm:p-6 space-y-5 md:flex-1 md:min-h-0 md:flex md:flex-col md:space-y-0 md:gap-5">
-      <div className="shrink-0 grid grid-cols-2 gap-3">
+      <div className="shrink-0 grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: "Vendors", value: loading ? "—" : filtered.length },
-          { label: "Total Spend", value: loading ? "—" : `₹ ${fmtAmount(totalSpend)}`, color: "text-rose-700" },
+          { label: "Vendors", val: filtered.length, icon: Store, accent: "#4f46e5", tint: "#eef2ff" },
+          { label: "Total Spend", val: `₹ ${fmtAmount(totalSpend)}`, icon: IndianRupee, accent: "#e11d48", tint: "#fff1f2" },
+          { label: "Expenses", val: filtered.reduce((n, v) => n + v.entries, 0), icon: Receipt, accent: "#0891b2", tint: "#ecfeff" },
+          { label: "Not Used Yet", val: filtered.filter(v => !v.entries).length, icon: Clock3, accent: "#d97706", tint: "#fffbeb" },
         ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl border border-slate-200 px-5 py-4">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{c.label}</p>
-            <p className={`text-xl sm:text-2xl font-extrabold mt-1 tabular-nums ${c.color || "text-slate-900"}`}>{c.value}</p>
+          <div key={c.label}
+            className="relative overflow-hidden bg-white rounded-lg border border-slate-200/80 shadow-sm p-3 flex items-center gap-3 min-w-0">
+            <div className="absolute inset-y-0 left-0 w-[3px]" style={{ background: c.accent }} />
+            <div className="w-9 h-9 rounded-md flex items-center justify-center shrink-0" style={{ background: c.tint, color: c.accent }}>
+              <c.icon size={16} strokeWidth={2.25} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide whitespace-nowrap">{c.label}</p>
+              <p className="text-lg font-extrabold text-slate-800 leading-tight tracking-tight truncate tabular-nums">{loading ? "—" : c.val}</p>
+            </div>
           </div>
         ))}
       </div>
@@ -167,30 +176,35 @@ export default function PettyCashVendors({ scope }) {
             className="w-full h-10 pl-9 pr-3 border border-slate-300 rounded-lg bg-white text-sm outline-none focus:border-slate-500" />
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {canExport && (
-            <button type="button" onClick={exportExcel} disabled={loading || !filtered.length}
-              className="h-10 px-3.5 flex items-center gap-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-              <FileSpreadsheet size={15} className="text-emerald-600" /> Export
-            </button>
-          )}
-          {canBulk && (
+          {(canExport || canBulk) && (
             <div className="relative">
               <button type="button" onClick={() => setImportOpen(o => !o)} disabled={importing}
                 className="h-10 px-3.5 flex items-center gap-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                {importing ? <Loader2 size={15} className="animate-spin" /> : <UploadCloud size={15} className="text-blue-600" />} Import <ChevronDown size={13} className="text-slate-400" />
+                {importing && <Loader2 size={15} className="animate-spin" />} More <ChevronDown size={14} className="text-slate-400" />
               </button>
               {importOpen && (
                 <>
                   <div className="fixed inset-0 z-30" onClick={() => setImportOpen(false)} />
                   <div className="absolute right-0 mt-1 w-56 bg-white border border-slate-200 rounded-xl shadow-xl z-40 p-1.5">
-                    <button type="button" onClick={() => { setImportOpen(false); downloadTemplate(); }}
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
-                      <Download size={14} className="text-slate-400" /> Download template
-                    </button>
-                    <button type="button" onClick={() => { setImportOpen(false); fileRef.current?.click(); }}
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
-                      <UploadCloud size={14} className="text-slate-400" /> Upload Excel
-                    </button>
+                    {canExport && (
+                      <button type="button" onClick={() => { setImportOpen(false); exportExcel(); }} disabled={loading || !filtered.length}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                        <FileSpreadsheet size={14} className="text-emerald-600" /> Export Excel
+                      </button>
+                    )}
+                    {canBulk && (
+                      <>
+                        {canExport && <div className="my-1 border-t border-slate-100" />}
+                        <button type="button" onClick={() => { setImportOpen(false); downloadTemplate(); }}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                          <Download size={14} className="text-slate-400" /> Download Template
+                        </button>
+                        <button type="button" onClick={() => { setImportOpen(false); fileRef.current?.click(); }}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                          <UploadCloud size={14} className="text-blue-600" /> Import Excel
+                        </button>
+                      </>
+                    )}
                   </div>
                 </>
               )}
