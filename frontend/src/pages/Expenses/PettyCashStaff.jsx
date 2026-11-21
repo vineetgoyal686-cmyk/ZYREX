@@ -1275,7 +1275,7 @@ export default function PettyCashStaff({ scope }) {
               <tr>
                 {columns.map((h, i) => (
                   <th key={i} style={{ ...pinStyle(h), ...(COL_W[h] && h !== flexCol && { width: COL_W[h] }) }}
-                    title={h === "Doc" ? "B = Bill, V = Voucher, P = Payment, M = Material · red = missing" : undefined}
+                    title={h === "Doc" ? "B = Bill, LB = Local Bill, V = Voucher, P = Payment, M = Material · red = missing" : undefined}
                     className={`sticky top-0 ${pinCls(h) ? `${pinCls(h)} z-20` : "z-10"} bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : h === "Doc" ? "text-center !px-2" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
@@ -1720,20 +1720,23 @@ function DocBadges({ entry: e, onOpen, onMissing }) {
   ].filter(Boolean);
   const have = docSectionsFor(e.entryType).filter(s => e.documents?.[s.key]?.length);
   if (!have.length && !missing.length) return <div className="text-center text-slate-400">—</div>;
+  // a Local Bill's bill shows as LB
+  const short = (key) => (key === "bill" && e.proofType === "local_bill" ? "LB" : DOC_BADGE[key].short);
+  const name = (key) => (key === "bill" && e.proofType === "local_bill" ? "Local Bill" : DOC_BADGE[key].label);
   const chip = "inline-flex items-center gap-px px-1 py-px rounded border text-[11px] font-semibold leading-4 whitespace-nowrap";
   return (
     <div className="flex flex-wrap justify-center gap-1">
       {have.map(s => (
-        <button key={s.key} type="button" onClick={() => onOpen(s.key)} title={`${DOC_BADGE[s.key].label}: ${e.documents[s.key].length} file${e.documents[s.key].length > 1 ? "s" : ""}`}
+        <button key={s.key} type="button" onClick={() => onOpen(s.key)} title={`${name(s.key)}: ${e.documents[s.key].length} file${e.documents[s.key].length > 1 ? "s" : ""}`}
           className={`${chip} ${DOC_BADGE[s.key].cls}`}>
-          {DOC_BADGE[s.key].short}{e.documents[s.key].length}
+          {short(s.key)}{e.documents[s.key].length}
         </button>
       ))}
       {missing.map(key => (
         <button key={key} type="button" disabled={!onMissing} onClick={() => onMissing?.()}
-          title={key === "bill" ? "Bill not uploaded" : "Voucher not made yet"}
+          title={key === "bill" ? `${name("bill")} not uploaded` : "Voucher not made yet"}
           className={`${chip} bg-rose-50 text-rose-700 border-rose-200 ${onMissing ? "hover:bg-rose-100" : "cursor-default"}`}>
-          {DOC_BADGE[key].short}<X size={10} strokeWidth={3} />
+          {short(key)}<X size={10} strokeWidth={3} />
         </button>
       ))}
     </div>
