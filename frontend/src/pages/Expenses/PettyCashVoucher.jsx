@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { jsPDF } from "jspdf";
-import { X, Plus, Trash2, UploadCloud, Loader2, Printer, Download, ZoomIn, ZoomOut, Maximize2, ChevronDown } from "lucide-react";
+import { X, Plus, Trash2, UploadCloud, Loader2, Printer, Download, ZoomIn, ZoomOut, Maximize2, ChevronDown, Check, Search } from "lucide-react";
 import api from "../../utils/api";
 import { fmtDate, apiError } from "./pettyCashConstants";
 import BrandLoader from "../../components/BrandLoader";
@@ -262,6 +262,73 @@ async function drawVoucher(doc, v, top) {
 const inp = "w-full h-9 border border-slate-300 rounded-lg px-2.5 text-sm outline-none bg-white text-slate-900 focus:border-slate-500";
 const lbl = "block text-xs font-semibold text-slate-600 mb-1";
 
+const initials = (name) => String(name || "").trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?";
+const Avatar = ({ name, size = 24 }) => (
+  <span className="shrink-0 rounded-full bg-indigo-50 text-indigo-600 font-bold flex items-center justify-center"
+    style={{ width: size, height: size, fontSize: size * 0.4 }}>{initials(name)}</span>
+);
+
+// Login user picker for a signature slot: search, initials, name + email.
+// value = user id ("" = none).
+function UserPicker({ users, value, onChange, disabled }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [up, setUp] = useState(false); // not enough room below → open upwards
+  const ref = useRef(null);
+  const toggle = () => {
+    if (!open && ref.current) setUp(window.innerHeight - ref.current.getBoundingClientRect().bottom < 320);
+    setOpen(o => !o);
+  };
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  const sel = users.find(u => u.id === value);
+  const term = q.trim().toLowerCase();
+  const list = users.filter(u => !term || `${u.name} ${u.email || ""}`.toLowerCase().includes(term));
+  const pick = (id) => { onChange(id); setOpen(false); setQ(""); };
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" disabled={disabled} onClick={toggle}
+        className={`w-full h-9 flex items-center gap-2 border rounded-lg pl-2 pr-2.5 bg-white text-left transition-colors disabled:opacity-60
+          ${open ? "border-slate-500" : "border-slate-300 hover:border-slate-400"}`}>
+        {sel ? <Avatar name={sel.name} size={22} /> : <span className="w-[22px] h-[22px] rounded-full border border-dashed border-slate-300 shrink-0" />}
+        <span className={`flex-1 min-w-0 truncate text-sm ${sel ? "text-slate-800 font-medium" : "text-slate-400"}`}>{sel ? sel.name : "Pick a login user"}</span>
+        {sel && !disabled && (
+          <span role="button" tabIndex={-1} title="Clear" onClick={e => { e.stopPropagation(); pick(""); }} className="p-0.5 text-slate-300 hover:text-slate-600"><X size={13} /></span>
+        )}
+        <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className={`absolute left-0 right-0 z-50 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden ${up ? "bottom-full mb-1" : "top-full mt-1"}`}>
+          <div className="p-2 border-b border-slate-100">
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search user…"
+                className="w-full h-8 pl-8 pr-2 rounded-md bg-slate-50 border border-slate-200 text-sm outline-none focus:border-slate-400" />
+            </div>
+          </div>
+          <div className="max-h-56 overflow-auto thin-scroll p-1">
+            {list.length === 0 ? <p className="px-3 py-3 text-center text-xs text-slate-400">No user found</p> : list.map(u => (
+              <button key={u.id} type="button" onClick={() => pick(u.id)}
+                className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left ${u.id === value ? "bg-indigo-50" : "hover:bg-slate-50"}`}>
+                <Avatar name={u.name} size={26} />
+                <span className="flex-1 min-w-0">
+                  <span className="block truncate text-[13px] font-medium text-slate-800">{u.name}</span>
+                  {u.email && u.email !== u.name && <span className="block truncate text-[11px] text-slate-400">{u.email}</span>}
+                </span>
+                {u.id === value && <Check size={14} className="text-indigo-600 shrink-0" />}
+              </button>
+            ))}
+          </div>
+          <p className="px-3 py-1.5 border-t border-slate-100 text-[10.5px] text-slate-400">Uses the user's profile signature</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // `initial` (saved voucher details) opens an existing voucher for editing:
 // it keeps its number, and Done returns a fresh PDF to replace the old one.
 export default function VoucherModal({ entry, company, project, initial, onClose, onDone }) {
@@ -449,10 +516,7 @@ export default function VoucherModal({ entry, company, project, initial, onClose
                 return (
                   <div key={s.key} className="rounded-lg border border-slate-200 p-2.5 space-y-2">
                     <p className="text-[13px] font-semibold text-slate-700">{s.label}</p>
-                    <select value={sign.userId} onChange={e => pickUser(s.key, e.target.value)} className={inp}>
-                      <option value="">Pick a login user (uses profile signature)</option>
-                      {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                    </select>
+                    <UserPicker users={users} value={sign.userId} onChange={id => pickUser(s.key, id)} />
                     <input value={sign.name} onChange={e => setSign(s.key, { name: e.target.value })} placeholder="Or type a name" className={inp} />
                     <div className="flex items-center gap-2">
                       <label className="flex items-center gap-1 text-xs font-medium text-blue-600 cursor-pointer hover:underline">
@@ -871,10 +935,7 @@ export function BulkVoucherModal({ entries, company, projects, onClose, onDone }
                 return (
                   <div key={s.key} className="rounded-lg border border-slate-200 p-2.5 space-y-2">
                     <p className="text-[13px] font-semibold text-slate-700">{s.label}</p>
-                    <select value={sign.userId} disabled={running} onChange={e => pickUser(s.key, e.target.value)} className={inp}>
-                      <option value="">Pick a login user (uses profile signature)</option>
-                      {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                    </select>
+                    <UserPicker users={users} value={sign.userId} disabled={running} onChange={id => pickUser(s.key, id)} />
                     <input value={sign.name} disabled={running} onChange={e => setSign(s.key, { name: e.target.value })} placeholder="Or type a name" className={inp} />
                     <div className="flex items-center gap-2">
                       <label className="flex items-center gap-1 text-xs font-medium text-blue-600 cursor-pointer hover:underline">
