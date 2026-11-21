@@ -537,7 +537,7 @@ export default function PettyCashStaff({ scope }) {
   }, [filtered]);
   const COL_W = {
     Date: 120, Vendor: vendorColW, Expense: 280, Amount: 120, "Paid By": 160, "Bill Type": 130, Payment: 120,
-    Type: 200, From: 180, To: 180, Doc: subTab === "entries" ? 190 : 110,
+    Type: 200, From: 180, To: 180, Doc: subTab === "entries" ? 118 : 80,
   };
   // Expenses open from the name, so only Received & Given needs a View button.
   const showViewBtn = subTab !== "entries";
@@ -1275,6 +1275,7 @@ export default function PettyCashStaff({ scope }) {
               <tr>
                 {columns.map((h, i) => (
                   <th key={i} style={{ ...pinStyle(h), ...(COL_W[h] && h !== flexCol && { width: COL_W[h] }) }}
+                    title={h === "Doc" ? "B = Bill, V = Voucher, P = Payment, M = Material · red = missing" : undefined}
                     className={`sticky top-0 ${pinCls(h) ? `${pinCls(h)} z-20` : "z-10"} bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : h === "Doc" ? "text-center !px-2" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
@@ -1706,10 +1707,10 @@ export default function PettyCashStaff({ scope }) {
 // what an expense should have but doesn't — a bill for Tax Invoice / Local
 // Bill, a voucher when one is to be made.
 const DOC_BADGE = {
-  bill:     { label: "Bill",     cls: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" },
-  voucher:  { label: "Voucher",  cls: "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" },
-  payment:  { label: "Payment",  cls: "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100" },
-  material: { label: "Material", cls: "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100" },
+  bill:     { label: "Bill",     short: "B", cls: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" },
+  voucher:  { label: "Voucher",  short: "V", cls: "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" },
+  payment:  { label: "Payment",  short: "P", cls: "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100" },
+  material: { label: "Material", short: "M", cls: "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100" },
 };
 function DocBadges({ entry: e, onOpen, onMissing }) {
   const isExp = e.entryType === "expense";
@@ -1719,20 +1720,20 @@ function DocBadges({ entry: e, onOpen, onMissing }) {
   ].filter(Boolean);
   const have = docSectionsFor(e.entryType).filter(s => e.documents?.[s.key]?.length);
   if (!have.length && !missing.length) return <div className="text-center text-slate-400">—</div>;
-  const chip = "inline-flex items-center gap-0.5 px-1.5 py-px rounded border text-[11px] font-semibold leading-4 whitespace-nowrap";
+  const chip = "inline-flex items-center gap-px px-1 py-px rounded border text-[11px] font-semibold leading-4 whitespace-nowrap";
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex flex-wrap justify-center gap-1">
       {have.map(s => (
-        <button key={s.key} type="button" onClick={() => onOpen(s.key)} title={`View ${s.label.toLowerCase()}`}
+        <button key={s.key} type="button" onClick={() => onOpen(s.key)} title={`${DOC_BADGE[s.key].label}: ${e.documents[s.key].length} file${e.documents[s.key].length > 1 ? "s" : ""}`}
           className={`${chip} ${DOC_BADGE[s.key].cls}`}>
-          {DOC_BADGE[s.key].label} {e.documents[s.key].length}
+          {DOC_BADGE[s.key].short}{e.documents[s.key].length}
         </button>
       ))}
       {missing.map(key => (
         <button key={key} type="button" disabled={!onMissing} onClick={() => onMissing?.()}
           title={key === "bill" ? "Bill not uploaded" : "Voucher not made yet"}
           className={`${chip} bg-rose-50 text-rose-700 border-rose-200 ${onMissing ? "hover:bg-rose-100" : "cursor-default"}`}>
-          {DOC_BADGE[key].label} <X size={11} strokeWidth={3} />
+          {DOC_BADGE[key].short}<X size={10} strokeWidth={3} />
         </button>
       ))}
     </div>
