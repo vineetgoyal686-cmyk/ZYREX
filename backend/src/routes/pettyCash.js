@@ -995,6 +995,56 @@ router.get("/entries/:id/voucher", requirePerm("petty_cash_staff", "can_view"), 
   }
 });
 
+/* POST /api/petty-cash/entries/:id/voucher — multipart "pdf" + "voucherData"
+   (JSON). Saves a system voucher on an expense that has none yet: its
+   details + number, and the PDF in its Voucher files. Used by Create Vouchers
+   (many at once); 409 when the number was taken meanwhile, so the caller can
+   fetch the next one and try again. */
+router.post("/entries/:id/voucher", requirePerm("petty_cash_staff", "can_edit"), upload.single("pdf"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "PDF is required" });
+    const { data: row, error } = await supabase.from("petty_cash_entries")
+      .select("id, entry_type, entry_date, particular, project_id, branch_id, voucher_data, voucher_docs")
+      .eq("id", req.params.id).is("deleted_at", null).maybeSingle();
+    if (error) throw error;
+    if (!row) return res.status(404).json({ error: "Entry not found" });
+    if (!pcAllowed(await pcScope(req, "petty_cash_staff"), row)) return res.status(403).json({ error: "This project / office isn't in your Petty Cash access" });
+    if (row.entry_type !== "expense") return res.status(400).json({ error: "Only an expense can have a voucher" });
+    if (row.voucher_data?.voucherNo) return res.status(409).json({ error: `Already has voucher ${row.voucher_data.voucherNo}`, exists: true });
+
+    let voucher, seqCols;
+    try {
+      voucher = parseVoucherData(req.body, "expense");
+      if (!voucher || !Number.isInteger(voucher.seq)) throw new Error("Invalid voucher details");
+      seqCols = voucherSeqCols(voucher, row.entry_date);
+    } catch (e) { return res.status(400).json({ error: e.message }); }
+
+    const safe = String(voucher.voucherNo).replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `entries/${row.id}/voucher/${Date.now()}_0_Voucher_${safe}.pdf`;
+    await uploadStorageFile(supabase, BUCKET, path, req.file.buffer, "application/pdf");
+    const { error: uErr } = await supabase.from("petty_cash_entries")
+      .update({ voucher_data: voucher, ...seqCols, voucher_docs: [...(row.voucher_docs || []), path] })
+      .eq("id", row.id);
+    if (uErr) {
+      await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
+      if (uErr.code === "23505") return res.status(409).json({ error: "Voucher number already used", taken: true });
+      throw uErr;
+    }
+
+    const uid = userIdFrom(req);
+    const { data: who } = await supabase.from("users").select("name, email").eq("id", uid).maybeSingle();
+    await supabase.schema("procurement").from("audit_logs").insert({
+      entity_type: "petty_cash_entry", entity_id: String(row.id), entity_name: row.particular || null,
+      action: "updated", user_id: uid || null, user_name: who?.name || null, user_email: who?.email || null,
+      changes: { Voucher: { from: "—", to: voucher.voucherNo } },
+    });
+    res.json({ success: true, voucherNo: voucher.voucherNo });
+  } catch (err) {
+    console.error("Petty cash voucher create error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* DELETE /api/petty-cash/entries/:id — soft delete */
 router.delete("/entries/:id", requirePerm("petty_cash_staff", "can_delete"), async (req, res) => {
   try {

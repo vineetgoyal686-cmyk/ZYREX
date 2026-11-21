@@ -712,6 +712,212 @@ export function PrintVouchersModal({ entries, skipped = [], onOpenEntry, onClose
   );
 }
 
+// ── Create Vouchers (many at once) ───────────────────────────────────────
+// `entries`: Voucher-type expenses in the current filter with no system
+// voucher yet. Each gets the same voucher Create Voucher makes — next number
+// in its project's series (in date order), Paid To = vendor (else Paid By),
+// one line with the expense — and the signatures picked here once.
+export function BulkVoucherModal({ entries, company, projects, onClose, onDone }) {
+  const sorted = useMemo(() => [...entries].sort((a, b) => String(a.entryDate).localeCompare(String(b.entryDate))), [entries]);
+  const [picked, setPicked] = useState(() => new Set(sorted.map(e => e.id)));
+  const [users, setUsers] = useState([]);
+  const [signs, setSigns] = useState(() => Object.fromEntries(SIGN_SLOTS.map(s => [s.key, { userId: "", name: "", image: "" }])));
+  const [signLoading, setSignLoading] = useState("");
+  const [noSign, setNoSign] = useState({}); // slot -> true when the picked user has no profile signature
+  const [run, setRun] = useState(null);     // { done, total, failed: [{ entry, error }], running }
+
+  useEffect(() => { api.get("/api/petty-cash/users").then(({ data }) => setUsers(data.users || [])).catch(() => {}); }, []);
+
+  const setSign = (slot, patch) => setSigns(p => ({ ...p, [slot]: { ...p[slot], ...patch } }));
+  const pickUser = async (slot, userId) => {
+    const u = users.find(x => x.id === userId);
+    setSign(slot, { userId, name: u?.name || "", image: "" });
+    setNoSign(p => ({ ...p, [slot]: false }));
+    if (!userId) return;
+    setSignLoading(slot);
+    try {
+      const { data } = await api.get(`/api/petty-cash/users/${userId}/signature`);
+      if (data.signatureUrl) {
+        const blob = await fetch(data.signatureUrl).then(r => r.blob());
+        setSign(slot, { image: await blobToDataUrl(blob) });
+      } else setNoSign(p => ({ ...p, [slot]: true }));
+    } catch { setNoSign(p => ({ ...p, [slot]: true })); }
+    setSignLoading("");
+  };
+
+  const chosen = sorted.filter(e => picked.has(e.id));
+  const total = chosen.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const toggle = (id) => setPicked(p => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allOn = chosen.length === sorted.length && sorted.length > 0;
+
+  const createAll = async () => {
+    const list = chosen;
+    const failed = [];
+    let done = 0;
+    setRun({ done, total: list.length, failed, running: true });
+    for (const e of list) {
+      try {
+        const project = projects.find(p => p.id === e.projectId);
+        if (!project) throw new Error("No project / office on this entry");
+        const items = [{ details: e.particular || "", category: e.category || "", amount: e.amount }];
+        const base = {
+          header: voucherHeader(company, project), date: e.entryDate,
+          paidTo: String(e.vendorName || "").trim() || e.personName || "", items,
+          paymentMode: MODE_FROM_ENTRY[e.paymentMode] || "", refNo: "",
+        };
+        let saved = false;
+        for (let attempt = 0; attempt < 3 && !saved; attempt++) {
+          const { data: no } = await api.get("/api/petty-cash/voucher-no", { params: { company_id: company.id, project_id: project.id, date: e.entryDate } });
+          const amt = Number(e.amount) || 0;
+          const blob = await buildVoucherPdf({ ...base, voucherNo: no.voucherNo, signs, total: amt, amountWords: amountInWords(amt) });
+          const details = {
+            voucherNo: no.voucherNo, fy: no.fy, seq: no.seq, ...base,
+            // profile signatures are fetched again when shown; only uploaded images are kept
+            signs: Object.fromEntries(SIGN_SLOTS.map(s => [s.key, { userId: signs[s.key].userId, name: signs[s.key].name, image: signs[s.key].userId ? "" : signs[s.key].image }])),
+          };
+          const fd = new FormData();
+          fd.append("pdf", new File([blob], `Voucher_${no.voucherNo.replace(/[^a-zA-Z0-9._-]/g, "_")}.pdf`, { type: "application/pdf" }));
+          fd.append("voucherData", JSON.stringify(details));
+          try {
+            await api.post(`/api/petty-cash/entries/${e.id}/voucher`, fd);
+            saved = true;
+          } catch (err) {
+            if (err?.response?.status === 409 && err.response.data?.taken) continue; // number taken meanwhile — next one
+            throw err;
+          }
+        }
+        if (!saved) throw new Error("Voucher number kept clashing — try again");
+        done += 1;
+      } catch (err) { failed.push({ entry: e, error: apiError(err, "Failed") }); }
+      setRun({ done, total: list.length, failed: [...failed], running: true });
+    }
+    setRun({ done, total: list.length, failed, running: false });
+    if (done) onDone?.(done);
+  };
+
+  const running = run?.running;
+  const finished = run && !run.running;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-3.5 border-b border-slate-100 shrink-0">
+          <div>
+            <h2 className="text-base font-bold text-slate-900">Create Vouchers</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Voucher entries in the current filter that don't have a voucher yet</p>
+          </div>
+          <button onClick={onClose} disabled={running} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 disabled:opacity-40"><X size={18} /></button>
+        </div>
+
+        {finished ? (
+          <div className="flex-1 overflow-auto p-6 space-y-4">
+            <p className="text-sm"><span className="font-semibold text-emerald-700">{run.done} voucher{run.done === 1 ? "" : "s"} created</span>
+              {run.failed.length > 0 && <> · <span className="font-semibold text-rose-700">{run.failed.length} failed</span></>}</p>
+            {run.failed.length > 0 && (
+              <div className="rounded-lg border border-rose-200 divide-y divide-rose-100">
+                {run.failed.map(f => (
+                  <div key={f.entry.id} className="px-3 py-2 text-sm flex flex-wrap gap-x-3">
+                    <span className="font-semibold">{fmtDate(f.entry.entryDate)}</span>
+                    <span className="truncate max-w-[260px]">{f.entry.particular}</span>
+                    <span className="tabular-nums">₹ {money(f.entry.amount)}</span>
+                    <span className="text-rose-700">{f.error}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex-1 min-h-0 grid lg:grid-cols-[1fr_340px] overflow-hidden">
+            {/* Entries */}
+            <div className="min-h-0 flex flex-col border-r border-slate-100">
+              <div className="px-5 py-2.5 flex items-center justify-between text-xs text-slate-500 border-b border-slate-100 shrink-0">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox" checked={allOn} disabled={running} onChange={() => setPicked(allOn ? new Set() : new Set(sorted.map(e => e.id)))} className="w-3.5 h-3.5 accent-slate-900" />
+                  <span className="font-semibold">{chosen.length} of {sorted.length} selected</span>
+                </label>
+                <span className="font-semibold text-slate-700 tabular-nums">₹ {money(total)}</span>
+              </div>
+              <div className="flex-1 overflow-auto thin-scroll">
+                {sorted.length === 0 ? (
+                  <p className="p-6 text-sm text-slate-400">No Voucher entries without a voucher in the current filter.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="text-slate-500 text-xs">
+                      <tr>{["", "Date", "Expense", "Paid To", "Amount"].map((h, i) => (
+                        <th key={i} className={`sticky top-0 bg-slate-50 px-3 py-2 font-semibold ${h === "Amount" ? "text-right" : "text-left"}`}>{h}</th>
+                      ))}</tr>
+                    </thead>
+                    <tbody>
+                      {sorted.map(e => (
+                        <tr key={e.id} onClick={() => !running && toggle(e.id)} className={`border-t border-slate-100 cursor-pointer ${picked.has(e.id) ? "" : "opacity-50"}`}>
+                          <td className="px-3 py-2"><input type="checkbox" checked={picked.has(e.id)} readOnly className="w-3.5 h-3.5 accent-slate-900" /></td>
+                          <td className="px-3 py-2 whitespace-nowrap">{fmtDate(e.entryDate)}</td>
+                          <td className="px-3 py-2 max-w-[240px] truncate" title={e.particular}>{e.particular}</td>
+                          <td className="px-3 py-2 max-w-[160px] truncate text-slate-600">{String(e.vendorName || "").trim() || e.personName}</td>
+                          <td className="px-3 py-2 text-right tabular-nums font-semibold">{money(e.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Signatures — one choice for all */}
+            <div className="min-h-0 overflow-auto thin-scroll p-4 space-y-3">
+              <p className="text-xs font-semibold text-slate-600">Signatures <span className="font-normal text-slate-400">— used on every voucher</span></p>
+              {SIGN_SLOTS.map(s => {
+                const sign = signs[s.key];
+                return (
+                  <div key={s.key} className="rounded-lg border border-slate-200 p-2.5 space-y-2">
+                    <p className="text-[13px] font-semibold text-slate-700">{s.label}</p>
+                    <select value={sign.userId} disabled={running} onChange={e => pickUser(s.key, e.target.value)} className={inp}>
+                      <option value="">Pick a login user (uses profile signature)</option>
+                      {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                    <input value={sign.name} disabled={running} onChange={e => setSign(s.key, { name: e.target.value })} placeholder="Or type a name" className={inp} />
+                    <div className="flex items-center gap-2">
+                      <label className="flex items-center gap-1 text-xs font-medium text-blue-600 cursor-pointer hover:underline">
+                        <UploadCloud size={13} /> Upload signature
+                        <input type="file" accept="image/*" className="hidden" disabled={running}
+                          onChange={async e => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setSign(s.key, { image: await blobToDataUrl(f) }); setNoSign(p => ({ ...p, [s.key]: false })); } }} />
+                      </label>
+                      {signLoading === s.key && <Loader2 size={13} className="animate-spin text-slate-400" />}
+                      {sign.image && (
+                        <>
+                          <img src={sign.image} alt="" className="h-8 max-w-[120px] object-contain border border-slate-100 rounded" />
+                          <button type="button" onClick={() => setSign(s.key, { image: "" })} className="p-1 text-slate-400 hover:text-red-600"><X size={13} /></button>
+                        </>
+                      )}
+                    </div>
+                    {noSign[s.key] && !sign.image && <p className="text-[11px] text-amber-700">{sign.name || "This user"} has no signature in their profile — only the name will show. Upload one to add it.</p>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between gap-3 px-6 py-3.5 border-t border-slate-100 bg-slate-50 shrink-0">
+          <p className="text-sm text-slate-600">
+            {running ? <span className="flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Creating {run.done + run.failed.length + 1 > run.total ? run.total : run.done + run.failed.length + 1} of {run.total}…</span>
+              : finished ? "" : "Numbers follow each project's series, oldest entry first."}
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={onClose} disabled={running} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-40">{finished ? "Close" : "Cancel"}</button>
+            {!finished && (
+              <button onClick={createAll} disabled={running || !chosen.length || !!signLoading}
+                className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-50 flex items-center gap-2">
+                {running && <Loader2 size={14} className="animate-spin" />} Create {chosen.length} Voucher{chosen.length === 1 ? "" : "s"}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Voucher numbering (format + month-wise renumber) ─────────────────────
 const padNo = (series, fy, seq) => `${series.prefix}/(${fy})/VH-${String(seq).padStart(series.digits, "0")}`;
 const thisMonth = () => new Date().toISOString().slice(0, 7);

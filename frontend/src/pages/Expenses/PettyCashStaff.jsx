@@ -10,7 +10,7 @@ import { useModulePermissions } from "../../hooks/useModulePermissions";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import LogPanel from "../../components/LogPanel";
 import Pagination from "./Pagination";
-import VoucherModal, { BlankVoucherModal, PrintVouchersModal, VoucherNumberingPanel } from "./PettyCashVoucher";
+import VoucherModal, { BlankVoucherModal, PrintVouchersModal, VoucherNumberingPanel, BulkVoucherModal } from "./PettyCashVoucher";
 import { PrintBillsPanel } from "./PettyCashBills";
 import { logAudit } from "../../utils/auditLog";
 import {
@@ -371,6 +371,7 @@ export default function PettyCashStaff({ scope }) {
   const [viewItem, setViewItem]     = useState(null); // an itemSummary row
   const [voucherOpen, setVoucherOpen] = useState(false);
   const [blankVoucherOpen, setBlankVoucherOpen] = useState(false);
+  const [bulkVouchers, setBulkVouchers] = useState(null); // Voucher entries without a voucher, for Create Vouchers
   const [numberingOpen, setNumberingOpen] = useState(false);
   const [printBills, setPrintBills] = useState(null); // { entries, missing }
   const [printVouchers, setPrintVouchers] = useState(null); // { entries, skipped }
@@ -1061,6 +1062,14 @@ export default function PettyCashStaff({ scope }) {
                         <FileSpreadsheet size={14} className="text-slate-400" /> Export
                       </button>
                     )}
+                    {subTab === "entries" && canEdit && (
+                      <button onClick={() => {
+                        setMoreMenuOpen(false);
+                        setBulkVouchers(filtered.filter(e => e.entryType === "expense" && e.proofType === "voucher" && !e.voucherNo));
+                      }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
+                        <FilePlus2 size={14} className="text-slate-400" /> Create Vouchers
+                      </button>
+                    )}
                     {subTab === "entries" && (
                       <button onClick={() => {
                         setMoreMenuOpen(false);
@@ -1510,6 +1519,16 @@ export default function PettyCashStaff({ scope }) {
             setPersonModal(null);
             showToast(`"${person.name}" added`);
           }}
+        />
+      )}
+
+      {bulkVouchers && (
+        <BulkVoucherModal
+          entries={bulkVouchers}
+          company={scope.company}
+          projects={scope.projects}
+          onClose={() => setBulkVouchers(null)}
+          onDone={() => fetchEntries()}
         />
       )}
 
