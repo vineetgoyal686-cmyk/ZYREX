@@ -425,6 +425,23 @@ export default function PettyCashStaff({ scope }) {
       .filter(n => { const k = n.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
   }, [vendors, form.projectId]);
 
+  // Expense pick list: what this project / office has spent on before, most
+  // used first (pick one, or type a new one)
+  const formExpenses = useMemo(() => {
+    if (!form.projectId) return [];
+    const count = new Map(); // lower-cased -> { name, n }
+    entries.forEach(e => {
+      if (e.entryType !== "expense" || e.projectId !== form.projectId) return;
+      const name = String(e.particular || "").trim();
+      if (!name) return;
+      const k = name.toLowerCase();
+      const c = count.get(k) || { name, n: 0 };
+      c.n += 1;
+      count.set(k, c);
+    });
+    return [...count.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name)).map(c => c.name);
+  }, [entries, form.projectId]);
+
   // ── Balances (always over the whole ledger, not the filtered view) ──────
   const balances = useMemo(() => {
     const map = {};
@@ -1361,7 +1378,8 @@ export default function PettyCashStaff({ scope }) {
 
                     {form.entryType === "expense" && (
                       <>
-                        <Field label="Expense" required wide><input value={form.particular} onChange={set("particular")} placeholder="e.g. Food charge (Zomato)" className={inp} /></Field>
+                        <Field label="Expense" required wide><NameCombo value={form.particular} onChange={v => setForm(f => ({ ...f, particular: v }))} options={formExpenses}
+                          noun="expense" placeholder="e.g. Food charge (Zomato)" inputClass={inp} /></Field>
                         <Field label="Vendor Name"><NameCombo value={form.vendorName} onChange={v => setForm(f => ({ ...f, vendorName: v }))} options={formVendors}
                           noun="vendor" placeholder="Search or add a vendor" inputClass={inp} withIcon /></Field>
                         <Field label="Paid By" required>{personSelect("personId", "Select person")}</Field>
