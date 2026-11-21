@@ -380,11 +380,14 @@ function AddDialog({ scope, vendors, onClose, onDone }) {
         <div className="px-6 pb-5 space-y-3">
           <label className="block text-sm">
             <span className="block text-xs font-semibold text-slate-500 mb-1">{scope.kindLabel}</span>
-            <select value={projectId} onChange={e => setProjectId(e.target.value)}
-              className="w-full h-10 px-3 border border-slate-300 rounded-lg bg-white text-sm outline-none focus:border-slate-500">
-              <option value="">Select {scope.kindLabel.toLowerCase()}…</option>
-              {scope.projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <div className="relative">
+              <select value={projectId} onChange={e => setProjectId(e.target.value)}
+                className={`w-full h-10 pl-3 pr-9 appearance-none border border-slate-300 rounded-lg bg-white text-sm outline-none focus:border-slate-500 cursor-pointer ${projectId ? "text-slate-800" : "text-slate-400"}`}>
+                <option value="">Select {scope.kindLabel.toLowerCase()}…</option>
+                {scope.projects.map(p => <option key={p.id} value={p.id} className="text-slate-800">{p.name}</option>)}
+              </select>
+              <ChevronDown size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
           </label>
           <label className="block text-sm">
             <span className="block text-xs font-semibold text-slate-500 mb-1">Vendor Name</span>
