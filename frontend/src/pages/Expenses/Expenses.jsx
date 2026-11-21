@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Users, Landmark, Building2, FolderKanban, Loader2, Briefcase } from "lucide-react";
+import { Users, Landmark, Building2, FolderKanban, Loader2, Briefcase, Store } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
 import PettyCashStaff from "./PettyCashStaff";
 import PettyCashAccounts from "./PettyCashAccounts";
+import PettyCashVendors from "./PettyCashVendors";
 import ScopeDropdown from "../../components/ScopeDropdown";
 
 const NoAccess = () => (
@@ -28,6 +29,8 @@ function PettyCash() {
   const tabs = [
     canViewStaff    && { id: "staff",    label: "Staff",    icon: Users },
     canViewAccounts && { id: "accounts", label: "Accounts", icon: Landmark },
+    // vendor names used on entries, per project / office (rename / merge)
+    (canViewStaff || canViewAccounts) && { id: "vendors", label: "Directory", icon: Store },
   ].filter(Boolean);
   const [picked, setPicked] = useState("staff");
   const tab = tabs.some(t => t.id === picked) ? picked : tabs[0]?.id;
@@ -105,7 +108,9 @@ function PettyCash() {
         <p className="p-6 text-sm text-red-600">{scopeError}</p>
       ) : !scope ? (
         scopes && <p className="p-6 text-sm text-slate-500">No active entity found. Add one under Organisation first.</p>
-      ) : tab === "staff" ? <PettyCashStaff key={scopeKey} scope={scope} /> : <PettyCashAccounts key={scopeKey} scope={scope} />}
+      ) : tab === "staff" ? <PettyCashStaff key={scopeKey} scope={scope} />
+        : tab === "vendors" ? <PettyCashVendors key={scopeKey} scope={scope} />
+        : <PettyCashAccounts key={scopeKey} scope={scope} />}
     </div>
   );
 }

@@ -339,7 +339,7 @@ export default function PettyCashStaff({ scope }) {
   const [entries, setEntries]     = useState([]);
   const [people, setPeople]       = useState([]);
   const [locations, setLocations] = useState([]);
-  const [vendors, setVendors]     = useState([]); // every vendor name used before, for the form picker
+  const [vendors, setVendors]     = useState([]); // { name, projectId } used before in this entity, for the form picker
   const [loading, setLoading]     = useState(true);
 
   const [search, setSearch]           = useState("");
@@ -403,7 +403,7 @@ export default function PettyCashStaff({ scope }) {
     try { const { data } = await api.get("/api/petty-cash/people"); setPeople(data.people || []); } catch { /* shown via entries */ }
   };
   const fetchVendors = async () => {
-    try { const { data } = await api.get("/api/petty-cash/vendors"); setVendors(data.vendors || []); } catch { /* optional */ }
+    try { const { data } = await api.get("/api/petty-cash/vendors", { params: { company_id: scope.company.id } }); setVendors(data.vendors || []); } catch { /* optional */ }
   };
   const fetchLocations = async () => {
     try { const { data } = await api.get("/api/petty-cash/locations"); setLocations(data.locations || []); } catch { /* optional */ }
@@ -415,6 +415,15 @@ export default function PettyCashStaff({ scope }) {
     fetchLocations();
     fetchVendors();
   }, []);
+
+  // Vendor pick list: only vendors used before on the entry's project / office
+  const formVendors = useMemo(() => {
+    const seen = new Set();
+    return vendors
+      .filter(v => form.projectId && v.projectId === form.projectId)
+      .map(v => v.name)
+      .filter(n => { const k = n.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+  }, [vendors, form.projectId]);
 
   // ── Balances (always over the whole ledger, not the filtered view) ──────
   const balances = useMemo(() => {
@@ -1353,7 +1362,7 @@ export default function PettyCashStaff({ scope }) {
                     {form.entryType === "expense" && (
                       <>
                         <Field label="Expense" required wide><input value={form.particular} onChange={set("particular")} placeholder="e.g. Food charge (Zomato)" className={inp} /></Field>
-                        <Field label="Vendor Name"><NameCombo value={form.vendorName} onChange={v => setForm(f => ({ ...f, vendorName: v }))} options={vendors}
+                        <Field label="Vendor Name"><NameCombo value={form.vendorName} onChange={v => setForm(f => ({ ...f, vendorName: v }))} options={formVendors}
                           noun="vendor" placeholder="Search or add a vendor" inputClass={inp} withIcon /></Field>
                         <Field label="Paid By" required>{personSelect("personId", "Select person")}</Field>
                         <Field label="Category" required>

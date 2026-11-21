@@ -342,19 +342,125 @@ router.get("/locations", requirePerm("petty_cash_staff", "can_view"), async (_re
   }
 });
 
-/* GET /api/petty-cash/vendors — every vendor name used on an entry (any
-   entity/project), case-insensitively de-duplicated, for the form picker. */
-router.get("/vendors", requirePerm("petty_cash_staff", "can_view"), async (_req, res) => {
+/* ── Vendors tab: every vendor of the picked entity + project / office ──
+   Vendors are the names typed on expense entries (no separate table), one
+   row per project / office + name (case-insensitive). Rename fixes a name on
+   all of that project's entries; renaming onto a name already there merges
+   the two. */
+
+// Projects / offices this user may see in Petty Cash (Staff or Accounts
+// view); null = every one
+const anyViewScope = async (req) => {
+  const parts = [];
+  for (const key of ["petty_cash_staff", "petty_cash_accounts"]) {
+    if (!(await hasPerm(userIdFrom(req), key, "can_view"))) continue;
+    const sc = await pcScope(req, key);
+    if (sc === null) return null;
+    parts.push(...sc);
+  }
+  return new Set(parts);
+};
+
+const vendorKey = (name) => String(name || "").trim().replace(/\s+/g, " ").toLowerCase();
+
+/* GET /api/petty-cash/vendor-directory?company_id=&kind=&project_id= */
+router.get("/vendor-directory", requireAnyView, async (req, res) => {
   try {
-    const { data, error } = await supabase.from("petty_cash_entries")
-      .select("vendor_name").neq("vendor_name", "").is("deleted_at", null);
+    if (!UUID_RE.test(String(req.query.company_id || ""))) return res.json({ vendors: [] });
+    const { data, error } = await scopeFilter(supabase.from("petty_cash_entries")
+      .select("vendor_name, project_id, branch_id, amount, entry_date"), req.query)
+      .eq("entry_type", "expense").neq("vendor_name", "").is("deleted_at", null);
     if (error) throw error;
-    const byKey = new Map();
-    (data || []).forEach(r => {
-      const name = String(r.vendor_name || "").trim();
-      if (name && !byKey.has(name.toLowerCase())) byKey.set(name.toLowerCase(), name);
+    const scope = await anyViewScope(req);
+    const map = new Map();
+    (data || []).filter(r => pcAllowed(scope, r)).forEach(r => {
+      const key = vendorKey(r.vendor_name);
+      if (!key) return;
+      const projectId = r.project_id || r.branch_id || null;
+      const k = `${projectId}|${key}`;
+      const v = map.get(k) || { name: "", projectId, entries: 0, total: 0, lastUsed: "", spellings: {} };
+      const spelled = String(r.vendor_name).trim();
+      v.spellings[spelled] = (v.spellings[spelled] || 0) + 1;
+      v.entries += 1;
+      v.total = round2(v.total + Number(r.amount || 0));
+      if (String(r.entry_date || "") > v.lastUsed) v.lastUsed = String(r.entry_date || "");
+      map.set(k, v);
     });
-    res.json({ vendors: [...byKey.values()].sort((a, b) => a.localeCompare(b)) });
+    // Shown name = the spelling used most
+    const vendors = [...map.values()].map(({ spellings, ...v }) => ({
+      ...v, name: Object.entries(spellings).sort((a, b) => b[1] - a[1])[0][0],
+    })).sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ vendors });
+  } catch (err) {
+    console.error("Petty cash vendor directory error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* POST /api/petty-cash/vendor-directory/rename
+   { company_id, project_id, from, to } — every entry of that project /
+   office whose vendor is `from` (any case / spacing) gets `to`. */
+router.post("/vendor-directory/rename", requirePerm("petty_cash_staff", "can_edit"), async (req, res) => {
+  try {
+    const { company_id: companyId, project_id: projectId } = req.body || {};
+    const from = vendorKey(req.body?.from);
+    const to = String(req.body?.to || "").trim().replace(/\s+/g, " ");
+    if (!UUID_RE.test(String(companyId || "")) || !UUID_RE.test(String(projectId || "")))
+      return res.status(400).json({ error: "Entity and project / office are required" });
+    if (!from || !to) return res.status(400).json({ error: "Vendor name is required" });
+    if (to.length > 200) return res.status(400).json({ error: "Vendor name is too long" });
+
+    const scope = await pcScope(req, "petty_cash_staff");
+    if (!allows(scope, projectId)) return res.status(403).json({ error: "You don't have access to this project / office" });
+
+    const { data, error } = await supabase.from("petty_cash_entries")
+      .select("id, vendor_name, particular").eq("company_id", companyId)
+      .or(`project_id.eq.${projectId},branch_id.eq.${projectId}`)
+      .eq("entry_type", "expense").is("deleted_at", null).neq("vendor_name", "");
+    if (error) throw error;
+    const rows = (data || []).filter(r => vendorKey(r.vendor_name) === from && r.vendor_name !== to);
+    if (!rows.length) return res.json({ success: true, updated: 0 });
+
+    const ids = rows.map(r => r.id);
+    const { error: upErr } = await supabase.from("petty_cash_entries").update({ vendor_name: to }).in("id", ids);
+    if (upErr) throw upErr;
+
+    // Each entry's Activity log shows the change
+    const uid = userIdFrom(req);
+    const { data: who } = await supabase.from("users").select("name, email").eq("id", uid).maybeSingle();
+    await supabase.schema("procurement").from("audit_logs").insert(rows.map(r => ({
+      entity_type: "petty_cash_entry", entity_id: String(r.id), entity_name: r.particular || null,
+      action: "updated", user_id: uid || null, user_name: who?.name || null, user_email: who?.email || null,
+      changes: { Vendor: { from: r.vendor_name, to } },
+    })));
+
+    res.json({ success: true, updated: ids.length });
+  } catch (err) {
+    console.error("Petty cash vendor rename error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* GET /api/petty-cash/vendors?company_id= — vendor names used on this
+   entity's entries, each with its project / office ({ name, projectId }), so
+   the form lists only the vendors of the project the entry is for. Only
+   projects / offices the user may see. */
+router.get("/vendors", requirePerm("petty_cash_staff", "can_view"), async (req, res) => {
+  try {
+    if (!UUID_RE.test(String(req.query.company_id || ""))) return res.json({ vendors: [] });
+    const { data, error } = await supabase.from("petty_cash_entries")
+      .select("vendor_name, project_id, branch_id").eq("company_id", req.query.company_id)
+      .neq("vendor_name", "").is("deleted_at", null);
+    if (error) throw error;
+    const scope = await pcScope(req, "petty_cash_staff");
+    const byKey = new Map();
+    (data || []).filter(r => pcAllowed(scope, r)).forEach(r => {
+      const name = String(r.vendor_name || "").trim();
+      const projectId = r.project_id || r.branch_id || null;
+      const key = `${projectId}|${name.toLowerCase()}`;
+      if (name && !byKey.has(key)) byKey.set(key, { name, projectId });
+    });
+    res.json({ vendors: [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name)) });
   } catch (err) {
     console.error("Petty cash vendors read error:", err.message);
     res.status(500).json({ error: err.message });
