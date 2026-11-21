@@ -4,6 +4,7 @@ import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
   ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye, FilePlus2, Package,
   User, Tag, CreditCard, Store, Check, ArrowLeft, ArrowDownLeft, ArrowUpRight, Wallet, Briefcase, MapPin, CalendarDays, FileText, Printer, ListOrdered,
+  Image as ImageIcon,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -537,7 +538,7 @@ export default function PettyCashStaff({ scope }) {
   }, [filtered]);
   const COL_W = {
     Date: 120, Vendor: vendorColW, Expense: 280, Amount: 120, "Paid By": 160, "Bill Type": 130, Payment: 120,
-    Type: 200, From: 180, To: 180, Doc: subTab === "entries" ? 118 : 80,
+    Type: 200, From: 180, To: 180, Doc: subTab === "entries" ? 110 : 70,
   };
   // Expenses open from the name, so only Received & Given needs a View button.
   const showViewBtn = subTab !== "entries";
@@ -1275,7 +1276,7 @@ export default function PettyCashStaff({ scope }) {
               <tr>
                 {columns.map((h, i) => (
                   <th key={i} style={{ ...pinStyle(h), ...(COL_W[h] && h !== flexCol && { width: COL_W[h] }) }}
-                    title={h === "Doc" ? "B = Bill, LB = Local Bill, V = Voucher, P = Payment, M = Material · red = missing" : undefined}
+                    title={h === "Doc" ? "Receipt = Bill, Page = Voucher, Card = Payment, Photo = Material · red = missing · hover for details" : undefined}
                     className={`sticky top-0 ${pinCls(h) ? `${pinCls(h)} z-20` : "z-10"} bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : h === "Doc" ? "text-center !px-2" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
@@ -1707,10 +1708,10 @@ export default function PettyCashStaff({ scope }) {
 // what an expense should have but doesn't — a bill for Tax Invoice / Local
 // Bill, a voucher when one is to be made.
 const DOC_BADGE = {
-  bill:     { label: "Bill",     short: "B", cls: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" },
-  voucher:  { label: "Voucher",  short: "V", cls: "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" },
-  payment:  { label: "Payment",  short: "P", cls: "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100" },
-  material: { label: "Material", short: "M", cls: "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100" },
+  bill:     { label: "Bill",     Icon: Receipt },
+  voucher:  { label: "Voucher",  Icon: FileText },
+  payment:  { label: "Payment",  Icon: CreditCard },
+  material: { label: "Material", Icon: ImageIcon },
 };
 function DocBadges({ entry: e, onOpen, onMissing }) {
   const isExp = e.entryType === "expense";
@@ -1720,25 +1721,32 @@ function DocBadges({ entry: e, onOpen, onMissing }) {
   ].filter(Boolean);
   const have = docSectionsFor(e.entryType).filter(s => e.documents?.[s.key]?.length);
   if (!have.length && !missing.length) return <div className="text-center text-slate-400">—</div>;
-  // a Local Bill's bill shows as LB
-  const short = (key) => (key === "bill" && e.proofType === "local_bill" ? "LB" : DOC_BADGE[key].short);
-  const name = (key) => (key === "bill" && e.proofType === "local_bill" ? "Local Bill" : DOC_BADGE[key].label);
-  const chip = "inline-flex items-center gap-px px-1 py-px rounded border text-[11px] font-semibold leading-4 whitespace-nowrap";
+  const name = (key) => (key === "bill" ? labelOf(PROOF_TYPES, e.proofType) || "Bill" : DOC_BADGE[key].label);
+  const btn = "relative inline-flex items-center gap-0.5 p-1 rounded-md";
   return (
-    <div className="flex flex-wrap justify-center gap-1">
-      {have.map(s => (
-        <button key={s.key} type="button" onClick={() => onOpen(s.key)} title={`${name(s.key)}: ${e.documents[s.key].length} file${e.documents[s.key].length > 1 ? "s" : ""}`}
-          className={`${chip} ${DOC_BADGE[s.key].cls}`}>
-          {short(s.key)}{e.documents[s.key].length}
-        </button>
-      ))}
-      {missing.map(key => (
-        <button key={key} type="button" disabled={!onMissing} onClick={() => onMissing?.()}
-          title={key === "bill" ? `${name("bill")} not uploaded` : "Voucher not made yet"}
-          className={`${chip} bg-rose-50 text-rose-700 border-rose-200 ${onMissing ? "hover:bg-rose-100" : "cursor-default"}`}>
-          {short(key)}<X size={10} strokeWidth={3} />
-        </button>
-      ))}
+    <div className="flex flex-wrap items-center justify-center gap-0.5">
+      {have.map(s => {
+        const { Icon } = DOC_BADGE[s.key];
+        const n = e.documents[s.key].length;
+        return (
+          <button key={s.key} type="button" onClick={() => onOpen(s.key)} title={`${name(s.key)} · ${n} file${n > 1 ? "s" : ""}`}
+            className={`${btn} text-slate-500 hover:text-blue-600 hover:bg-blue-50`}>
+            <Icon size={15} />
+            {n > 1 && <span className="text-[11px] font-semibold tabular-nums">{n}</span>}
+          </button>
+        );
+      })}
+      {missing.map(key => {
+        const { Icon } = DOC_BADGE[key];
+        return (
+          <button key={key} type="button" disabled={!onMissing} onClick={() => onMissing?.()}
+            title={key === "bill" ? `${name("bill")} not uploaded` : "Voucher not made yet"}
+            className={`${btn} text-rose-600 ${onMissing ? "hover:bg-rose-50" : "cursor-default"}`}>
+            <Icon size={15} />
+            <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-rose-600 ring-2 ring-white" />
+          </button>
+        );
+      })}
     </div>
   );
 }
