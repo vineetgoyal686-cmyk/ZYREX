@@ -1,4 +1,4 @@
--- Petty Cash: "Voucher banana hai" tick on an expense.
+-- Petty Cash: "Voucher needed" tick on an expense.
 -- Bill Type stays one choice (Tax Invoice / Local Bill / Voucher); this flag
 -- marks a Local Bill / Tax Invoice expense that also gets a company voucher.
 -- Run in the Supabase SQL editor (dev and prod) before deploying the code.

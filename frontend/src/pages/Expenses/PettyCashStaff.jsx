@@ -4,7 +4,6 @@ import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
   ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye, FilePlus2, Package,
   User, Tag, CreditCard, Store, Check, ArrowLeft, ArrowDownLeft, ArrowUpRight, Wallet, Briefcase, MapPin, CalendarDays, FileText, Printer, ListOrdered,
-  Image as ImageIcon,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -15,7 +14,7 @@ import VoucherModal, { BlankVoucherModal, PrintVouchersModal, VoucherNumberingPa
 import { PrintBillsPanel } from "./PettyCashBills";
 import { logAudit } from "../../utils/auditLog";
 import {
-  CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, docSectionsFor, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
+  CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, docSectionsFor, docCount, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
 } from "./pettyCashConstants";
 import BrandLoader from "../../components/BrandLoader";
 
@@ -538,7 +537,7 @@ export default function PettyCashStaff({ scope }) {
   }, [filtered]);
   const COL_W = {
     Date: 120, Vendor: vendorColW, Expense: 280, Amount: 120, "Paid By": 160, "Bill Type": 130, Payment: 120,
-    Type: 200, From: 180, To: 180, Doc: subTab === "entries" ? 110 : 70,
+    Type: 200, From: 180, To: 180, Doc: 70,
   };
   // Expenses open from the name, so only Received & Given needs a View button.
   const showViewBtn = subTab !== "entries";
@@ -1276,7 +1275,6 @@ export default function PettyCashStaff({ scope }) {
               <tr>
                 {columns.map((h, i) => (
                   <th key={i} style={{ ...pinStyle(h), ...(COL_W[h] && h !== flexCol && { width: COL_W[h] }) }}
-                    title={h === "Doc" ? "Receipt = Bill, Page = Voucher, Card = Payment, Photo = Material · red = missing · hover for details" : undefined}
                     className={`sticky top-0 ${pinCls(h) ? `${pinCls(h)} z-20` : "z-10"} bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : h === "Doc" ? "text-center !px-2" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
@@ -1317,9 +1315,14 @@ export default function PettyCashStaff({ scope }) {
                     </>
                   )}
                   <td style={pinStyle("Doc")} className={`${pinTd("Doc")} px-2 py-2`}>
-                    <DocBadges entry={e}
-                      onOpen={(key) => setDocsEntry({ ...e, only: key })}
-                      onMissing={canEdit ? () => openEdit(e) : null} />
+                    {docCount(e.documents) > 0 ? (
+                      <div className="text-center">
+                        <button onClick={() => setDocsEntry(e)} title="View attachments"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-blue-600 hover:bg-blue-50 font-medium">
+                          <Paperclip size={13} /> {docCount(e.documents)}
+                        </button>
+                      </div>
+                    ) : <div className="text-center text-slate-400">—</div>}
                   </td>
                   <td className={`${pinTd("Action")} px-3 py-2.5`}>
                     <div className="flex items-center gap-1.5">
@@ -1419,7 +1422,7 @@ export default function PettyCashStaff({ scope }) {
                                 checked={form.proofType === "voucher" || form.needsVoucher}
                                 disabled={form.proofType === "voucher"}
                                 onChange={e => setForm(f => ({ ...f, needsVoucher: e.target.checked }))} />
-                              Voucher banana hai
+                              Voucher needed
                             </label>
                           )}
                         </Field>
@@ -1643,11 +1646,11 @@ export default function PettyCashStaff({ scope }) {
         <div className="fixed inset-0 z-[55] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h2 className="text-base font-bold text-slate-900">{labelOf(DOC_SECTIONS.map(s => ({ value: s.key, label: s.label })), docsEntry.only) || "Attachments"}</h2>
+              <h2 className="text-base font-bold text-slate-900">Attachments</h2>
               <button onClick={() => setDocsEntry(null)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
             </div>
             <div className="px-6 py-4">
-              <DocSectionsList documents={docsEntry.only ? { [docsEntry.only]: docsEntry.documents?.[docsEntry.only] } : docsEntry.documents} />
+              <DocSectionsList documents={docsEntry.documents} />
             </div>
           </div>
         </div>
@@ -1700,53 +1703,6 @@ export default function PettyCashStaff({ scope }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// Doc column: one badge per kind of file the entry has, and a red one for
-// what an expense should have but doesn't — a bill for Tax Invoice / Local
-// Bill, a voucher when one is to be made.
-const DOC_BADGE = {
-  bill:     { label: "Bill",     Icon: Receipt },
-  voucher:  { label: "Voucher",  Icon: FileText },
-  payment:  { label: "Payment",  Icon: CreditCard },
-  material: { label: "Material", Icon: ImageIcon },
-};
-function DocBadges({ entry: e, onOpen, onMissing }) {
-  const isExp = e.entryType === "expense";
-  const missing = !isExp ? [] : [
-    (e.proofType === "tax_invoice" || e.proofType === "local_bill") && !e.documents?.bill?.length && "bill",
-    e.needsVoucher && !e.documents?.voucher?.length && "voucher",
-  ].filter(Boolean);
-  const have = docSectionsFor(e.entryType).filter(s => e.documents?.[s.key]?.length);
-  if (!have.length && !missing.length) return <div className="text-center text-slate-400">—</div>;
-  const name = (key) => (key === "bill" ? labelOf(PROOF_TYPES, e.proofType) || "Bill" : DOC_BADGE[key].label);
-  const btn = "relative inline-flex items-center gap-0.5 p-1 rounded-md";
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-0.5">
-      {have.map(s => {
-        const { Icon } = DOC_BADGE[s.key];
-        const n = e.documents[s.key].length;
-        return (
-          <button key={s.key} type="button" onClick={() => onOpen(s.key)} title={`${name(s.key)} · ${n} file${n > 1 ? "s" : ""}`}
-            className={`${btn} text-slate-500 hover:text-blue-600 hover:bg-blue-50`}>
-            <Icon size={15} />
-            {n > 1 && <span className="text-[11px] font-semibold tabular-nums">{n}</span>}
-          </button>
-        );
-      })}
-      {missing.map(key => {
-        const { Icon } = DOC_BADGE[key];
-        return (
-          <button key={key} type="button" disabled={!onMissing} onClick={() => onMissing?.()}
-            title={key === "bill" ? `${name("bill")} not uploaded` : "Voucher not made yet"}
-            className={`${btn} text-rose-600 ${onMissing ? "hover:bg-rose-50" : "cursor-default"}`}>
-            <Icon size={15} />
-            <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-rose-600 ring-2 ring-white" />
-          </button>
-        );
-      })}
     </div>
   );
 }
