@@ -720,7 +720,7 @@ export function EntryChips({ entries, onOpen }) {
 }
 
 // `entries` are the filtered entries that have a Create-Voucher voucher;
-// `skipped` lists Voucher-type entries whose voucher was only uploaded;
+// `skipped` lists entries marked for a voucher whose voucher was only uploaded;
 // each can be opened (onOpenEntry) to create its voucher.
 export function PrintVouchersModal({ entries, skipped = [], onOpenEntry, onClose }) {
   const [layout, setLayout] = useState("a4x2");
@@ -777,7 +777,7 @@ export function PrintVouchersModal({ entries, skipped = [], onOpenEntry, onClose
 }
 
 // ── Create Vouchers (many at once) ───────────────────────────────────────
-// `entries`: Voucher-type expenses in the current filter with no system
+// `entries`: expenses marked for a voucher (Voucher bill or ticked) in the current filter with no system
 // voucher yet. Each gets the same voucher Create Voucher makes — next number
 // in its project's series (in date order), Paid To = vendor (else Paid By),
 // one line with the expense — and the signatures picked here once.

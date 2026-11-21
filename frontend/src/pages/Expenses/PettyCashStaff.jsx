@@ -14,7 +14,7 @@ import VoucherModal, { BlankVoucherModal, PrintVouchersModal, VoucherNumberingPa
 import { PrintBillsPanel } from "./PettyCashBills";
 import { logAudit } from "../../utils/auditLog";
 import {
-  CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, docSectionsFor, docCount, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
+  CATEGORIES, ENTRY_TYPES, PROOF_TYPES, PAYMENT_MODES, GRID_TABLE, DOC_SECTIONS, docSectionsFor, labelOf, taxLabel, fmtAmount, fmtDate, todayStr, apiError,
 } from "./pettyCashConstants";
 import BrandLoader from "../../components/BrandLoader";
 
@@ -26,7 +26,7 @@ const currentUser = () => { try { return JSON.parse(localStorage.getItem("bms_us
 
 const emptyForm = (entryType = "expense", projectId = "") => ({
   entryType, entryDate: todayStr(), amount: "", personId: "", fromPersonId: "",
-  particular: "", vendorName: "", category: "", proofType: "", paymentMode: "",
+  particular: "", vendorName: "", category: "", proofType: "", needsVoucher: false, paymentMode: "",
   projectId, location: readLocal(LAST_LOCATION_KEY), remarks: "",
   items: [], charges: [],
 });
@@ -272,10 +272,10 @@ const TYPE_BADGE = {
 const TEMPLATES = {
   entries: {
     file: "petty_cash_expense_template.xlsx",
-    headers: ["Date", "Amount", "Paid By", "Expense", "Vendor", "Category", "Bill Type", "Payment Mode", "Location", "Remarks"],
+    headers: ["Date", "Amount", "Paid By", "Expense", "Vendor", "Category", "Bill Type", "Voucher", "Payment Mode", "Location", "Remarks"],
     sample: [
-      ["2026-09-14", 729, "Jitendar", "Mithai", "Haldiram", "Kitchen & Grocery", "Local Bill", "Cash", "Noida", ""],
-      ["2026-09-14", 1871.94, "Jitendar", "Food charge (Zomato)", "Zomato", "Meals", "Tax Invoice", "Online", "Noida", ""],
+      ["2026-09-14", 729, "Jitendar", "Mithai", "Haldiram", "Kitchen & Grocery", "Local Bill", "Yes", "Cash", "Noida", ""],
+      ["2026-09-14", 1871.94, "Jitendar", "Food charge (Zomato)", "Zomato", "Meals", "Tax Invoice", "No", "Online", "Noida", ""],
     ],
     options: () => {
       const max = Math.max(CATEGORIES.length, PROOF_TYPES.length, PAYMENT_MODES.length);
@@ -285,6 +285,7 @@ const TEMPLATES = {
     notes: [
       "Every row is an expense. Date, Amount, Paid By, Expense, Category, Bill Type and Payment Mode are required. Vendor is optional.",
       "Tax / Non Tax is set automatically from Bill Type: Tax Invoice = Tax; Local Bill and Voucher = Non Tax.",
+      "Voucher: Yes when a voucher is to be made for a Local Bill / Tax Invoice expense (optional; Bill Type Voucher is always Yes).",
     ],
   },
   movement: {
@@ -472,7 +473,8 @@ export default function PettyCashStaff({ scope }) {
       if (typeFilter && e.entryType !== typeFilter) return false;
       if (personFilter && e.personId !== personFilter && e.fromPersonId !== personFilter) return false;
       if (vendorFilter && String(e.vendorName || "").trim().toLowerCase() !== vendorFilter.toLowerCase()) return false;
-      if (billFilter && subTab === "entries" && e.proofType !== billFilter) return false;
+      // "Voucher" = every expense whose voucher is to be made, Local Bill ones ticked too
+      if (billFilter && subTab === "entries" && (billFilter === "voucher" ? !e.needsVoucher : e.proofType !== billFilter)) return false;
       if (dateRange !== "all" && customFrom && e.entryDate < customFrom) return false;
       if (dateRange !== "all" && customTo && e.entryDate > customTo) return false;
       if (!q || subTab === "items") return true;
@@ -535,7 +537,7 @@ export default function PettyCashStaff({ scope }) {
   }, [filtered]);
   const COL_W = {
     Date: 120, Vendor: vendorColW, Expense: 280, Amount: 120, "Paid By": 160, "Bill Type": 130, Payment: 120,
-    Type: 200, From: 180, To: 180, Doc: 70,
+    Type: 200, From: 180, To: 180, Doc: subTab === "entries" ? 190 : 110,
   };
   // Expenses open from the name, so only Received & Given needs a View button.
   const showViewBtn = subTab !== "entries";
@@ -580,7 +582,7 @@ export default function PettyCashStaff({ scope }) {
     setForm({
       entryType: e.entryType, entryDate: String(e.entryDate || "").slice(0, 10), amount: String(e.amount),
       personId: e.personId || "", fromPersonId: e.fromPersonId || "",
-      particular: e.particular, vendorName: e.vendorName || "", category: e.category, proofType: e.proofType, paymentMode: e.paymentMode,
+      particular: e.particular, vendorName: e.vendorName || "", category: e.category, proofType: e.proofType, needsVoucher: !!e.needsVoucher, paymentMode: e.paymentMode,
       projectId: e.projectId || "", location: e.location, remarks: e.remarks,
       items: (e.items || []).map(it => ({
         name: it.name, qty: String(it.qty), unit: it.unit || "", rate: it.rate ? String(it.rate) : "", amount: String(it.amount), rateAuto: true,
@@ -662,13 +664,14 @@ export default function PettyCashStaff({ scope }) {
 
   const LOG_FIELDS = {
     entryType: "Type", entryDate: "Date", amount: "Amount", personId: "Person", fromPersonId: "Given By",
-    particular: "Expense", vendorName: "Vendor", category: "Category", proofType: "Bill Type", paymentMode: "Payment Mode",
+    particular: "Expense", vendorName: "Vendor", category: "Category", proofType: "Bill Type", needsVoucher: "Voucher", paymentMode: "Payment Mode",
     projectId: "Project / Office", location: "Location", remarks: "Remarks", items: "Items", charges: "Charges",
   };
   const displayValue = (key, value) => {
     if (key === "personId" || key === "fromPersonId") return personName(value);
     if (key === "entryType") return labelOf(ENTRY_TYPES, value);
     if (key === "proofType") return labelOf(PROOF_TYPES, value);
+    if (key === "needsVoucher") return value ? "Yes" : "No";
     if (key === "paymentMode") return labelOf(PAYMENT_MODES, value);
     if (key === "projectId") return projectName(value);
     if (key === "charges") return (value || []).map(c => `${String(c.name).trim()} = ${Number(c.amount)}`).join(", ");
@@ -677,9 +680,11 @@ export default function PettyCashStaff({ scope }) {
   };
   const diff = (original, next) => {
     const changes = {};
+    // a Voucher bill always has its voucher, ticked or not
+    const val = (o, key) => key === "needsVoucher" ? o.entryType === "expense" && (o.proofType === "voucher" || !!o.needsVoucher) : o[key];
     Object.keys(LOG_FIELDS).forEach(key => {
-      const from = displayValue(key, original[key]);
-      const to   = displayValue(key, next[key]);
+      const from = displayValue(key, val(original, key));
+      const to   = displayValue(key, val(next, key));
       if (key === "amount" ? Number(from) !== Number(to) : from !== to) {
         changes[LOG_FIELDS[key]] = { from: from || "—", to: to || "—" };
       }
@@ -820,6 +825,7 @@ export default function PettyCashStaff({ scope }) {
             vendorName: r["Vendor"],
             category: CATEGORIES.find(c => c.toLowerCase() === String(r["Category"] || "").trim().toLowerCase()) || String(r["Category"] || "").trim(),
             proofType: byLabel(PROOF_TYPES, r["Bill Type"]),
+            needsVoucher: /^(yes|y|true|1)$/i.test(String(r["Voucher"] ?? "").trim()),
             paymentMode: byLabel(PAYMENT_MODES, r["Payment Mode"] || r["Payment"]),
             location: r["Location"], remarks: r["Remarks"],
           };
@@ -868,6 +874,7 @@ export default function PettyCashStaff({ scope }) {
       Vendor: e.vendorName,
       Category: e.category,
       "Bill Type": labelOf(PROOF_TYPES, e.proofType),
+      Voucher: isExp(e) ? (e.needsVoucher ? "Yes" : "No") : "",
       "Payment Mode": labelOf(PAYMENT_MODES, e.paymentMode),
       Location: e.location,
       Charges: (e.charges || []).map(c => `${c.name} ${c.amount}`).join("; "),
@@ -1065,7 +1072,7 @@ export default function PettyCashStaff({ scope }) {
                     {subTab === "entries" && canEdit && (
                       <button onClick={() => {
                         setMoreMenuOpen(false);
-                        setBulkVouchers(filtered.filter(e => e.entryType === "expense" && e.proofType === "voucher" && !e.voucherNo));
+                        setBulkVouchers(filtered.filter(e => e.entryType === "expense" && e.needsVoucher && !e.voucherNo));
                       }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
                         <FilePlus2 size={14} className="text-slate-400" /> Create Vouchers
                       </button>
@@ -1075,7 +1082,7 @@ export default function PettyCashStaff({ scope }) {
                         setMoreMenuOpen(false);
                         setPrintVouchers({
                           entries: filtered.filter(e => e.voucherNo),
-                          skipped: filtered.filter(e => !e.voucherNo && e.proofType === "voucher"),
+                          skipped: filtered.filter(e => !e.voucherNo && e.needsVoucher),
                         });
                       }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-700 hover:bg-slate-50">
                         <Printer size={14} className="text-slate-400" /> Print Vouchers
@@ -1294,7 +1301,7 @@ export default function PettyCashStaff({ scope }) {
                       </td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold truncate text-rose-700">{fmtAmount(e.amount)}</td>
                       <td className="px-4 py-2.5 truncate text-slate-700" title={e.personName}>{e.personName}</td>
-                      <td className="px-4 py-2.5 truncate text-slate-600">{labelOf(PROOF_TYPES, e.proofType)}</td>
+                      <td className="px-4 py-2.5 truncate text-slate-600">{labelOf(PROOF_TYPES, e.proofType)}{e.needsVoucher && e.proofType !== "voucher" && " + Voucher"}</td>
                       <td className="px-4 py-2.5 truncate text-slate-600">{labelOf(PAYMENT_MODES, e.paymentMode)}</td>
                     </>
                   ) : (
@@ -1307,13 +1314,10 @@ export default function PettyCashStaff({ scope }) {
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold truncate text-emerald-700">{fmtAmount(e.amount)}</td>
                     </>
                   )}
-                  <td style={pinStyle("Doc")} className={`${pinTd("Doc")} px-2 py-2.5 whitespace-nowrap text-center`}>
-                    {docCount(e.documents) > 0 ? (
-                      <button onClick={() => setDocsEntry(e)} title="View attachments"
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-blue-600 hover:bg-blue-50 font-medium">
-                        <Paperclip size={13} /> {docCount(e.documents)}
-                      </button>
-                    ) : <span className="text-slate-400">—</span>}
+                  <td style={pinStyle("Doc")} className={`${pinTd("Doc")} px-2 py-2`}>
+                    <DocBadges entry={e}
+                      onOpen={(key) => setDocsEntry({ ...e, only: key })}
+                      onMissing={canEdit ? () => openEdit(e) : null} />
                   </td>
                   <td className={`${pinTd("Action")} px-3 py-2.5`}>
                     <div className="flex items-center gap-1.5">
@@ -1407,6 +1411,15 @@ export default function PettyCashStaff({ scope }) {
                             <option value="">Select bill type</option>
                             {PROOF_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                           </Select>
+                          {form.proofType && (
+                            <label className={`mt-1.5 inline-flex items-center gap-1.5 text-xs select-none ${form.proofType === "voucher" ? "text-slate-400" : "text-slate-600 cursor-pointer"}`}>
+                              <input type="checkbox" className="h-3.5 w-3.5 rounded border-slate-300 accent-emerald-600"
+                                checked={form.proofType === "voucher" || form.needsVoucher}
+                                disabled={form.proofType === "voucher"}
+                                onChange={e => setForm(f => ({ ...f, needsVoucher: e.target.checked }))} />
+                              Voucher banana hai
+                            </label>
+                          )}
                         </Field>
                         <Field label="Payment" required>
                           <Select value={form.paymentMode} onChange={set("paymentMode")}>
@@ -1593,6 +1606,7 @@ export default function PettyCashStaff({ scope }) {
             setForm(f => ({
               ...f,
               proofType: f.proofType || "voucher",
+              needsVoucher: true,
               amount: Number(f.amount) > 0 ? f.amount : String(total),
             }));
             setVoucherOpen(false);
@@ -1627,11 +1641,11 @@ export default function PettyCashStaff({ scope }) {
         <div className="fixed inset-0 z-[55] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h2 className="text-base font-bold text-slate-900">Attachments</h2>
+              <h2 className="text-base font-bold text-slate-900">{labelOf(DOC_SECTIONS.map(s => ({ value: s.key, label: s.label })), docsEntry.only) || "Attachments"}</h2>
               <button onClick={() => setDocsEntry(null)} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
             </div>
             <div className="px-6 py-4">
-              <DocSectionsList documents={docsEntry.documents} />
+              <DocSectionsList documents={docsEntry.only ? { [docsEntry.only]: docsEntry.documents?.[docsEntry.only] } : docsEntry.documents} />
             </div>
           </div>
         </div>
@@ -1684,6 +1698,43 @@ export default function PettyCashStaff({ scope }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Doc column: one badge per kind of file the entry has, and a red one for
+// what an expense should have but doesn't — a bill for Tax Invoice / Local
+// Bill, a voucher when one is to be made.
+const DOC_BADGE = {
+  bill:     { label: "Bill",     cls: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" },
+  voucher:  { label: "Voucher",  cls: "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100" },
+  payment:  { label: "Payment",  cls: "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100" },
+  material: { label: "Material", cls: "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100" },
+};
+function DocBadges({ entry: e, onOpen, onMissing }) {
+  const isExp = e.entryType === "expense";
+  const missing = !isExp ? [] : [
+    (e.proofType === "tax_invoice" || e.proofType === "local_bill") && !e.documents?.bill?.length && "bill",
+    e.needsVoucher && !e.documents?.voucher?.length && "voucher",
+  ].filter(Boolean);
+  const have = docSectionsFor(e.entryType).filter(s => e.documents?.[s.key]?.length);
+  if (!have.length && !missing.length) return <div className="text-center text-slate-400">—</div>;
+  const chip = "inline-flex items-center gap-0.5 px-1.5 py-px rounded border text-[11px] font-semibold leading-4 whitespace-nowrap";
+  return (
+    <div className="flex flex-wrap gap-1">
+      {have.map(s => (
+        <button key={s.key} type="button" onClick={() => onOpen(s.key)} title={`View ${s.label.toLowerCase()}`}
+          className={`${chip} ${DOC_BADGE[s.key].cls}`}>
+          {DOC_BADGE[s.key].label} {e.documents[s.key].length}
+        </button>
+      ))}
+      {missing.map(key => (
+        <button key={key} type="button" disabled={!onMissing} onClick={() => onMissing?.()}
+          title={key === "bill" ? "Bill not uploaded" : "Voucher not made yet"}
+          className={`${chip} bg-rose-50 text-rose-700 border-rose-200 ${onMissing ? "hover:bg-rose-100" : "cursor-default"}`}>
+          {DOC_BADGE[key].label} <X size={11} strokeWidth={3} />
+        </button>
+      ))}
     </div>
   );
 }
@@ -1847,7 +1898,7 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
     { icon: User,        label: "Paid By",   value: e.personName },
     { icon: Store,       label: "Vendor",    value: e.vendorName },
     { icon: Tag,         label: "Category",  value: e.category },
-    { icon: Receipt,     label: "Bill Type", value: e.proofType && `${labelOf(PROOF_TYPES, e.proofType)}`, sub: e.proofType && taxLabel(e.proofType) },
+    { icon: Receipt,     label: "Bill Type", value: e.proofType && `${labelOf(PROOF_TYPES, e.proofType)}${e.needsVoucher && e.proofType !== "voucher" ? " + Voucher" : ""}`, sub: e.proofType && taxLabel(e.proofType) },
     { icon: CreditCard,  label: "Payment",   value: labelOf(PAYMENT_MODES, e.paymentMode) },
     { icon: Briefcase,   label: "Project / Office", value: e.project },
     { icon: MapPin,      label: "Location",  value: e.location },

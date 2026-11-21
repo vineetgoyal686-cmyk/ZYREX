@@ -57,6 +57,8 @@ const mapEntry = async (r, peopleById) => ({
   vendorName:    r.vendor_name || "",
   category:     r.category || "",
   proofType:     r.proof_type || "",
+  // voucher to be made: a Voucher bill, or ticked on a Local Bill / Tax Invoice
+  needsVoucher:  r.entry_type === "expense" && (r.proof_type === "voucher" || !!r.needs_voucher || !!r.voucher_data?.voucherNo),
   paymentMode:   r.payment_mode || "",
   project:       r.project || "",
   location:      r.location || "",
@@ -232,7 +234,7 @@ const buildRow = (b) => {
     entry_type: entryType, entry_date: b.entryDate, amount,
     person_id: b.personId, from_person_id: null,
     particular: "", vendor_name: "", category: "", proof_type: "", payment_mode: "", project: "", location: "",
-    remarks: String(b.remarks || "").trim(), items: [], charges: [],
+    remarks: String(b.remarks || "").trim(), items: [], charges: [], needs_voucher: false,
   };
 
   if (entryType === "expense") {
@@ -251,6 +253,7 @@ const buildRow = (b) => {
       items, charges,
       particular: String(b.particular).trim(), vendor_name: String(b.vendorName || "").trim(),
       category: b.category, proof_type: b.proofType,
+      needs_voucher: b.proofType === "voucher" || b.needsVoucher === true || /^(true|yes|y|1)$/i.test(String(b.needsVoucher ?? "").trim()),
       payment_mode: b.paymentMode, project: String(b.project || "").trim(), location: String(b.location || "").trim(),
     });
   } else if (entryType === "transfer") {
@@ -1023,7 +1026,7 @@ router.post("/entries/:id/voucher", requirePerm("petty_cash_staff", "can_edit"),
     const path = `entries/${row.id}/voucher/${Date.now()}_0_Voucher_${safe}.pdf`;
     await uploadStorageFile(supabase, BUCKET, path, req.file.buffer, "application/pdf");
     const { error: uErr } = await supabase.from("petty_cash_entries")
-      .update({ voucher_data: voucher, ...seqCols, voucher_docs: [...(row.voucher_docs || []), path] })
+      .update({ voucher_data: voucher, ...seqCols, needs_voucher: true, voucher_docs: [...(row.voucher_docs || []), path] })
       .eq("id", row.id);
     if (uErr) {
       await supabase.storage.from(BUCKET).remove([path]).catch(() => {});
