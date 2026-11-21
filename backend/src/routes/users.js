@@ -170,7 +170,9 @@ router.post("/:id/resend-invite", requireAuth, requireAdminOrAbove, async (req, 
   res.json({ success: true });
 });
 
-/* POST /api/users/:id/signature — admin uploads signature on behalf of user */
+/* POST /api/users/:id/signature — upload a user's signature on their behalf.
+   Global Admin may set or replace it any time (Edit Member); other admins
+   only while the user has none yet (Add User), never replace one. */
 router.post("/:id/signature", requireAuth, requireAdminOrAbove, async (req, res) => {
   const { id } = req.params;
   const { signature } = req.body;
@@ -189,6 +191,8 @@ router.post("/:id/signature", requireAuth, requireAdminOrAbove, async (req, res)
 
   const { data: targetUser } = await admin.from("users").select("profile_permissions").eq("id", id).single();
   if (!targetUser) return res.status(404).json({ error: "User not found" });
+  if (req.user.role !== "global_admin" && targetUser.profile_permissions?.ui?.signature)
+    return res.status(403).json({ error: "Only Global Admin can change a user's signature" });
 
   // Cleanup old signature files for this user
   try {

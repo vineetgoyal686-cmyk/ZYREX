@@ -94,6 +94,9 @@ export default function UserManagement({
   // the rest keep following the Access Profile
   const [newUserTouched,        setNewUserTouched]        = useState(() => new Set());
   const newUserSigRef = useRef();
+  // Edit Member: Global Admin can replace a user's signature
+  const editSigRef = useRef();
+  const [editSigSaving, setEditSigSaving] = useState(false);
 
   /* Edit member */
   const [editingMember,         setEditingMember]         = useState(null);
@@ -220,6 +223,23 @@ export default function UserManagement({
     const nextProfilePerms = {};
     Object.keys(DEFAULT_PROFILE_PERMS).forEach(k => { nextProfilePerms[k] = { view: checked, edit: checked }; });
     setNewUserProfilePerms(nextProfilePerms);
+  };
+
+  // Saved straight away (not on Save Changes) — the file is uploaded as is
+  const handleEditSigChange = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file || !editingMember) return;
+    setEditSigSaving(true);
+    try {
+      const base64 = await resizeSignature(file);
+      const { data } = await api.post(`/api/users/${editingMember.id}/signature`, { signature: base64 });
+      const url = data?.url || base64;
+      setMembers(prev => prev.map(m => m.id === editingMember.id ? { ...m, signature: url } : m));
+      setEditingMember(prev => prev ? { ...prev, signature: url } : prev);
+      showToast("Signature updated");
+    } catch (err) { showToast(err.response?.data?.error || "Signature upload failed", "error"); }
+    finally { setEditSigSaving(false); }
   };
 
   const handleNewUserSigChange = async (e) => {
@@ -496,6 +516,7 @@ export default function UserManagement({
   return (
     <>
       <input ref={newUserSigRef} type="file" accept="image/*" className="hidden" onChange={handleNewUserSigChange} />
+      <input ref={editSigRef} type="file" accept="image/*" className="hidden" onChange={handleEditSigChange} />
 
       {openMenuId && menuMember && createPortal(
         <div data-user-menu className="fixed z-[9999] w-48 bg-white border border-slate-200 rounded-sm shadow-xl overflow-hidden"
@@ -1118,6 +1139,25 @@ export default function UserManagement({
                   <span className={lbl}>Department</span>
                   <input className={inp} value={editForm.department} onChange={e => setEditForm(p => ({ ...p, department: e.target.value }))} placeholder="e.g. Operations" />
                 </div>
+                {isGlobalAdmin && (
+                  <div>
+                    <span className={lbl}>Signature</span>
+                    <div className="flex items-center gap-4 p-3 rounded-sm border border-amber-100 bg-amber-50/60">
+                      <div className="w-40 h-20 rounded-sm border-2 border-dashed border-amber-200 bg-white flex items-center justify-center overflow-hidden shrink-0">
+                        {editSigSaving ? <Loader2 size={18} className="text-amber-400 animate-spin" />
+                          : editingMember.signature ? <img src={editingMember.signature} alt="Signature" className="max-h-full max-w-full object-contain p-1.5" />
+                          : <p className="text-[10px] text-amber-400 font-medium">No signature</p>}
+                      </div>
+                      <div className="space-y-1.5">
+                        <button type="button" onClick={() => editSigRef.current?.click()} disabled={editSigSaving}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-sm transition-all disabled:opacity-60">
+                          <Camera size={12} /> {editingMember.signature ? "Change Signature" : "Upload Signature"}
+                        </button>
+                        <p className="text-[10px] text-slate-400">Saved as soon as you pick the image.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {isGlobalAdmin && editingMember.role === "super_admin" && (
                   <div className={`flex items-center justify-between px-3.5 py-3 rounded-sm border transition-all ${editForm.can_manage_roles ? "border-violet-200 bg-violet-50" : "border-slate-200 bg-slate-50"}`}>
                     <div>
