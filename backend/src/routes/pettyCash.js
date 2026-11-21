@@ -342,11 +342,12 @@ router.get("/locations", requirePerm("petty_cash_staff", "can_view"), async (_re
   }
 });
 
-/* ── Vendors tab: every vendor of the picked entity + project / office ──
-   Vendors are the names typed on expense entries (no separate table), one
-   row per project / office + name (case-insensitive). Rename fixes a name on
-   all of that project's entries; renaming onto a name already there merges
-   the two. */
+/* ── Directory tab: every vendor of the picked entity + project / office ──
+   Vendors are the names typed on expense entries plus the ones added by hand
+   or from Excel (petty_cash_vendors, sql/petty_cash_vendors.sql), one row
+   per project / office + name (case-insensitive). Rename fixes a name on all
+   of that project's entries; renaming onto a name already there merges the
+   two. A vendor with no entries can be deleted. */
 
 // Projects / offices this user may see in Petty Cash (Staff or Accounts
 // view); null = every one
@@ -362,6 +363,18 @@ const anyViewScope = async (req) => {
 };
 
 const vendorKey = (name) => String(name || "").trim().replace(/\s+/g, " ").toLowerCase();
+const cleanVendor = (name) => String(name || "").trim().replace(/\s+/g, " ");
+
+// Vendors added by hand, filtered like entries; [] until the SQL is run
+const savedVendors = async (query) => {
+  const { data, error } = await scopeFilter(supabase.from("petty_cash_vendors")
+    .select("id, name, project_id, branch_id"), query);
+  if (error) {
+    if (/petty_cash_vendors/.test(error.message || "")) return [];
+    throw error;
+  }
+  return data || [];
+};
 
 /* GET /api/petty-cash/vendor-directory?company_id=&kind=&project_id= */
 router.get("/vendor-directory", requireAnyView, async (req, res) => {
@@ -386,9 +399,18 @@ router.get("/vendor-directory", requireAnyView, async (req, res) => {
       if (String(r.entry_date || "") > v.lastUsed) v.lastUsed = String(r.entry_date || "");
       map.set(k, v);
     });
+    // Added by hand (no entries yet, or also used on entries)
+    (await savedVendors(req.query)).filter(r => pcAllowed(scope, r)).forEach(r => {
+      const projectId = r.project_id || r.branch_id;
+      const k = `${projectId}|${vendorKey(r.name)}`;
+      const v = map.get(k) || { name: "", projectId, entries: 0, total: 0, lastUsed: "", spellings: {} };
+      if (!v.entries) v.spellings[r.name] = 1;
+      v.saved = true;
+      map.set(k, v);
+    });
     // Shown name = the spelling used most
     const vendors = [...map.values()].map(({ spellings, ...v }) => ({
-      ...v, name: Object.entries(spellings).sort((a, b) => b[1] - a[1])[0][0],
+      ...v, saved: !!v.saved, name: Object.entries(spellings).sort((a, b) => b[1] - a[1])[0][0],
     })).sort((a, b) => a.name.localeCompare(b.name));
     res.json({ vendors });
   } catch (err) {
@@ -419,6 +441,18 @@ router.post("/vendor-directory/rename", requirePerm("petty_cash_staff", "can_edi
       .eq("entry_type", "expense").is("deleted_at", null).neq("vendor_name", "");
     if (error) throw error;
     const rows = (data || []).filter(r => vendorKey(r.vendor_name) === from && r.vendor_name !== to);
+
+    // The hand-added row follows the rename; on a merge the old one goes
+    const saved = await savedVendors({ company_id: companyId, project_id: projectId });
+    const fromRow = saved.find(r => vendorKey(r.name) === from);
+    const toRow = saved.find(r => vendorKey(r.name) === vendorKey(to));
+    if (fromRow && toRow && fromRow.id !== toRow.id) {
+      const { error: dErr } = await supabase.from("petty_cash_vendors").delete().eq("id", fromRow.id);
+      if (dErr) throw dErr;
+    } else if (fromRow && fromRow.name !== to) {
+      const { error: uErr } = await supabase.from("petty_cash_vendors").update({ name: to }).eq("id", fromRow.id);
+      if (uErr) throw uErr;
+    }
     if (!rows.length) return res.json({ success: true, updated: 0 });
 
     const ids = rows.map(r => r.id);
@@ -441,6 +475,123 @@ router.post("/vendor-directory/rename", requirePerm("petty_cash_staff", "can_edi
   }
 });
 
+// Names already in a project / office: hand-added + used on expenses
+const takenNames = async (companyId, projectId) => {
+  const [saved, { data, error }] = await Promise.all([
+    savedVendors({ company_id: companyId, project_id: projectId }),
+    supabase.from("petty_cash_entries").select("vendor_name").eq("company_id", companyId)
+      .or(`project_id.eq.${projectId},branch_id.eq.${projectId}`)
+      .eq("entry_type", "expense").neq("vendor_name", "").is("deleted_at", null),
+  ]);
+  if (error) throw error;
+  return new Set([...saved.map(r => vendorKey(r.name)), ...(data || []).map(r => vendorKey(r.vendor_name))]);
+};
+
+const whoIs = async (req) => {
+  const { data } = await supabase.from("users").select("name").eq("id", userIdFrom(req)).maybeSingle();
+  return data?.name || "";
+};
+
+const vendorInsertError = (err) =>
+  /petty_cash_vendors/.test(err?.message || "") && !/duplicate/i.test(err?.message || "")
+    ? "Vendor list isn't set up yet — run sql/petty_cash_vendors.sql" : err.message;
+
+const vendorRow = (name, by, place) => {
+  const row = applyScope({ name, created_by_name: by }, place);
+  delete row.project; // that text column is only on entries
+  return row;
+};
+
+/* POST /api/petty-cash/vendor-directory { company_id, project_id, name } */
+router.post("/vendor-directory", requirePerm("petty_cash_staff", "can_add"), async (req, res) => {
+  try {
+    const name = cleanVendor(req.body?.name);
+    if (!name) return res.status(400).json({ error: "Vendor name is required" });
+    if (name.length > 200) return res.status(400).json({ error: "Vendor name is too long" });
+    let place;
+    try { place = await loadProject(req.body?.company_id, req.body?.project_id, req); }
+    catch (e) { return res.status(400).json({ error: e.message }); }
+    if ((await takenNames(place.company_id, place.id)).has(vendorKey(name)))
+      return res.status(409).json({ error: `${name} is already in ${place.name}` });
+    const { error } = await supabase.from("petty_cash_vendors").insert(vendorRow(name, await whoIs(req), place));
+    if (error) return res.status(/duplicate/i.test(error.message) ? 409 : 500).json({ error: vendorInsertError(error) });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Petty cash vendor add error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* POST /api/petty-cash/vendor-directory/bulk { company_id, rows: [{ row, name, project_id }] }
+   Adds the new ones; names already in their project / office (or repeated in
+   the file) are skipped and reported. */
+router.post("/vendor-directory/bulk", requirePerm("petty_cash_staff", "can_add"), async (req, res) => {
+  try {
+    const companyId = req.body?.company_id;
+    const list = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!list.length) return res.status(400).json({ error: "No rows to upload" });
+    if (list.length > 2000) return res.status(400).json({ error: "Upload at most 2000 vendors at a time" });
+
+    const places = new Map(); // project_id -> { place, taken } | { error }
+    const toInsert = [];
+    const skipped = [];
+    const by = await whoIs(req);
+    for (let i = 0; i < list.length; i++) {
+      const rowNo = Number(list[i]?.row) || i + 2;
+      const name = cleanVendor(list[i]?.name);
+      const pid = String(list[i]?.project_id || "");
+      if (!name) { skipped.push({ row: rowNo, name: "", reason: "Vendor name is empty" }); continue; }
+      if (name.length > 200) { skipped.push({ row: rowNo, name, reason: "Name is too long" }); continue; }
+      if (!places.has(pid)) {
+        try {
+          const place = await loadProject(companyId, pid, req);
+          places.set(pid, { place, taken: await takenNames(place.company_id, place.id) });
+        } catch (e) { places.set(pid, { error: e.message }); }
+      }
+      const p = places.get(pid);
+      if (p.error) { skipped.push({ row: rowNo, name, reason: p.error }); continue; }
+      if (p.taken.has(vendorKey(name))) { skipped.push({ row: rowNo, name, reason: `Already in ${p.place.name}` }); continue; }
+      p.taken.add(vendorKey(name));
+      toInsert.push(vendorRow(name, by, p.place));
+    }
+    if (toInsert.length) {
+      const { error } = await supabase.from("petty_cash_vendors").insert(toInsert);
+      if (error) return res.status(500).json({ error: vendorInsertError(error) });
+    }
+    res.json({ success: true, added: toInsert.length, skipped });
+  } catch (err) {
+    console.error("Petty cash vendor bulk error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* POST /api/petty-cash/vendor-directory/delete { company_id, project_id, name }
+   Only a vendor no expense uses (added by hand / Excel). */
+router.post("/vendor-directory/delete", requirePerm("petty_cash_staff", "can_delete"), async (req, res) => {
+  try {
+    const { company_id: companyId, project_id: projectId } = req.body || {};
+    const key = vendorKey(req.body?.name);
+    if (!UUID_RE.test(String(companyId || "")) || !UUID_RE.test(String(projectId || "")) || !key)
+      return res.status(400).json({ error: "Vendor is required" });
+    if (!allows(await pcScope(req, "petty_cash_staff"), projectId))
+      return res.status(403).json({ error: "You don't have access to this project / office" });
+    const { data, error } = await supabase.from("petty_cash_entries").select("vendor_name").eq("company_id", companyId)
+      .or(`project_id.eq.${projectId},branch_id.eq.${projectId}`)
+      .eq("entry_type", "expense").neq("vendor_name", "").is("deleted_at", null);
+    if (error) throw error;
+    if ((data || []).some(r => vendorKey(r.vendor_name) === key))
+      return res.status(409).json({ error: "This vendor is used on expenses — rename or merge it instead" });
+    const row = (await savedVendors({ company_id: companyId, project_id: projectId })).find(r => vendorKey(r.name) === key);
+    if (!row) return res.status(404).json({ error: "Vendor not found" });
+    const { error: dErr } = await supabase.from("petty_cash_vendors").delete().eq("id", row.id);
+    if (dErr) throw dErr;
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Petty cash vendor delete error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* GET /api/petty-cash/vendors?company_id= — vendor names used on this
    entity's entries, each with its project / office ({ name, projectId }), so
    the form lists only the vendors of the project the entry is for. Only
@@ -454,7 +605,8 @@ router.get("/vendors", requirePerm("petty_cash_staff", "can_view"), async (req, 
     if (error) throw error;
     const scope = await pcScope(req, "petty_cash_staff");
     const byKey = new Map();
-    (data || []).filter(r => pcAllowed(scope, r)).forEach(r => {
+    const saved = (await savedVendors({ company_id: req.query.company_id })).map(r => ({ ...r, vendor_name: r.name }));
+    [...(data || []), ...saved].filter(r => pcAllowed(scope, r)).forEach(r => {
       const name = String(r.vendor_name || "").trim();
       const projectId = r.project_id || r.branch_id || null;
       const key = `${projectId}|${name.toLowerCase()}`;
