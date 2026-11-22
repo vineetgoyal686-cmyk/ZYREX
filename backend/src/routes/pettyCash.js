@@ -34,10 +34,11 @@ const CATEGORIES = [
   "Repair & Maintance charges", "Housekeeping Charges", "Software", "Bank Charges", "Others",
 ];
 
-// Attachments are kept in four separate sections, each its own column.
+// Attachments are kept in five separate sections, each its own column.
 // Uploads arrive as multipart fields "doc_<section>"; on edit, the files
 // to keep come back as { <section>: [path|signedUrl, ...] } in docKeep.
-const DOC_SECTIONS = { bill: "bill_docs", voucher: "voucher_docs", payment: "payment_docs", material: "material_docs" };
+// "other" = anything extra that fits none of the above (sql/petty_cash_other_docs.sql).
+const DOC_SECTIONS = { bill: "bill_docs", voucher: "voucher_docs", payment: "payment_docs", material: "material_docs", other: "other_docs" };
 
 const signDocs = async (r) => Object.fromEntries(await Promise.all(
   Object.entries(DOC_SECTIONS).map(async ([key, col]) => [key, await Promise.all((r[col] || []).map(signDoc))])
@@ -301,6 +302,34 @@ router.post("/people", requirePerm("petty_cash_staff", "can_add"), async (req, r
     res.json({ person: { id: data.id, name: data.name, userId: data.user_id, isActive: data.is_active } });
   } catch (err) {
     console.error("Petty cash people create error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* PUT /api/petty-cash/people/:id — { name }. Fixes a typed name; entries
+   point at the person id, so every entry shows the new name. A person linked
+   to a login user keeps that user's name. */
+router.put("/people/:id", requirePerm("petty_cash_staff", "can_edit"), async (req, res) => {
+  try {
+    const name = String(req.body.name || "").trim();
+    if (!name) return res.status(400).json({ error: "Name is required" });
+    const { data: person, error: readErr } = await supabase.from("petty_cash_people").select("id, user_id").eq("id", req.params.id).maybeSingle();
+    if (readErr) throw readErr;
+    if (!person) return res.status(404).json({ error: "Person not found" });
+    if (person.user_id) return res.status(400).json({ error: "This person is linked to a login user — their name comes from the user" });
+    const { data: clash } = await supabase.from("petty_cash_people").select("id").ilike("name", name).neq("id", person.id).maybeSingle();
+    if (clash) return res.status(400).json({ error: `"${name}" already exists` });
+
+    const { data, error } = await supabase
+      .from("petty_cash_people")
+      .update({ name })
+      .eq("id", person.id)
+      .select("id, name, user_id, is_active")
+      .single();
+    if (error) throw error;
+    res.json({ person: { id: data.id, name: data.name, userId: data.user_id, isActive: data.is_active } });
+  } catch (err) {
+    console.error("Petty cash people update error:", err.message);
     res.status(500).json({ error: err.message });
   }
 });

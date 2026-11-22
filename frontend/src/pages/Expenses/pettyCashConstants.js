@@ -32,10 +32,11 @@ export const DOC_SECTIONS = [
   { key: "voucher",  label: "Voucher" },
   { key: "payment",  label: "Payment Docs" },
   { key: "material", label: "Material Image" },
+  { key: "other",    label: "Other Docs" }, // anything extra that fits none of the above
 ];
-// Received / Given entries only carry payment proof.
+// Received / Given entries carry payment proof, plus Other for anything extra.
 export const docSectionsFor = (entryType) =>
-  entryType === "expense" ? DOC_SECTIONS : DOC_SECTIONS.filter(s => s.key === "payment");
+  entryType === "expense" ? DOC_SECTIONS : DOC_SECTIONS.filter(s => s.key === "payment" || s.key === "other");
 export const docCount = (documents) =>
   DOC_SECTIONS.reduce((n, s) => n + (documents?.[s.key]?.length || 0), 0);
 

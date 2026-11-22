@@ -367,6 +367,7 @@ export default function PettyCashStaff({ scope }) {
   const [docsMenuOpen, setDocsMenuOpen] = useState(false);
   const [zipping, setZipping]       = useState(null); // { done, total } while building a docs zip
   const [personModal, setPersonModal] = useState(null); // field name the new person fills
+  const [editPerson, setEditPerson]   = useState(null); // typed-name person being renamed
   const [docsEntry, setDocsEntry]   = useState(null);
   const [viewEntry, setViewEntry]   = useState(null);
   const [viewPerson, setViewPerson] = useState(null); // a balances.list row
@@ -956,7 +957,9 @@ export default function PettyCashStaff({ scope }) {
   };
 
   const activePeople = people.filter(p => p.isActive);
-  const personSelect = (field, placeholder) => (
+  const personSelect = (field, placeholder) => {
+    const picked = people.find(p => p.id === form[field]);
+    return (
     <div className="flex gap-2">
       <div className="flex-1">
         <Select value={form[field]} onChange={set(field)}>
@@ -964,12 +967,20 @@ export default function PettyCashStaff({ scope }) {
           {activePeople.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </Select>
       </div>
+      {/* Typed names can be fixed; a login user's name comes from the user */}
+      {canEdit && picked && !picked.userId && (
+        <button type="button" onClick={() => setEditPerson(picked)} title={`Edit name "${picked.name}"`}
+          className="h-11 w-11 shrink-0 flex items-center justify-center rounded-lg border border-slate-300 text-slate-500 hover:text-slate-800 hover:border-slate-500">
+          <Pencil size={15} />
+        </button>
+      )}
       <button type="button" onClick={() => setPersonModal(field)} title="Add person"
         className="h-11 w-11 shrink-0 flex items-center justify-center rounded-lg border border-slate-300 text-slate-500 hover:text-slate-800 hover:border-slate-500">
         <UserPlus size={16} />
       </button>
     </div>
-  );
+    );
+  };
 
   return (
     <div className="p-3 sm:px-6 sm:py-4 space-y-3 md:flex-1 md:min-h-0 md:flex md:flex-col md:space-y-0 md:gap-3">
@@ -1556,6 +1567,20 @@ export default function PettyCashStaff({ scope }) {
             setForm(f => ({ ...f, [personModal]: person.id }));
             setPersonModal(null);
             showToast(`"${person.name}" added`);
+          }}
+        />
+      )}
+
+      {editPerson && (
+        <EditPersonModal
+          person={editPerson}
+          onClose={() => setEditPerson(null)}
+          onSaved={(person) => {
+            logAudit("petty_cash_person", person.id, person.name, "updated", { Name: { from: editPerson.name, to: person.name } });
+            setPeople(prev => prev.map(p => (p.id === person.id ? person : p)).sort((a, b) => a.name.localeCompare(b.name)));
+            setEditPerson(null);
+            showToast(`Renamed to "${person.name}"`);
+            fetchEntries(); // entries carry the name, so reload them
           }}
         />
       )}
@@ -2163,6 +2188,47 @@ function ItemHistory({ item, onViewEntry, onClose }) {
         </div>
         <div className="flex justify-end px-6 py-4 border-t border-slate-100 bg-slate-50 shrink-0">
           <button onClick={onClose} className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Fixes the spelling of a typed-name person; every entry follows the new name.
+function EditPersonModal({ person, onClose, onSaved }) {
+  const [name, setName]     = useState(person.name);
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState("");
+
+  const save = async () => {
+    const clean = name.trim();
+    if (!clean) return setError("Enter a name");
+    if (clean === person.name) return onClose();
+    setSaving(true);
+    setError("");
+    try {
+      const { data } = await api.put(`/api/petty-cash/people/${person.id}`, { name: clean });
+      onSaved(data.person);
+    } catch (err) { setError(apiError(err, "Failed to save")); }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[55] flex items-center justify-center p-4 bg-black/40">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+          <h2 className="text-base font-bold text-slate-900">Edit Person</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+        <div className="px-6 py-5 space-y-3">
+          <input autoFocus value={name} onChange={e => setName(e.target.value)} placeholder="Full name" className={inp}
+            onKeyDown={e => e.key === "Enter" && save()} />
+          <p className="text-xs text-slate-500">The new name shows on every entry of this person.</p>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
+          <button onClick={save} disabled={saving} className="px-5 py-2 rounded-xl text-sm font-semibold bg-slate-900 text-white hover:bg-slate-700 disabled:opacity-60">Save</button>
         </div>
       </div>
     </div>
