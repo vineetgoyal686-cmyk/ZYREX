@@ -172,7 +172,10 @@ export default function PettyCashAccounts({ scope }) {
       [`${scope.kindLabel}: ${scope.project?.name || scope.allLabel}   |   Period: ${fmtDate(from)} to ${fmtDate(to)}`],
       [],
       ["Opening Balance", summary.opening],
-      ["Received from Accounts", summary.received],
+      ["Received from Accounts", summary.receivedAccounts ?? summary.received],
+      // Money an outside person handed in (e.g. when Accounts was late), one line each
+      ...(data.otherReceipts || []).map(o => [`Received from ${o.fromName} → ${o.toName} (${fmtDate(o.entryDate)})`, o.amount]),
+      ["Total Received", summary.received],
       ["Total Expense", summary.expense],
       ["Closing Balance", summary.closing],
       [],
@@ -255,15 +258,20 @@ export default function PettyCashAccounts({ scope }) {
       <div className="shrink-0 grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: "Opening Balance", value: s?.opening },
-          { label: "Received from Accounts", value: s?.received, color: "text-emerald-700" },
+          {
+            label: "Received", value: s?.received, color: "text-emerald-700",
+            sub: s?.receivedOthers > 0 && `Accounts ${fmtAmount(s.receivedAccounts)} · Others ${fmtAmount(s.receivedOthers)}`,
+            title: (data?.otherReceipts || []).map(o => `${fmtDate(o.entryDate)}  ${o.fromName} → ${o.toName}  ₹ ${fmtAmount(o.amount)}`).join("\n"),
+          },
           { label: "Total Expense", value: s?.expense, color: "text-rose-700" },
           { label: "Closing Balance", value: s?.closing, color: (s?.closing || 0) < 0 ? "text-rose-700" : "text-slate-900" },
         ].map(c => (
-          <div key={c.label} className="bg-white rounded-xl border border-slate-200 px-5 py-4">
+          <div key={c.label} title={c.title || undefined} className="bg-white rounded-xl border border-slate-200 px-5 py-4">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{c.label}</p>
             <p className={`text-xl sm:text-2xl font-extrabold mt-1 tabular-nums ${c.color || "text-slate-900"}`}>
               {loading || !s ? "—" : `₹ ${fmtAmount(c.value)}`}
             </p>
+            {!loading && c.sub && <p className="text-[11px] text-slate-500 tabular-nums mt-0.5">{c.sub}</p>}
           </div>
         ))}
       </div>

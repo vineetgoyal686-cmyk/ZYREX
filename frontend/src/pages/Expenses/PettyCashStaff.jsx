@@ -293,12 +293,13 @@ const TEMPLATES = {
     headers: ["Type", "Date", "Amount", "From", "To", "Remarks"],
     sample: [
       ["Received", "2026-09-01", 20000, "Accounts", "Jitendar", "Petty cash for September"],
-      ["Given", "2026-09-02", 5000, "Jitendar", "Lalit", ""],
+      ["Received", "2026-09-02", 5000, "Amit", "Jitendar", "Accounts late — Amit paid, settles with Accounts himself"],
+      ["Given", "2026-09-03", 5000, "Jitendar", "Lalit", ""],
     ],
     options: () => [["Type"], ["Received"], ["Given"]],
     notes: [
-      "Type: Received = money from Accounts; Given = one person gave money to another.",
-      "From: for Received write Accounts (or leave blank); for Given, the person who gave. To: the person who got the money.",
+      "Type: Received = money that came in (from Accounts, or from an outside person); Given = one staff person gave money to another.",
+      "From: for Received write Accounts (or leave blank), or the name of the person who gave it — only the receiver's balance goes up; for Given, the person who gave. To: the person who got the money.",
     ],
   },
 };
@@ -447,9 +448,12 @@ export default function PettyCashStaff({ scope }) {
   // ── Balances (always over the whole ledger, not the filtered view) ──────
   const balances = useMemo(() => {
     const map = {};
-    const row = (id, name) => (map[id] ||= { id, name, fromAccounts: 0, gotFromOthers: 0, givenToOthers: 0, expense: 0 });
+    // fromOthers = money handed in by an outside person (Received with a
+    // "from"); only the receiver's balance moves — the giver settles with
+    // Accounts on their own. gotFromOthers / givenToOthers = staff transfers.
+    const row = (id, name) => (map[id] ||= { id, name, fromAccounts: 0, fromOthers: 0, gotFromOthers: 0, givenToOthers: 0, expense: 0 });
     entries.forEach(e => {
-      if (e.entryType === "received") row(e.personId, e.personName).fromAccounts += e.amount;
+      if (e.entryType === "received") row(e.personId, e.personName)[e.fromPersonId ? "fromOthers" : "fromAccounts"] += e.amount;
       else if (e.entryType === "expense") row(e.personId, e.personName).expense += e.amount;
       else {
         row(e.personId, e.personName).gotFromOthers += e.amount;
@@ -457,11 +461,13 @@ export default function PettyCashStaff({ scope }) {
       }
     });
     const list = Object.values(map)
-      .map(r => ({ ...r, balance: r.fromAccounts + r.gotFromOthers - r.givenToOthers - r.expense }))
+      .map(r => ({ ...r, balance: r.fromAccounts + r.fromOthers + r.gotFromOthers - r.givenToOthers - r.expense }))
       .sort((a, b) => a.name.localeCompare(b.name));
-    const totalReceived = list.reduce((s, r) => s + r.fromAccounts, 0);
+    const totalFromAccounts = list.reduce((s, r) => s + r.fromAccounts, 0);
+    const totalFromOthers   = list.reduce((s, r) => s + r.fromOthers, 0);
+    const totalReceived = totalFromAccounts + totalFromOthers;
     const totalExpense  = list.reduce((s, r) => s + r.expense, 0);
-    return { list, totalReceived, totalExpense, totalBalance: totalReceived - totalExpense };
+    return { list, totalFromAccounts, totalFromOthers, totalReceived, totalExpense, totalBalance: totalReceived - totalExpense };
   }, [entries]);
 
   // ── Filtering ───────────────────────────────────────────────────────────
@@ -659,15 +665,16 @@ export default function PettyCashStaff({ scope }) {
   const personName = (id) => people.find(p => p.id === id)?.name || "";
   const entryLabel = (f) =>
     f.entryType === "expense" ? f.particular || "Expense"
-    : f.entryType === "received" ? `Received from Accounts — ${personName(f.personId)}`
+    : f.entryType === "received" ? `Received from ${f.fromPersonId ? personName(f.fromPersonId) : "Accounts"} — ${personName(f.personId)}`
     : `${personName(f.fromPersonId)} → ${personName(f.personId)}`;
 
   const LOG_FIELDS = {
-    entryType: "Type", entryDate: "Date", amount: "Amount", personId: "Person", fromPersonId: "Given By",
+    entryType: "Type", entryDate: "Date", amount: "Amount", personId: "Person", fromPersonId: "From",
     particular: "Expense", vendorName: "Vendor", category: "Category", proofType: "Bill Type", needsVoucher: "Voucher", paymentMode: "Payment Mode",
     projectId: "Project / Office", location: "Location", remarks: "Remarks", items: "Items", charges: "Charges",
   };
   const displayValue = (key, value) => {
+    if (key === "fromPersonId" && !value) return "Accounts";
     if (key === "personId" || key === "fromPersonId") return personName(value);
     if (key === "entryType") return labelOf(ENTRY_TYPES, value);
     if (key === "proofType") return labelOf(PROOF_TYPES, value);
@@ -720,6 +727,7 @@ export default function PettyCashStaff({ scope }) {
       if (!f.paymentMode) return showToast("Payment mode is required", "error");
     } else if (f.entryType === "received") {
       if (!f.personId) return showToast("Received By is required", "error");
+      if (f.fromPersonId && f.fromPersonId === f.personId) return showToast("Received From and Received By can't be the same person", "error");
     } else {
       if (!f.fromPersonId || !f.personId) return showToast("Given By and Given To are required", "error");
       if (f.fromPersonId === f.personId) return showToast("Given By and Given To can't be the same person", "error");
@@ -809,7 +817,7 @@ export default function PettyCashStaff({ scope }) {
           // The Received & Given template (and older all-in-one files) do.
           const typeWord = String(r["Type"] || "").trim().toLowerCase();
           const entryType = !("Type" in r) ? "expense"
-            : { expense: "expense", received: "received", given: "transfer", transfer: "transfer" }[typeWord]
+            : { expense: "expense", received: "received", "received from accounts": "received", given: "transfer", transfer: "transfer" }[typeWord]
               || byLabel(ENTRY_TYPES, r["Type"]);
           const from = String(r["From"] || r["Given By"] || "").trim();
           // Older exports had one "Person" column like "Lalit (Paid by)".
@@ -820,7 +828,8 @@ export default function PettyCashStaff({ scope }) {
             entryDate: parseSheetDate(r["Date"]),
             amount: r["Amount"],
             personName: person,
-            fromPersonName: entryType === "received" || from.toLowerCase() === "accounts" ? "" : from,
+            // Received: blank / "Accounts" = from Accounts, any other name = outside person
+            fromPersonName: from.toLowerCase() === "accounts" ? "" : from,
             particular: r["Expense"],
             vendorName: r["Vendor"],
             category: CATEGORIES.find(c => c.toLowerCase() === String(r["Category"] || "").trim().toLowerCase()) || String(r["Category"] || "").trim(),
@@ -868,7 +877,7 @@ export default function PettyCashStaff({ scope }) {
       Type: e.entryType === "transfer" ? "Given" : e.entryType === "received" ? "Received" : "Expense",
       Amount: e.amount,
       "Paid By": isExp(e) ? e.personName : "",
-      From: e.entryType === "received" ? "Accounts" : e.entryType === "transfer" ? e.fromPersonName : "",
+      From: e.entryType === "received" ? (e.fromPersonName || "Accounts") : e.entryType === "transfer" ? e.fromPersonName : "",
       To: isExp(e) ? "" : e.personName,
       Expense: e.particular,
       Vendor: e.vendorName,
@@ -884,8 +893,8 @@ export default function PettyCashStaff({ scope }) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Entries");
     const summary = balances.list.map(b => ({
-      Person: b.name, "From Accounts": b.fromAccounts, "Got from Others": b.gotFromOthers,
-      "Given to Others": b.givenToOthers, Expense: b.expense, Balance: b.balance,
+      Person: b.name, "From Accounts": b.fromAccounts, "From Others": b.fromOthers, "Got from Staff": b.gotFromOthers,
+      "Given to Staff": b.givenToOthers, Expense: b.expense, Balance: b.balance,
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "Person-wise");
     const itemRows = filtered.flatMap(e => (e.items || []).map(it => ({
@@ -978,7 +987,10 @@ export default function PettyCashStaff({ scope }) {
         {(() => {
           const spentPct = balances.totalReceived > 0 ? Math.min(100, Math.round((balances.totalExpense / balances.totalReceived) * 100)) : 0;
           return [
-            { label: "Received from Accounts", value: balances.totalReceived, icon: ArrowDownLeft, tile: "bg-emerald-50 text-emerald-600", color: "text-slate-900" },
+            {
+              label: "Received", value: balances.totalReceived, icon: ArrowDownLeft, tile: "bg-emerald-50 text-emerald-600", color: "text-slate-900",
+              sub: balances.totalFromOthers > 0 && `Accounts ${fmtAmount(balances.totalFromAccounts)} · Others ${fmtAmount(balances.totalFromOthers)}`,
+            },
             { label: "Total Expense", value: balances.totalExpense, icon: ArrowUpRight, tile: "bg-rose-50 text-rose-600", color: "text-slate-900" },
             {
               label: "Balance", value: balances.totalBalance, icon: Wallet,
@@ -999,6 +1011,7 @@ export default function PettyCashStaff({ scope }) {
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide truncate">{c.label}</p>
                 <p className={`text-lg font-bold leading-tight tabular-nums whitespace-nowrap ${c.color}`}>₹ {fmtAmount(c.value)}</p>
+                {c.sub && <p className="text-[11px] text-slate-500 tabular-nums truncate">{c.sub}</p>}
               </div>
               {c.extra}
             </div>
@@ -1141,18 +1154,19 @@ export default function PettyCashStaff({ scope }) {
           <table className={GRID_TABLE}>
             <thead className="text-slate-600">
               <tr>
-                {["Person", "From Accounts", "Got from Others", "Given to Others", "Expense", "Balance", "Action"].map((h, i) => (
+                {["Person", "From Accounts", "From Others", "Got from Staff", "Given to Staff", "Expense", "Balance", "Action"].map((h, i) => (
                   <th key={h} className={`sticky top-0 z-20 bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${i && h !== "Action" ? "text-right" : "text-left"}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {balances.list.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-6 text-center text-slate-400">No entries yet</td></tr>
+                <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-400">No entries yet</td></tr>
               ) : peopleRows.map(b => (
                 <tr key={b.id} className="border-t border-slate-200">
                   <td className="px-4 py-2.5 font-medium text-slate-800">{b.name}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(b.fromAccounts)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(b.fromOthers)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(b.gotFromOthers)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(b.givenToOthers)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(b.expense)}</td>
@@ -1167,7 +1181,8 @@ export default function PettyCashStaff({ scope }) {
               <tfoot className="sticky bottom-0 z-20 bg-slate-50 font-bold text-slate-800">
                 <tr className="border-t border-slate-200">
                   <td className="px-4 py-2.5">Total</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(balances.totalReceived)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(balances.totalFromAccounts)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(balances.totalFromOthers)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(balances.list.reduce((s, b) => s + b.gotFromOthers, 0))}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(balances.list.reduce((s, b) => s + b.givenToOthers, 0))}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{fmtAmount(balances.totalExpense)}</td>
@@ -1309,7 +1324,7 @@ export default function PettyCashStaff({ scope }) {
                       <td className="px-4 py-2.5 whitespace-nowrap">
                         <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${TYPE_BADGE[e.entryType]}`}>{labelOf(ENTRY_TYPES, e.entryType)}</span>
                       </td>
-                      <td className="px-4 py-2.5 truncate text-slate-700">{e.entryType === "received" ? "Accounts" : e.fromPersonName}</td>
+                      <td className="px-4 py-2.5 truncate text-slate-700">{e.entryType === "received" && !e.fromPersonId ? "Accounts" : e.fromPersonName}</td>
                       <td className="px-4 py-2.5 truncate text-slate-700">{e.personName}</td>
                       <td className="px-4 py-2.5 text-right tabular-nums font-semibold truncate text-emerald-700">{fmtAmount(e.amount)}</td>
                     </>
@@ -1363,7 +1378,9 @@ export default function PettyCashStaff({ scope }) {
             </div>
             <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
               {ENTRY_TYPES.map(t => (
-                <button key={t.value} type="button" onClick={() => setForm(f => ({ ...f, entryType: t.value }))}
+                <button key={t.value} type="button" onClick={() => setForm(f => (f.entryType === t.value ? f
+                  // "From" means Given By on a transfer but an outside giver on Received — don't carry it across
+                  : { ...f, entryType: t.value, fromPersonId: "" }))}
                   className={`px-3 py-1.5 rounded-md text-sm font-semibold transition-all ${form.entryType === t.value ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
                   {t.label}
                 </button>
@@ -1436,7 +1453,10 @@ export default function PettyCashStaff({ scope }) {
                     )}
 
                     {form.entryType === "received" && (
-                      <Field label="Received By" required wide>{personSelect("personId", "Who got the money")}</Field>
+                      <>
+                        <Field label="Received From" required>{personSelect("fromPersonId", "Accounts")}</Field>
+                        <Field label="Received By" required>{personSelect("personId", "Who got the money")}</Field>
+                      </>
                     )}
 
                     {form.entryType === "transfer" && (
@@ -1762,14 +1782,16 @@ const fmtStamp = (iso) => (iso ? new Date(iso).toLocaleString("en-IN", {
 // was reached.
 function PersonLedger({ person, entries, onViewEntry, onClose }) {
   const rows = useMemo(() => {
+    // An outside giver on a Received entry is not part of this person's
+    // balance, so only the receiver sees it.
     const mine = entries
-      .filter(e => e.personId === person.id || e.fromPersonId === person.id)
+      .filter(e => e.personId === person.id || (e.fromPersonId === person.id && e.entryType === "transfer"))
       .sort((a, b) => a.entryDate.localeCompare(b.entryDate)
         || String(a.createdAt).localeCompare(String(b.createdAt))
         || String(a.id).localeCompare(String(b.id)));
     const describe = (e) => {
       if (e.entryType === "expense") return [`${e.particular}${e.category ? ` (${e.category})` : ""}`, -e.amount];
-      if (e.entryType === "received") return ["From Accounts", e.amount];
+      if (e.entryType === "received") return [`From ${e.fromPersonName || "Accounts"}`, e.amount];
       if (e.personId === person.id) return [`From ${e.fromPersonName}`, e.amount];
       return [`To ${e.personName}`, -e.amount];
     };
@@ -1793,11 +1815,12 @@ function PersonLedger({ person, entries, onViewEntry, onClose }) {
           <button onClick={onClose} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-px bg-slate-100 border-b border-slate-100 shrink-0">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-px bg-slate-100 border-b border-slate-100 shrink-0">
           {[
             ["From Accounts", person.fromAccounts],
-            ["Got from Others", person.gotFromOthers],
-            ["Given to Others", person.givenToOthers],
+            ["From Others", person.fromOthers],
+            ["Got from Staff", person.gotFromOthers],
+            ["Given to Staff", person.givenToOthers],
             ["Expense", person.expense],
           ].map(([label, value]) => (
             <div key={label} className="bg-white px-5 py-3">
@@ -1859,7 +1882,7 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
 
   const isExpense = e.entryType === "expense";
   const title = isExpense ? e.particular
-    : e.entryType === "received" ? "Received from Accounts"
+    : e.entryType === "received" ? `Received from ${e.fromPersonName || "Accounts"}`
     : `${e.fromPersonName} → ${e.personName}`;
 
   const facts = isExpense ? [
@@ -1871,7 +1894,7 @@ function EntryDetails({ entry: e, canEdit, onEdit, onClose }) {
     { icon: Briefcase,   label: "Project / Office", value: e.project },
     { icon: MapPin,      label: "Location",  value: e.location },
   ] : e.entryType === "received" ? [
-    { icon: ArrowLeftRight, label: "From",        value: "Accounts" },
+    { icon: ArrowLeftRight, label: "From",        value: e.fromPersonName || "Accounts" },
     { icon: User,           label: "Received By", value: e.personName },
   ] : [
     { icon: User, label: "Given By", value: e.fromPersonName },

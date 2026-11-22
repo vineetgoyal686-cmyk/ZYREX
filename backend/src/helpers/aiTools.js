@@ -333,7 +333,11 @@ async function pettyCashSummary(user, a) {
   const byCategory = {};
   rows.filter(e => e.type === "expense").forEach(e => { byCategory[e.category || "Other"] = (byCategory[e.category || "Other"] || 0) + e.amount; });
   return {
-    received_from_accounts: sum("received"), given_between_staff: sum("transfer"), total_expense: sum("expense"),
+    // received with a "from" name came from an outside person, not Accounts
+    received_total: sum("received"),
+    received_from_accounts: rows.filter(e => e.type === "received" && !e.from).reduce((s, e) => s + e.amount, 0),
+    received_from_others: rows.filter(e => e.type === "received" && e.from).reduce((s, e) => s + e.amount, 0),
+    given_between_staff: sum("transfer"), total_expense: sum("expense"),
     expense_by_category: byCategory,
     entries: rows.sort((x, y) => String(y.date).localeCompare(String(x.date))).slice(0, MAX_ROWS),
     total_matching: rows.length,

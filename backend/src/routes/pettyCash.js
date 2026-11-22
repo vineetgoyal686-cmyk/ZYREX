@@ -1,6 +1,7 @@
 // Expenses > Petty Cash. One ledger (petty_cash_entries) holding three kinds
-// of entry — expense, received (from Accounts) and transfer (person to
-// person). The Staff tab (petty_cash_staff) works on the full ledger; the
+// of entry — expense, received (from Accounts, or from an outside person
+// such as an owner who pays when Accounts is late — from_person_id set) and
+// transfer (person to person). The Staff tab (petty_cash_staff) works on the full ledger; the
 // Accounts tab (petty_cash_accounts) only gets totals + expense rows for a
 // date range, with no per-person breakdown and no transfers.
 const express  = require("express");
@@ -256,6 +257,13 @@ const buildRow = (b) => {
       needs_voucher: b.proofType === "voucher" || b.needsVoucher === true || /^(true|yes|y|1)$/i.test(String(b.needsVoucher ?? "").trim()),
       payment_mode: b.paymentMode, project: String(b.project || "").trim(), location: String(b.location || "").trim(),
     });
+  } else if (entryType === "received") {
+    // No fromPersonId = from Accounts; otherwise the person who handed the
+    // money in (their own balance is never touched — they settle with Accounts).
+    if (b.fromPersonId) {
+      if (b.fromPersonId === b.personId) throw new Error("Received From and Received By can't be the same person");
+      row.from_person_id = b.fromPersonId;
+    }
   } else if (entryType === "transfer") {
     if (!b.fromPersonId) throw new Error("Given By is required");
     if (b.fromPersonId === b.personId) throw new Error("Given By and Given To can't be the same person");
@@ -1153,16 +1161,26 @@ router.get("/accounts", requirePerm("petty_cash_accounts", "can_view"), async (r
       .order("id");
     if (error) throw error;
 
-    let opening = 0, received = 0, expense = 0;
-    const inRange = [];
+    // Money handed in by an outside person (from_person_id) counts as
+    // received too — otherwise the expenses paid from it would push the
+    // balance negative. It is listed by name so Accounts can see who gave it.
+    let opening = 0, received = 0, receivedOthers = 0, expense = 0;
+    const inRange = [], otherRows = [];
     const scope = await pcScope(req, "petty_cash_accounts");
     for (const r of (data || []).filter(x => pcAllowed(scope, x))) {
       const amt = Number(r.amount) || 0;
       const sign = r.entry_type === "received" ? 1 : -1;
       if (r.entry_date < from) { opening += sign * amt; continue; }
-      if (r.entry_type === "received") received += amt;
-      else { expense += amt; inRange.push(r); }
+      if (r.entry_type === "received") {
+        received += amt;
+        if (r.from_person_id) { receivedOthers += amt; otherRows.push(r); }
+      } else { expense += amt; inRange.push(r); }
     }
+    const peopleById = otherRows.length ? await loadPeopleMap() : {};
+    const otherReceipts = otherRows.map(r => ({
+      id: r.id, entryDate: r.entry_date, amount: Number(r.amount) || 0,
+      fromName: peopleById[r.from_person_id]?.name || "", toName: peopleById[r.person_id]?.name || "",
+    }));
 
     const rows = await Promise.all(inRange.map(async r => ({
       id:           r.id,
@@ -1180,7 +1198,12 @@ router.get("/accounts", requirePerm("petty_cash_accounts", "can_view"), async (r
     })));
 
     res.json({
-      summary: { opening: round2(opening), received: round2(received), expense: round2(expense), closing: round2(opening + received - expense) },
+      summary: {
+        opening: round2(opening), received: round2(received),
+        receivedAccounts: round2(received - receivedOthers), receivedOthers: round2(receivedOthers),
+        expense: round2(expense), closing: round2(opening + received - expense),
+      },
+      otherReceipts,
       rows,
     });
   } catch (err) {

@@ -8,7 +8,7 @@ export const CATEGORIES = [
 
 export const ENTRY_TYPES = [
   { value: "expense",  label: "Expense" },
-  { value: "received", label: "Received from Accounts" },
+  { value: "received", label: "Received" }, // from Accounts, or from an outside person (fromPersonId)
   { value: "transfer", label: "Given to Person" },
 ];
 
