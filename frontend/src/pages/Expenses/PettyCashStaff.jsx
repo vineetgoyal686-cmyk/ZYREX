@@ -4,6 +4,7 @@ import {
   Plus, Search, Pencil, Trash2, X, Paperclip, Clock, UploadCloud, Download, FileSpreadsheet,
   ChevronDown, UserPlus, Loader2, Receipt, Users, ArrowLeftRight, Eye, FilePlus2, Package,
   User, Tag, CreditCard, Store, Check, ArrowLeft, ArrowDownLeft, ArrowUpRight, Wallet, Briefcase, MapPin, CalendarDays, FileText, Printer, ListOrdered,
+  ListChecks,
 } from "lucide-react";
 import api from "../../utils/api";
 import { useModulePermissions } from "../../hooks/useModulePermissions";
@@ -542,8 +543,10 @@ export default function PettyCashStaff({ scope }) {
     const widest = Math.max(0, ...[...new Set(filtered.map(e => e.vendorName).filter(Boolean))].map(textWidth));
     return Math.min(420, Math.max(140, Math.ceil(widest) + 40));
   }, [filtered]);
-  // Expenses can be ticked (checkbox in the Date cell) to change Paid By on many at once.
-  const selectable = subTab === "entries" && canEdit;
+  // Expenses can be ticked (checkbox in the Date cell) to change Paid By on
+  // many at once — only after "Select" is pressed, so the table stays clean.
+  const [selectMode, setSelectMode] = useState(false);
+  const selectable = subTab === "entries" && canEdit && selectMode;
   const COL_W = {
     Date: selectable ? 150 : 120, Vendor: vendorColW, Expense: 280, Amount: 120, "Paid By": 160, "Bill Type": 130, Payment: 120,
     Type: 200, From: 180, To: 180, Doc: 70,
@@ -579,6 +582,11 @@ export default function PettyCashStaff({ scope }) {
     return next;
   });
   const toggleAll = () => setSelected(allTicked ? new Set() : new Set(filtered.map(e => e.id)));
+  // Focusing a checkbox inside a sticky cell makes the browser scroll the
+  // table sideways, sliding Expense under the pinned Vendor column. Skipping
+  // the focus on mouse-down keeps the scroll put; the click still ticks it.
+  const noFocusScroll = (ev) => ev.preventDefault();
+  const exitSelect = () => { setSelectMode(false); setSelected(new Set()); setBulkPaidBy(""); };
   const applyBulkPaidBy = async () => {
     if (!bulkPaidBy) return showToast("Select who paid", "error");
     setBulkSaving(true);
@@ -587,6 +595,7 @@ export default function PettyCashStaff({ scope }) {
       showToast(`Paid By changed on ${data.updated} expense${data.updated === 1 ? "" : "s"}${data.unchanged ? ` (${data.unchanged} already had it)` : ""}`);
       setSelected(new Set());
       setBulkPaidBy("");
+      setSelectMode(false);
       fetchEntries();
     } catch (err) { showToast(apiError(err, "Failed to change Paid By"), "error"); }
     setBulkSaving(false);
@@ -1252,6 +1261,14 @@ export default function PettyCashStaff({ scope }) {
               {ENTRY_TYPES.filter(t => t.value !== "expense").map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </FilterSelect>
           )}
+          {subTab === "entries" && canEdit && (
+            <button type="button" onClick={() => (selectMode ? exitSelect() : setSelectMode(true))}
+              title={selectMode ? "Stop selecting" : "Tick expenses to change Paid By on many at once"}
+              className={`h-9 px-3 flex items-center gap-1.5 rounded-lg border text-sm font-medium
+                ${selectMode ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"}`}>
+              <ListChecks size={15} /> {selectMode ? "Done" : "Select"}
+            </button>
+          )}
           {subTab === "entries" && (
             <ListFilter value={vendorFilter} options={scopeVendors} noun="vendor" icon={Store} onChange={v => { setVendorFilter(v); setPage(1); }} />
           )}
@@ -1322,10 +1339,17 @@ export default function PettyCashStaff({ scope }) {
       {TAB_TYPES[subTab] && (
       <>
 
-      {selectedIds.length > 0 && (
+      {selectable && (
         <div className="relative z-10 shrink-0 flex flex-wrap items-center gap-2 rounded-xl border border-slate-300 bg-slate-900 text-white px-4 py-2">
-          <span className="text-sm font-semibold">{selectedIds.length} selected</span>
-          <span className="text-sm text-slate-300 tabular-nums">· ₹ {fmtAmount(filtered.filter(e => selected.has(e.id)).reduce((s, e) => s + e.amount, 0))}</span>
+          <span className="text-sm font-semibold">{selectedIds.length ? `${selectedIds.length} selected` : "Tick the expenses to change"}</span>
+          {selectedIds.length > 0 && (
+            <span className="text-sm text-slate-300 tabular-nums">· ₹ {fmtAmount(filtered.filter(e => selected.has(e.id)).reduce((s, e) => s + e.amount, 0))}</span>
+          )}
+          {/* every expense in the current filtered list, all pages */}
+          <button type="button" onClick={toggleAll} disabled={!filtered.length}
+            className="h-8 px-3 rounded-lg border border-slate-600 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50">
+            {allTicked ? "Unselect all" : `Select all (${filtered.length})`}
+          </button>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <span className="text-sm text-slate-300">Change Paid By to</span>
             <select value={bulkPaidBy} onChange={e => setBulkPaidBy(e.target.value)}
@@ -1333,12 +1357,12 @@ export default function PettyCashStaff({ scope }) {
               <option value="">Select person</option>
               {activePeople.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
-            <button type="button" onClick={applyBulkPaidBy} disabled={bulkSaving || !bulkPaidBy}
+            <button type="button" onClick={applyBulkPaidBy} disabled={bulkSaving || !bulkPaidBy || !selectedIds.length}
               className="h-8 px-3 rounded-lg bg-emerald-500 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-50">
               {bulkSaving ? "Saving…" : "Apply"}
             </button>
-            <button type="button" onClick={() => { setSelected(new Set()); setBulkPaidBy(""); }}
-              className="h-8 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700">Clear</button>
+            <button type="button" onClick={exitSelect}
+              className="h-8 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700">Cancel</button>
           </div>
         </div>
       )}
@@ -1353,7 +1377,7 @@ export default function PettyCashStaff({ scope }) {
                   <th key={i} style={{ ...pinStyle(h), ...(COL_W[h] && h !== flexCol && { width: COL_W[h] }) }}
                     className={`sticky top-0 ${pinCls(h) ? `${pinCls(h)} z-20` : "z-10"} bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : h === "Doc" ? "text-center !px-2" : "text-left"}`}>
                     {h === "Date" && selectable ? (
-                      <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                      <label className="inline-flex items-center gap-2.5 cursor-pointer" onMouseDown={noFocusScroll}>
                         <input type="checkbox" checked={allTicked} onChange={toggleAll} title="Tick all expenses in this list"
                           ref={el => { if (el) el.indeterminate = selectedIds.length > 0 && !allTicked; }}
                           className="h-4 w-4 rounded border-slate-300 accent-slate-900" />
@@ -1373,7 +1397,7 @@ export default function PettyCashStaff({ scope }) {
                 <tr key={e.id} className="group border-t border-slate-200 hover:bg-slate-50">
                   <td className={`${pinTd("Date")} px-4 py-2.5 whitespace-nowrap text-slate-700`}>
                     {selectable ? (
-                      <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                      <label className="inline-flex items-center gap-2.5 cursor-pointer" onMouseDown={noFocusScroll}>
                         <input type="checkbox" checked={selected.has(e.id)} onChange={() => toggleRow(e.id)}
                           className="h-4 w-4 rounded border-slate-300 accent-slate-900" />
                         {fmtDate(e.entryDate)}
