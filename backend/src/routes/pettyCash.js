@@ -1021,6 +1021,60 @@ router.put("/entries/:id", requirePerm("petty_cash_staff", "can_edit"), upload.a
   }
 });
 
+/* POST /api/petty-cash/entries/bulk-paid-by — { ids: [...], personId }.
+   Sets Paid By on many expenses at once (ticked rows on the Expenses tab).
+   Only expenses inside the user's Petty Cash access are changed; one audit
+   row per entry that actually changed. */
+router.post("/entries/bulk-paid-by", requirePerm("petty_cash_staff", "can_edit"), async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body.ids) ? [...new Set(req.body.ids.map(String))] : [];
+    const personId = String(req.body.personId || "");
+    if (!ids.length) return res.status(400).json({ error: "Select at least one expense" });
+    if (ids.length > 1000) return res.status(400).json({ error: "Too many entries (max 1000 at once)" });
+    if (!personId) return res.status(400).json({ error: "Select the person" });
+
+    const peopleById = await loadPeopleMap();
+    if (!peopleById[personId]) return res.status(400).json({ error: "Person not found" });
+
+    // ids go in the URL, so read / update in chunks
+    const chunks = (list) => Array.from({ length: Math.ceil(list.length / 100) }, (_, i) => list.slice(i * 100, i * 100 + 100));
+    const rows = [];
+    for (const part of chunks(ids)) {
+      const { data, error } = await supabase.from("petty_cash_entries")
+        .select("id, entry_type, person_id, particular, project_id, branch_id")
+        .in("id", part).is("deleted_at", null);
+      if (error) throw error;
+      rows.push(...(data || []));
+    }
+    const scope = await pcScope(req, "petty_cash_staff");
+    if (rows.some(r => !pcAllowed(scope, r))) return res.status(403).json({ error: "Some entries aren't in your Petty Cash access" });
+    if (rows.some(r => r.entry_type !== "expense")) return res.status(400).json({ error: "Paid By can only be changed on expenses" });
+
+    const toChange = rows.filter(r => r.person_id !== personId);
+    if (toChange.length) {
+      const now = new Date().toISOString();
+      for (const part of chunks(toChange.map(r => r.id))) {
+        const { error: uErr } = await supabase.from("petty_cash_entries")
+          .update({ person_id: personId, updated_at: now })
+          .in("id", part).is("deleted_at", null);
+        if (uErr) throw uErr;
+      }
+
+      const uid = userIdFrom(req);
+      const { data: who } = await supabase.from("users").select("name, email").eq("id", uid).maybeSingle();
+      await supabase.schema("procurement").from("audit_logs").insert(toChange.map(r => ({
+        entity_type: "petty_cash_entry", entity_id: String(r.id), entity_name: r.particular || null,
+        action: "updated", user_id: uid || null, user_name: who?.name || null, user_email: who?.email || null,
+        changes: { "Paid By": { from: peopleById[r.person_id]?.name || "—", to: peopleById[personId].name } },
+      })));
+    }
+    res.json({ updated: toChange.length, unchanged: rows.length - toChange.length });
+  } catch (err) {
+    console.error("Petty cash bulk paid-by error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /* GET /api/petty-cash/entries/:id/voucher — saved Create-Voucher details
    (kept out of the list response; only needed when editing a voucher) */
 router.get("/entries/:id/voucher", requirePerm("petty_cash_staff", "can_view"), async (req, res) => {

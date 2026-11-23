@@ -542,8 +542,10 @@ export default function PettyCashStaff({ scope }) {
     const widest = Math.max(0, ...[...new Set(filtered.map(e => e.vendorName).filter(Boolean))].map(textWidth));
     return Math.min(420, Math.max(140, Math.ceil(widest) + 40));
   }, [filtered]);
+  // Expenses can be ticked (checkbox in the Date cell) to change Paid By on many at once.
+  const selectable = subTab === "entries" && canEdit;
   const COL_W = {
-    Date: 120, Vendor: vendorColW, Expense: 280, Amount: 120, "Paid By": 160, "Bill Type": 130, Payment: 120,
+    Date: selectable ? 150 : 120, Vendor: vendorColW, Expense: 280, Amount: 120, "Paid By": 160, "Bill Type": 130, Payment: 120,
     Type: 200, From: 180, To: 180, Doc: 70,
   };
   // Expenses open from the name, so only Received & Given needs a View button.
@@ -556,12 +558,39 @@ export default function PettyCashStaff({ scope }) {
   const EDGE_R = "shadow-[inset_1px_0_0_#e2e8f0,inset_-1px_0_0_#e2e8f0,-6px_0_8px_-6px_rgba(15,23,42,0.25)]";
   const pinCls = (h) => ({
     Date:   `sticky left-0 ${subTab === "entries" ? LINE : EDGE_L}`,
-    Vendor: `sticky left-[120px] ${EDGE_L}`,
+    Vendor: `sticky ${EDGE_L}`,
     Doc:    `sticky ${EDGE_R}`,
     Action: "sticky right-0",
   })[h] || "";
   const pinTd = (h) => `${pinCls(h)} z-[5] bg-white group-hover:bg-slate-50`;
-  const pinStyle = (h) => (h === "Doc" ? { right: COL_W.Action } : undefined);
+  const pinStyle = (h) => (h === "Doc" ? { right: COL_W.Action } : h === "Vendor" ? { left: COL_W.Date } : undefined);
+
+  // ── Ticked expenses (bulk Paid By) ──────────────────────────────────────
+  // Only rows still in the filtered list count, so a filter change can't
+  // leave hidden rows selected.
+  const [selected, setSelected]       = useState(() => new Set());
+  const [bulkPaidBy, setBulkPaidBy]   = useState("");
+  const [bulkSaving, setBulkSaving]   = useState(false);
+  const selectedIds = selectable ? filtered.filter(e => selected.has(e.id)).map(e => e.id) : [];
+  const allTicked = selectable && filtered.length > 0 && selectedIds.length === filtered.length;
+  const toggleRow = (id) => setSelected(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleAll = () => setSelected(allTicked ? new Set() : new Set(filtered.map(e => e.id)));
+  const applyBulkPaidBy = async () => {
+    if (!bulkPaidBy) return showToast("Select who paid", "error");
+    setBulkSaving(true);
+    try {
+      const { data } = await api.post("/api/petty-cash/entries/bulk-paid-by", { ids: selectedIds, personId: bulkPaidBy });
+      showToast(`Paid By changed on ${data.updated} expense${data.updated === 1 ? "" : "s"}${data.unchanged ? ` (${data.unchanged} already had it)` : ""}`);
+      setSelected(new Set());
+      setBulkPaidBy("");
+      fetchEntries();
+    } catch (err) { showToast(apiError(err, "Failed to change Paid By"), "error"); }
+    setBulkSaving(false);
+  };
 
   // One pager shared by all three tabs (switching tabs resets to page 1).
   const listTotal = subTab === "people" ? balances.list.length : subTab === "items" ? itemSummary.length : filtered.length;
@@ -1293,6 +1322,27 @@ export default function PettyCashStaff({ scope }) {
       {TAB_TYPES[subTab] && (
       <>
 
+      {selectedIds.length > 0 && (
+        <div className="relative z-10 shrink-0 flex flex-wrap items-center gap-2 rounded-xl border border-slate-300 bg-slate-900 text-white px-4 py-2">
+          <span className="text-sm font-semibold">{selectedIds.length} selected</span>
+          <span className="text-sm text-slate-300 tabular-nums">· ₹ {fmtAmount(filtered.filter(e => selected.has(e.id)).reduce((s, e) => s + e.amount, 0))}</span>
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <span className="text-sm text-slate-300">Change Paid By to</span>
+            <select value={bulkPaidBy} onChange={e => setBulkPaidBy(e.target.value)}
+              className="h-8 rounded-lg border border-slate-600 bg-white px-2 text-sm text-slate-900 outline-none">
+              <option value="">Select person</option>
+              {activePeople.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+            <button type="button" onClick={applyBulkPaidBy} disabled={bulkSaving || !bulkPaidBy}
+              className="h-8 px-3 rounded-lg bg-emerald-500 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-50">
+              {bulkSaving ? "Saving…" : "Apply"}
+            </button>
+            <button type="button" onClick={() => { setSelected(new Set()); setBulkPaidBy(""); }}
+              className="h-8 px-3 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700">Clear</button>
+          </div>
+        </div>
+      )}
+
       <div className="relative z-0 bg-white rounded-xl border border-slate-200 overflow-hidden md:flex-1 md:min-h-0 md:flex md:flex-col">
 
         <div className="overflow-auto md:flex-1 md:min-h-0">
@@ -1301,7 +1351,16 @@ export default function PettyCashStaff({ scope }) {
               <tr>
                 {columns.map((h, i) => (
                   <th key={i} style={{ ...pinStyle(h), ...(COL_W[h] && h !== flexCol && { width: COL_W[h] }) }}
-                    className={`sticky top-0 ${pinCls(h) ? `${pinCls(h)} z-20` : "z-10"} bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : h === "Doc" ? "text-center !px-2" : "text-left"}`}>{h}</th>
+                    className={`sticky top-0 ${pinCls(h) ? `${pinCls(h)} z-20` : "z-10"} bg-slate-50 px-4 py-2.5 font-semibold whitespace-nowrap ${h === "Amount" ? "text-right" : h === "Doc" ? "text-center !px-2" : "text-left"}`}>
+                    {h === "Date" && selectable ? (
+                      <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                        <input type="checkbox" checked={allTicked} onChange={toggleAll} title="Tick all expenses in this list"
+                          ref={el => { if (el) el.indeterminate = selectedIds.length > 0 && !allTicked; }}
+                          className="h-4 w-4 rounded border-slate-300 accent-slate-900" />
+                        {h}
+                      </label>
+                    ) : h}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -1312,10 +1371,18 @@ export default function PettyCashStaff({ scope }) {
                 <tr><td colSpan={columns.length} className="px-4 py-10 text-center text-slate-400">No entries found</td></tr>
               ) : pageRows.map(e => (
                 <tr key={e.id} className="group border-t border-slate-200 hover:bg-slate-50">
-                  <td className={`${pinTd("Date")} px-4 py-2.5 whitespace-nowrap text-slate-700`}>{fmtDate(e.entryDate)}</td>
+                  <td className={`${pinTd("Date")} px-4 py-2.5 whitespace-nowrap text-slate-700`}>
+                    {selectable ? (
+                      <label className="inline-flex items-center gap-2.5 cursor-pointer">
+                        <input type="checkbox" checked={selected.has(e.id)} onChange={() => toggleRow(e.id)}
+                          className="h-4 w-4 rounded border-slate-300 accent-slate-900" />
+                        {fmtDate(e.entryDate)}
+                      </label>
+                    ) : fmtDate(e.entryDate)}
+                  </td>
                   {subTab === "entries" ? (
                     <>
-                      <td className={`${pinTd("Vendor")} px-4 py-2.5 text-slate-700 break-words`}>{e.vendorName || <span className="text-slate-400">—</span>}</td>
+                      <td style={pinStyle("Vendor")} className={`${pinTd("Vendor")} px-4 py-2.5 text-slate-700 break-words`}>{e.vendorName || <span className="text-slate-400">—</span>}</td>
                       <td className="px-4 py-2.5 text-slate-800 overflow-hidden">
                         <button type="button" onClick={() => setViewEntry(e)} title="View details"
                           className="block max-w-full truncate text-left hover:text-blue-600 hover:underline">{e.particular}</button>
