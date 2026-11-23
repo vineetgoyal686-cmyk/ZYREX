@@ -128,6 +128,66 @@ const matchesQuery = (list, q) => {
 // scrolling parent — the item rows, the form body — can't clip it.
 // multiline: a one-row textarea that grows, so a long name wraps instead of
 // being cut off (Enter never adds a new line).
+// Person picker like the voucher's user picker: search, initials, tick on
+// the chosen one. value = person id ("" = none).
+const initialsOf = (name) => String(name || "").trim().split(/\s+/).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?";
+const PersonAvatar = ({ name, size = 24 }) => (
+  <span className="shrink-0 rounded-full bg-indigo-50 text-indigo-600 font-bold flex items-center justify-center"
+    style={{ width: size, height: size, fontSize: size * 0.4 }}>{initialsOf(name)}</span>
+);
+function PersonPicker({ people, value, onChange, placeholder = "Select person", className = "w-56" }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const ref = useRef(null);
+  useEffect(() => {
+    const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  const sel = people.find(p => p.id === value);
+  const term = q.trim().toLowerCase();
+  const list = people.filter(p => !term || p.name.toLowerCase().includes(term));
+  const pick = (id) => { onChange(id); setOpen(false); setQ(""); };
+  return (
+    <div ref={ref} className={`relative ${className}`}>
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className={`w-full h-8 flex items-center gap-2 border rounded-lg pl-1.5 pr-2.5 bg-white text-left transition-colors
+          ${open ? "border-slate-500" : "border-slate-300 hover:border-slate-400"}`}>
+        {sel ? <PersonAvatar name={sel.name} size={22} /> : <span className="w-[22px] h-[22px] rounded-full border border-dashed border-slate-300 shrink-0" />}
+        <span className={`flex-1 min-w-0 truncate text-sm ${sel ? "text-slate-800 font-medium" : "text-slate-400"}`}>{sel ? sel.name : placeholder}</span>
+        {sel && (
+          <span role="button" tabIndex={-1} title="Clear" onClick={e => { e.stopPropagation(); pick(""); }} className="p-0.5 text-slate-300 hover:text-slate-600"><X size={13} /></span>
+        )}
+        <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 w-full min-w-[240px] bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden">
+          <div className="p-2 border-b border-slate-100">
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+              <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Search person…"
+                className="w-full h-8 pl-8 pr-2 rounded-md bg-slate-50 border border-slate-200 text-sm text-slate-800 outline-none focus:border-slate-400" />
+            </div>
+          </div>
+          <div className="max-h-60 overflow-auto thin-scroll p-1">
+            {list.length === 0 ? <p className="px-3 py-3 text-center text-xs text-slate-400">No person found</p> : list.map(p => (
+              <button key={p.id} type="button" onClick={() => pick(p.id)}
+                className={`w-full flex items-center gap-2.5 px-2 py-1.5 rounded-lg text-left ${p.id === value ? "bg-indigo-50" : "hover:bg-slate-50"}`}>
+                <PersonAvatar name={p.name} size={26} />
+                <span className="flex-1 min-w-0">
+                  <span className="block truncate text-[13px] font-medium text-slate-800">{p.name}</span>
+                  {p.userId && <span className="block truncate text-[11px] text-slate-400">Login user</span>}
+                </span>
+                {p.id === value && <Check size={14} className="text-indigo-600 shrink-0" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NameCombo({ value, onChange, options, noun, placeholder, inputClass, withIcon, multiline }) {
   const [rect, setRect] = useState(null); // input position while the list is open
   const ref = useRef(null);
@@ -1352,11 +1412,7 @@ export default function PettyCashStaff({ scope }) {
           </button>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <span className="text-sm text-slate-300">Change Paid By to</span>
-            <select value={bulkPaidBy} onChange={e => setBulkPaidBy(e.target.value)}
-              className="h-8 rounded-lg border border-slate-600 bg-white px-2 text-sm text-slate-900 outline-none">
-              <option value="">Select person</option>
-              {activePeople.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <PersonPicker people={activePeople} value={bulkPaidBy} onChange={setBulkPaidBy} />
             <button type="button" onClick={applyBulkPaidBy} disabled={bulkSaving || !bulkPaidBy || !selectedIds.length}
               className="h-8 px-3 rounded-lg bg-emerald-500 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-50">
               {bulkSaving ? "Saving…" : "Apply"}
